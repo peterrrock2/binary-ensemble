@@ -1,0 +1,8 @@
+# Ignore the build directory for cargo
+target
+.cargo
+dev_files
+.vscode
+.venv
+demo
+example
