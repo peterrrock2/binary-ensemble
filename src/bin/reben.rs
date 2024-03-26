@@ -34,15 +34,20 @@ struct Args {
     #[arg(short, long)]
     output_file: Option<String>,
 
+    /// Key to sort the JSON or BEN file by.
     #[arg(short, long)]
     key: Option<String>,
 
+    /// Shape file to use for sorting the BEN file. Only needed
+    /// in BEN mode when a map is not provided.
     #[arg(short, long)]
     shape_file: Option<String>,
 
+    /// Map file to use for relabeling the BEN file.
     #[arg(short = 'p', long)]
     map_file: Option<String>,
 
+    /// Mode to run the program in (either JSON or BEN).
     #[arg(short, long)]
     mode: Mode,
 }
