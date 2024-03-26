@@ -19,7 +19,7 @@ You may install the binary-ensemble package from the cargo package manager
 using 
 
 ```
-cargo install binary-ensamble
+cargo install binary-ensemble
 ```
 
 [Here](./example/small_example.jsonl) is a link to a small example file that you can use 
