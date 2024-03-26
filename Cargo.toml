@@ -2,6 +2,7 @@
 name = "binary-ensemble"
 version = "0.1.0"
 edition = "2021"
+authors = ["Peter Rock"]
 
 [lib]
 name = "ben"
