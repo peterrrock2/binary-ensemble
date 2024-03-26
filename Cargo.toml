@@ -2,8 +2,10 @@
 name = "binary-ensemble"
 version = "0.1.0"
 edition = "2021"
-authors = ["Peter Rock"]
+authors = ["Peter Rock <peter.r.rock2@gmail.com>"]
 exclude = ["example/"]
+
+description = "A CLI tool for working with and compressing ensambles of districting plans"
 
 [lib]
 name = "ben"
