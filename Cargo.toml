@@ -7,6 +7,8 @@ exclude = ["example/"]
 license = "MIT"
 readme = "README.md"
 
+repository = "https://github.com/peterrrock2/binary-ensemble"
+
 description = "A CLI tool for working with and compressing ensambles of districting plans"
 
 [lib]
