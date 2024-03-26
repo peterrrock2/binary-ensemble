@@ -120,9 +120,9 @@ assignment. Of course, there is no BEST way to do this, but, generally,
 sorting the JSON file according to geographic markers is a pretty good way
 to go.
 
-Consider, for example [this](./example/CO_small.json) shapefile for the state 
-of Colorado. This is a block-level shapefile containing ~140k nodes in no 
-particular order. If we then use this shapefile to generate 100k example plans
+Consider, for example [this](./example/CO_small.json) dual-graph file for the state 
+of Colorado. This is a block-level dual-graph file containing ~140k nodes in no 
+particular order. If we then use this dual-graph file to generate 100k example plans
 and store the result in an XBEN file, we end up with something like
 [this](./example/100k_CO_chain.jsonl.xben).
 
@@ -191,11 +191,11 @@ then becomes "can we sort the vectors after we have run the simulation already?"
 to which the answer is "of course!"
 
 This is where the other aspects of `reben`come into play. If we would like to produce
-a new mapping for our shapefiles so that they are sorted according to some key value
+a new mapping for our dual-graph files so that they are sorted according to some key value
 then we may use the command
 
 ```
-reben -m ben -s <shapefile-name> -k <key-name>  <ben-file-name>
+reben -m ben -s <dual-graph-file-name> -k <key-name>  <ben-file-name>
 ```
 
 In our example, the CO_small.json file has the GEOID20 key that we would like to sort
@@ -209,7 +209,7 @@ This will produce the files
 
 * 100k_CO_chain_canonicalized_assignments_sorted_by_GEOID20.jsonl.ben (~550Mb)
 * CO_small_sorted_by_GEOID20_map.json (a map file containing the new data)
-* CO_small_sorted_by_GEOID20.json (a shapefile with the nodes shifted around)
+* CO_small_sorted_by_GEOID20.json (a dual-graph file with the nodes shifted around)
 
 Notice, our BEN file has now shrunk from ~7Gb to around 0.5Gb, which is pretty good!
 Now, we can further compress this file using the `x-encode` mode of the `ben` CLI
@@ -231,8 +231,8 @@ should be aware of:
 
 * When using the `ben` CLI tool, it is assumed that the assignments in the
   assignment vector are stored in the same order as the nodes in some JSON
-  shapefile. While this seems to be the standard, it is incumbent on the user
-  to make sure that they know which shapefile / node labeling produced these
+  dual-graph file. While this seems to be the standard, it is incumbent on the user
+  to make sure that they know which dual-graph file / node labeling produced these
   assignment vectors.
 
 * When the samples are encoded into BEN formatting, the decoded samples will
@@ -244,8 +244,8 @@ should be aware of:
   applications, this should not cause any issues unless the user is specifically
   looking at ways to split Idaho into congressional districts at the census block
   level between the years 2010-2020 and they make the decision to sort the
-  shapefile according to the congressional assignments (and if you are doing 
-  that, 1. why? and 2. maybe sort the shapefile in some other way that is more
+  dual-graph file according to the congressional assignments (and if you are doing 
+  that, 1. why? and 2. maybe sort the dual-graph file in some other way that is more
   meaningful using `reben` first). None of the other states can cause any issues for
   any of the state-wide races.
 

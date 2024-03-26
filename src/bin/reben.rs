@@ -121,7 +121,7 @@ fn main() {
                 panic!(concat!(
                     "Cannot provide both a map file and a key. ",
                     "Please provide either the map file or the key and the ",
-                    "(JSON formatted) shapefile needed to generate a map file."
+                    "(JSON formatted) dual-graph file needed to generate a map file."
                 ));
             }
 
