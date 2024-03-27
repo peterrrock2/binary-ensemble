@@ -1,3 +1,8 @@
+//! This module contains the main functions that are used in the `reben` binary
+//! for relabeling the assignment vectors in a BEN file. The relabeling is done
+//! can be doe either so that the values are in ascending order or according to
+//! a mapping provided by the user in a map file.
+
 use crate::decode::*;
 use crate::encode::*;
 use byteorder::{BigEndian, ReadBytesExt};

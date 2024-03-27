@@ -43,7 +43,7 @@ use self::translate::ben_to_ben32_lines;
 /// # Returns
 ///
 /// A vector of bytes containing the ben32 encoded assignment vector
-fn encode_ben_32_line(data: Value) -> Vec<u8> {
+fn encode_ben32_line(data: Value) -> Vec<u8> {
     let assign_vec = data["assignment"].as_array().unwrap();
     let mut prev_assign: u16 = 0;
     let mut count: u16 = 0;
@@ -108,7 +108,7 @@ pub fn jsonl_encode_xben<R: BufRead, W: Write>(reader: R, mut writer: W) -> std:
         let line = line_result?;
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
 
-        let ben32_vec = encode_ben_32_line(data);
+        let ben32_vec = encode_ben32_line(data);
         encoder.write_all(&ben32_vec)?;
     }
     drop(encoder); // Make sure to flush and finish compression
@@ -157,6 +157,21 @@ pub fn xz_compress<R: BufRead, W: Write>(mut reader: R, writer: W) -> std::io::R
     }
     drop(encoder); // Make sure to flush and finish compression
     Ok(())
+}
+
+/// This function takes in a standard assignment vector and encodes
+/// it into a bit-packed ben version.
+///
+/// # Arguments
+///
+/// * `assign_vec` - A vector of u16 values representing the assignment vector
+///
+/// # Returns
+///
+/// A vector of bytes containing the bit-packed ben encoded assignment vector
+pub fn encode_ben_vec_from_assign(assign_vec: Vec<u16>) -> Vec<u8> {
+    let rle_vec: Vec<(u16, u16)> = assign_to_rle(assign_vec);
+    encode_ben_vec_from_rle(rle_vec)
 }
 
 /// This function takes a run-length encoded assignment vector and
