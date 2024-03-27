@@ -71,7 +71,7 @@ fn encode_setup(args: &Args) -> Result<String> {
     };
 
     if Path::new(&out_file_name).exists() {
-        print!(
+        eprint!(
             "File {:?} already exists, do you want to overwrite it? (y/[n]): ",
             out_file_name
         );
@@ -309,7 +309,7 @@ fn main() {
             };
 
             if Path::new(&out_file_name).exists() {
-                print!(
+                eprint!(
                     "File {:?} already exists, do you want to overwrite it? (y/[n]): ",
                     out_file_name
                 );
@@ -343,7 +343,7 @@ fn main() {
             };
 
             if Path::new(&output_file_name).exists() {
-                print!(
+                eprint!(
                     "File {:?} already exists, do you want to overwrite it? (y/[n]): ",
                     output_file_name
                 );

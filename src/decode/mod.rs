@@ -186,7 +186,7 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
             if overflow[i - 3..=i] == [0, 0, 0, 0] {
                 last_valid_assignment = i + 1;
                 line_count += 1;
-                print!("Decoding sample: {}\r", line_count);
+                eprint!("Decoding sample: {}\r", line_count);
             }
         }
 
@@ -388,7 +388,7 @@ pub fn jsonl_decode_ben<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::
                 return Err(e);
             }
         };
-        print!("Decoding sample: {}\r", sample_number);
+        eprint!("Decoding sample: {}\r", sample_number);
         let max_len_bits = reader.read_u8()?;
         let n_bytes = reader.read_u32::<BigEndian>()?;
 
@@ -469,7 +469,7 @@ pub fn jsonl_decode_xben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::
             if overflow[i - 3..=i] == [0, 0, 0, 0] {
                 last_valid_assignment = i + 1;
                 line_count += 1;
-                print!("Decoding sample: {}\r", line_count);
+                eprint!("Decoding sample: {}\r", line_count);
             }
         }
 

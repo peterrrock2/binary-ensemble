@@ -114,7 +114,7 @@ pub fn sort_json_file_by_key<R: Read, W: Write>(
     let mut rev_node_map = HashMap::new();
     if let Some(nodes) = data["nodes"].as_array_mut() {
         for (i, node) in nodes.iter_mut().enumerate() {
-            print!("Relabeling node: {}\r", i + 1);
+            eprint!("Relabeling node: {}\r", i + 1);
             node_map.insert(node["id"].to_string().parse::<usize>().unwrap(), i);
             rev_node_map.insert(i, node["id"].to_string().parse::<usize>().unwrap());
             node["id"] = json!(i);
@@ -125,7 +125,7 @@ pub fn sort_json_file_by_key<R: Read, W: Write>(
     let mut edge_array = Vec::new();
     if let Some(edges) = data["adjacency"].as_array() {
         for i in 0..edges.len() {
-            print!("Relabeling edge: {}\r", i + 1);
+            eprint!("Relabeling edge: {}\r", i + 1);
             let edge_list_location =
                 rev_node_map[&data["nodes"][i]["id"].to_string().parse::<usize>().unwrap()];
             let mut new_edge_lst = edges[edge_list_location].as_array().unwrap().clone();
@@ -358,7 +358,7 @@ mod test {
 }
 "#;
 
-        println!();
+        eprintln!();
         let output_json: Value = serde_json::from_slice(&output).unwrap();
         let expected_output_json: Value = serde_json::from_str(expected_output).unwrap();
 

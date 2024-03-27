@@ -103,7 +103,7 @@ pub fn jsonl_encode_xben<R: BufRead, W: Write>(reader: R, mut writer: W) -> std:
 
     encoder.write_all("STANDARD BEN FILE".as_bytes())?;
     for line_result in reader.lines() {
-        print!("Encoding line: {}\r", line_num);
+        eprint!("Encoding line: {}\r", line_num);
         line_num += 1;
         let line = line_result?;
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
@@ -275,7 +275,7 @@ pub fn jsonl_encode_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> std::
     let mut line_num = 1;
     writer.write_all("STANDARD BEN FILE".as_bytes())?;
     for line_result in reader.lines() {
-        print!("Encoding line: {}\r", line_num);
+        eprint!("Encoding line: {}\r", line_num);
         line_num += 1;
         let line = line_result?; // Handle potential I/O errors for each line
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");

@@ -26,7 +26,7 @@ fn test_ben_pipeline() {
 
     eprintln!();
     for i in 0..n_samples {
-        print!("Generating sample: {}\r", i + 1);
+        eprint!("Generating sample: {}\r", i + 1);
         let mut rle_vec = Vec::new();
         while rle_vec.len() < 500 {
             rle_vec.push((mu.sample(&mut rng) as u16, gamma.sample(&mut rng) as u16));
@@ -84,7 +84,7 @@ fn test_xben_pipeline() {
 
     eprintln!();
     for i in 0..n_samples {
-        print!("Generating sample: {}\r", i + 1);
+        eprint!("Generating sample: {}\r", i + 1);
         let mut rle_vec = Vec::new();
         while rle_vec.len() < 500 {
             rle_vec.push((

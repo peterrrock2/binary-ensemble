@@ -176,7 +176,7 @@ pub fn ben_to_ben32_lines<R: Read, W: Write>(mut reader: R, mut writer: W) -> io
         let max_len_bits = reader.read_u8()?;
         let n_bytes = reader.read_u32::<BigEndian>()?;
 
-        print!("Encoding line: {}\r", sample_number);
+        eprint!("Encoding line: {}\r", sample_number);
         sample_number += 1;
         let ben32_vec = ben_to_ben32_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
 
