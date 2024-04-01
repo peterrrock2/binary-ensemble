@@ -42,7 +42,7 @@ pub fn relabel_ben_lines<R: Read, W: Write>(mut reader: R, mut writer: W) -> io:
 
         let mut ben_line = decode_ben_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
 
-        eprint!("Relabeling line: {}\r", sample_number);
+        log!("Relabeling line: {}\r", sample_number);
         sample_number += 1;
 
         // relabel the line
@@ -63,8 +63,8 @@ pub fn relabel_ben_lines<R: Read, W: Write>(mut reader: R, mut writer: W) -> io:
         let relabeled = encode_ben_vec_from_rle(ben_line);
         writer.write_all(&relabeled)?;
     }
-    eprintln!();
-    eprintln!("Done!");
+    logln!();
+    logln!("Done!");
 
     Ok(())
 }
@@ -158,14 +158,14 @@ pub fn relabel_ben_lines_with_map<R: Read, W: Write>(
 
         let new_rle = assign_to_rle(new_assignment_vec);
 
-        eprint!("Relabeling line: {}\r", sample_number);
+        log!("Relabeling line: {}\r", sample_number);
         sample_number += 1;
 
         let relabeled = encode_ben_vec_from_rle(new_rle);
         writer.write_all(&relabeled)?;
     }
-    eprintln!();
-    eprintln!("Done!");
+    logln!();
+    logln!("Done!");
 
     Ok(())
 }

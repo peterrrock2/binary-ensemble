@@ -2,7 +2,7 @@
 //! ensembles of districting plans contained in a JSONL file with lines of the
 //! form
 //!
-//! ```
+//! ```text
 //! {"assignment": <assignment>, "sample": <sample>}
 //! ```
 //!
@@ -21,3 +21,25 @@
 pub mod decode;
 pub mod encode;
 pub mod utils;
+
+#[macro_export]
+macro_rules! log {
+    ($($arg:tt)*) => {{
+        if let Ok(log_level) = std::env::var("RUST_LOG") {
+            if log_level.to_lowercase() == "trace" {
+                eprint!($($arg)*);
+            }
+        }
+    }}
+}
+
+#[macro_export]
+macro_rules! logln {
+    ($($arg:tt)*) => {{
+        if let Ok(log_level) = std::env::var("RUST_LOG") {
+            if log_level.to_lowercase() == "trace" {
+                eprintln!($($arg)*);
+            }
+        }
+    }}
+}

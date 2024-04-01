@@ -29,6 +29,7 @@ use std::io::{self, BufRead, Write};
 use xz2::write::XzEncoder;
 
 use self::translate::ben_to_ben32_lines;
+use super::{log, logln};
 
 /// This function takes a json encoded line containing an assignment
 /// vector and a sample number and encodes the assignment vector
@@ -103,7 +104,7 @@ pub fn jsonl_encode_xben<R: BufRead, W: Write>(reader: R, mut writer: W) -> std:
 
     encoder.write_all("STANDARD BEN FILE".as_bytes())?;
     for line_result in reader.lines() {
-        eprint!("Encoding line: {}\r", line_num);
+        log!("Encoding line: {}\r", line_num);
         line_num += 1;
         let line = line_result?;
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
@@ -113,8 +114,10 @@ pub fn jsonl_encode_xben<R: BufRead, W: Write>(reader: R, mut writer: W) -> std:
     }
     drop(encoder); // Make sure to flush and finish compression
     writer.write_all(&buffer)?;
-    eprintln!();
-    eprintln!("Done!");
+
+    logln!();
+    logln!("Done!");
+
     Ok(())
 }
 
@@ -290,7 +293,7 @@ pub fn jsonl_encode_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> std::
     let mut line_num = 1;
     writer.write_all("STANDARD BEN FILE".as_bytes())?;
     for line_result in reader.lines() {
-        eprint!("Encoding line: {}\r", line_num);
+        log!("Encoding line: {}\r", line_num);
         line_num += 1;
         let line = line_result?; // Handle potential I/O errors for each line
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
@@ -307,8 +310,8 @@ pub fn jsonl_encode_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> std::
             writer.write_all(&encoded)?;
         }
     }
-    eprintln!();
-    eprintln!("Done!"); // Print newline after progress bar
+    logln!();
+    logln!("Done!"); // Print newline after progress bar
     Ok(())
 }
 
@@ -323,10 +326,7 @@ pub fn jsonl_encode_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> std::
 /// # Returns
 ///
 /// A Result type that contains the result of the operation
-pub fn encode_ben_to_xben<R: BufRead, W: Write>(
-    mut reader: R,
-    mut writer: W,
-) -> std::io::Result<()> {
+pub fn ben_encode_xben<R: BufRead, W: Write>(mut reader: R, writer: W) -> std::io::Result<()> {
     let mut check_buffer = [0u8; 17];
     reader.read_exact(&mut check_buffer)?;
 
