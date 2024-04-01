@@ -1,6 +1,7 @@
 use ben::decode::read::extract_assignment_ben;
 use ben::decode::*;
 use ben::encode::*;
+use ben::logln;
 use clap::{Parser, ValueEnum};
 use std::{
     fs::File,
@@ -24,7 +25,7 @@ enum Mode {
 #[command(
     name = "Binary Ensamble CLI Tool",
     about = "This is a command line tool for encoding and decoding binary ensamble files.",
-    version = "0.1.0"
+    version = "0.1.1"
 )]
 struct Args {
     /// Mode to run the program in (encode, decode, or read).
@@ -33,7 +34,7 @@ struct Args {
 
     /// Input file to read from.
     #[arg()]
-    input_file: String,
+    input_file: Option<String>,
 
     /// Output file to write to. Optional.
     /// If not provided, the output file will be determined
@@ -41,246 +42,392 @@ struct Args {
     #[arg(short, long)]
     output_file: Option<String>,
 
+    /// The standard behaviour is to try and derive the output file
+    /// name from the input file name. If this flag is set, then this
+    /// logic is ignored and the output is printed to stdout.
+    /// This flag is considered a higher priority than
+    /// the output_file flag, so if both are present, the output
+    /// will be printed to stdout.
+    #[arg(short, long)]
+    print: bool,
+
     /// Sample number to extract. Optional.
     #[arg(short = 'n', long)]
     sample_number: Option<usize>,
 
-    /// Print the output to the console. Optional.
+    /// If input and output files are not provided,
+    /// then this tells the x-encode, x-decode, and decode modes
+    /// that the expected formats are BEN and XBEN
+    #[arg(short = 'b', long)]
+    ben_and_xben: bool,
+
+    /// If input and output files are not provided,
+    /// then this tells the x-encode and x-decode modes
+    /// that the expected formats are JSONL and XBEN
+    #[arg(short = 'J', long)]
+    jsonl_and_xben: bool,
+
+    /// If the input and output files are not provided,
+    /// then this tells the decode mode that the expected
+    /// formats are JSONL and BEN
+    #[arg(short = 'j', long)]
+    jsonl_and_ben: bool,
+
+    /// If the output file already exists, this flag
+    /// will cause the program to overwrite it without
+    /// asking the user for confirmation.
+    #[arg(short = 'w', long)]
+    overwrite: bool,
+
+    /// Enables verbose printing for the CLI. Optional.
     #[arg(short, long)]
-    print: bool,
+    verbose: bool,
 }
 
-fn encode_setup(args: &Args) -> Result<String> {
-    let extension = if args.mode == Mode::XEncode {
+fn encode_setup(
+    mode: Mode,
+    input_file_name: String,
+    output_file_name: Option<String>,
+    overwrite: bool,
+) -> Result<String> {
+    let extension = if mode == Mode::XEncode {
         ".xben"
-    } else if args.mode == Mode::Encode {
+    } else if mode == Mode::Encode {
         ".ben"
     } else {
         ".xz"
     };
 
-    let out_file_name = match &args.output_file {
+    let out_file_name = match output_file_name {
         Some(name) => name.to_owned(),
         None => {
-            if args.input_file.ends_with(".ben") && extension == ".xben" {
-                args.input_file.trim_end_matches(".ben").to_owned() + extension
+            if input_file_name.ends_with(".ben") && extension == ".xben" {
+                input_file_name.trim_end_matches(".ben").to_owned() + extension
             } else {
-                args.input_file.to_string() + extension
+                input_file_name.to_string() + extension
             }
         }
     };
 
-    if Path::new(&out_file_name).exists() {
-        eprint!(
-            "File {:?} already exists, do you want to overwrite it? (y/[n]): ",
-            out_file_name
-        );
-        eprintln!();
-        let mut user_input = String::new();
-        std::io::stdin().read_line(&mut user_input).unwrap();
-        if user_input.trim().to_lowercase() != "y" {
-            return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists));
-        }
+    if let Err(e) = check_overwrite(&out_file_name, overwrite) {
+        return Err(e);
     }
 
     Ok(out_file_name)
 }
 
-fn decode_setup(args: &Args, full_decode: bool) -> Result<String> {
-    let outfile_name = if let Some(name) = &args.output_file {
+fn decode_setup(
+    in_file_name: String,
+    out_file_name: Option<String>,
+    full_decode: bool,
+    overwrite: bool,
+) -> Result<String> {
+    let out_file_name = if let Some(name) = out_file_name {
         name.to_owned()
-    } else if args.input_file.ends_with(".ben") {
-        args.input_file.trim_end_matches(".ben").to_owned()
-    } else if args.input_file.ends_with(".xben") {
+    } else if in_file_name.ends_with(".ben") {
+        in_file_name.trim_end_matches(".ben").to_owned()
+    } else if in_file_name.ends_with(".xben") {
         if !full_decode {
-            args.input_file.trim_end_matches(".xben").to_owned() + ".ben"
+            in_file_name.trim_end_matches(".xben").to_owned() + ".ben"
         } else {
-            args.input_file.trim_end_matches(".xben").to_owned()
+            in_file_name.trim_end_matches(".xben").to_owned()
         }
-    } else if args.input_file.ends_with(".xz") {
+    } else if in_file_name.ends_with(".xz") {
         eprintln!(
             "Error: Unsupported file type for decode mode {:?}. Please decompress xz files with \
             either the xz command line tool or the xz-decompress mode of this tool.",
-            args.input_file
+            in_file_name
         );
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     } else {
         eprintln!(
             "Error: Unsupported file type for decode mode {:?}. Supported types are .ben and .xben.",
-            args.input_file
+            in_file_name
         );
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     };
 
-    if Path::new(&outfile_name).exists() {
+    if let Err(e) = check_overwrite(&out_file_name, overwrite) {
+        return Err(e);
+    }
+
+    Ok(out_file_name)
+}
+
+fn check_overwrite(file_name: &str, overwrite: bool) -> Result<()> {
+    if Path::new(file_name).exists() && !overwrite {
         eprint!(
             "File {:?} already exists, do you want to overwrite it? (y/[n]): ",
-            outfile_name
+            file_name
         );
         let mut user_input = String::new();
         std::io::stdin().read_line(&mut user_input).unwrap();
+        eprintln!();
         if user_input.trim().to_lowercase() != "y" {
             return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists));
         }
-        eprintln!();
     }
-
-    Ok(outfile_name)
+    Ok(())
 }
 
 fn main() {
     let args = Args::parse();
 
+    if args.verbose {
+        std::env::set_var("RUST_LOG", "trace");
+    }
+
     match args.mode {
         Mode::Encode => {
-            eprintln!("Running in encode mode");
-            let in_file = File::open(&args.input_file).unwrap();
-            let reader = BufReader::new(in_file);
+            logln!("Running in encode mode");
 
-            let mut out_file: Box<dyn Write> = if args.print {
-                Box::new(io::stdout())
-            } else {
-                match encode_setup(&args) {
-                    Ok(name) => match File::create(&name) {
-                        Ok(file) => Box::new(file),
-                        Err(err) => {
-                            eprintln!("Error creating file: {:?}", err);
-                            return;
+            let reader: Box<dyn io::BufRead>;
+            let writer: Box<dyn Write>;
+
+            match args.input_file {
+                Some(in_file) => {
+                    reader = Box::new(BufReader::new(File::open(&in_file).unwrap()))
+                        as Box<dyn io::BufRead>;
+
+                    if args.print {
+                        writer = Box::new(BufWriter::new(io::stdout())) as Box<dyn Write>;
+                    } else {
+                        let out_file_name = match encode_setup(
+                            args.mode,
+                            in_file,
+                            args.output_file,
+                            args.overwrite,
+                        ) {
+                            Ok(name) => name,
+                            Err(err) => {
+                                eprintln!("Error: {:?}", err);
+                                return;
+                            }
+                        };
+                        let out_file = File::create(&out_file_name).unwrap();
+                        writer = Box::new(BufWriter::new(out_file)) as Box<dyn Write>;
+                    }
+                }
+                None => {
+                    reader = Box::new(BufReader::new(io::stdin())) as Box<dyn io::BufRead>;
+
+                    writer = if args.print {
+                        Box::new(BufWriter::new(io::stdout())) as Box<dyn Write>
+                    } else {
+                        match args.output_file {
+                            Some(name) => {
+                                if let Err(e) = check_overwrite(&name, args.overwrite) {
+                                    eprintln!("Error: {:?}", e);
+                                    return;
+                                }
+                                let out_file = File::create(&name).unwrap();
+                                Box::new(BufWriter::new(out_file)) as Box<dyn Write>
+                            }
+                            None => Box::new(BufWriter::new(io::stdout())) as Box<dyn Write>,
                         }
-                    },
-                    Err(err) => {
-                        if err.kind() == std::io::ErrorKind::AlreadyExists {
-                            return;
-                        }
-                        eprintln!("Error: {:?}", err);
-                        return;
                     }
                 }
             };
 
-            let writer = BufWriter::new(&mut out_file);
-
-            if let Err(err) = jsonl_encode_ben(reader, writer) {
-                eprintln!("Error: {:?}", err);
+            if let Err(e) = jsonl_encode_ben(reader, writer) {
+                eprintln!("Error: {:?}", e);
             }
         }
         Mode::XEncode => {
-            eprintln!("Running in xencode mode");
-            let in_file = File::open(&args.input_file).unwrap();
-            let reader = BufReader::new(in_file);
+            logln!("Running in xencode mode");
 
-            let mut out_file: Box<dyn Write> = if args.print {
-                Box::new(io::stdout())
-            } else {
-                match encode_setup(&args) {
-                    Ok(name) => match File::create(&name) {
-                        Ok(file) => Box::new(file),
-                        Err(err) => {
-                            eprintln!("Error creating file: {:?}", err);
-                            return;
-                        }
-                    },
-                    Err(err) => {
-                        if err.kind() == std::io::ErrorKind::AlreadyExists {
-                            return;
-                        }
-                        eprintln!("Error: {:?}", err);
-                        return;
+            let mut ben_and_xben = args.ben_and_xben;
+            let mut jsonl_and_xben = args.ben_and_xben;
+
+            let reader: Box<dyn io::BufRead>;
+            let writer: Box<dyn Write>;
+
+            match args.input_file {
+                Some(in_file) => {
+                    if in_file.ends_with(".ben") {
+                        ben_and_xben = true;
+                    } else if in_file.ends_with(".jsonl") {
+                        jsonl_and_xben = true;
                     }
+
+                    reader = Box::new(BufReader::new(File::open(&in_file).unwrap()))
+                        as Box<dyn io::BufRead>;
+
+                    writer = if args.print {
+                        Box::new(BufWriter::new(io::stdout())) as Box<dyn Write>
+                    } else {
+                        let out_file_name = match encode_setup(
+                            args.mode,
+                            in_file,
+                            args.output_file,
+                            args.overwrite,
+                        ) {
+                            Ok(name) => name,
+                            Err(err) => {
+                                eprintln!("Error: {:?}", err);
+                                return;
+                            }
+                        };
+                        let out_file = File::create(&out_file_name).unwrap();
+                        Box::new(BufWriter::new(out_file)) as Box<dyn Write>
+                    };
+                }
+                None => {
+                    reader = Box::new(BufReader::new(io::stdin())) as Box<dyn io::BufRead>;
+
+                    writer = match args.output_file {
+                        Some(name) => {
+                            if let Err(e) = check_overwrite(&name, args.overwrite) {
+                                eprintln!("Error: {:?}", e);
+                                return;
+                            }
+                            let out_file = File::create(&name).unwrap();
+                            Box::new(BufWriter::new(out_file)) as Box<dyn Write>
+                        }
+                        None => Box::new(BufWriter::new(io::stdout())) as Box<dyn Write>,
+                    };
                 }
             };
 
-            let writer = BufWriter::new(&mut out_file);
-
-            if args.input_file.ends_with(".ben") {
-                if let Err(err) = encode_ben_to_xben(reader, writer) {
+            if ben_and_xben {
+                if let Err(err) = ben_encode_xben(reader, writer) {
                     eprintln!("Error: {:?}", err);
                 }
-            } else {
+            } else if jsonl_and_xben {
                 if let Err(err) = jsonl_encode_xben(reader, writer) {
                     eprintln!("Error: {:?}", err);
                 }
+            } else {
+                eprintln!("Error: Unsupported file type(s) for xencode mode");
             }
         }
         Mode::Decode => {
-            eprintln!("Running in decode mode");
-            let file = File::open(&args.input_file).unwrap();
-            let reader = BufReader::new(file);
+            logln!("Running in decode mode");
 
-            let xben = args.input_file.ends_with(".xben");
+            let mut ben_and_xben = args.ben_and_xben;
+            let mut jsonl_and_ben = args.jsonl_and_ben;
 
-            let mut out_file: Box<dyn Write> = if args.print {
-                Box::new(io::stdout())
-            } else {
-                match decode_setup(&args, false) {
-                    Ok(name) => match File::create(&name) {
-                        Ok(file) => Box::new(file),
-                        Err(err) => {
-                            eprintln!("Error creating file: {:?}", err);
-                            return;
+            let reader: Box<dyn io::BufRead>;
+            let writer: Box<dyn Write>;
+
+            match args.input_file {
+                Some(file) => {
+                    if file.ends_with(".ben") {
+                        jsonl_and_ben = true;
+                    } else if file.ends_with(".xben") {
+                        ben_and_xben = true;
+                    }
+
+                    reader = Box::new(BufReader::new(File::open(&file).unwrap()))
+                        as Box<dyn io::BufRead>;
+
+                    writer = if args.print {
+                        Box::new(BufWriter::new(io::stdout())) as Box<dyn Write>
+                    } else {
+                        let out_file_name =
+                            match decode_setup(file, args.output_file, false, args.overwrite) {
+                                Ok(name) => name,
+                                Err(err) => {
+                                    eprintln!("Error: {:?}", err);
+                                    return;
+                                }
+                            };
+                        let out_file = File::create(&out_file_name).unwrap();
+                        Box::new(BufWriter::new(out_file)) as Box<dyn Write>
+                    };
+                }
+                None => {
+                    reader = Box::new(BufReader::new(io::stdin())) as Box<dyn io::BufRead>;
+
+                    writer = if args.print {
+                        Box::new(BufWriter::new(io::stdout())) as Box<dyn Write>
+                    } else {
+                        match args.output_file {
+                            Some(out_name) => {
+                                if let Err(e) = check_overwrite(&out_name, args.overwrite) {
+                                    eprintln!("Error: {:?}", e);
+                                    return;
+                                }
+                                let out_file = File::create(&out_name).unwrap();
+                                Box::new(BufWriter::new(out_file)) as Box<dyn Write>
+                            }
+                            None => Box::new(BufWriter::new(io::stdout())) as Box<dyn Write>,
                         }
-                    },
-                    Err(err) => {
-                        if err.kind() == std::io::ErrorKind::AlreadyExists {
-                            return;
-                        }
-                        eprintln!("Error: {:?}", err);
-                        return;
                     }
                 }
-            };
+            }
 
-            let writer = BufWriter::new(&mut out_file);
-
-            if xben {
-                eprintln!("Decoding xben file to ben file");
-
+            if ben_and_xben {
                 if let Err(err) = decode_xben_to_ben(reader, writer) {
                     eprintln!("Error: {:?}", err);
                 }
-            } else {
-                eprintln!("Decoding ben file to jsonl file");
-
+            } else if jsonl_and_ben {
                 if let Err(err) = jsonl_decode_ben(reader, writer) {
                     eprintln!("Error: {:?}", err);
                 }
+            } else {
+                eprintln!("Error: Unsupported file type(s) for decode mode");
             }
         }
         Mode::XDecode => {
-            eprintln!("Running in xdecode mode");
-            let file = File::open(&args.input_file).unwrap();
-            let reader = BufReader::new(file);
+            logln!("Running in x-decode mode");
 
-            let mut out_file: Box<dyn Write> = if args.print {
-                Box::new(io::stdout())
-            } else {
-                match decode_setup(&args, false) {
-                    Ok(name) => match File::create(&name) {
-                        Ok(file) => Box::new(file),
-                        Err(err) => {
-                            eprintln!("Error creating file: {:?}", err);
-                            return;
-                        }
-                    },
-                    Err(err) => {
-                        if err.kind() == std::io::ErrorKind::AlreadyExists {
-                            return;
-                        }
-                        eprintln!("Error: {:?}", err);
-                        return;
+            let reader: Box<dyn io::BufRead>;
+            let writer: Box<dyn Write>;
+
+            match args.input_file {
+                Some(file) => {
+                    reader = Box::new(BufReader::new(File::open(&file).unwrap()))
+                        as Box<dyn io::BufRead>;
+
+                    writer = if args.print {
+                        Box::new(BufWriter::new(io::stdout())) as Box<dyn Write>
+                    } else {
+                        let out_file_name =
+                            match decode_setup(file, args.output_file, true, args.overwrite) {
+                                Ok(name) => name,
+                                Err(err) => {
+                                    eprintln!("Error: {:?}", err);
+                                    return;
+                                }
+                            };
+                        let out_file = File::create(&out_file_name).unwrap();
+                        Box::new(BufWriter::new(out_file)) as Box<dyn Write>
                     }
                 }
-            };
+                None => {
+                    reader = Box::new(BufReader::new(io::stdin())) as Box<dyn io::BufRead>;
 
-            let writer = BufWriter::new(&mut out_file);
+                    writer = if args.print {
+                        Box::new(BufWriter::new(io::stdout())) as Box<dyn Write>
+                    } else {
+                        match args.output_file {
+                            Some(out_name) => {
+                                if let Err(e) = check_overwrite(&out_name, args.overwrite) {
+                                    eprintln!("Error: {:?}", e);
+                                    return;
+                                }
+                                let out_file = File::create(&out_name).unwrap();
+                                Box::new(BufWriter::new(out_file)) as Box<dyn Write>
+                            }
+                            None => Box::new(BufWriter::new(io::stdout())) as Box<dyn Write>,
+                        }
+                    }
+                }
+            }
 
             if let Err(err) = jsonl_decode_xben(reader, writer) {
                 eprintln!("Error: {:?}", err);
             }
         }
         Mode::Read => {
-            eprintln!("Running in read mode");
-            let file: File = File::open(&args.input_file).unwrap();
+            logln!("Running in read mode");
+            let file: File = File::open(
+                &args
+                    .input_file
+                    .expect("Must provide input file for read mode."),
+            )
+            .unwrap();
             let reader: BufReader<File> = BufReader::new(file);
 
             if args.sample_number.is_none() {
@@ -288,8 +435,17 @@ fn main() {
                 return;
             }
 
-            let stdout: std::io::Stdout = std::io::stdout();
-            let mut writer: BufWriter<std::io::StdoutLock<'_>> = BufWriter::new(stdout.lock());
+            let mut writer = if args.print {
+                Box::new(BufWriter::new(io::stdout())) as Box<dyn Write>
+            } else {
+                match args.output_file {
+                    Some(name) => {
+                        let file: File = File::create(name).unwrap();
+                        Box::new(BufWriter::new(file)) as Box<dyn Write>
+                    }
+                    None => Box::new(BufWriter::new(io::stdout())) as Box<dyn Write>,
+                }
+            };
 
             args.sample_number
                 .map(|n| match extract_assignment_ben(reader, n) {
@@ -298,14 +454,17 @@ fn main() {
                 });
         }
         Mode::XzCompress => {
-            eprintln!("Running in xz compress mode");
+            logln!("Running in xz compress mode");
 
-            let in_file = File::open(&args.input_file).unwrap();
+            let in_file_name = args
+                .input_file
+                .expect("Must provide input file for xz-compress mode.");
+            let in_file = File::open(&in_file_name).unwrap();
             let reader = BufReader::new(in_file);
 
             let out_file_name = match args.output_file {
                 Some(name) => name,
-                None => args.input_file + ".xz",
+                None => in_file_name + ".xz",
             };
 
             if Path::new(&out_file_name).exists() {
@@ -313,12 +472,12 @@ fn main() {
                     "File {:?} already exists, do you want to overwrite it? (y/[n]): ",
                     out_file_name
                 );
-                eprintln!();
                 let mut user_input = String::new();
                 std::io::stdin().read_line(&mut user_input).unwrap();
                 if user_input.trim().to_lowercase() != "y" {
                     return;
                 }
+                eprintln!();
             }
 
             let out_file = File::create(out_file_name).unwrap();
@@ -327,19 +486,23 @@ fn main() {
             if let Err(err) = xz_compress(reader, writer) {
                 eprintln!("Error: {:?}", err);
             }
-            eprintln!("Done!");
+            logln!("Done!");
         }
         Mode::XzDecompress => {
-            eprintln!("Running in xz decompress mode");
+            logln!("Running in xz decompress mode");
 
-            if !args.input_file.ends_with(".xz") {
+            let in_file_name = args
+                .input_file
+                .expect("Must provide input file for xz-decompress mode.");
+
+            if in_file_name.ends_with(".xz") {
                 eprintln!("Error: Unsupported file type for xz decompress mode");
                 return;
             }
 
             let output_file_name = match args.output_file {
                 Some(name) => name,
-                None => args.input_file[..args.input_file.len() - 3].to_string(),
+                None => in_file_name[..in_file_name.len() - 3].to_string(),
             };
 
             if Path::new(&output_file_name).exists() {
@@ -355,7 +518,7 @@ fn main() {
                 }
             }
 
-            let in_file = File::open(&args.input_file).unwrap();
+            let in_file = File::open(&in_file_name).unwrap();
             let reader = BufReader::new(in_file);
 
             let out_file = File::create(output_file_name).unwrap();

@@ -1,5 +1,6 @@
 use ben::{
     encode::relabel::{relabel_ben_file, relabel_ben_file_with_map},
+    logln,
     utils::*,
 };
 use clap::{Parser, ValueEnum};
@@ -23,7 +24,7 @@ enum Mode {
         "This is a command line tool for relabeling binary ensambles ",
         "to help improve compression ratios for BEN and XBEN files."
     ),
-    version = "0.1.0"
+    version = "0.1.1"
 )]
 struct Args {
     /// Input file to read from.
@@ -50,10 +51,18 @@ struct Args {
     /// Mode to run the program in (either JSON or BEN).
     #[arg(short, long)]
     mode: Mode,
+
+    /// Verbosity level for the program.
+    #[arg(short, long)]
+    verbose: bool,
 }
 
 fn main() {
     let args = Args::parse();
+
+    if args.verbose {
+        std::env::set_var("RUST_LOG", "trace");
+    }
 
     match &args.mode {
         Mode::Json => {
@@ -98,7 +107,7 @@ fn main() {
             let reader = BufReader::new(input_file);
 
             if args.map_file.is_none() && args.key.is_none() {
-                eprintln!("Canonicalizing assignment vectors in ben file.");
+                logln!("Canonicalizing assignment vectors in ben file.");
 
                 let output_file_name = match args.output_file {
                     Some(name) => name,
@@ -128,7 +137,7 @@ fn main() {
             let mut map_file_name = String::new();
             if let Some(key) = args.key {
                 if let Some(shape) = args.shape_file {
-                    eprintln!("Creating map file for key: {}", key);
+                    logln!("Creating map file for key: {}", key);
 
                     let output_file_name = shape.trim_end_matches(".json").to_owned()
                         + format!("_sorted_by_{}.json", key).as_str();
@@ -194,7 +203,7 @@ fn main() {
                 File::create(&output_file_name).expect("Could not create output file.");
             let writer = BufWriter::new(output_file);
 
-            eprintln!(
+            logln!(
                 "Relabeling ben file according to map file {}",
                 map_file_name,
             );
