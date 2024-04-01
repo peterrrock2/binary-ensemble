@@ -25,11 +25,103 @@ pub mod translate;
 
 use crate::utils::*;
 use serde_json::Value;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Cursor, Write};
 use xz2::write::XzEncoder;
 
 use self::translate::ben_to_ben32_lines;
 use super::{log, logln};
+
+/// A struct to make the writing of BEN files easier
+/// and more ergonomic.
+///
+/// # Example
+///
+/// ```
+/// use ben::encode::BenEncoder;
+///
+/// let mut buffer = Vec::new();
+/// let mut ben_encoder = BenEncoder::new(&mut buffer);
+///
+/// ben_encoder.write_assignment(vec![1, 1, 1, 2, 2, 2]);
+/// ```
+pub struct BenEncoder<W: Write> {
+    writer: W,
+}
+
+impl<W: Write> BenEncoder<W> {
+    /// Create a new BenEncoder instance and handles
+    /// the BEN file header.
+    pub fn new(mut writer: W) -> Self {
+        writer.write_all(b"STANDARD BEN FILE").unwrap();
+        BenEncoder { writer }
+    }
+
+    /// Write a run-length encoded assignment vector to the
+    /// BEN file.
+    pub fn write_rle(&mut self, rle_vec: Vec<(u16, u16)>) {
+        let encoded = encode_ben_vec_from_rle(rle_vec);
+        self.writer.write_all(&encoded).unwrap();
+    }
+
+    /// Write an assignment vector to the BEN file.
+    pub fn write_assignment(&mut self, assign_vec: Vec<u16>) {
+        let rle_vec = assign_to_rle(assign_vec);
+        self.write_rle(rle_vec);
+    }
+
+    /// Write a JSON value containing an assignment vector to the BEN file.
+    pub fn write_json_value(&mut self, data: Value) {
+        let assign_vec = data["assignment"].as_array().unwrap();
+        let rle_vec = assign_to_rle(
+            assign_vec
+                .into_iter()
+                .map(|x| x.as_u64().unwrap() as u16)
+                .collect(),
+        );
+        self.write_rle(rle_vec);
+    }
+}
+
+/// A struct to make the writing of XBEN files easier
+/// and more ergonomic.
+pub struct XBenEncoder<W: Write> {
+    encoder: XzEncoder<W>,
+}
+
+impl<W: Write> XBenEncoder<W> {
+    /// Create a new XBenEncoder instance and handles
+    /// the BEN file header.
+    pub fn new(mut encoder: XzEncoder<W>) -> Self {
+        encoder.write_all(b"STANDARD BEN FILE").unwrap();
+        XBenEncoder { encoder }
+    }
+
+    /// Write a an assigment vector encoded as a JSON value
+    /// to the XBEN file.
+    pub fn write_json_value(&mut self, data: Value) {
+        let encoded = encode_ben32_line(data);
+        self.encoder.write_all(&encoded).unwrap();
+    }
+
+    /// Converts a raw BEN assignment file into to an XBEN file.
+    /// This function will check to see if the header is there and then
+    /// handle it accordingly.
+    pub fn write_ben_file(&mut self, mut reader: impl BufRead) -> std::io::Result<()> {
+        let mut buff = [0u8; 17];
+        reader.read_exact(&mut buff)?;
+
+        // Create a new reader that prepends buff back onto the original reader
+        let mut reader = if buff != b"STANDARD BEN FILE".as_slice() {
+            let cursor = Cursor::new(buff.to_vec());
+            let reader = reader.chain(cursor);
+            Box::new(reader) as Box<dyn BufRead>
+        } else {
+            Box::new(reader)
+        };
+
+        ben_to_ben32_lines(&mut *reader, &mut self.encoder)
+    }
+}
 
 /// This function takes a json encoded line containing an assignment
 /// vector and a sample number and encodes the assignment vector
@@ -96,24 +188,20 @@ fn encode_ben32_line(data: Value) -> Vec<u8> {
 /// the byte level to achieve better compression ratios. In order
 /// to use XBEN files, the `decode_xben_to_ben` function must be
 /// used to decode the file back into a BEN format.
-pub fn jsonl_encode_xben<R: BufRead, W: Write>(reader: R, mut writer: W) -> std::io::Result<()> {
-    let mut buffer: Vec<u8> = Vec::new();
-    let mut encoder = XzEncoder::new(&mut buffer, 9);
+pub fn jsonl_encode_xben<R: BufRead, W: Write>(reader: R, writer: W) -> std::io::Result<()> {
+    let encoder = XzEncoder::new(writer, 9);
+    let mut ben_encoder = XBenEncoder::new(encoder);
 
     let mut line_num = 1;
 
-    encoder.write_all("STANDARD BEN FILE".as_bytes())?;
     for line_result in reader.lines() {
         log!("Encoding line: {}\r", line_num);
         line_num += 1;
         let line = line_result?;
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
 
-        let ben32_vec = encode_ben32_line(data);
-        encoder.write_all(&ben32_vec)?;
+        ben_encoder.write_json_value(data);
     }
-    drop(encoder); // Make sure to flush and finish compression
-    writer.write_all(&buffer)?;
 
     logln!();
     logln!("Done!");
@@ -289,26 +377,16 @@ fn encode_ben_vec_from_rle(rle_vec: Vec<(u16, u16)>) -> Vec<u8> {
 /// //  2, 106, 89]
 /// ```
 ///
-pub fn jsonl_encode_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> std::io::Result<()> {
+pub fn jsonl_encode_ben<R: BufRead, W: Write>(reader: R, writer: W) -> std::io::Result<()> {
     let mut line_num = 1;
-    writer.write_all("STANDARD BEN FILE".as_bytes())?;
+    let mut ben_encoder = BenEncoder::new(writer);
     for line_result in reader.lines() {
         log!("Encoding line: {}\r", line_num);
         line_num += 1;
         let line = line_result?; // Handle potential I/O errors for each line
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
 
-        if let Some(assign_vec) = data["assignment"].as_array() {
-            let rle_vec: Vec<(u16, u16)> = assign_to_rle(
-                assign_vec
-                    .into_iter()
-                    .map(|x| x.as_u64().unwrap() as u16)
-                    .collect(),
-            );
-
-            let encoded = encode_ben_vec_from_rle(rle_vec);
-            writer.write_all(&encoded)?;
-        }
+        ben_encoder.write_json_value(data);
     }
     logln!();
     logln!("Done!"); // Print newline after progress bar
@@ -337,15 +415,10 @@ pub fn ben_encode_xben<R: BufRead, W: Write>(mut reader: R, writer: W) -> std::i
         ));
     }
 
-    let mut buffer: Vec<u8> = Vec::new();
-    let mut encoder = XzEncoder::new(&mut buffer, 9);
+    let encoder = XzEncoder::new(writer, 9);
+    let mut ben_encoder = XBenEncoder::new(encoder);
 
-    encoder.write_all(b"STANDARD BEN FILE")?;
-
-    ben_to_ben32_lines(reader, &mut encoder)?;
-
-    drop(encoder); // Make sure to flush and finish compression
-    writer.write_all(&buffer)?;
+    ben_encoder.write_ben_file(reader)?;
 
     Ok(())
 }
