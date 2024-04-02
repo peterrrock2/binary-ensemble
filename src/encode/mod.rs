@@ -25,7 +25,7 @@ pub mod translate;
 
 use crate::utils::*;
 use serde_json::Value;
-use std::io::{self, BufRead, Cursor, Write};
+use std::io::{self, BufRead, Cursor, Result, Write};
 use xz2::write::XzEncoder;
 
 use self::translate::ben_to_ben32_lines;
@@ -58,19 +58,21 @@ impl<W: Write> BenEncoder<W> {
 
     /// Write a run-length encoded assignment vector to the
     /// BEN file.
-    pub fn write_rle(&mut self, rle_vec: Vec<(u16, u16)>) {
+    pub fn write_rle(&mut self, rle_vec: Vec<(u16, u16)>) -> Result<()> {
         let encoded = encode_ben_vec_from_rle(rle_vec);
-        self.writer.write_all(&encoded).unwrap();
+        self.writer.write_all(&encoded)?;
+        Ok(())
     }
 
     /// Write an assignment vector to the BEN file.
-    pub fn write_assignment(&mut self, assign_vec: Vec<u16>) {
+    pub fn write_assignment(&mut self, assign_vec: Vec<u16>) -> Result<()> {
         let rle_vec = assign_to_rle(assign_vec);
-        self.write_rle(rle_vec);
+        self.write_rle(rle_vec)?;
+        Ok(())
     }
 
     /// Write a JSON value containing an assignment vector to the BEN file.
-    pub fn write_json_value(&mut self, data: Value) {
+    pub fn write_json_value(&mut self, data: Value) -> Result<()> {
         let assign_vec = data["assignment"].as_array().unwrap();
         let rle_vec = assign_to_rle(
             assign_vec
@@ -78,7 +80,8 @@ impl<W: Write> BenEncoder<W> {
                 .map(|x| x.as_u64().unwrap() as u16)
                 .collect(),
         );
-        self.write_rle(rle_vec);
+        self.write_rle(rle_vec)?;
+        Ok(())
     }
 }
 
@@ -98,15 +101,16 @@ impl<W: Write> XBenEncoder<W> {
 
     /// Write a an assigment vector encoded as a JSON value
     /// to the XBEN file.
-    pub fn write_json_value(&mut self, data: Value) {
+    pub fn write_json_value(&mut self, data: Value) -> Result<()> {
         let encoded = encode_ben32_line(data);
-        self.encoder.write_all(&encoded).unwrap();
+        self.encoder.write_all(&encoded)?;
+        Ok(())
     }
 
     /// Converts a raw BEN assignment file into to an XBEN file.
     /// This function will check to see if the header is there and then
     /// handle it accordingly.
-    pub fn write_ben_file(&mut self, mut reader: impl BufRead) -> std::io::Result<()> {
+    pub fn write_ben_file(&mut self, mut reader: impl BufRead) -> Result<()> {
         let mut buff = [0u8; 17];
         reader.read_exact(&mut buff)?;
 
@@ -188,7 +192,7 @@ fn encode_ben32_line(data: Value) -> Vec<u8> {
 /// the byte level to achieve better compression ratios. In order
 /// to use XBEN files, the `decode_xben_to_ben` function must be
 /// used to decode the file back into a BEN format.
-pub fn jsonl_encode_xben<R: BufRead, W: Write>(reader: R, writer: W) -> std::io::Result<()> {
+pub fn jsonl_encode_xben<R: BufRead, W: Write>(reader: R, writer: W) -> Result<()> {
     let encoder = XzEncoder::new(writer, 9);
     let mut ben_encoder = XBenEncoder::new(encoder);
 
@@ -200,7 +204,7 @@ pub fn jsonl_encode_xben<R: BufRead, W: Write>(reader: R, writer: W) -> std::io:
         let line = line_result?;
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
 
-        ben_encoder.write_json_value(data);
+        ben_encoder.write_json_value(data)?;
     }
 
     logln!();
@@ -236,7 +240,7 @@ pub fn jsonl_encode_xben<R: BufRead, W: Write>(reader: R, writer: W) -> std::io:
 ///
 /// println!("{:?}", output_buffer);
 /// ```
-pub fn xz_compress<R: BufRead, W: Write>(mut reader: R, writer: W) -> std::io::Result<()> {
+pub fn xz_compress<R: BufRead, W: Write>(mut reader: R, writer: W) -> Result<()> {
     let mut buff = [0; 4096];
     let mut encoder = XzEncoder::new(writer, 9);
 
@@ -377,7 +381,7 @@ fn encode_ben_vec_from_rle(rle_vec: Vec<(u16, u16)>) -> Vec<u8> {
 /// //  2, 106, 89]
 /// ```
 ///
-pub fn jsonl_encode_ben<R: BufRead, W: Write>(reader: R, writer: W) -> std::io::Result<()> {
+pub fn jsonl_encode_ben<R: BufRead, W: Write>(reader: R, writer: W) -> Result<()> {
     let mut line_num = 1;
     let mut ben_encoder = BenEncoder::new(writer);
     for line_result in reader.lines() {
@@ -386,7 +390,7 @@ pub fn jsonl_encode_ben<R: BufRead, W: Write>(reader: R, writer: W) -> std::io::
         let line = line_result?; // Handle potential I/O errors for each line
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
 
-        ben_encoder.write_json_value(data);
+        ben_encoder.write_json_value(data)?;
     }
     logln!();
     logln!("Done!"); // Print newline after progress bar
@@ -404,7 +408,7 @@ pub fn jsonl_encode_ben<R: BufRead, W: Write>(reader: R, writer: W) -> std::io::
 /// # Returns
 ///
 /// A Result type that contains the result of the operation
-pub fn ben_encode_xben<R: BufRead, W: Write>(mut reader: R, writer: W) -> std::io::Result<()> {
+pub fn ben_encode_xben<R: BufRead, W: Write>(mut reader: R, writer: W) -> Result<()> {
     let mut check_buffer = [0u8; 17];
     reader.read_exact(&mut check_buffer)?;
 
