@@ -1,3 +1,8 @@
+//! This module contains the main functions that are used in the `reben` binary
+//! for relabeling the assignment vectors in a BEN file. The relabeling is done
+//! can be doe either so that the values are in ascending order or according to
+//! a mapping provided by the user in a map file.
+
 use crate::decode::*;
 use crate::encode::*;
 use byteorder::{BigEndian, ReadBytesExt};
@@ -37,7 +42,7 @@ pub fn relabel_ben_lines<R: Read, W: Write>(mut reader: R, mut writer: W) -> io:
 
         let mut ben_line = decode_ben_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
 
-        print!("Relabeling line: {}\r", sample_number);
+        log!("Relabeling line: {}\r", sample_number);
         sample_number += 1;
 
         // relabel the line
@@ -58,8 +63,8 @@ pub fn relabel_ben_lines<R: Read, W: Write>(mut reader: R, mut writer: W) -> io:
         let relabeled = encode_ben_vec_from_rle(ben_line);
         writer.write_all(&relabeled)?;
     }
-    eprintln!();
-    eprintln!("Done!");
+    logln!();
+    logln!("Done!");
 
     Ok(())
 }
@@ -153,14 +158,14 @@ pub fn relabel_ben_lines_with_map<R: Read, W: Write>(
 
         let new_rle = assign_to_rle(new_assignment_vec);
 
-        print!("Relabeling line: {}\r", sample_number);
+        log!("Relabeling line: {}\r", sample_number);
         sample_number += 1;
 
         let relabeled = encode_ben_vec_from_rle(new_rle);
         writer.write_all(&relabeled)?;
     }
-    eprintln!();
-    eprintln!("Done!");
+    logln!();
+    logln!("Done!");
 
     Ok(())
 }

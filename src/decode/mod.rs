@@ -21,6 +21,7 @@ use std::io::{self, BufRead, Error, Read, Write};
 use crate::utils::rle_to_vec;
 
 use super::encode::translate::*;
+use super::{log, logln};
 
 /// This function takes a reader containing a single ben32 encoded assignment
 /// vector and decodes it into a full assignment vector of u16s.
@@ -186,7 +187,7 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
             if overflow[i - 3..=i] == [0, 0, 0, 0] {
                 last_valid_assignment = i + 1;
                 line_count += 1;
-                print!("Decoding sample: {}\r", line_count);
+                log!("Decoding sample: {}\r", line_count);
             }
         }
 
@@ -197,8 +198,8 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
         ben32_to_ben_lines(&overflow[0..last_valid_assignment], &mut writer)?;
         overflow = overflow[last_valid_assignment..].to_vec();
     }
-    eprintln!();
-    eprintln!("Done!");
+    logln!();
+    logln!("Done!");
     Ok(())
 }
 
@@ -381,14 +382,14 @@ pub fn jsonl_decode_ben<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::
             Ok(()) => tmp_buffer[0],
             Err(e) => {
                 if e.kind() == io::ErrorKind::UnexpectedEof {
-                    eprintln!();
-                    eprintln!("Done!");
+                    logln!();
+                    logln!("Done!");
                     return Ok(());
                 }
                 return Err(e);
             }
         };
-        print!("Decoding sample: {}\r", sample_number);
+        log!("Decoding sample: {}\r", sample_number);
         let max_len_bits = reader.read_u8()?;
         let n_bytes = reader.read_u32::<BigEndian>()?;
 
@@ -469,7 +470,7 @@ pub fn jsonl_decode_xben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::
             if overflow[i - 3..=i] == [0, 0, 0, 0] {
                 last_valid_assignment = i + 1;
                 line_count += 1;
-                print!("Decoding sample: {}\r", line_count);
+                log!("Decoding sample: {}\r", line_count);
             }
         }
 
@@ -482,8 +483,8 @@ pub fn jsonl_decode_xben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::
         jsonl_decode_ben32(&new_vec[..], &mut writer)?;
         overflow = overflow[last_valid_assignment..].to_vec();
     }
-    eprintln!();
-    eprintln!("Done!");
+    logln!();
+    logln!("Done!");
     Ok(())
 }
 

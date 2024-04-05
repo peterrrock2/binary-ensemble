@@ -6,6 +6,7 @@
 use byteorder::{BigEndian, ReadBytesExt};
 use std::io::{self, Error, Read, Write};
 
+use super::{log, logln};
 use crate::decode::decode_ben_line;
 use crate::encode::encode_ben_vec_from_rle;
 
@@ -176,15 +177,15 @@ pub fn ben_to_ben32_lines<R: Read, W: Write>(mut reader: R, mut writer: W) -> io
         let max_len_bits = reader.read_u8()?;
         let n_bytes = reader.read_u32::<BigEndian>()?;
 
-        print!("Encoding line: {}\r", sample_number);
+        log!("Encoding line: {}\r", sample_number);
         sample_number += 1;
         let ben32_vec = ben_to_ben32_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
 
         writer.write_all(&ben32_vec)?;
     }
 
-    eprintln!();
-    eprintln!("Done!");
+    logln!();
+    logln!("Done!");
     Ok(())
 }
 

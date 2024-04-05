@@ -12,7 +12,7 @@ fn jsonl_encode_ben32<R: BufRead, W: Write>(reader: R, mut writer: W) -> std::io
         let line = line_result?; // Handle potential I/O errors for each line
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
 
-        writer.write_all(&encode_ben_32_line(data))?;
+        writer.write_all(&encode_ben32_line(data))?;
     }
     Ok(())
 }

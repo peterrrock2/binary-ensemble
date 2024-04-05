@@ -420,12 +420,12 @@ fn jsonl_encode_ben32<R: BufRead, W: Write>(reader: R, mut writer: W) -> std::io
 
     writer.write_all("STANDARD BEN FILE".as_bytes())?;
     for line_result in reader.lines() {
-        print!("Encoding line: {}\r", line_num);
+        eprint!("Encoding line: {}\r", line_num);
         line_num += 1;
         let line = line_result?; // Handle potential I/O errors for each line
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
 
-        writer.write_all(&encode_ben_32_line(data))?;
+        writer.write_all(&encode_ben32_line(data))?;
     }
     eprintln!("Done!"); // Print newline after progress bar
     Ok(())
