@@ -309,7 +309,7 @@ file that is stored as an XBEN file can quickly (in under 5 minutes) be
 extracted into a usable BEN format. Of course, the trade-off for this
 is that the compression itself is fairly slow, and can sometimes take
 several hours to finish if the data is not relabeled to improve the
-efficiency. However, considering any method used to create an ensamble
+efficiency. However, considering any method used to create an ensemble
 of plans is likely to take several hours anyway, the additional
 compression time to get a small XBEN file should be mostly inconsequential
 in the grand scheme of things.
