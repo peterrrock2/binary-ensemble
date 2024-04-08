@@ -137,7 +137,7 @@ we can work with it (WARNING: The BEN file that this will generate is
 ~7GB, but we will fix that soon), so we will need to run the command
 
 ```
-ben -m decode 100k_CO_chain.jsonl.ben
+ben -m decode 100k_CO_chain.jsonl.xben
 ```
 
 The first thing that we can do is change up the
