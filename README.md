@@ -50,11 +50,11 @@ ben -m read -n 4 small_example.jsonl  # Outputs [1,1,1,2,2,2,3,2,3,1,4,4,4,3,3,4
 ```
 * XZCompress
 ```
-ben -m encode small_example.jsonl # Outputs small_example.jsonl.xz
+ben -m xz-compress small_example.jsonl # Outputs small_example.jsonl.xz
 ```
 * XZDecompress
 ```
-ben -m encode small_example.jsonl.xz # Outputs small_example.jsonl
+ben -m xz-decompress small_example.jsonl.xz # Outputs small_example.jsonl
 ```
 
 There is also a `reben` CLI tool that is available through this package, but

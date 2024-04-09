@@ -24,7 +24,7 @@ enum Mode {
         "This is a command line tool for relabeling binary ensambles ",
         "to help improve compression ratios for BEN and XBEN files."
     ),
-    version = "0.1.2"
+    version = "0.1.3"
 )]
 
 // TODO: Change the name of shape_file to dual_graph_file.

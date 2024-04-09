@@ -25,7 +25,7 @@ enum Mode {
 #[command(
     name = "Binary Ensamble CLI Tool",
     about = "This is a command line tool for encoding and decoding binary ensamble files.",
-    version = "0.1.2"
+    version = "0.1.3"
 )]
 struct Args {
     /// Mode to run the program in (encode, decode, or read).
@@ -495,7 +495,7 @@ fn main() {
                 .input_file
                 .expect("Must provide input file for xz-decompress mode.");
 
-            if in_file_name.ends_with(".xz") {
+            if !in_file_name.ends_with(".xz") {
                 eprintln!("Error: Unsupported file type for xz decompress mode");
                 return;
             }
