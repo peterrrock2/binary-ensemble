@@ -7,7 +7,7 @@ use crate::decode::*;
 use crate::encode::*;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::collections::HashMap;
-use std::io::{Error, Read};
+use std::io::Error;
 
 /// Relabels each of the assignment vectors in a BEN file so that the values are
 /// in ascending order.
