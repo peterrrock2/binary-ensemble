@@ -25,7 +25,7 @@ enum Mode {
 #[command(
     name = "Binary Ensamble CLI Tool",
     about = "This is a command line tool for encoding and decoding binary ensamble files.",
-    version = "0.1.1"
+    version = "0.1.2"
 )]
 struct Args {
     /// Mode to run the program in (encode, decode, or read).

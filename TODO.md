@@ -16,3 +16,12 @@
 - [ ] Make a special MCMC writer for ben that add a self-loop counter to the start of 
   the next item. This will be really useful for reducing the size of any chain that
   has a high rejection ratio (e.g. reversible)
+
+- [ ] Add an overwrite option to `reben` rather than just doing it by default
+
+- [ ] Change the `-s` flag in the "shapefile" parameter in `reben` to a `-d`
+
+- [ ] Add a reverse mode to reben to make reverting the labeling a little bit
+  easier for the end user
+
+- [ ] Add a `jsonl` mode to reben to relabel the `jsonl` file.

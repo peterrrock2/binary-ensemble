@@ -24,8 +24,10 @@ enum Mode {
         "This is a command line tool for relabeling binary ensambles ",
         "to help improve compression ratios for BEN and XBEN files."
     ),
-    version = "0.1.1"
+    version = "0.1.2"
 )]
+
+// TODO: Change the name of shape_file to dual_graph_file.
 struct Args {
     /// Input file to read from.
     #[arg()]
@@ -66,6 +68,7 @@ fn main() {
 
     match &args.mode {
         Mode::Json => {
+            // TODO: Change the input file here to the shape file.
             let input_file = File::open(&args.input_file).expect("Could not open input file.");
             let reader = BufReader::new(input_file);
 

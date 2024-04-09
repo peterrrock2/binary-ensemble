@@ -25,7 +25,7 @@ pub mod translate;
 
 use crate::utils::*;
 use serde_json::Value;
-use std::io::{self, BufRead, Cursor, Result, Write};
+use std::io::{self, BufRead, Cursor, Read, Result, Write};
 use xz2::write::XzEncoder;
 
 use self::translate::ben_to_ben32_lines;
@@ -117,7 +117,7 @@ impl<W: Write> XBenEncoder<W> {
         // Create a new reader that prepends buff back onto the original reader
         let mut reader = if buff != b"STANDARD BEN FILE".as_slice() {
             let cursor = Cursor::new(buff.to_vec());
-            let reader = reader.chain(cursor);
+            let reader = cursor.chain(reader);
             Box::new(reader) as Box<dyn BufRead>
         } else {
             Box::new(reader)
