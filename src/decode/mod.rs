@@ -23,6 +23,91 @@ use crate::utils::rle_to_vec;
 use super::encode::translate::*;
 use super::{log, logln};
 
+// Note: This will make Read easier to use since
+// I can now implement the read chunk with a Cursor
+// object.
+pub struct BenDecoder<R: Read> {
+    reader: R,
+    sample_count: usize,
+}
+
+impl<R: Read> BenDecoder<R> {
+    pub fn new(mut reader: R) -> Self {
+        let mut check_buffer = [0u8; 17];
+
+        match reader.read_exact(&mut check_buffer) {
+            Ok(_) => {
+                if &check_buffer != b"STANDARD BEN FILE" {
+                    panic!("Invalid file format");
+                }
+            }
+            Err(e) => {
+                panic!("Error reading file: {}", e);
+            }
+        }
+
+        BenDecoder {
+            reader,
+            sample_count: 0,
+        }
+    }
+
+    pub fn write_all_jsonl(&mut self, mut writer: impl Write) -> io::Result<()> {
+        while let Some(result) = self.next() {
+            match result {
+                Ok(assignment) => {
+                    let line = json!({
+                        "assignment": assignment,
+                        "sample": self.sample_count,
+                    })
+                    .to_string()
+                        + "\n";
+                    writer.write_all(line.as_bytes()).unwrap();
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<R: Read> Iterator for BenDecoder<R> {
+    type Item = io::Result<Vec<u16>>;
+
+    fn next(&mut self) -> Option<io::Result<Vec<u16>>> {
+        let mut tmp_buffer = [0u8];
+        let max_val_bits: u8 = match self.reader.read_exact(&mut tmp_buffer) {
+            Ok(()) => tmp_buffer[0],
+            Err(e) => {
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    logln!();
+                    logln!("Done!");
+                    return None;
+                }
+                return Some(Err(e));
+            }
+        };
+
+        self.sample_count += 1;
+        log!("Decoding sample: {}\r", self.sample_count);
+        let max_len_bits = self
+            .reader
+            .read_u8()
+            .expect(format!("Error when reading sample {}.", self.sample_count).as_str());
+        let n_bytes = self
+            .reader
+            .read_u32::<BigEndian>()
+            .expect(format!("Error when reading sample {}.", self.sample_count).as_str());
+
+        match decode_ben_line(&mut self.reader, max_val_bits, max_len_bits, n_bytes) {
+            Ok(output_rle) => Some(Ok(rle_to_vec(output_rle))),
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
+
 /// This function takes a reader containing a single ben32 encoded assignment
 /// vector and decodes it into a full assignment vector of u16s.
 ///
@@ -364,46 +449,9 @@ pub fn decode_ben_line<R: Read>(
 /// This function will return an error if the input reader contains invalid ben
 /// data or if the the decode method encounters while trying to extract a single
 /// assignment vector, that error is then propagated.
-pub fn jsonl_decode_ben<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::Result<()> {
-    let mut sample_number = 1;
-    let mut check_buffer = [0u8; 17];
-    reader.read_exact(&mut check_buffer)?;
-
-    if &check_buffer != b"STANDARD BEN FILE" {
-        return Err(Error::new(
-            io::ErrorKind::InvalidData,
-            "Invalid file format",
-        ));
-    }
-
-    loop {
-        let mut tmp_buffer = [0u8];
-        let max_val_bits: u8 = match reader.read_exact(&mut tmp_buffer) {
-            Ok(()) => tmp_buffer[0],
-            Err(e) => {
-                if e.kind() == io::ErrorKind::UnexpectedEof {
-                    logln!();
-                    logln!("Done!");
-                    return Ok(());
-                }
-                return Err(e);
-            }
-        };
-        log!("Decoding sample: {}\r", sample_number);
-        let max_len_bits = reader.read_u8()?;
-        let n_bytes = reader.read_u32::<BigEndian>()?;
-
-        let output_rle = decode_ben_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
-
-        let line = json!({
-            "assignment": rle_to_vec(output_rle),
-            "sample": sample_number,
-        })
-        .to_string()
-            + "\n";
-        writer.write_all(line.as_bytes())?;
-        sample_number += 1;
-    }
+pub fn jsonl_decode_ben<R: Read, W: Write>(reader: R, writer: W) -> io::Result<()> {
+    let mut ben_decoder = BenDecoder::new(reader);
+    ben_decoder.write_all_jsonl(writer)
 }
 
 /// This function takes a reader containing a file encoded in the XBEN format

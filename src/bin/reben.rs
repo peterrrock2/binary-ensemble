@@ -19,9 +19,9 @@ enum Mode {
 /// Defines the command line arguments accepted by the program.
 #[derive(Parser, Debug)]
 #[command(
-    name = "Relabeling Binary Ensamble CLI Tool",
+    name = "Relabeling Binary Ensemble CLI Tool",
     about = concat!(
-        "This is a command line tool for relabeling binary ensambles ",
+        "This is a command line tool for relabeling binary ensembles ",
         "to help improve compression ratios for BEN and XBEN files."
     ),
     version = "0.1.3"

@@ -23,8 +23,8 @@ enum Mode {
 /// Defines the command line arguments accepted by the program.
 #[derive(Parser, Debug)]
 #[command(
-    name = "Binary Ensamble CLI Tool",
-    about = "This is a command line tool for encoding and decoding binary ensamble files.",
+    name = "Binary Ensemble CLI Tool",
+    about = "This is a command line tool for encoding and decoding binary ensemble files.",
     version = "0.1.3"
 )]
 struct Args {
