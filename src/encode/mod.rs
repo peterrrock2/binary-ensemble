@@ -44,47 +44,6 @@ use super::{log, logln, BenVariant};
 ///
 /// ben_encoder.write_assignment(vec![1, 1, 1, 2, 2, 2]);
 /// ```
-// pub struct BenEncoder<W: Write> {
-//     writer: W,
-// }
-
-// impl<W: Write> BenEncoder<W> {
-//     /// Create a new BenEncoder instance and handles
-//     /// the BEN file header.
-//     pub fn new(mut writer: W) -> Self {
-//         writer.write_all(b"STANDARD BEN FILE").unwrap();
-//         BenEncoder { writer }
-//     }
-
-//     /// Write a run-length encoded assignment vector to the
-//     /// BEN file.
-//     pub fn write_rle(&mut self, rle_vec: Vec<(u16, u16)>) -> Result<()> {
-//         let encoded = encode_ben_vec_from_rle(rle_vec);
-//         self.writer.write_all(&encoded)?;
-//         Ok(())
-//     }
-
-//     /// Write an assignment vector to the BEN file.
-//     pub fn write_assignment(&mut self, assign_vec: Vec<u16>) -> Result<()> {
-//         let rle_vec = assign_to_rle(assign_vec);
-//         self.write_rle(rle_vec)?;
-//         Ok(())
-//     }
-
-//     /// Write a JSON value containing an assignment vector to the BEN file.
-//     pub fn write_json_value(&mut self, data: Value) -> Result<()> {
-//         let assign_vec = data["assignment"].as_array().unwrap();
-//         let rle_vec = assign_to_rle(
-//             assign_vec
-//                 .into_iter()
-//                 .map(|x| x.as_u64().unwrap() as u16)
-//                 .collect(),
-//         );
-//         self.write_rle(rle_vec)?;
-//         Ok(())
-//     }
-// }
-
 pub struct BenEncoder<W: Write> {
     writer: W,
     previous_sample: Vec<u8>,
