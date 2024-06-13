@@ -29,7 +29,7 @@ use std::io::{self, BufRead, Cursor, Read, Result, Write};
 use xz2::write::XzEncoder;
 
 use self::translate::ben_to_ben32_lines;
-use super::{log, logln};
+use super::{log, logln, BenVariant};
 
 /// A struct to make the writing of BEN files easier
 /// and more ergonomic.
@@ -37,31 +37,105 @@ use super::{log, logln};
 /// # Example
 ///
 /// ```
-/// use ben::encode::BenEncoder;
+/// use ben::{encode::BenEncoder, BenVariant};
 ///
 /// let mut buffer = Vec::new();
-/// let mut ben_encoder = BenEncoder::new(&mut buffer);
+/// let mut ben_encoder = BenEncoder::new(&mut buffer, BenVariant::Standard);
 ///
 /// ben_encoder.write_assignment(vec![1, 1, 1, 2, 2, 2]);
 /// ```
+// pub struct BenEncoder<W: Write> {
+//     writer: W,
+// }
+
+// impl<W: Write> BenEncoder<W> {
+//     /// Create a new BenEncoder instance and handles
+//     /// the BEN file header.
+//     pub fn new(mut writer: W) -> Self {
+//         writer.write_all(b"STANDARD BEN FILE").unwrap();
+//         BenEncoder { writer }
+//     }
+
+//     /// Write a run-length encoded assignment vector to the
+//     /// BEN file.
+//     pub fn write_rle(&mut self, rle_vec: Vec<(u16, u16)>) -> Result<()> {
+//         let encoded = encode_ben_vec_from_rle(rle_vec);
+//         self.writer.write_all(&encoded)?;
+//         Ok(())
+//     }
+
+//     /// Write an assignment vector to the BEN file.
+//     pub fn write_assignment(&mut self, assign_vec: Vec<u16>) -> Result<()> {
+//         let rle_vec = assign_to_rle(assign_vec);
+//         self.write_rle(rle_vec)?;
+//         Ok(())
+//     }
+
+//     /// Write a JSON value containing an assignment vector to the BEN file.
+//     pub fn write_json_value(&mut self, data: Value) -> Result<()> {
+//         let assign_vec = data["assignment"].as_array().unwrap();
+//         let rle_vec = assign_to_rle(
+//             assign_vec
+//                 .into_iter()
+//                 .map(|x| x.as_u64().unwrap() as u16)
+//                 .collect(),
+//         );
+//         self.write_rle(rle_vec)?;
+//         Ok(())
+//     }
+// }
+
 pub struct BenEncoder<W: Write> {
     writer: W,
+    previous_sample: Vec<u8>,
+    count: u16,
+    variant: BenVariant,
 }
 
 impl<W: Write> BenEncoder<W> {
     /// Create a new BenEncoder instance and handles
     /// the BEN file header.
-    pub fn new(mut writer: W) -> Self {
-        writer.write_all(b"STANDARD BEN FILE").unwrap();
-        BenEncoder { writer }
+    pub fn new(mut writer: W, variant: BenVariant) -> Self {
+        match variant {
+            BenVariant::Standard => {
+                writer.write_all(b"STANDARD BEN FILE").unwrap();
+            }
+            BenVariant::MkvChain => {
+                writer.write_all(b"MKVCHAIN BEN FILE").unwrap();
+            }
+        }
+        BenEncoder {
+            writer,
+            previous_sample: Vec::new(),
+            count: 0,
+            variant,
+        }
     }
 
     /// Write a run-length encoded assignment vector to the
     /// BEN file.
     pub fn write_rle(&mut self, rle_vec: Vec<(u16, u16)>) -> Result<()> {
-        let encoded = encode_ben_vec_from_rle(rle_vec);
-        self.writer.write_all(&encoded)?;
-        Ok(())
+        match self.variant {
+            BenVariant::Standard => {
+                let encoded = encode_ben_vec_from_rle(rle_vec);
+                self.writer.write_all(&encoded)?;
+                Ok(())
+            }
+            BenVariant::MkvChain => {
+                let encoded = encode_ben_vec_from_rle(rle_vec);
+                if encoded == self.previous_sample {
+                    self.count += 1;
+                } else {
+                    if self.count > 0 {
+                        self.writer.write_all(&self.previous_sample)?;
+                        self.writer.write_all(&self.count.to_be_bytes())?;
+                    }
+                    self.previous_sample = encoded;
+                    self.count = 1;
+                }
+                Ok(())
+            }
+        }
     }
 
     /// Write an assignment vector to the BEN file.
@@ -85,25 +159,73 @@ impl<W: Write> BenEncoder<W> {
     }
 }
 
+impl<W: Write> Drop for BenEncoder<W> {
+    fn drop(&mut self) {
+        if self.variant == BenVariant::MkvChain && self.count > 0 {
+            self.writer
+                .write_all(&self.previous_sample)
+                .expect("Error writing last line to file");
+            self.writer
+                .write_all(&self.count.to_be_bytes())
+                .expect("Error writing last line count to file");
+        }
+    }
+}
+
 /// A struct to make the writing of XBEN files easier
 /// and more ergonomic.
 pub struct XBenEncoder<W: Write> {
     encoder: XzEncoder<W>,
+    previous_sample: Vec<u8>,
+    count: u16,
+    variant: BenVariant,
 }
 
 impl<W: Write> XBenEncoder<W> {
-    /// Create a new XBenEncoder instance and handles
-    /// the BEN file header.
-    pub fn new(mut encoder: XzEncoder<W>) -> Self {
-        encoder.write_all(b"STANDARD BEN FILE").unwrap();
-        XBenEncoder { encoder }
+    pub fn new(mut encoder: XzEncoder<W>, variant: BenVariant) -> Self {
+        match variant {
+            BenVariant::Standard => {
+                encoder.write_all(b"STANDARD BEN FILE").unwrap();
+                XBenEncoder {
+                    encoder,
+                    previous_sample: Vec::new(),
+                    count: 0,
+                    variant: BenVariant::Standard,
+                }
+            }
+            BenVariant::MkvChain => {
+                encoder.write_all(b"MKVCHAIN BEN FILE").unwrap();
+                XBenEncoder {
+                    encoder,
+                    previous_sample: Vec::new(),
+                    count: 0,
+                    variant: BenVariant::MkvChain,
+                }
+            }
+        }
     }
 
     /// Write a an assigment vector encoded as a JSON value
     /// to the XBEN file.
     pub fn write_json_value(&mut self, data: Value) -> Result<()> {
         let encoded = encode_ben32_line(data);
-        self.encoder.write_all(&encoded)?;
+        match self.variant {
+            BenVariant::Standard => {
+                self.encoder.write_all(&encoded)?;
+            }
+            BenVariant::MkvChain => {
+                if encoded == self.previous_sample {
+                    self.count += 1;
+                } else {
+                    if self.count > 0 {
+                        self.encoder.write_all(&self.previous_sample)?;
+                        self.encoder.write_all(&self.count.to_be_bytes())?;
+                    }
+                    self.previous_sample = encoded;
+                    self.count = 1;
+                }
+            }
+        }
         Ok(())
     }
 
@@ -115,15 +237,29 @@ impl<W: Write> XBenEncoder<W> {
         reader.read_exact(&mut buff)?;
 
         // Create a new reader that prepends buff back onto the original reader
-        let mut reader = if buff != b"STANDARD BEN FILE".as_slice() {
-            let cursor = Cursor::new(buff.to_vec());
-            let reader = cursor.chain(reader);
-            Box::new(reader) as Box<dyn BufRead>
-        } else {
-            Box::new(reader)
-        };
+        let mut reader =
+            if buff != b"STANDARD BEN FILE".as_slice() || buff != b"MKVCHAIN BEN FILE".as_slice() {
+                let cursor = Cursor::new(buff.to_vec());
+                let reader = cursor.chain(reader);
+                Box::new(reader) as Box<dyn BufRead>
+            } else {
+                Box::new(reader)
+            };
 
-        ben_to_ben32_lines(&mut *reader, &mut self.encoder)
+        ben_to_ben32_lines(&mut *reader, &mut self.encoder, self.variant)
+    }
+}
+
+impl<W: Write> Drop for XBenEncoder<W> {
+    fn drop(&mut self) {
+        if self.variant == BenVariant::MkvChain && self.count > 0 {
+            self.encoder
+                .write_all(&self.previous_sample)
+                .expect("Error writing last line to file");
+            self.encoder
+                .write_all(&self.count.to_be_bytes())
+                .expect("Error writing last line count to file");
+        }
     }
 }
 
@@ -192,9 +328,13 @@ fn encode_ben32_line(data: Value) -> Vec<u8> {
 /// the byte level to achieve better compression ratios. In order
 /// to use XBEN files, the `decode_xben_to_ben` function must be
 /// used to decode the file back into a BEN format.
-pub fn jsonl_encode_xben<R: BufRead, W: Write>(reader: R, writer: W) -> Result<()> {
+pub fn jsonl_encode_xben<R: BufRead, W: Write>(
+    reader: R,
+    writer: W,
+    variant: BenVariant,
+) -> Result<()> {
     let encoder = XzEncoder::new(writer, 9);
-    let mut ben_encoder = XBenEncoder::new(encoder);
+    let mut ben_encoder = XBenEncoder::new(encoder, variant);
 
     let mut line_num = 1;
 
@@ -361,7 +501,7 @@ fn encode_ben_vec_from_rle(rle_vec: Vec<(u16, u16)>) -> Vec<u8> {
 /// ```
 /// use std::io::{BufReader, BufWriter};
 /// use serde_json::json;
-/// use ben::encode::jsonl_encode_ben;
+/// use ben::{encode::jsonl_encode_ben, BenVariant};
 ///
 /// let input = r#"{"assignment": [1,1,1,2,2,2], "sample": 1}"#.to_string()
 ///     + "\n"
@@ -371,7 +511,7 @@ fn encode_ben_vec_from_rle(rle_vec: Vec<(u16, u16)>) -> Vec<u8> {
 /// let mut write_buffer = Vec::new();
 /// let mut writer = BufWriter::new(&mut write_buffer);
 ///
-/// jsonl_encode_ben(reader, writer).unwrap();
+/// jsonl_encode_ben(reader, writer, BenVariant::Standard).unwrap();
 ///
 /// println!("{:?}", write_buffer);
 /// // This will output
@@ -381,9 +521,13 @@ fn encode_ben_vec_from_rle(rle_vec: Vec<(u16, u16)>) -> Vec<u8> {
 /// //  2, 106, 89]
 /// ```
 ///
-pub fn jsonl_encode_ben<R: BufRead, W: Write>(reader: R, writer: W) -> Result<()> {
+pub fn jsonl_encode_ben<R: BufRead, W: Write>(
+    reader: R,
+    writer: W,
+    variant: BenVariant,
+) -> Result<()> {
     let mut line_num = 1;
-    let mut ben_encoder = BenEncoder::new(writer);
+    let mut ben_encoder = BenEncoder::new(writer, variant);
     for line_result in reader.lines() {
         log!("Encoding line: {}\r", line_num);
         line_num += 1;
@@ -412,15 +556,18 @@ pub fn ben_encode_xben<R: BufRead, W: Write>(mut reader: R, writer: W) -> Result
     let mut check_buffer = [0u8; 17];
     reader.read_exact(&mut check_buffer)?;
 
-    if &check_buffer != b"STANDARD BEN FILE" {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Invalid file format",
-        ));
-    }
-
     let encoder = XzEncoder::new(writer, 9);
-    let mut ben_encoder = XBenEncoder::new(encoder);
+
+    let mut ben_encoder = match &check_buffer {
+        b"STANDARD BEN FILE" => XBenEncoder::new(encoder, BenVariant::Standard),
+        b"MKVCHAIN BEN FILE" => XBenEncoder::new(encoder, BenVariant::MkvChain),
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid file format",
+            ));
+        }
+    };
 
     ben_encoder.write_ben_file(reader)?;
 
@@ -428,6 +575,5 @@ pub fn ben_encode_xben<R: BufRead, W: Write>(mut reader: R, writer: W) -> Result
 }
 
 #[cfg(test)]
-mod tests {
-    include!("tests/encode_tests.rs");
-}
+#[path = "tests/encode_tests.rs"]
+mod tests;

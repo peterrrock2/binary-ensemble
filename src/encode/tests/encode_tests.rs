@@ -27,7 +27,11 @@ fn test_jsonl_encode_ben_underflow() {
         0b01_11011_0,
     ]);
 
-    let output = jsonl_encode_ben(json!(data).to_string().as_bytes(), writer);
+    let output = jsonl_encode_ben(
+        json!(data).to_string().as_bytes(),
+        writer,
+        BenVariant::Standard,
+    );
     if let Err(e) = output {
         panic!("Error: {}", e);
     }
@@ -72,7 +76,11 @@ fn test_jsonl_encode_ben_exact() {
         0b001_11001_,
     ]);
 
-    let output = jsonl_encode_ben(json!(data).to_string().as_bytes(), writer);
+    let output = jsonl_encode_ben(
+        json!(data).to_string().as_bytes(),
+        writer,
+        BenVariant::Standard,
+    );
     if let Err(e) = output {
         panic!("Error: {}", e);
     }
@@ -108,7 +116,11 @@ fn test_jsonl_encode_ben_16_bit_val() {
         0b0011011_0,
     ]);
 
-    let output = jsonl_encode_ben(json!(data).to_string().as_bytes(), writer);
+    let output = jsonl_encode_ben(
+        json!(data).to_string().as_bytes(),
+        writer,
+        BenVariant::Standard,
+    );
     if let Err(e) = output {
         panic!("Error: {}", e);
     }
@@ -144,7 +156,11 @@ fn test_jsonl_encode_ben_16_bit_len() {
         0b0011_0000,
     ]);
 
-    let output = jsonl_encode_ben(json!(data).to_string().as_bytes(), writer);
+    let output = jsonl_encode_ben(
+        json!(data).to_string().as_bytes(),
+        writer,
+        BenVariant::Standard,
+    );
     if let Err(e) = output {
         panic!("Error: {}", e);
     }
@@ -183,7 +199,11 @@ fn test_jsonl_encode_ben_max_val_65535() {
         0b0011_0000,
     ]);
 
-    let output = jsonl_encode_ben(json!(data).to_string().as_bytes(), writer);
+    let output = jsonl_encode_ben(
+        json!(data).to_string().as_bytes(),
+        writer,
+        BenVariant::Standard,
+    );
     if let Err(e) = output {
         panic!("Error: {}", e);
     }
@@ -223,7 +243,11 @@ fn test_jsonl_encode_ben_len_65535() {
         0b11_000000,
     ]);
 
-    let output = jsonl_encode_ben(json!(data).to_string().as_bytes(), writer);
+    let output = jsonl_encode_ben(
+        json!(data).to_string().as_bytes(),
+        writer,
+        BenVariant::Standard,
+    );
     if let Err(e) = output {
         panic!("Error: {}", e);
     }
@@ -266,7 +290,11 @@ fn jsonl_encode_ben_max_val_and_len_at_65535() {
         0b00000100_,
     ]);
 
-    let output = jsonl_encode_ben(json!(data).to_string().as_bytes(), writer);
+    let output = jsonl_encode_ben(
+        json!(data).to_string().as_bytes(),
+        writer,
+        BenVariant::Standard,
+    );
     if let Err(e) = output {
         panic!("Error: {}", e);
     }
@@ -298,7 +326,11 @@ fn jsonl_encode_ben_single_element() {
         0b101111_00,
     ]);
 
-    let output = jsonl_encode_ben(json!(data).to_string().as_bytes(), writer);
+    let output = jsonl_encode_ben(
+        json!(data).to_string().as_bytes(),
+        writer,
+        BenVariant::Standard,
+    );
     if let Err(e) = output {
         panic!("Error: {}", e);
     }
@@ -330,7 +362,11 @@ fn jsonl_encode_ben_single_zero() {
         0b01_000000,
     ]);
 
-    let output = jsonl_encode_ben(json!(data).to_string().as_bytes(), writer);
+    let output = jsonl_encode_ben(
+        json!(data).to_string().as_bytes(),
+        writer,
+        BenVariant::Standard,
+    );
     if let Err(e) = output {
         panic!("Error: {}", e);
     }
@@ -408,7 +444,7 @@ fn jsonl_encode_ben_multiple_simple_lines() {
         0b01_000000,
     ]);
 
-    let output = jsonl_encode_ben(full_data.as_bytes(), writer);
+    let output = jsonl_encode_ben(full_data.as_bytes(), writer, BenVariant::Standard);
     if let Err(e) = output {
         panic!("Error {}", e);
     }

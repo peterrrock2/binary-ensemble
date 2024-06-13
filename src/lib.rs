@@ -43,3 +43,9 @@ macro_rules! logln {
         }
     }}
 }
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BenVariant {
+    Standard,
+    MkvChain,
+}

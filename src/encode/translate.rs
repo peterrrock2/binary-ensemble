@@ -6,7 +6,7 @@
 use byteorder::{BigEndian, ReadBytesExt};
 use std::io::{self, Error, Read, Write};
 
-use super::{log, logln};
+use super::{log, logln, BenVariant};
 use crate::decode::decode_ben_line;
 use crate::encode::encode_ben_vec_from_rle;
 
@@ -81,10 +81,16 @@ fn ben32_to_ben_line(ben32_vec: Vec<u8>) -> io::Result<Vec<u8>> {
 ///
 /// This function will return an error if the input reader contains invalid ben32
 /// data or if the writer encounters an error while writing the ben data.
-pub fn ben32_to_ben_lines<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::Result<()> {
+pub fn ben32_to_ben_lines<R: Read, W: Write>(
+    mut reader: R,
+    mut writer: W,
+    variant: BenVariant,
+) -> io::Result<()> {
     'outer: loop {
         let mut ben32_vec: Vec<u8> = Vec::new();
         let mut ben32_read_buff: [u8; 4] = [0u8; 4];
+
+        let mut n_reps = 0;
 
         // extract the ben32 data
         'inner: loop {
@@ -92,6 +98,9 @@ pub fn ben32_to_ben_lines<R: Read, W: Write>(mut reader: R, mut writer: W) -> io
                 Ok(()) => {
                     ben32_vec.extend(ben32_read_buff);
                     if ben32_read_buff == [0u8; 4] {
+                        if variant == BenVariant::MkvChain {
+                            n_reps = reader.read_u16::<BigEndian>()?;
+                        }
                         break 'inner;
                     }
                 }
@@ -106,6 +115,9 @@ pub fn ben32_to_ben_lines<R: Read, W: Write>(mut reader: R, mut writer: W) -> io
 
         let ben_vec = ben32_to_ben_line(ben32_vec)?;
         writer.write_all(&ben_vec)?;
+        if variant == BenVariant::MkvChain {
+            writer.write_all(&n_reps.to_be_bytes())?;
+        }
     }
 
     Ok(())
@@ -160,7 +172,11 @@ fn ben_to_ben32_line<R: Read>(
 ///
 /// This function will return an error if the input reader contains invalid ben
 /// data or if the writer encounters an error while writing the ben32 data.
-pub fn ben_to_ben32_lines<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::Result<()> {
+pub fn ben_to_ben32_lines<R: Read, W: Write>(
+    mut reader: R,
+    mut writer: W,
+    variant: BenVariant,
+) -> io::Result<()> {
     let mut sample_number = 1;
     'outer: loop {
         let mut tmp_buffer = [0u8];
@@ -178,10 +194,25 @@ pub fn ben_to_ben32_lines<R: Read, W: Write>(mut reader: R, mut writer: W) -> io
         let n_bytes = reader.read_u32::<BigEndian>()?;
 
         log!("Encoding line: {}\r", sample_number);
-        sample_number += 1;
-        let ben32_vec = ben_to_ben32_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
 
-        writer.write_all(&ben32_vec)?;
+        match variant {
+            BenVariant::Standard => {
+                sample_number += 1;
+                let ben32_vec =
+                    ben_to_ben32_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
+                writer.write_all(&ben32_vec)?;
+            }
+            BenVariant::MkvChain => {
+                let ben32_vec =
+                    ben_to_ben32_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
+
+                // Read the number of repetitions AFTER the ben32 data
+                let n_reps = reader.read_u16::<BigEndian>()?;
+                sample_number += n_reps as usize;
+                writer.write_all(&ben32_vec)?;
+                writer.write_all(&n_reps.to_be_bytes())?;
+            }
+        }
     }
 
     logln!();
@@ -190,6 +221,5 @@ pub fn ben_to_ben32_lines<R: Read, W: Write>(mut reader: R, mut writer: W) -> io
 }
 
 #[cfg(test)]
-mod tests {
-    include!("tests/translate_tests.rs");
-}
+#[path = "tests/translate_tests.rs"]
+mod tests;

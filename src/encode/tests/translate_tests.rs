@@ -29,7 +29,7 @@ fn translate_ben32_to_ben_file<R: Read, W: Write>(mut reader: R, mut writer: W) 
     }
 
     writer.write_all(b"STANDARD BEN FILE")?;
-    ben32_to_ben_lines(reader, writer)
+    ben32_to_ben_lines(reader, writer, BenVariant::Standard)
 }
 
 fn translate_ben_to_ben32_file<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::Result<()> {
@@ -44,7 +44,7 @@ fn translate_ben_to_ben32_file<R: Read, W: Write>(mut reader: R, mut writer: W) 
     }
 
     writer.write_all(b"STANDARD BEN FILE")?;
-    ben_to_ben32_lines(reader, writer)
+    ben_to_ben32_lines(reader, writer, BenVariant::Standard)
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn test_simple_translation_ben32_to_ben() {
     let mut buffer: Vec<u8> = Vec::new();
     let writer2 = &mut buffer;
 
-    jsonl_encode_ben(full_data.as_bytes(), writer2).unwrap();
+    jsonl_encode_ben(full_data.as_bytes(), writer2, BenVariant::Standard).unwrap();
 
     assert_eq!(writer, &buffer);
 }
@@ -134,7 +134,7 @@ fn test_random_translation_ben32_to_ben() {
     let mut buffer: Vec<u8> = Vec::new();
     let writer2 = &mut buffer;
 
-    jsonl_encode_ben(full_data.as_bytes(), writer2).unwrap();
+    jsonl_encode_ben(full_data.as_bytes(), writer2, BenVariant::Standard).unwrap();
 
     assert_eq!(writer, &buffer);
 }
@@ -159,7 +159,7 @@ fn test_simple_translation_ben_to_ben32() {
     let mut input: Vec<u8> = Vec::new();
     let input_writer = &mut input;
 
-    jsonl_encode_ben(full_data.as_bytes(), input_writer).unwrap();
+    jsonl_encode_ben(full_data.as_bytes(), input_writer, BenVariant::Standard).unwrap();
 
     let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
@@ -214,7 +214,7 @@ fn test_random_translation_ben_to_ben32() {
     let mut input: Vec<u8> = Vec::new();
     let input_writer = &mut input;
 
-    jsonl_encode_ben(full_data.as_bytes(), input_writer).unwrap();
+    jsonl_encode_ben(full_data.as_bytes(), input_writer, BenVariant::Standard).unwrap();
 
     let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
