@@ -401,14 +401,14 @@ fn test_decode_ben_multiple_simple_lines() {
 
 #[test]
 fn test_jsonl_decode_ben32_simple() {
-    let mut input: Vec<u8> = b"STANDARD BEN FILE".to_vec();
-    input.extend(vec![0, 1, 0, 4, 0, 2, 0, 1, 0, 3, 0, 3, 0, 0, 0, 0]);
+    let input = vec![0, 1, 0, 4, 0, 2, 0, 1, 0, 3, 0, 3, 0, 0, 0, 0];
 
     let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben32(&mut reader, writer);
+    let result = jsonl_decode_ben32(&mut reader, writer, 0, BenVariant::Standard);
+
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -425,14 +425,13 @@ fn test_jsonl_decode_ben32_simple() {
 
 #[test]
 fn test_jsonl_decode_ben32_16_bit_val() {
-    let mut input: Vec<u8> = b"STANDARD BEN FILE".to_vec();
-    input.extend(vec![0, 1, 0, 4, 2, 0, 0, 1, 0, 3, 0, 3, 0, 0, 0, 0]);
+    let input = vec![0, 1, 0, 4, 2, 0, 0, 1, 0, 3, 0, 3, 0, 0, 0, 0];
 
     let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben32(&mut reader, writer);
+    let result = jsonl_decode_ben32(&mut reader, writer, 0, BenVariant::Standard);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -449,14 +448,13 @@ fn test_jsonl_decode_ben32_16_bit_val() {
 
 #[test]
 fn test_jsonl_decode_ben32_16_bit_len() {
-    let mut input: Vec<u8> = b"STANDARD BEN FILE".to_vec();
-    input.extend(vec![0, 1, 0, 4, 0, 2, 2, 0, 0, 3, 0, 3, 0, 0, 0, 0]);
+    let input = vec![0, 1, 0, 4, 0, 2, 2, 0, 0, 3, 0, 3, 0, 0, 0, 0];
 
     let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben32(&mut reader, writer);
+    let result = jsonl_decode_ben32(&mut reader, writer, 0, BenVariant::Standard);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -473,14 +471,13 @@ fn test_jsonl_decode_ben32_16_bit_len() {
 
 #[test]
 fn test_jsonl_decode_ben32_max_val_65535() {
-    let mut input: Vec<u8> = b"STANDARD BEN FILE".to_vec();
-    input.extend(vec![0, 23, 0, 4, 255, 255, 0, 15, 0, 8, 0, 3, 0, 0, 0, 0]);
+    let input = vec![0, 23, 0, 4, 255, 255, 0, 15, 0, 8, 0, 3, 0, 0, 0, 0];
 
     let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben32(&mut reader, writer);
+    let result = jsonl_decode_ben32(&mut reader, writer, 0, BenVariant::Standard);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -497,14 +494,13 @@ fn test_jsonl_decode_ben32_max_val_65535() {
 
 #[test]
 fn test_jsonl_decode_ben32_max_len_65535() {
-    let mut input: Vec<u8> = b"STANDARD BEN FILE".to_vec();
-    input.extend(vec![0, 23, 0, 4, 0, 60, 255, 255, 0, 8, 0, 3, 0, 0, 0, 0]);
+    let input = vec![0, 23, 0, 4, 0, 60, 255, 255, 0, 8, 0, 3, 0, 0, 0, 0];
 
     let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben32(&mut reader, writer);
+    let result = jsonl_decode_ben32(&mut reader, writer, 0, BenVariant::Standard);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -521,14 +517,14 @@ fn test_jsonl_decode_ben32_max_len_65535() {
 
 #[test]
 fn test_decode_ben32_single_element() {
-    let mut input: Vec<u8> = b"STANDARD BEN FILE".to_vec();
-    input.extend(vec![0, 23, 0, 1, 0, 0, 0, 0]);
+    let input: Vec<u8> = vec![0, 23, 0, 1, 0, 0, 0, 0];
 
     let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben32(&mut reader, writer);
+    let result = jsonl_decode_ben32(&mut reader, writer, 0, BenVariant::Standard);
+    println!("result {:?}", result);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -543,18 +539,17 @@ fn test_decode_ben32_single_element() {
 
 #[test]
 fn test_decode_ben32_multiple_simple_lines() {
-    let mut input: Vec<u8> = b"STANDARD BEN FILE".to_vec();
-    input.extend(vec![
+    let input = vec![
         0, 1, 0, 4, 0, 2, 0, 4, 0, 3, 0, 4, 0, 4, 0, 4, 0, 0, 0, 0, 0, 2, 0, 2, 0, 3, 0, 7, 0, 1,
         0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 4, 0, 1,
         0, 5, 0, 1, 0, 6, 0, 1, 0, 7, 0, 1, 0, 8, 0, 1, 0, 9, 0, 1, 0, 10, 0, 1, 0, 0, 0, 0,
-    ]);
+    ];
 
     let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben32(&mut reader, writer);
+    let result = jsonl_decode_ben32(&mut reader, writer, 0, BenVariant::Standard);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }

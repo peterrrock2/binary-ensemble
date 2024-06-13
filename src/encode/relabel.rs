@@ -23,8 +23,12 @@ use std::io::Error;
 ///
 /// Returns an error if the file format is invalid or if there is an issue reading or writing
 /// the file.
-pub fn relabel_ben_lines<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::Result<()> {
-    let mut sample_number = 1;
+pub fn relabel_ben_lines<R: Read, W: Write>(
+    mut reader: R,
+    mut writer: W,
+    variant: BenVariant,
+) -> io::Result<()> {
+    let mut sample_number = 0;
     loop {
         let mut tmp_buffer = [0u8];
         let max_val_bits = match reader.read_exact(&mut tmp_buffer) {
@@ -41,9 +45,6 @@ pub fn relabel_ben_lines<R: Read, W: Write>(mut reader: R, mut writer: W) -> io:
         let n_bytes = reader.read_u32::<BigEndian>()?;
 
         let mut ben_line = decode_ben_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
-
-        log!("Relabeling line: {}\r", sample_number);
-        sample_number += 1;
 
         // relabel the line
         let mut label = 0;
@@ -62,6 +63,18 @@ pub fn relabel_ben_lines<R: Read, W: Write>(mut reader: R, mut writer: W) -> io:
 
         let relabeled = encode_ben_vec_from_rle(ben_line);
         writer.write_all(&relabeled)?;
+
+        let count_occurrences = if variant == BenVariant::MkvChain {
+            let count = reader.read_u16::<BigEndian>()?;
+            writer.write_all(&count.to_be_bytes())?;
+            count
+        } else {
+            1
+        };
+
+        sample_number += count_occurrences as usize;
+
+        log!("Relabeling line: {}\r", sample_number);
     }
     logln!();
     logln!("Done!");
@@ -88,16 +101,20 @@ pub fn relabel_ben_file<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::
     let mut check_buffer = [0u8; 17];
     reader.read_exact(&mut check_buffer)?;
 
-    if &check_buffer != b"STANDARD BEN FILE" {
-        return Err(Error::new(
-            io::ErrorKind::InvalidData,
-            "Invalid file format",
-        ));
-    }
+    let variant = match &check_buffer {
+        b"STANDARD BEN FILE" => BenVariant::Standard,
+        b"MKVCHAIN BEN FILE" => BenVariant::MkvChain,
+        _ => {
+            return Err(Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid file format",
+            ));
+        }
+    };
 
-    writer.write_all(b"STANDARD BEN FILE")?;
+    writer.write_all(&check_buffer)?;
 
-    relabel_ben_lines(&mut reader, &mut writer)?;
+    relabel_ben_lines(&mut reader, &mut writer, variant)?;
 
     Ok(())
 }
@@ -124,8 +141,9 @@ pub fn relabel_ben_lines_with_map<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,
     new_to_old_node_map: HashMap<usize, usize>,
+    variant: BenVariant,
 ) -> io::Result<()> {
-    let mut sample_number = 1;
+    let mut sample_number = 0;
     loop {
         let mut tmp_buffer = [0u8];
         let max_val_bits = match reader.read_exact(&mut tmp_buffer) {
@@ -158,11 +176,19 @@ pub fn relabel_ben_lines_with_map<R: Read, W: Write>(
 
         let new_rle = assign_to_rle(new_assignment_vec);
 
-        log!("Relabeling line: {}\r", sample_number);
-        sample_number += 1;
-
         let relabeled = encode_ben_vec_from_rle(new_rle);
         writer.write_all(&relabeled)?;
+
+        let count_occurrences = if variant == BenVariant::MkvChain {
+            let count = reader.read_u16::<BigEndian>()?;
+            writer.write_all(&count.to_be_bytes())?;
+            count
+        } else {
+            1
+        };
+
+        sample_number += count_occurrences as usize;
+        log!("Relabeling line: {}\r", sample_number);
     }
     logln!();
     logln!("Done!");
@@ -196,16 +222,20 @@ pub fn relabel_ben_file_with_map<R: Read, W: Write>(
     let mut check_buffer = [0u8; 17];
     reader.read_exact(&mut check_buffer)?;
 
-    if &check_buffer != b"STANDARD BEN FILE" {
-        return Err(Error::new(
-            io::ErrorKind::InvalidData,
-            "Invalid file format",
-        ));
-    }
+    let variant = match &check_buffer {
+        b"STANDARD BEN FILE" => BenVariant::Standard,
+        b"MKVCHAIN BEN FILE" => BenVariant::MkvChain,
+        _ => {
+            return Err(Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid file format",
+            ));
+        }
+    };
 
-    writer.write_all(b"STANDARD BEN FILE")?;
+    writer.write_all(&check_buffer)?;
 
-    relabel_ben_lines_with_map(&mut reader, &mut writer, new_to_old_node_map)?;
+    relabel_ben_lines_with_map(&mut reader, &mut writer, new_to_old_node_map, variant)?;
 
     Ok(())
 }
@@ -244,7 +274,7 @@ mod tests {
         let expected = encode_ben_vec_from_rle(out_rle);
 
         let mut buf = Vec::new();
-        relabel_ben_lines(input.as_slice(), &mut buf).unwrap();
+        relabel_ben_lines(input.as_slice(), &mut buf, BenVariant::Standard).unwrap();
 
         assert_eq!(buf, expected);
     }
@@ -267,7 +297,7 @@ mod tests {
         let mut output = Vec::new();
         let writer = io::BufWriter::new(&mut output);
 
-        jsonl_encode_ben(input, writer).unwrap();
+        jsonl_encode_ben(input, writer, BenVariant::Standard).unwrap();
 
         let mut output2 = Vec::new();
         let writer2 = io::BufWriter::new(&mut output2);
@@ -288,6 +318,56 @@ mod tests {
             "{\"assignment\":[1,2,2,3,4,1,4,3,1],\"sample\":5}",
             "{\"assignment\":[1,1,2,2,3,3,4,4,5],\"sample\":6}",
             "{\"assignment\":[1,2,3,4,1,2,5,3,5],\"sample\":7}"
+        );
+
+        assert_eq!(output_str, out_file);
+    }
+
+    #[test]
+    fn test_relabel_simple_file_mkv() {
+        let file = format!(
+            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+            "{\"assignment\":[1,2,3,4,5,5,3,4,2],\"sample\":1}",
+            "{\"assignment\":[2,1,3,4,5,5,3,4,2],\"sample\":2}",
+            "{\"assignment\":[3,3,1,1,2,2,3,3,4],\"sample\":3}",
+            "{\"assignment\":[4,3,2,1,4,3,2,1,1],\"sample\":4}",
+            "{\"assignment\":[3,2,2,4,1,3,1,4,3],\"sample\":5}",
+            "{\"assignment\":[3,2,2,4,1,3,1,4,3],\"sample\":6}",
+            "{\"assignment\":[3,2,2,4,1,3,1,4,3],\"sample\":7}",
+            "{\"assignment\":[2,2,3,3,4,4,5,5,1],\"sample\":8}",
+            "{\"assignment\":[2,4,1,5,2,4,3,1,3],\"sample\":9}",
+            "{\"assignment\":[2,4,1,5,2,4,3,1,3],\"sample\":10}"
+        );
+
+        let input = file.as_bytes();
+
+        let mut output = Vec::new();
+        let writer = io::BufWriter::new(&mut output);
+
+        jsonl_encode_ben(input, writer, BenVariant::MkvChain).unwrap();
+
+        let mut output2 = Vec::new();
+        let writer2 = io::BufWriter::new(&mut output2);
+        relabel_ben_file(output.as_slice(), writer2).unwrap();
+
+        let mut output3 = Vec::new();
+        let writer3 = io::BufWriter::new(&mut output3);
+        jsonl_decode_ben(output2.as_slice(), writer3).unwrap();
+
+        let output_str = String::from_utf8(output3).unwrap();
+
+        let out_file = format!(
+            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+            "{\"assignment\":[1,2,3,4,5,5,3,4,2],\"sample\":1}",
+            "{\"assignment\":[1,2,3,4,5,5,3,4,1],\"sample\":2}",
+            "{\"assignment\":[1,1,2,2,3,3,1,1,4],\"sample\":3}",
+            "{\"assignment\":[1,2,3,4,1,2,3,4,4],\"sample\":4}",
+            "{\"assignment\":[1,2,2,3,4,1,4,3,1],\"sample\":5}",
+            "{\"assignment\":[1,2,2,3,4,1,4,3,1],\"sample\":6}",
+            "{\"assignment\":[1,2,2,3,4,1,4,3,1],\"sample\":7}",
+            "{\"assignment\":[1,1,2,2,3,3,4,4,5],\"sample\":8}",
+            "{\"assignment\":[1,2,3,4,1,2,5,3,5],\"sample\":9}",
+            "{\"assignment\":[1,2,3,4,1,2,5,3,5],\"sample\":10}"
         );
 
         assert_eq!(output_str, out_file);
@@ -316,7 +396,13 @@ mod tests {
         new_to_old_map.insert(8, 5);
 
         let mut buf = Vec::new();
-        relabel_ben_lines_with_map(input.as_slice(), &mut buf, new_to_old_map).unwrap();
+        relabel_ben_lines_with_map(
+            input.as_slice(),
+            &mut buf,
+            new_to_old_map,
+            BenVariant::Standard,
+        )
+        .unwrap();
 
         assert_eq!(buf, expected);
     }
@@ -334,7 +420,13 @@ mod tests {
         let expected = encode_ben_vec_from_rle(out_rle);
 
         let mut buf = Vec::new();
-        relabel_ben_lines_with_map(input.as_slice(), &mut buf, new_to_old_map).unwrap();
+        relabel_ben_lines_with_map(
+            input.as_slice(),
+            &mut buf,
+            new_to_old_map,
+            BenVariant::Standard,
+        )
+        .unwrap();
 
         assert_eq!(buf, expected);
     }
@@ -359,7 +451,13 @@ mod tests {
         let expected = encode_ben_vec_from_rle(out_rle);
 
         let mut buf = Vec::new();
-        relabel_ben_lines_with_map(input.as_slice(), &mut buf, new_to_old_map).unwrap();
+        relabel_ben_lines_with_map(
+            input.as_slice(),
+            &mut buf,
+            new_to_old_map,
+            BenVariant::Standard,
+        )
+        .unwrap();
 
         assert_eq!(buf, expected);
     }
@@ -397,7 +495,7 @@ mod tests {
         let mut output = Vec::new();
         let writer = io::BufWriter::new(&mut output);
 
-        jsonl_encode_ben(input, writer).unwrap();
+        jsonl_encode_ben(input, writer, BenVariant::Standard).unwrap();
 
         let mut output2 = Vec::new();
         let writer2 = io::BufWriter::new(&mut output2);
@@ -418,6 +516,71 @@ mod tests {
             "{\"assignment\":[2,4,1,3,1,4,3,3,2],\"sample\":5}",
             "{\"assignment\":[3,3,4,4,5,5,1,2,2],\"sample\":6}",
             "{\"assignment\":[1,5,2,4,3,1,3,2,4],\"sample\":7}"
+        );
+
+        assert_eq!(output_str, out_file);
+    }
+
+    #[test]
+    fn test_relabel_simple_file_with_map_mkv() {
+        let file = format!(
+            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+            "{\"assignment\":[1,2,3,4,5,5,3,4,2],\"sample\":1}",
+            "{\"assignment\":[1,2,3,4,5,5,3,4,2],\"sample\":2}",
+            "{\"assignment\":[1,2,3,4,5,5,3,4,2],\"sample\":3}",
+            "{\"assignment\":[1,2,3,4,5,5,3,4,2],\"sample\":4}",
+            "{\"assignment\":[1,2,3,4,5,5,3,4,2],\"sample\":5}",
+            "{\"assignment\":[1,2,3,4,5,5,3,4,2],\"sample\":6}",
+            "{\"assignment\":[2,1,3,4,5,5,3,4,2],\"sample\":7}",
+            "{\"assignment\":[2,1,3,4,5,5,3,4,2],\"sample\":8}",
+            "{\"assignment\":[2,1,3,4,5,5,3,4,2],\"sample\":9}",
+            "{\"assignment\":[2,4,1,5,2,4,3,1,3],\"sample\":10}",
+        );
+
+        let new_to_old_map: HashMap<usize, usize> = [
+            (0, 2),
+            (1, 3),
+            (2, 4),
+            (3, 5),
+            (4, 6),
+            (5, 7),
+            (6, 8),
+            (7, 0),
+            (8, 1),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+
+        let input = file.as_bytes();
+
+        let mut output = Vec::new();
+        let writer = io::BufWriter::new(&mut output);
+
+        jsonl_encode_ben(input, writer, BenVariant::MkvChain).unwrap();
+
+        let mut output2 = Vec::new();
+        let writer2 = io::BufWriter::new(&mut output2);
+        relabel_ben_file_with_map(output.as_slice(), writer2, new_to_old_map).unwrap();
+
+        let mut output3 = Vec::new();
+        let writer3 = io::BufWriter::new(&mut output3);
+        jsonl_decode_ben(output2.as_slice(), writer3).unwrap();
+
+        let output_str = String::from_utf8(output3).unwrap();
+
+        let out_file = format!(
+            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+            "{\"assignment\":[3,4,5,5,3,4,2,1,2],\"sample\":1}",
+            "{\"assignment\":[3,4,5,5,3,4,2,1,2],\"sample\":2}",
+            "{\"assignment\":[3,4,5,5,3,4,2,1,2],\"sample\":3}",
+            "{\"assignment\":[3,4,5,5,3,4,2,1,2],\"sample\":4}",
+            "{\"assignment\":[3,4,5,5,3,4,2,1,2],\"sample\":5}",
+            "{\"assignment\":[3,4,5,5,3,4,2,1,2],\"sample\":6}",
+            "{\"assignment\":[3,4,5,5,3,4,2,2,1],\"sample\":7}",
+            "{\"assignment\":[3,4,5,5,3,4,2,2,1],\"sample\":8}",
+            "{\"assignment\":[3,4,5,5,3,4,2,2,1],\"sample\":9}",
+            "{\"assignment\":[1,5,2,4,3,1,3,2,4],\"sample\":10}",
         );
 
         assert_eq!(output_str, out_file);

@@ -1,6 +1,6 @@
 use ben::decode::*;
 use ben::encode::*;
-use ben::logln;
+use ben::{logln, BenVariant};
 use clap::{Parser, ValueEnum};
 use pcompress;
 use pipe::pipe;
@@ -22,7 +22,7 @@ enum Mode {
 #[command(
     name = "Conversion tool for BEN and PCOMPRESS formats",
     about = "This is a CLI tool that allows for the conversion between BEN and PCOMPRESS formats.",
-    version = "0.1.4"
+    version = "0.2.0"
 )]
 struct Args {
     /// Mode to run the program in
@@ -137,7 +137,7 @@ fn main() -> Result<()> {
 }
 
 fn assignment_decode_ben<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::Result<()> {
-    let ben_reader = BenDecoder::new(&mut reader);
+    let ben_reader = BenDecoder::new(&mut reader)?;
 
     for result in ben_reader {
         match result {
@@ -152,10 +152,14 @@ fn assignment_decode_ben<R: Read, W: Write>(mut reader: R, mut writer: W) -> io:
 }
 
 fn assignment_encode_ben<R: Read + BufRead, W: Write>(reader: R, writer: W) -> io::Result<()> {
-    let mut ben_writer = BenEncoder::new(writer);
+    let mut ben_writer = BenEncoder::new(writer, BenVariant::MkvChain);
 
     for line in reader.lines() {
-        let assignment: Vec<u16> = serde_json::from_str(&line.unwrap()).unwrap();
+        let assignment: Vec<u16> = serde_json::from_str::<Vec<u16>>(&line.unwrap())
+            .unwrap()
+            .into_iter()
+            .map(|x| x as u16 + 1)
+            .collect();
         ben_writer.write_assignment(assignment)?;
     }
     Ok(())
@@ -163,7 +167,7 @@ fn assignment_encode_ben<R: Read + BufRead, W: Write>(reader: R, writer: W) -> i
 
 fn assignment_encode_xben<R: Read + BufRead, W: Write>(reader: R, writer: W) -> io::Result<()> {
     let encoder = XzEncoder::new(writer, 9);
-    let mut xben_writer = XBenEncoder::new(encoder);
+    let mut xben_writer = XBenEncoder::new(encoder, BenVariant::MkvChain);
 
     xben_writer.write_ben_file(reader)?;
     Ok(())

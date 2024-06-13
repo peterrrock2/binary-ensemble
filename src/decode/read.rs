@@ -144,14 +144,18 @@ pub fn extract_assignment_ben<R: Read>(
     let mut check_buffer = [0u8; 17];
     reader.read_exact(&mut check_buffer)?;
 
-    if &check_buffer != b"STANDARD BEN FILE" {
-        return Err(SampleError {
-            kind: SampleErrorKind::IoError(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Invalid file format",
-            )),
-        });
-    }
+    let variant = match &check_buffer {
+        b"STANDARD BEN FILE" => BenVariant::Standard,
+        b"MKVCHAIN BEN FILE" => BenVariant::MkvChain,
+        _ => {
+            return Err(SampleError {
+                kind: SampleErrorKind::IoError(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Invalid file format",
+                )),
+            })
+        }
+    };
 
     let mut r_sample = 1;
     let mut writer = Vec::new();
@@ -176,10 +180,16 @@ pub fn extract_assignment_ben<R: Read>(
         let mut assign_bits: Vec<u8> = vec![0; n_bytes as usize];
         reader.read_exact(&mut assign_bits)?;
 
+        let count_samples = if variant == BenVariant::MkvChain {
+            reader.read_u16::<BigEndian>()?
+        } else {
+            1
+        };
+
         // Reader buffer gets thrown away after each iteration
         // and only decoded if we are in the right sample.
         // This speeds up the process significantly by not decoding all samples.
-        if r_sample == sample_number {
+        if r_sample == sample_number || r_sample + count_samples as usize > sample_number {
             // Write the ben header that is expected by jsonl_decode_ben
             let mut tmp_reader = b"STANDARD BEN FILE".to_vec();
             // Write the actual ben data
@@ -204,7 +214,11 @@ pub fn extract_assignment_ben<R: Read>(
     Ok(assignment)
 }
 
+// #[cfg(test)]
+// mod tests {
+//     include!("tests/read_tests.rs");
+// }
+
 #[cfg(test)]
-mod tests {
-    include!("tests/read_tests.rs");
-}
+#[path = "tests/read_tests.rs"]
+mod tests;

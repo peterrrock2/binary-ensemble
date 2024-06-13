@@ -1,7 +1,7 @@
 use ben::decode::read::extract_assignment_ben;
 use ben::decode::*;
 use ben::encode::*;
-use ben::logln;
+use ben::{logln, BenVariant};
 use clap::{Parser, ValueEnum};
 use std::{
     fs::File,
@@ -25,7 +25,7 @@ enum Mode {
 #[command(
     name = "Binary Ensemble CLI Tool",
     about = "This is a command line tool for encoding and decoding binary ensemble files.",
-    version = "0.1.3"
+    version = "0.2.0"
 )]
 struct Args {
     /// Mode to run the program in (encode, decode, or read).
@@ -72,6 +72,14 @@ struct Args {
     /// formats are JSONL and BEN
     #[arg(short = 'j', long)]
     jsonl_and_ben: bool,
+
+    /// When saving a file in the BEN format, the deault is to have
+    /// an assignment vector saved followed by the number of repetitions
+    /// of that assignment vector (this is useful for Markov chian methods
+    /// like ReCom). This flag will cause the program to forgo the repetition
+    /// count and just save all of the assignment vectors as they are encountered.
+    #[arg(short = 'a', long)]
+    save_all: bool,
 
     /// If the output file already exists, this flag
     /// will cause the program to overwrite it without
@@ -229,8 +237,17 @@ fn main() {
                 }
             };
 
-            if let Err(e) = jsonl_encode_ben(reader, writer) {
-                eprintln!("Error: {:?}", e);
+            let possible_error = if args.save_all {
+                jsonl_encode_ben(reader, writer, BenVariant::Standard)
+            } else {
+                jsonl_encode_ben(reader, writer, BenVariant::MkvChain)
+            };
+
+            match possible_error {
+                Ok(_) => {}
+                Err(err) => {
+                    eprintln!("Error: {:?}", err);
+                }
             }
         }
         Mode::XEncode => {
@@ -294,8 +311,13 @@ fn main() {
                     eprintln!("Error: {:?}", err);
                 }
             } else if jsonl_and_xben {
-                if let Err(err) = jsonl_encode_xben(reader, writer) {
-                    eprintln!("Error: {:?}", err);
+                let possible_error = if args.save_all {
+                    jsonl_encode_xben(reader, writer, BenVariant::Standard)
+                } else {
+                    jsonl_encode_xben(reader, writer, BenVariant::MkvChain)
+                };
+                if let Err(e) = possible_error {
+                    eprintln!("Error: {:?}", e);
                 }
             } else {
                 eprintln!("Error: Unsupported file type(s) for xencode mode");

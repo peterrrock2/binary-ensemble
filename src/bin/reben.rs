@@ -24,7 +24,7 @@ enum Mode {
         "This is a command line tool for relabeling binary ensembles ",
         "to help improve compression ratios for BEN and XBEN files."
     ),
-    version = "0.1.3"
+    version = "0.2.0"
 )]
 
 // TODO: Change the name of shape_file to dual_graph_file.
@@ -51,6 +51,11 @@ struct Args {
     map_file: Option<String>,
 
     /// Mode to run the program in (either JSON or BEN).
+    /// The JSON mode will sort a JSON file by a given key.
+    /// The BEN mode will relabel a BEN file according to a map file
+    /// or a key (the latter also requires a dual-graph file). If no
+    /// map file or key is provided, the BEN mode will canonicalize
+    /// the assignment vectors in the BEN file.
     #[arg(short, long)]
     mode: Mode,
 
