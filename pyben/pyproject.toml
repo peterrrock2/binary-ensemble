@@ -1,0 +1,14 @@
+[build-system]
+requires    = ["maturin>=0.14"]    # maturin itself (and its deps) will drive the build
+build-backend = "maturin"
+
+
+[project]
+name = "pyben"
+version = "0.1.0"
+description = "Python bindings for the Binary Ensemble Package."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "maturin>=1.8.6",
+]
