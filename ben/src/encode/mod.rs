@@ -49,6 +49,7 @@ pub struct BenEncoder<W: Write> {
     previous_sample: Vec<u8>,
     count: u16,
     variant: BenVariant,
+    complete: bool,
 }
 
 impl<W: Write> BenEncoder<W> {
@@ -67,7 +68,8 @@ impl<W: Write> BenEncoder<W> {
             writer,
             previous_sample: Vec::new(),
             count: 0,
-            variant,
+            complete: false,
+            variant: variant,
         }
     }
 
@@ -106,28 +108,59 @@ impl<W: Write> BenEncoder<W> {
 
     /// Write a JSON value containing an assignment vector to the BEN file.
     pub fn write_json_value(&mut self, data: Value) -> Result<()> {
-        let assign_vec = data["assignment"].as_array().unwrap();
-        let rle_vec = assign_to_rle(
-            assign_vec
-                .into_iter()
-                .map(|x| x.as_u64().unwrap() as u16)
-                .collect(),
-        );
+        let assign_vec = data["assignment"].as_array().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "'assignment' field either missing or is not an array of integers",
+            )
+        })?;
+        let converted_vec = assign_vec
+            .into_iter()
+            .map(|x| {
+                let u = x.as_u64().ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!(
+                            "The value '{}' could not be unwrapped as an unsigned 64 bit integer.",
+                            x
+                        ),
+                    )
+                })?;
+
+                u16::try_from(u).map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("The value '{}' is too large to fit in a u16.", u),
+                    )
+                })
+            })
+            .collect::<Result<Vec<u16>>>()?;
+
+        let rle_vec = assign_to_rle(converted_vec);
         self.write_rle(rle_vec)?;
+        Ok(())
+    }
+
+    pub fn finish(&mut self) -> Result<()> {
+        if self.complete {
+            return Ok(());
+        }
+        if self.variant == BenVariant::MkvChain && self.count > 0 {
+            self.writer
+                .write_all(&self.previous_sample)
+                .expect("Error while writing last line to file");
+            self.writer
+                .write_all(&self.count.to_be_bytes())
+                .expect("Error while writing last count to file");
+        }
+        self.complete = true;
         Ok(())
     }
 }
 
 impl<W: Write> Drop for BenEncoder<W> {
     fn drop(&mut self) {
-        if self.variant == BenVariant::MkvChain && self.count > 0 {
-            self.writer
-                .write_all(&self.previous_sample)
-                .expect("Error writing last line to file");
-            self.writer
-                .write_all(&self.count.to_be_bytes())
-                .expect("Error writing last line count to file");
-        }
+        let _ = self.finish();
     }
 }
 
