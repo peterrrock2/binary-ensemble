@@ -11,12 +11,14 @@
 //! run-length encoded assignment vectors, and is streamable. Therefore, the
 //! BEN file format works well with the `read` submodule of this module
 //! which is designed to extract a single assignment vector from a BEN file.
-
 pub mod read;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use serde_json::json;
-use std::io::{self, BufRead, Error, Read, Write};
+use std::io::BufReader; // type import
+use std::io::{self, BufRead, Error, Read, Write}; // trait imports
+use std::iter::Peekable;
+use xz2::read::XzDecoder;
 
 use crate::utils::rle_to_vec;
 
@@ -25,16 +27,44 @@ use super::{log, logln, BenVariant};
 
 #[derive(Debug)]
 pub enum DecoderInitError {
-    InvalidFileFormat(String),
+    InvalidFileFormat(Vec<u8>),
     Io(io::Error),
+}
+
+fn is_xz_header(h: &[u8]) -> bool {
+    h.len() >= 6 && &h[..6] == b"\xFD\x37\x7A\x58\x5A\x00"
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| format!("{:02X}", b))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 impl std::fmt::Display for DecoderInitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DecoderInitError::Io(e) => write!(f, "IO error: {}", e),
-            DecoderInitError::InvalidFileFormat(msg) => {
-                write!(f, "Invalid file format. Found header {:?}", msg)
+            Self::Io(e) => write!(f, "IO error: {e}"),
+            Self::InvalidFileFormat(header) => {
+                if is_xz_header(header) {
+                    write!(
+                        f,
+                        "Invalid file format: Compressed header detected (hex: {}). \
+                     This reader expects an uncompressed .ben file. \
+                     Decompress this file using the BEN cli `ben -m decode <file_name>.xben` tool \
+                     or the `decode_xben_to_ben` function in this library.",
+                        to_hex(header)
+                    )
+                } else {
+                    let lossy = String::from_utf8_lossy(header);
+                    write!(
+                        f,
+                        "Invalid file format. Found header (utf8-lossy: {lossy:?}, hex: {})",
+                        to_hex(header)
+                    )
+                }
             }
         }
     }
@@ -60,7 +90,7 @@ impl From<DecoderInitError> for io::Error {
         match error {
             DecoderInitError::Io(e) => e,
             DecoderInitError::InvalidFileFormat(msg) => {
-                io::Error::new(io::ErrorKind::InvalidData, msg)
+                io::Error::new(io::ErrorKind::InvalidData, format!("{msg:?}"))
             }
         }
     }
@@ -94,10 +124,7 @@ impl<R: Read> BenDecoder<R> {
                 sample_count: 0,
                 variant: BenVariant::MkvChain,
             }),
-            _ => Err(DecoderInitError::InvalidFileFormat(format!(
-                "Invalid file format. Found header bytes {:?}",
-                check_buffer
-            ))),
+            _ => Err(DecoderInitError::InvalidFileFormat(check_buffer.to_vec())),
         }
     }
 
@@ -125,10 +152,12 @@ impl<R: Read> BenDecoder<R> {
     }
 }
 
-impl<R: Read> Iterator for BenDecoder<R> {
-    type Item = io::Result<(Vec<u16>, u16)>;
+pub type MkvRecord = (Vec<u16>, u16);
 
-    fn next(&mut self) -> Option<io::Result<(Vec<u16>, u16)>> {
+impl<R: Read> Iterator for BenDecoder<R> {
+    type Item = io::Result<MkvRecord>;
+
+    fn next(&mut self) -> Option<io::Result<MkvRecord>> {
         let mut tmp_buffer = [0u8];
         let max_val_bits: u8 = match self.reader.read_exact(&mut tmp_buffer) {
             Ok(()) => tmp_buffer[0],
@@ -187,17 +216,13 @@ impl<R: Read> Iterator for BenDecoder<R> {
 /// bytes long since each assignment vector is an run-length encoded as a 32 bit
 /// integer (2 bytes for the value and 2 bytes for the count).
 ///
-fn decode_ben32_line<R: BufRead>(
-    mut reader: R,
-    variant: BenVariant,
-) -> io::Result<(Vec<u16>, u16)> {
+fn decode_ben32_line<R: BufRead>(mut reader: R, variant: BenVariant) -> io::Result<MkvRecord> {
     let mut buffer = [0u8; 4];
     let mut output_vec: Vec<u16> = Vec::new();
 
     loop {
         match reader.read_exact(&mut buffer) {
             Ok(()) => {
-                println!("found {:?}", buffer);
                 let encoded = u32::from_be_bytes(buffer);
                 if encoded == 0 {
                     // Check for separator (all 0s)
@@ -261,7 +286,6 @@ fn jsonl_decode_ben32<R: BufRead, W: Write>(
     let mut sample_number = 1;
     loop {
         let result = decode_ben32_line(&mut reader, variant);
-        println!("In jsonl_decode_ben32 result {:?}", result);
         if let Err(e) = result {
             if e.kind() == io::ErrorKind::UnexpectedEof {
                 return Ok(());
@@ -304,7 +328,7 @@ fn jsonl_decode_ben32<R: BufRead, W: Write>(
 /// data or if the the decode method encounters while trying to convert the
 /// xben data to ben data.
 pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::Result<()> {
-    let mut decoder = xz2::read::XzDecoder::new(reader);
+    let mut decoder = XzDecoder::new(reader);
 
     let mut first_buffer = [0u8; 17];
 
@@ -412,7 +436,7 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
 /// println!("{:?}", output_buffer);
 /// ```
 pub fn xz_decompress<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::Result<()> {
-    let mut decoder = xz2::read::XzDecoder::new(reader);
+    let mut decoder = XzDecoder::new(reader);
     let mut buffer = [0u8; 4096];
 
     while let Ok(count) = decoder.read(&mut buffer) {
@@ -572,7 +596,7 @@ pub fn jsonl_decode_ben<R: Read, W: Write>(reader: R, writer: W) -> io::Result<(
 /// data or if the the decode method encounters while trying to extract a single
 /// assignment vector, that error is then propagated.
 pub fn jsonl_decode_xben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::Result<()> {
-    let mut decoder = xz2::read::XzDecoder::new(reader);
+    let mut decoder = XzDecoder::new(reader);
 
     let mut first_buffer = [0u8; 17];
 
