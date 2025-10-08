@@ -800,7 +800,7 @@ pub enum Selection {
 pub struct SubsampleDecoder<I> {
     inner: I,
     selection: Selection,
-    sample: usize,
+    sample: usize, // number of samples fully processed so far (next is sample+1)
 }
 
 impl<I> SubsampleDecoder<I> {
