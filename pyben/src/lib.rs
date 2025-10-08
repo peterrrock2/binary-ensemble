@@ -1,65 +1,28 @@
-use ben::decode::BenDecoder;
-use pyo3::exceptions::{PyException, PyIOError};
-use pyo3::prelude::PyResult;
-use pyo3::{pyclass, pymethods, pymodule, Py, PyRefMut};
-use std::fs::File;
-use std::io::BufReader;
+use pyo3::prelude::*;
+use pyo3::wrap_pyfunction; // <-- needed for wrap_pyfunction!
 
-#[pyclass]
-pub struct PyBenDecoder {
-    decoder: BenDecoder<BufReader<File>>,
-    current_assignment: Option<Vec<u16>>,
-    remaining_count: u16,
-}
+pub mod decode;
+pub mod encode;
 
-#[pymethods]
-impl PyBenDecoder {
-    #[new]
-    fn new(file_path: String) -> PyResult<Self> {
-        let file = File::open(&file_path)
-            .map_err(|e| PyIOError::new_err(format!("Failed to open file {}: {}", file_path, e)))?;
-        let decoder = BenDecoder::new(BufReader::new(file))
-            .map_err(|e| PyException::new_err(format!("Failed to create BenDecoder: {}", e)))?;
-        Ok(PyBenDecoder {
-            decoder: decoder,
-            current_assignment: None,
-            remaining_count: 0,
-        })
-    }
+#[pymodule]
+fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Export classes
+    m.add_class::<crate::encode::PyBenEncoder>()?;
+    m.add_class::<crate::decode::PyBenDecoder>()?;
 
-    fn __iter__(slf: PyRefMut<Self>) -> PyResult<Py<Self>> {
-        Ok(slf.into())
-    }
+    // Create submodule "read"
+    let read = pyo3::types::PyModule::new(m.py(), "read")?; // <-- new()
+    read.add_function(wrap_pyfunction!(
+        crate::decode::read::read_single_assignment,
+        &read
+    )?)?;
 
-    fn __next__(mut slf: PyRefMut<Self>) -> PyResult<Option<Vec<u16>>> {
-        if slf.remaining_count > 0 {
-            // If there are remaining items, return the current assignment
-            slf.remaining_count -= 1;
-            let assgn = slf.current_assignment.as_ref().unwrap().clone();
-            return Ok(Some(assgn));
-        }
+    // Attach as attribute and submodule so both `pyben.read` and `from pyben.read ...` work
+    m.add_submodule(&read)?; // <-- pass by reference
+    m.py()
+        .import("sys")?
+        .getattr("modules")?
+        .set_item("pyben.read", read)?;
 
-        match slf.decoder.next() {
-            Some(Ok((assignment, count))) => {
-                assert!(
-                    count > 0,
-                    "Found a non-positive count in the data. The data may be corrupted."
-                );
-                slf.current_assignment = Some(assignment.clone());
-                slf.remaining_count = count - 1;
-                Ok(Some(assignment))
-            }
-            Some(Err(e)) => Err(PyException::new_err(format!(
-                "Error decoding next item: {}",
-                e
-            ))),
-            None => Ok(None),
-        }
-    }
-}
-
-#[pymodule(name = "pyben")]
-mod pyben {
-    #[pymodule_export]
-    use super::PyBenDecoder;
+    Ok(())
 }

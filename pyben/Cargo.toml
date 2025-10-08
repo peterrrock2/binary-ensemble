@@ -1,6 +1,6 @@
 [package]
 name = "pyben"
-version = "0.1.0"
+version = "0.1.0-alpha"
 edition = "2021"
 authors = ["Peter Rock <peter.r.rock2@gmail.com>"]
 license = "MIT"
@@ -9,7 +9,7 @@ repository = "https://github.com/peterrrock2/binary-ensemble"
 description = "Python bindings for the Binary Ensemble Package. Specifically the Encoder and Decoder"
 
 [lib]
-name = "pyben"
+name = "pyben_core"
 crate-type = ["cdylib"]
 
 [dependencies]
@@ -18,7 +18,7 @@ binary-ensemble = { path = "../ben"}
 clap = { version = "^4.5.2", features = ["derive"] }
 pcompress = "1.0.7"
 pipe = "0.4.0"
-pyo3 = { version = "0.25.0", features = ["extension-module"] }
+pyo3 = { version = "0.26.0", features = ["extension-module"] }
 serde_json = "^1.0.107"
 xz2 = "0.1.7"
 
