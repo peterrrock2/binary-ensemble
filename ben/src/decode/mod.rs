@@ -678,6 +678,240 @@ pub fn jsonl_decode_xben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::
     Ok(())
 }
 
+pub struct XBenDecoder<R: Read> {
+    xz: BufReader<XzDecoder<R>>,
+    variant: BenVariant,
+    overflow: Vec<u8>,
+    buf: Box<[u8]>, // reusable read buffer
+}
+
+impl<R: Read> XBenDecoder<R> {
+    pub fn new(reader: R) -> io::Result<Self> {
+        let xz = XzDecoder::new(reader);
+        let mut xz = BufReader::with_capacity(256 * 1024, xz);
+
+        // Read the 17-byte banner to determine variant
+        let mut first = [0u8; 17];
+        xz.read_exact(&mut first)?;
+        let variant = match &first {
+            b"STANDARD BEN FILE" => BenVariant::Standard,
+            b"MKVCHAIN BEN FILE" => BenVariant::MkvChain,
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Invalid .xben header (expecting STANDARD/MKVCHAIN BEN FILE)",
+                ));
+            }
+        };
+
+        Ok(Self {
+            xz,
+            variant,
+            overflow: Vec::with_capacity(1 << 20),
+            buf: vec![0u8; 1 << 20].into_boxed_slice(), // 1 MiB chunk; tune as needed
+        })
+    }
+
+    /// Try to pop one *complete* ben32 frame from `overflow`.
+    /// Returns (frame_bytes, total_len_consumed_from_overflow).
+    fn pop_frame_from_overflow<'a>(&self, overflow: &'a [u8]) -> Option<(&'a [u8], usize, u16)> {
+        match self.variant {
+            BenVariant::Standard => {
+                // Frame ends right after 4 zero bytes
+                // ... [payload] ... 00 00 00 00
+                if overflow.len() < 4 {
+                    return None;
+                }
+                for i in 3..overflow.len() {
+                    if overflow[i - 3..=i] == [0, 0, 0, 0] {
+                        let end = i + 1;
+                        let frame = &overflow[..end];
+                        // In STANDARD, count is always 1
+                        return Some((frame, end, 1));
+                    }
+                }
+                None
+            }
+            BenVariant::MkvChain => {
+                // ... [payload] ... 00 00 00 00 <hi> <lo>
+                if overflow.len() < 6 {
+                    return None;
+                }
+                for i in 3..overflow.len().saturating_sub(2) {
+                    if overflow[i - 3..=i] == [0, 0, 0, 0] {
+                        let count_hi = overflow[i + 1];
+                        let count_lo = overflow[i + 2];
+                        let count = u16::from_be_bytes([count_hi, count_lo]);
+                        let end = i + 3; // inclusive of count bytes
+                        let frame = &overflow[..end];
+                        return Some((frame, end, count));
+                    }
+                }
+                None
+            }
+        }
+    }
+}
+
+impl<R: Read> Iterator for XBenDecoder<R> {
+    type Item = io::Result<MkvRecord>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            // If we already have a complete frame in overflow, decode and return it
+            if let Some((frame, consumed, count)) = self.pop_frame_from_overflow(&self.overflow) {
+                let variant = self.variant;
+                let res =
+                    decode_ben32_line(frame, variant).map(|(assignment, _)| (assignment, count));
+                // drop the used bytes
+                self.overflow.drain(..consumed);
+                return Some(res);
+            }
+
+            // Otherwise, read more from the XZ stream
+            let read = match self.xz.read(&mut self.buf) {
+                Ok(0) => {
+                    // EOF: no more data; if there's leftover but not a full frame, report error or stop
+                    if self.overflow.is_empty() {
+                        return None;
+                    } else {
+                        return Some(Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "truncated .xben stream (partial frame at EOF)",
+                        )));
+                    }
+                }
+                Ok(n) => n,
+                Err(e) => return Some(Err(e)),
+            };
+            self.overflow.extend_from_slice(&self.buf[..read]);
+        }
+    }
+}
+
+/// What to subsample.
+pub enum Selection {
+    Indices(Peekable<std::vec::IntoIter<usize>>), // 1-based, sorted
+    Every { step: usize, offset: usize },         // 1-based
+    Range { start: usize, end: usize },           // inclusive, 1-based
+}
+
+/// Generic subsampling adapter over any `(Vec<u16>, u16)` stream.
+pub struct SubsampleDecoder<I> {
+    inner: I,
+    selection: Selection,
+    sample: usize,
+}
+
+impl<I> SubsampleDecoder<I> {
+    /// Construct from any iterator + a Selection
+    pub fn new(inner: I, selection: Selection) -> Self {
+        Self {
+            inner,
+            selection,
+            sample: 0,
+        }
+    }
+
+    /// Only selected (1-based) indices; `indices` must be sorted ascending and unique.
+    pub fn by_indices(inner: I, mut indices: Vec<usize>) -> Self {
+        indices.sort_unstable();
+        indices.dedup();
+        Self::new(inner, Selection::Indices(indices.into_iter().peekable()))
+    }
+
+    /// Every `step` samples starting at 1-based `offset` (e.g., offset=1, step=100 => 1,101,201,…).
+    pub fn every(inner: I, step: usize, offset: usize) -> Self {
+        assert!(step >= 1 && offset >= 1);
+        Self::new(inner, Selection::Every { step, offset })
+    }
+
+    /// Inclusive 1-based range [start, end].
+    pub fn by_range(inner: I, start: usize, end: usize) -> Self {
+        assert!(start >= 1 && end >= start);
+        Self::new(inner, Selection::Range { start, end })
+    }
+
+    /// Count how many selected indices fall inside [lo, hi] (inclusive).
+    fn count_selected_in(&mut self, lo: usize, hi: usize) -> u16 {
+        match &mut self.selection {
+            Selection::Indices(iter) => {
+                let mut taken = 0u16;
+                while let Some(&next) = iter.peek() {
+                    if next < lo {
+                        iter.next();
+                        continue;
+                    }
+                    if next > hi {
+                        break;
+                    }
+                    iter.next();
+                    taken = taken.saturating_add(1);
+                }
+                taken
+            }
+            Selection::Every { step, offset } => {
+                if hi < *offset {
+                    return 0;
+                }
+                let r = (lo as isize - *offset as isize).rem_euclid(*step as isize) as usize;
+                let first = lo + ((*step - r) % *step);
+                if first > hi {
+                    0
+                } else {
+                    (1 + (hi - first) / *step) as u16
+                }
+            }
+            Selection::Range { start, end } => {
+                if hi < *start || lo > *end {
+                    0
+                } else {
+                    let a = lo.max(*start);
+                    let b = hi.min(*end);
+                    (b - a + 1) as u16
+                }
+            }
+        }
+    }
+}
+
+impl<I> Iterator for SubsampleDecoder<I>
+where
+    I: Iterator<Item = io::Result<MkvRecord>>,
+{
+    type Item = io::Result<MkvRecord>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            // Early stop for Range once we're past the end.
+            if let Selection::Range { end, .. } = self.selection {
+                if self.sample >= end {
+                    return None;
+                }
+            }
+
+            let rec = self.inner.next()?;
+            let (assignment, count) = match rec {
+                Ok(x) => x,
+                Err(e) => return Some(Err(e)),
+            };
+
+            let lo = self.sample + 1;
+            let hi = self.sample + count as usize;
+            let selected = self.count_selected_in(lo, hi);
+
+            // advance global sample counter regardless
+            self.sample = hi;
+
+            if selected > 0 {
+                // Yield this assignment once, with how many selected samples it covers
+                return Some(Ok((assignment, selected)));
+            }
+            // else skip and continue
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "tests/decode_tests.rs"]
 mod tests;
