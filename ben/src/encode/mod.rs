@@ -184,6 +184,11 @@ impl<W: Write> BenEncoder<W> {
     /// # Returns
     ///
     /// A Result type that contains the result of the operation
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the writer encounters
+    /// an error while writing the last sample to the BEN file.
     pub fn finish(&mut self) -> Result<()> {
         if self.complete {
             return Ok(());
@@ -456,6 +461,8 @@ pub fn jsonl_encode_xben<R: BufRead, W: Write>(
 /// # Returns
 ///
 /// A Result type that contains the result of the operation
+///
+/// # Example
 ///
 /// ```
 /// use ben::encode::xz_compress;

@@ -656,7 +656,17 @@ impl<R: Read> XBenDecoder<R> {
     }
 
     /// Try to pop one *complete* ben32 frame from `overflow`.
-    /// Returns (frame_bytes, total_len_consumed_from_overflow).
+    ///
+    /// # Arguments
+    ///
+    /// * `overflow` - A byte slice that may contain one or more complete ben32 frames.
+    ///
+    /// # Returns
+    ///
+    /// An Option containing a tuple of:
+    ///
+    /// * the complete frame as a byte slice,
+    /// * the number of bytes consumed from the start of `overflow` to get this frame,
     fn pop_frame_from_overflow<'a>(&self, overflow: &'a [u8]) -> Option<(&'a [u8], usize, u16)> {
         match self.variant {
             BenVariant::Standard => {
@@ -748,6 +758,15 @@ pub struct SubsampleDecoder<I> {
 
 impl<I> SubsampleDecoder<I> {
     /// Construct from any iterator + a Selection
+    ///
+    /// # Arguments
+    ///
+    /// * `inner` - An iterator over `(Vec<u16>, u16)` items
+    /// * `selection` - A Selection enum specifying which samples to keep
+    ///
+    /// # Returns
+    ///
+    /// A SubsampleDecoder that will yield only the selected samples
     pub fn new(inner: I, selection: Selection) -> Self {
         Self {
             inner,
@@ -757,6 +776,15 @@ impl<I> SubsampleDecoder<I> {
     }
 
     /// Only selected (1-based) indices; `indices` must be sorted ascending and unique.
+    ///
+    /// # Arguments
+    ///
+    /// * `inner` - An iterator over `(Vec<u16>, u16)` items
+    /// * `indices` - A vector of 1-based indices to keep
+    ///
+    /// # Returns
+    ///
+    /// A SubsampleDecoder that yields only the selected samples
     pub fn by_indices(inner: I, mut indices: Vec<usize>) -> Self {
         indices.sort_unstable();
         indices.dedup();
@@ -764,18 +792,48 @@ impl<I> SubsampleDecoder<I> {
     }
 
     /// Every `step` samples starting at 1-based `offset` (e.g., offset=1, step=100 => 1,101,201,…).
+    ///
+    /// # Arguments
+    ///
+    /// * `inner` - An iterator over `(Vec<u16>, u16)` items
+    /// * `step` - The step size (must be >= 1)
+    /// * `offset` - The 1-based offset (must be >= 1)
+    ///
+    /// # Returns
+    ///
+    /// A SubsampleDecoder that yields every `step` samples starting at `offset`
     pub fn every(inner: I, step: usize, offset: usize) -> Self {
         assert!(step >= 1 && offset >= 1);
         Self::new(inner, Selection::Every { step, offset })
     }
 
     /// Inclusive 1-based range [start, end].
+    ///
+    /// # Arguments
+    ///
+    /// * `inner` - An iterator over `(Vec<u16>, u16)` items
+    /// * `start` - The 1-based start of the range (must be >= 1)
+    /// * `end` - The 1-based end of the range (must
+    ///
+    /// # Returns
+    ///
+    /// A SubsampleDecoder that yields samples in the inclusive range [start, end]
     pub fn by_range(inner: I, start: usize, end: usize) -> Self {
         assert!(start >= 1 && end >= start);
         Self::new(inner, Selection::Range { start, end })
     }
 
     /// Count how many selected indices fall inside [lo, hi] (inclusive).
+    ///
+    /// # Arguments
+    ///
+    /// * `lo` - The lower bound of the range (inclusive)
+    /// * `hi` - The upper bound of the range (inclusive)
+    ///
+    /// # Returns
+    ///
+    /// The number of selected indices in the range [lo, hi]
+    /// (saturating at u16::MAX)
     fn count_selected_in(&mut self, lo: usize, hi: usize) -> u16 {
         match &mut self.selection {
             Selection::Indices(iter) => {
