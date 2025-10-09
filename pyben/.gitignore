@@ -2,6 +2,6 @@ python_tester.py
 main.py
 
 dist/
-__pycache__/
+__pycache__
 *.pyc
 *.so

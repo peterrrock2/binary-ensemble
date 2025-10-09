@@ -13,7 +13,7 @@ if __name__ == "__main__":
     # encoder = pyben.PyBenEncoder(out_path, overwrite=True)
     for line in pyben.PyBenDecoder(
         "../example/small_example.jsonl.xben", mode="xben"
-    ).subsample_indices([1, 1, 2, 3]):
+    ).subsample_indices([1, 1, 2, 3, 5]):
         print(line)
         # if line is not None:
         #     encoder.write(line)

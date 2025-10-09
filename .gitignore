@@ -5,3 +5,6 @@ dev_files
 .vscode
 .venv
 demo
+
+__pycache__
+*.so
