@@ -25,16 +25,24 @@ use crate::utils::rle_to_vec;
 use super::encode::translate::*;
 use super::{log, logln, BenVariant};
 
+pub type MkvRecord = (Vec<u16>, u16);
+
 #[derive(Debug)]
 pub enum DecoderInitError {
     InvalidFileFormat(Vec<u8>),
     Io(io::Error),
 }
 
+/// Check if the given header matches the XZ magic number.
+/// This is used to provide a more informative error message when
+/// a user tries to decode a compressed .xben file with the
+/// `BenDecoder` instead of the `decode_xben_to_ben` function.
 fn is_xz_header(h: &[u8]) -> bool {
     h.len() >= 6 && &h[..6] == b"\xFD\x37\x7A\x58\x5A\x00"
 }
 
+/// Convert a byte slice to a hex string for display purposes.
+/// Each byte is represented as two uppercase hex digits, separated by spaces.
 fn to_hex(bytes: &[u8]) -> String {
     bytes
         .iter()
@@ -96,9 +104,6 @@ impl From<DecoderInitError> for io::Error {
     }
 }
 
-// Note: This will make Read easier to use since
-// I can now implement the read chunk with a Cursor
-// object.
 pub struct BenDecoder<R: Read> {
     reader: R,
     sample_count: usize,
@@ -106,6 +111,10 @@ pub struct BenDecoder<R: Read> {
 }
 
 impl<R: Read> BenDecoder<R> {
+    /// Create a new BenDecoder from a reader.
+    /// The reader must contain a valid BEN file.
+    /// The first 17 bytes of the file are checked to determine
+    /// the variant of the BEN file.
     pub fn new(mut reader: R) -> Result<Self, DecoderInitError> {
         let mut check_buffer = [0u8; 17];
 
@@ -151,8 +160,6 @@ impl<R: Read> BenDecoder<R> {
         Ok(())
     }
 }
-
-pub type MkvRecord = (Vec<u16>, u16);
 
 impl<R: Read> Iterator for BenDecoder<R> {
     type Item = io::Result<MkvRecord>;
@@ -201,14 +208,6 @@ impl<R: Read> Iterator for BenDecoder<R> {
 
 /// This function takes a reader containing a single ben32 encoded assignment
 /// vector and decodes it into a full assignment vector of u16s.
-///
-/// # Arguments
-///
-/// * `reader` - A reader containing the ben32 encoded assignment vector
-///
-/// # Returns
-///
-/// A vector of u16s containing the decoded assignment vector
 ///
 /// # Errors
 ///
@@ -263,15 +262,6 @@ fn decode_ben32_line<R: BufRead>(mut reader: R, variant: BenVariant) -> io::Resu
 /// {"assignment": [...], "sample": #}
 /// ```
 ///
-/// # Arguments
-///
-/// * `reader` - A reader containing the ben32 encoded assignment vectors
-/// * `writer` - A writer that will contain the JSONL formatted assignment vectors
-///
-/// # Returns
-///
-/// An io::Result containing the result of the operation
-///
 /// # Errors
 ///
 /// This function will return an error if the input reader contains invalid ben32
@@ -312,15 +302,6 @@ fn jsonl_decode_ben32<R: BufRead, W: Write>(
 
 /// This function takes a reader containing a file encoded in the XBEN format
 /// and decodes it into a BEN file.
-///
-/// # Arguments
-///
-/// * `reader` - A reader containing the xben encoded assignment vectors
-/// * `writer` - A writer that will contain the BEN formatted assignment vectors
-///
-/// # Returns
-///
-/// An io::Result containing the result of the operation
 ///
 /// # Errors
 ///
@@ -408,15 +389,6 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
 
 /// This is a convenience function that decodes a general level 9 LZMA2 compressed file.
 ///
-/// # Arguments
-///
-/// * `reader` - A reader containing the LZMA2 compressed data
-/// * `writer` - A writer that will contain the decompressed data
-///
-/// # Returns
-///
-/// An io::Result containing the result of the operation
-///
 /// ```
 /// use ben::encode::xz_compress;
 /// use ben::decode::xz_decompress;
@@ -428,7 +400,7 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
 /// let mut output_buffer = Vec::new();
 /// let writer = BufWriter::new(&mut output_buffer);
 ///
-/// xz_compress(reader, writer).unwrap();
+/// xz_compress(reader, writer, Some(1), Some(1)).unwrap();
 ///
 /// let mut recovery_buff = Vec::new();
 /// let recovery_reader = BufWriter::new(&mut recovery_buff);
@@ -452,17 +424,6 @@ pub fn xz_decompress<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::Resu
 /// This is a helper function that is designed to read in a single
 /// ben encoded line and convert it to a regular run-length encoded
 /// assignment vector.
-///
-/// # Arguments
-///
-/// * `reader` - A reader containing the ben encoded assignment vectors
-/// * `max_val_bits` - The maximum number of bits used to encode the value
-/// * `max_len_bits` - The maximum number of bits used to encode the length
-/// * `n_bytes` - The number of bytes used to encode the assignment vector
-///
-/// # Returns
-///
-/// A vector of tuples containing the run-length encoded assignment vector
 pub fn decode_ben_line<R: Read>(
     mut reader: R,
     max_val_bits: u8,
@@ -553,15 +514,6 @@ pub fn decode_ben_line<R: Read>(
 /// {"assignment": [...], "sample": #}
 /// ```
 ///
-/// # Arguments
-///
-/// * `reader` - A reader containing the ben encoded assignment vectors
-/// * `writer` - A writer that will contain the JSONL formatted assignment vectors
-///
-/// # Returns
-///
-/// An io::Result containing the result of the operation
-///
 /// # Errors
 ///
 /// This function will return an error if the input reader contains invalid ben
@@ -580,15 +532,6 @@ pub fn jsonl_decode_ben<R: Read, W: Write>(reader: R, writer: W) -> io::Result<(
 /// ```json
 /// {"assignment": [...], "sample": #}
 /// ```
-///
-/// # Arguments
-///
-/// * `reader` - A reader containing the xben encoded assignment vectors
-/// * `writer` - A writer that will contain the JSONL formatted assignment vectors
-///
-/// # Returns
-///
-/// An io::Result containing the result of the operation
 ///
 /// # Errors
 ///
@@ -615,7 +558,7 @@ pub fn jsonl_decode_xben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::
         }
     };
 
-    let mut buffer = [0u8; 1048576]; // 1MB buffer
+    let mut buffer = [0u8; 1 << 20]; // 1MB buffer
     let mut overflow: Vec<u8> = Vec::new();
 
     let mut line_count: usize = 0;
@@ -648,7 +591,7 @@ pub fn jsonl_decode_xben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::
                 // Need a different step size here because each assignment
                 // vector is no longer guaranteed to be a multiple of 4 bytes
                 // due to the 2-byte repetition count appended at the end
-                for i in (last_valid_assignment + 3..overflow.len() - 2).step_by(2) {
+                for i in (last_valid_assignment + 3..overflow.len().saturating_sub(2)).step_by(2) {
                     if overflow[i - 3..=i] == [0, 0, 0, 0] {
                         last_valid_assignment = i + 3;
                         let lines = &overflow[i + 1..i + 3];
@@ -670,7 +613,7 @@ pub fn jsonl_decode_xben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::
             starting_sample,
             variant,
         )?;
-        overflow = overflow[last_valid_assignment..].to_vec();
+        overflow.drain(..last_valid_assignment);
         starting_sample = line_count;
     }
     logln!();
@@ -688,7 +631,7 @@ pub struct XBenDecoder<R: Read> {
 impl<R: Read> XBenDecoder<R> {
     pub fn new(reader: R) -> io::Result<Self> {
         let xz = XzDecoder::new(reader);
-        let mut xz = BufReader::with_capacity(256 * 1024, xz);
+        let mut xz = BufReader::with_capacity(1 << 20, xz);
 
         // Read the 17-byte banner to determine variant
         let mut first = [0u8; 17];
@@ -708,7 +651,7 @@ impl<R: Read> XBenDecoder<R> {
             xz,
             variant,
             overflow: Vec::with_capacity(1 << 20),
-            buf: vec![0u8; 1 << 20].into_boxed_slice(), // 1 MiB chunk; tune as needed
+            buf: vec![0u8; 1 << 20].into_boxed_slice(),
         })
     }
 
@@ -722,7 +665,7 @@ impl<R: Read> XBenDecoder<R> {
                 if overflow.len() < 4 {
                     return None;
                 }
-                for i in 3..overflow.len() {
+                for i in (3..overflow.len()).step_by(4) {
                     if overflow[i - 3..=i] == [0, 0, 0, 0] {
                         let end = i + 1;
                         let frame = &overflow[..end];
@@ -733,11 +676,11 @@ impl<R: Read> XBenDecoder<R> {
                 None
             }
             BenVariant::MkvChain => {
-                // ... [payload] ... 00 00 00 00 <hi> <lo>
+                // ... [payload] ... 00 00 00 00 <n_lines_hi_byte> <n_lines_lo_byte>
                 if overflow.len() < 6 {
                     return None;
                 }
-                for i in 3..overflow.len().saturating_sub(2) {
+                for i in (3..overflow.len().saturating_sub(2)).step_by(2) {
                     if overflow[i - 3..=i] == [0, 0, 0, 0] {
                         let count_hi = overflow[i + 1];
                         let count_lo = overflow[i + 2];
@@ -851,11 +794,13 @@ impl<I> SubsampleDecoder<I> {
                 taken
             }
             Selection::Every { step, offset } => {
-                if hi < *offset {
+                let start = lo.max(*offset);
+                if start > hi {
                     return 0;
                 }
-                let r = (lo as isize - *offset as isize).rem_euclid(*step as isize) as usize;
-                let first = lo + ((*step - r) % *step);
+
+                let r = (start as isize - *offset as isize).rem_euclid(*step as isize) as usize;
+                let first = start + ((*step - r) % *step);
                 if first > hi {
                     0
                 } else {
