@@ -90,6 +90,17 @@ struct Args {
     /// Enables verbose printing for the CLI. Optional.
     #[arg(short, long)]
     verbose: bool,
+
+    /// When running x-encoder, this flag will determine the number of cpus to use on the
+    /// system. By default, all available cpus will be used.
+    #[arg(short = 'c', long)]
+    n_cpus: Option<u32>,
+
+    /// When running x-encoder, this flag will deterimine the level of compression to use.
+    /// By default, the highest level of compression will be used.
+    /// Valid values are 0-9, where 0 is no compression and 9 is the highest level of compression.
+    #[arg(short = 'l', long)]
+    compression_level: Option<u32>,
 }
 
 fn encode_setup(
@@ -307,14 +318,28 @@ fn main() {
             };
 
             if ben_and_xben {
-                if let Err(err) = ben_encode_xben(reader, writer) {
+                if let Err(err) =
+                    ben_encode_xben(reader, writer, args.n_cpus, args.compression_level)
+                {
                     eprintln!("Error: {:?}", err);
                 }
             } else if jsonl_and_xben {
                 let possible_error = if args.save_all {
-                    jsonl_encode_xben(reader, writer, BenVariant::Standard)
+                    jsonl_encode_xben(
+                        reader,
+                        writer,
+                        BenVariant::Standard,
+                        args.n_cpus,
+                        args.compression_level,
+                    )
                 } else {
-                    jsonl_encode_xben(reader, writer, BenVariant::MkvChain)
+                    jsonl_encode_xben(
+                        reader,
+                        writer,
+                        BenVariant::MkvChain,
+                        args.n_cpus,
+                        args.compression_level,
+                    )
                 };
                 if let Err(e) = possible_error {
                     eprintln!("Error: {:?}", e);
@@ -505,7 +530,7 @@ fn main() {
             let out_file = File::create(out_file_name).unwrap();
             let writer = BufWriter::new(out_file);
 
-            if let Err(err) = xz_compress(reader, writer) {
+            if let Err(err) = xz_compress(reader, writer, args.n_cpus, args.compression_level) {
                 eprintln!("Error: {:?}", err);
             }
             logln!("Done!");

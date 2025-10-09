@@ -26,6 +26,7 @@ pub mod translate;
 use crate::utils::*;
 use serde_json::Value;
 use std::io::{self, BufRead, Cursor, Read, Result, Write};
+use xz2::stream::MtStreamBuilder;
 use xz2::write::XzEncoder;
 
 use self::translate::ben_to_ben32_lines;
@@ -55,6 +56,15 @@ pub struct BenEncoder<W: Write> {
 impl<W: Write> BenEncoder<W> {
     /// Create a new BenEncoder instance and handles
     /// the BEN file header.
+    ///
+    /// # Arguments
+    ///
+    /// * `writer` - A writer to write the BEN file to
+    /// * `variant` - The BEN variant to use (Standard or MkvChain)
+    ///
+    /// # Returns
+    ///
+    /// A new BenEncoder instance
     pub fn new(mut writer: W, variant: BenVariant) -> Self {
         match variant {
             BenVariant::Standard => {
@@ -75,6 +85,14 @@ impl<W: Write> BenEncoder<W> {
 
     /// Write a run-length encoded assignment vector to the
     /// BEN file.
+    ///
+    /// # Arguments
+    ///
+    /// * `rle_vec` - A run-length encoded assignment vector to write
+    ///
+    /// # Returns
+    ///
+    /// A Result type that contains the result of the operation
     pub fn write_rle(&mut self, rle_vec: Vec<(u16, u16)>) -> Result<()> {
         match self.variant {
             BenVariant::Standard => {
@@ -100,6 +118,14 @@ impl<W: Write> BenEncoder<W> {
     }
 
     /// Write an assignment vector to the BEN file.
+    ///
+    /// # Arguments
+    ///
+    /// * `assign_vec` - An assignment vector to write
+    ///
+    /// # Returns
+    ///
+    /// A Result type that contains the result of the operation
     pub fn write_assignment(&mut self, assign_vec: Vec<u16>) -> Result<()> {
         let rle_vec = assign_to_rle(assign_vec);
         self.write_rle(rle_vec)?;
@@ -107,6 +133,14 @@ impl<W: Write> BenEncoder<W> {
     }
 
     /// Write a JSON value containing an assignment vector to the BEN file.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - A JSON value containing an assignment vector
+    ///
+    /// # Returns
+    ///
+    /// A Result type that contains the result of the operation
     pub fn write_json_value(&mut self, data: Value) -> Result<()> {
         let assign_vec = data["assignment"].as_array().ok_or_else(|| {
             io::Error::new(
@@ -141,6 +175,15 @@ impl<W: Write> BenEncoder<W> {
         Ok(())
     }
 
+    /// Cleanup function to make sure the last sample is written
+    /// to the BEN file if using the MkvChain variant.
+    ///
+    /// This function is automatically called when the BenEncoder
+    /// goes out of scope, but can be called manually if desired.
+    ///
+    /// # Returns
+    ///
+    /// A Result type that contains the result of the operation
     pub fn finish(&mut self) -> Result<()> {
         if self.complete {
             return Ok(());
@@ -159,6 +202,8 @@ impl<W: Write> BenEncoder<W> {
 }
 
 impl<W: Write> Drop for BenEncoder<W> {
+    /// Make sure to finish writing the BEN file when the
+    /// BenEncoder goes out of scope.
     fn drop(&mut self) {
         let _ = self.finish();
     }
@@ -174,6 +219,17 @@ pub struct XBenEncoder<W: Write> {
 }
 
 impl<W: Write> XBenEncoder<W> {
+    /// Create a new XBenEncoder instance and handles
+    /// the XBEN file header.
+    ///
+    /// # Arguments
+    ///
+    /// * `encoder` - An XzEncoder to write the XBEN file to
+    /// * `variant` - The BEN variant to use (Standard or MkvChain)
+    ///
+    /// # Returns
+    ///
+    /// A new XBenEncoder instance
     pub fn new(mut encoder: XzEncoder<W>, variant: BenVariant) -> Self {
         match variant {
             BenVariant::Standard => {
@@ -199,6 +255,14 @@ impl<W: Write> XBenEncoder<W> {
 
     /// Write a an assigment vector encoded as a JSON value
     /// to the XBEN file.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - A JSON value containing an assignment vector
+    ///
+    /// # Returns
+    ///
+    /// A Result type that contains the result of the operation
     pub fn write_json_value(&mut self, data: Value) -> Result<()> {
         let encoded = encode_ben32_line(data);
         match self.variant {
@@ -224,6 +288,14 @@ impl<W: Write> XBenEncoder<W> {
     /// Converts a raw BEN assignment file into to an XBEN file.
     /// This function will check to see if the header is there and then
     /// handle it accordingly.
+    ///
+    /// # Arguments
+    ///
+    /// * `reader` - A buffered reader for the input BEN file
+    ///
+    /// # Returns
+    ///
+    /// A Result type that contains the result of the operation
     pub fn write_ben_file(&mut self, mut reader: impl BufRead) -> Result<()> {
         let mut buff = [0u8; 17];
         reader.read_exact(&mut buff)?;
@@ -243,6 +315,8 @@ impl<W: Write> XBenEncoder<W> {
 }
 
 impl<W: Write> Drop for XBenEncoder<W> {
+    /// Make sure to finish writing the XBEN file when the
+    /// XBenEncoder goes out of scope.
     fn drop(&mut self) {
         if self.variant == BenVariant::MkvChain && self.count > 0 {
             self.encoder
@@ -320,12 +394,43 @@ fn encode_ben32_line(data: Value) -> Vec<u8> {
 /// the byte level to achieve better compression ratios. In order
 /// to use XBEN files, the `decode_xben_to_ben` function must be
 /// used to decode the file back into a BEN format.
+///
+/// # Arguments
+///
+/// * `reader` - A buffered reader for the input file
+/// * `writer` - A writer for the output file
+/// * `variant` - The BEN variant to use (Standard or MkvChain)
+/// * `n_threads` - The number of threads to use for compression (optional)
+/// * `compression_level` - The compression level to use (0-9, optional)
+///
+/// # Returns
+///
+/// A Result type that contains the result of the operation
 pub fn jsonl_encode_xben<R: BufRead, W: Write>(
     reader: R,
     writer: W,
     variant: BenVariant,
+    n_threads: Option<u32>,
+    compression_level: Option<u32>,
 ) -> Result<()> {
-    let encoder = XzEncoder::new(writer, 9);
+    let mut n_cpus: u32 = n_threads.unwrap_or(1);
+    n_cpus = n_cpus
+        .min(
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1) as u32,
+        )
+        .max(1);
+
+    let level = compression_level.unwrap_or(9).min(9).max(0);
+
+    let mt = MtStreamBuilder::new()
+        .threads(n_cpus)
+        .preset(level)
+        .block_size(0)
+        .encoder()
+        .expect("init MT encoder");
+    let encoder = XzEncoder::new_stream(writer, mt);
     let mut ben_encoder = XBenEncoder::new(encoder, variant);
 
     let mut line_num = 1;
@@ -372,9 +477,33 @@ pub fn jsonl_encode_xben<R: BufRead, W: Write>(
 ///
 /// println!("{:?}", output_buffer);
 /// ```
-pub fn xz_compress<R: BufRead, W: Write>(mut reader: R, writer: W) -> Result<()> {
+pub fn xz_compress<R: BufRead, W: Write>(
+    mut reader: R,
+    writer: W,
+    n_threads: Option<u32>,
+    compression_level: Option<u32>,
+) -> Result<()> {
     let mut buff = [0; 4096];
-    let mut encoder = XzEncoder::new(writer, 9);
+    // let mut encoder = XzEncoder::new(writer, 1);
+
+    let mut n_cpus: u32 = n_threads.unwrap_or(1);
+    n_cpus = n_cpus
+        .min(
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1) as u32,
+        )
+        .max(1);
+
+    let level = compression_level.unwrap_or(9).min(9).max(0);
+
+    let mt = MtStreamBuilder::new()
+        .threads(n_cpus)
+        .preset(level)
+        .block_size(0)
+        .encoder()
+        .expect("init MT encoder");
+    let mut encoder = XzEncoder::new_stream(writer, mt);
 
     while let Ok(count) = reader.read(&mut buff) {
         if count == 0 {
@@ -483,6 +612,7 @@ fn encode_ben_vec_from_rle(rle_vec: Vec<(u16, u16)>) -> Vec<u8> {
 ///
 /// * `reader` - A buffered reader for the input file
 /// * `writer` - A writer for the output file
+/// * `variant` - The BEN variant to use (Standard or MkvChain)
 ///
 /// # Returns
 ///
@@ -540,15 +670,39 @@ pub fn jsonl_encode_ben<R: BufRead, W: Write>(
 ///
 /// * `reader` - A buffered reader for the input file
 /// * `writer` - A writer for the output file
+/// * `n_threads` - The number of threads to use for compression (optional)
+/// * `compression_level` - The compression level to use (0-9, optional)
 ///
 /// # Returns
 ///
 /// A Result type that contains the result of the operation
-pub fn ben_encode_xben<R: BufRead, W: Write>(mut reader: R, writer: W) -> Result<()> {
+pub fn ben_encode_xben<R: BufRead, W: Write>(
+    mut reader: R,
+    writer: W,
+    n_threads: Option<u32>,
+    compression_level: Option<u32>,
+) -> Result<()> {
     let mut check_buffer = [0u8; 17];
     reader.read_exact(&mut check_buffer)?;
 
-    let encoder = XzEncoder::new(writer, 9);
+    let mut n_cpus: u32 = n_threads.unwrap_or(1);
+    n_cpus = n_cpus
+        .min(
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1) as u32,
+        )
+        .max(1);
+
+    let level = compression_level.unwrap_or(9).min(9).max(0);
+
+    let mt = MtStreamBuilder::new()
+        .threads(n_cpus)
+        .preset(level)
+        .block_size(0)
+        .encoder()
+        .expect("init MT encoder");
+    let encoder = XzEncoder::new_stream(writer, mt);
 
     let mut ben_encoder = match &check_buffer {
         b"STANDARD BEN FILE" => XBenEncoder::new(encoder, BenVariant::Standard),
