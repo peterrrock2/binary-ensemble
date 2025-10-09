@@ -24,6 +24,7 @@ xz2 = "0.1.7"
 
 
 [dev-dependencies]
+proptest = "1.8.0"
 lipsum = "0.9.1"
 rand = "^0.8.5"
 rand_distr = "^0.4.2"
