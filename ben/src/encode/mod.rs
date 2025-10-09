@@ -25,7 +25,7 @@ pub mod translate;
 
 use crate::utils::*;
 use serde_json::Value;
-use std::io::{self, BufRead, Cursor, Read, Result, Write};
+use std::io::{self, BufRead, Read, Result, Write};
 use xz2::stream::MtStreamBuilder;
 use xz2::write::XzEncoder;
 
@@ -297,20 +297,15 @@ impl<W: Write> XBenEncoder<W> {
     ///
     /// A Result type that contains the result of the operation
     pub fn write_ben_file(&mut self, mut reader: impl BufRead) -> Result<()> {
-        let mut buff = [0u8; 17];
-        reader.read_exact(&mut buff)?;
+        let peek = reader.fill_buf()?;
+        let has_banner = peek.len() >= 17
+            && (peek.starts_with(b"STANDARD BEN FILE") || peek.starts_with(b"MKVCHAIN BEN FILE"));
 
-        // Create a new reader that prepends buff back onto the original reader
-        let mut reader =
-            if buff != b"STANDARD BEN FILE".as_slice() || buff != b"MKVCHAIN BEN FILE".as_slice() {
-                let cursor = Cursor::new(buff.to_vec());
-                let reader = cursor.chain(reader);
-                Box::new(reader) as Box<dyn BufRead>
-            } else {
-                Box::new(reader)
-            };
+        if has_banner {
+            reader.consume(17);
+        }
 
-        ben_to_ben32_lines(&mut *reader, &mut self.encoder, self.variant)
+        ben_to_ben32_lines(&mut reader, &mut self.encoder, self.variant)
     }
 }
 
@@ -473,7 +468,7 @@ pub fn jsonl_encode_xben<R: BufRead, W: Write>(
 /// let mut output_buffer = Vec::new();
 /// let writer = BufWriter::new(&mut output_buffer);
 ///
-/// xz_compress(reader, writer).unwrap();
+/// xz_compress(reader, writer, Some(1), Some(1)).unwrap();
 ///
 /// println!("{:?}", output_buffer);
 /// ```
@@ -540,7 +535,7 @@ pub fn encode_ben_vec_from_assign(assign_vec: Vec<u16>) -> Vec<u8> {
 /// # Returns
 ///
 /// A vector of bytes containing the bit-packed ben encoded assignment vector
-fn encode_ben_vec_from_rle(rle_vec: Vec<(u16, u16)>) -> Vec<u8> {
+pub fn encode_ben_vec_from_rle(rle_vec: Vec<(u16, u16)>) -> Vec<u8> {
     let mut output_vec: Vec<u8> = Vec::new();
 
     let max_val: u16 = rle_vec.iter().max_by_key(|x| x.0).unwrap().0;
