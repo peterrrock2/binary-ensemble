@@ -1,5 +1,5 @@
 from typing import Optional
-from ._core.read import read_single_assignment as _impl
+from ._core.read import read_single_assignment as _impl  # type: ignore
 
 
 def read_single_assignment(file_path: str, sample_number: int) -> Optional[list[int]]:

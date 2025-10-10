@@ -1,8 +1,11 @@
-use ben::decode::{BenDecoder, MkvRecord, Selection, SubsampleDecoder, XBenDecoder};
+use ben::decode::{
+    decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl, BenDecoder, MkvRecord,
+    Selection, SubsampleDecoder, XBenDecoder,
+};
 use pyo3::exceptions::{PyException, PyIOError};
 use pyo3::prelude::*;
 use std::fs::File;
-use std::io::{self, BufReader};
+use std::io::{self, BufReader, BufWriter};
 use std::path::PathBuf;
 
 pub mod read;
@@ -18,7 +21,6 @@ pub struct PyBenDecoder {
 
 impl PyBenDecoder {
     fn take_iter(&mut self) -> DynIter {
-        // replace with a correctly-typed empty iterator
         std::mem::replace(
             &mut self.iter,
             Box::new(std::iter::empty::<io::Result<MkvRecord>>()),
@@ -30,6 +32,7 @@ impl PyBenDecoder {
 impl PyBenDecoder {
     #[new]
     #[pyo3(signature = (file_path, mode = "ben"))]
+    #[pyo3(text_signature = "(file_path, mode='ben')")]
     fn new(file_path: PathBuf, mode: &str) -> PyResult<Self> {
         let file = File::options().read(true).open(&file_path).map_err(|e| {
             PyIOError::new_err(format!("Failed to open {}: {e}", file_path.display()))
@@ -58,7 +61,7 @@ impl PyBenDecoder {
 
         Ok(Self {
             iter,
-            current_assignment: ::std::option::Option::None,
+            current_assignment: None,
             remaining_count: 0,
         })
     }
@@ -83,11 +86,11 @@ impl PyBenDecoder {
             Some(Err(e)) => Err(PyException::new_err(format!(
                 "Error decoding next item: {e}"
             ))),
-            ::std::option::Option::None => Ok(::std::option::Option::None),
+            None => Ok(None),
         }
     }
 
-    /// Keep only explicit 1-based indices (sorted & deduped internally).
+    #[pyo3(text_signature = "(self, indices, /)")]
     fn subsample_indices<'py>(
         mut slf: PyRefMut<'py, Self>,
         mut indices: Vec<usize>,
@@ -95,14 +98,12 @@ impl PyBenDecoder {
         indices.sort_unstable();
         indices.dedup();
         let sel = Selection::Indices(indices.into_iter().peekable());
-
         let inner = slf.take_iter();
         slf.iter = Box::new(SubsampleDecoder::new(inner, sel));
-
         Ok(slf.into())
     }
 
-    /// Keep only samples in inclusive 1-based range [start, end].
+    #[pyo3(text_signature = "(self, start, end, /)")]
     fn subsample_range<'py>(
         mut slf: PyRefMut<'py, Self>,
         start: usize,
@@ -119,7 +120,6 @@ impl PyBenDecoder {
         Ok(slf.into())
     }
 
-    /// Keep every `step`-th sample starting at 1-based `offset`.
     #[pyo3(signature = (step, offset=1))]
     fn subsample_every<'py>(
         mut slf: PyRefMut<'py, Self>,
@@ -134,4 +134,163 @@ impl PyBenDecoder {
         slf.iter = Box::new(SubsampleDecoder::new(inner, sel));
         Ok(slf.into())
     }
+}
+
+#[pyfunction]
+#[pyo3(signature = (in_file, out_file, overwrite=false))]
+#[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
+pub fn decompress_xben_to_ben(
+    in_file: PathBuf,
+    out_file: PathBuf,
+    overwrite: bool,
+) -> PyResult<()> {
+    if in_file == out_file {
+        return Err(PyIOError::new_err("Input and output paths must differ."));
+    }
+    if !in_file.exists() {
+        return Err(PyIOError::new_err(format!(
+            "Input file {} does not exist.",
+            in_file.display()
+        )));
+    }
+    if out_file.exists() && !overwrite {
+        return Err(PyIOError::new_err(format!(
+            "Output file {} already exists (use overwrite=True to replace).",
+            out_file.display()
+        )));
+    }
+    // Open input (read-only, buffered)
+    let infile = File::open(&in_file)
+        .map_err(|e| PyIOError::new_err(format!("Failed to open {}: {e}", in_file.display())))?;
+    let reader = BufReader::new(infile);
+
+    // Open/create output according to overwrite flag
+    let out_open = if overwrite {
+        File::options()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&out_file)
+    } else {
+        File::options().write(true).create_new(true).open(&out_file)
+    };
+    let outfile = out_open
+        .map_err(|e| PyIOError::new_err(format!("Failed to create {}: {e}", out_file.display())))?;
+    let writer = BufWriter::new(outfile);
+
+    decode_xben_to_ben(reader, writer).map_err(|e| {
+        PyIOError::new_err(format!(
+            "Failed to convert XBEN to BEN from {} to {}: {e}",
+            in_file.display(),
+            out_file.display()
+        ))
+    })?;
+
+    Ok(())
+}
+
+#[pyfunction]
+#[pyo3(signature = (in_file, out_file, overwrite=false))]
+#[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
+pub fn decompress_xben_to_jsonl(
+    in_file: PathBuf,
+    out_file: PathBuf,
+    overwrite: bool,
+) -> PyResult<()> {
+    if in_file == out_file {
+        return Err(PyIOError::new_err("Input and output paths must differ."));
+    }
+    if !in_file.exists() {
+        return Err(PyIOError::new_err(format!(
+            "Input file {} does not exist.",
+            in_file.display()
+        )));
+    }
+    if out_file.exists() && !overwrite {
+        return Err(PyIOError::new_err(format!(
+            "Output file {} already exists (use overwrite=True to replace).",
+            out_file.display()
+        )));
+    }
+    // Open input (read-only, buffered)
+    let infile = File::open(&in_file)
+        .map_err(|e| PyIOError::new_err(format!("Failed to open {}: {e}", in_file.display())))?;
+    let reader = BufReader::new(infile);
+
+    // Open/create output according to overwrite flag
+    let out_open = if overwrite {
+        File::options()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&out_file)
+    } else {
+        File::options().write(true).create_new(true).open(&out_file)
+    };
+    let outfile = out_open
+        .map_err(|e| PyIOError::new_err(format!("Failed to create {}: {e}", out_file.display())))?;
+    let writer = BufWriter::new(outfile);
+
+    decode_xben_to_jsonl(reader, writer).map_err(|e| {
+        PyIOError::new_err(format!(
+            "Failed to convert XBEN to BEN from {} to {}: {e}",
+            in_file.display(),
+            out_file.display()
+        ))
+    })?;
+
+    Ok(())
+}
+
+#[pyfunction]
+#[pyo3(signature = (in_file, out_file, overwrite=false))]
+#[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
+pub fn decompress_ben_to_jsonl(
+    in_file: PathBuf,
+    out_file: PathBuf,
+    overwrite: bool,
+) -> PyResult<()> {
+    if in_file == out_file {
+        return Err(PyIOError::new_err("Input and output paths must differ."));
+    }
+    if !in_file.exists() {
+        return Err(PyIOError::new_err(format!(
+            "Input file {} does not exist.",
+            in_file.display()
+        )));
+    }
+    if out_file.exists() && !overwrite {
+        return Err(PyIOError::new_err(format!(
+            "Output file {} already exists (use overwrite=True to replace).",
+            out_file.display()
+        )));
+    }
+    // Open input (read-only, buffered)
+    let infile = File::open(&in_file)
+        .map_err(|e| PyIOError::new_err(format!("Failed to open {}: {e}", in_file.display())))?;
+    let reader = BufReader::new(infile);
+
+    // Open/create output according to overwrite flag
+    let out_open = if overwrite {
+        File::options()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&out_file)
+    } else {
+        File::options().write(true).create_new(true).open(&out_file)
+    };
+    let outfile = out_open
+        .map_err(|e| PyIOError::new_err(format!("Failed to create {}: {e}", out_file.display())))?;
+    let writer = BufWriter::new(outfile);
+
+    decode_ben_to_jsonl(reader, writer).map_err(|e| {
+        PyIOError::new_err(format!(
+            "Failed to convert XBEN to BEN from {} to {}: {e}",
+            in_file.display(),
+            out_file.display()
+        ))
+    })?;
+
+    Ok(())
 }
