@@ -15,3 +15,8 @@ requires-python = ">=3.11"
 python-source = "."
 module-name = "pyben._core"
 bindings = "pyo3"
+
+[dependency-groups]
+dev = [
+    "maturin>=1.9.6",
+]
