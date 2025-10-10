@@ -2,10 +2,13 @@
 //!
 //! This module provides functionality for extracting single assignment
 //! vectors from a BEN file.
+use byteorder::ReadBytesExt;
 use serde_json::{Error as SerdeError, Value};
 use std::fmt::{self};
+use std::io::Cursor;
+use std::io::{self, Read};
 
-use super::*;
+use super::{decode_ben32_line, decode_ben_to_jsonl, BenVariant, BigEndian, XBenDecoder};
 
 /// Types of errors that can occur during the extraction of assignments.
 #[derive(Debug)]
@@ -214,11 +217,43 @@ pub fn extract_assignment_ben<R: Read>(
     Ok(assignment)
 }
 
+pub fn extract_assignment_xben<R: Read>(
+    mut reader: R,
+    sample_number: usize,
+) -> Result<Vec<u16>, SampleError> {
+    if sample_number == 0 {
+        return Err(SampleError {
+            kind: SampleErrorKind::InvalidSampleNumber,
+        });
+    }
+
+    let inner_decoder = XBenDecoder::new(&mut reader).expect("Failed to create XBenDecoder");
+    let variant = inner_decoder.variant;
+    let frame_iterator = inner_decoder.into_frames();
+
+    let mut current_sample = 1;
+    for frame in frame_iterator {
+        let frame = frame.map_err(SampleError::new_io_error)?;
+        current_sample += frame.1 as usize;
+        if current_sample >= sample_number {
+            match decode_ben32_line(Cursor::new(&frame.0), variant) {
+                Ok((assignment, _)) => return Ok(assignment),
+                Err(e) => return Err(SampleError::new_io_error(e)),
+            };
+        }
+    }
+
+    Err(SampleError {
+        kind: SampleErrorKind::SampleNotFound {
+            sample_number: current_sample,
+        },
+    })
+}
+
 // #[cfg(test)]
 // mod tests {
 //     include!("tests/read_tests.rs");
 // }
-
 #[cfg(test)]
 #[path = "tests/read_tests.rs"]
 mod tests;

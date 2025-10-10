@@ -742,6 +742,73 @@ impl<R: Read> Iterator for XBenDecoder<R> {
     }
 }
 
+/// A frame is the raw ben32 bytes plus its repetition count (1 for Standard).
+pub type Ben32Frame = (Vec<u8>, u16);
+
+/// Iterator over raw ben32 frames inside an XBEN stream.
+///
+/// Yields `(frame_bytes, count)` where `frame_bytes` includes the 4-byte
+/// 0x00_00_00_00 terminator; for `MkvChain` frames it also includes the
+/// 2-byte big-endian repetition count at the end. `count` is the decoded
+/// repetition count (1 for Standard).
+///
+/// Mainly useful for finding an assignment quickly
+pub struct XBenFrameDecoder<R: Read> {
+    inner: XBenDecoder<R>,
+}
+
+impl<R: Read> XBenFrameDecoder<R> {
+    pub fn new(reader: R) -> io::Result<Self> {
+        Ok(Self {
+            inner: XBenDecoder::new(reader)?,
+        })
+    }
+}
+
+impl<R: Read> Iterator for XBenFrameDecoder<R> {
+    type Item = io::Result<Ben32Frame>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some((frame, consumed, count)) =
+                self.inner.pop_frame_from_overflow(&self.inner.overflow)
+            {
+                // copy out the frame; caller owns the bytes
+                let out = frame.to_vec();
+                self.inner.overflow.drain(..consumed);
+                return Some(Ok((out, count)));
+            }
+
+            // refill from xz
+            let read = match self.inner.xz.read(&mut self.inner.buf) {
+                Ok(0) => {
+                    if self.inner.overflow.is_empty() {
+                        return None;
+                    } else {
+                        return Some(Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "truncated .xben stream (partial frame at EOF)",
+                        )));
+                    }
+                }
+                Ok(n) => n,
+                Err(e) => return Some(Err(e)),
+            };
+            self.inner
+                .overflow
+                .extend_from_slice(&self.inner.buf[..read]);
+        }
+    }
+}
+
+// convenience to convert a decoder into frame iterator
+impl<R: Read> XBenDecoder<R> {
+    /// Consume this decoder and iterate raw ben32 frames instead of decoded assignments.
+    pub fn into_frames(self) -> XBenFrameDecoder<R> {
+        XBenFrameDecoder { inner: self }
+    }
+}
+
 /// What to subsample.
 pub enum Selection {
     Indices(Peekable<std::vec::IntoIter<usize>>), // 1-based, sorted
