@@ -54,9 +54,9 @@ fn test_ben_pipeline() {
     let mut output_writer = Vec::new();
 
     // Assume these functions are adapted to work with streams
-    jsonl_encode_ben(&mut buffer, &mut input_writer, BenVariant::Standard).unwrap();
+    encode_jsonl_to_ben(&mut buffer, &mut input_writer, BenVariant::Standard).unwrap();
     buffer.set_position(0); // Reset if needed for reuse
-    jsonl_decode_ben(&input_writer[..], &mut output_writer).unwrap();
+    decode_ben_to_jsonl(&input_writer[..], &mut output_writer).unwrap();
 
     // Reset buffer to compare
     buffer.set_position(0);
@@ -115,9 +115,9 @@ fn test_mkvben_pipeline() {
     let mut output_writer = Vec::new();
 
     // Assume these functions are adapted to work with streams
-    jsonl_encode_ben(&mut buffer, &mut input_writer, BenVariant::MkvChain).unwrap();
+    encode_jsonl_to_ben(&mut buffer, &mut input_writer, BenVariant::MkvChain).unwrap();
     buffer.set_position(0); // Reset if needed for reuse
-    jsonl_decode_ben(&input_writer[..], &mut output_writer).unwrap();
+    decode_ben_to_jsonl(&input_writer[..], &mut output_writer).unwrap();
 
     // Reset buffer to compare
     buffer.set_position(0);
@@ -176,7 +176,7 @@ fn test_xben_pipeline() {
     let mut output_writer = Vec::new();
 
     // Assume these functions are adapted to work with streams
-    jsonl_encode_xben(
+    encode_jsonl_to_xben(
         sample_writer,
         &mut input_writer,
         BenVariant::Standard,
@@ -187,7 +187,7 @@ fn test_xben_pipeline() {
     decode_xben_to_ben(&input_writer[..], &mut output_writer).unwrap();
 
     let mut xoutput_writer = Vec::new();
-    jsonl_decode_ben(&output_writer[..], &mut xoutput_writer).unwrap();
+    decode_ben_to_jsonl(&output_writer[..], &mut xoutput_writer).unwrap();
 
     assert_eq!(original_data, xoutput_writer);
 }
@@ -245,7 +245,7 @@ fn test_xmkvben_pipeline() {
     let mut output_writer = Vec::new();
 
     // Assume these functions are adapted to work with streams
-    jsonl_encode_xben(
+    encode_jsonl_to_xben(
         sample_writer,
         &mut input_writer,
         BenVariant::MkvChain,
@@ -256,7 +256,7 @@ fn test_xmkvben_pipeline() {
     decode_xben_to_ben(&input_writer[..], &mut output_writer).unwrap();
 
     let mut xoutput_writer = Vec::new();
-    jsonl_decode_ben(&output_writer[..], &mut xoutput_writer).unwrap();
+    decode_ben_to_jsonl(&output_writer[..], &mut xoutput_writer).unwrap();
 
     assert_eq!(original_data, xoutput_writer);
 }

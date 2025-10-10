@@ -19,7 +19,7 @@ fn test_jsonl_decode_ben_underflow() {
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben(&mut reader, writer);
+    let result = decode_ben_to_jsonl(&mut reader, writer);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -55,7 +55,7 @@ fn test_jsonl_decode_ben_exact() {
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben(&mut reader, writer);
+    let result = decode_ben_to_jsonl(&mut reader, writer);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -100,7 +100,7 @@ fn test_jsonl_decode_ben_16_bit_val() {
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben(&mut reader, writer);
+    let result = decode_ben_to_jsonl(&mut reader, writer);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -136,7 +136,7 @@ fn test_jsonl_decode_ben_16_bit_len() {
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben(&mut reader, writer);
+    let result = decode_ben_to_jsonl(&mut reader, writer);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -175,7 +175,7 @@ fn test_jsonl_decode_ben_max_val_65535() {
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben(&mut reader, writer);
+    let result = decode_ben_to_jsonl(&mut reader, writer);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -215,7 +215,7 @@ fn test_jsonl_decode_ben_max_len_65535() {
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben(&mut reader, writer);
+    let result = decode_ben_to_jsonl(&mut reader, writer);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -257,7 +257,7 @@ fn test_decode_ben_max_val_and_len_at_65535() {
     let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
 
-    let result = jsonl_decode_ben(&mut reader, &mut output);
+    let result = decode_ben_to_jsonl(&mut reader, &mut output);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -281,7 +281,7 @@ fn test_decode_ben_single_element() {
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben(&mut reader, writer);
+    let result = decode_ben_to_jsonl(&mut reader, writer);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -303,7 +303,7 @@ fn test_decode_ben_single_one() {
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben(&mut reader, writer);
+    let result = decode_ben_to_jsonl(&mut reader, writer);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -358,7 +358,7 @@ fn test_decode_ben_multiple_simple_lines() {
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben(&mut reader, writer);
+    let result = decode_ben_to_jsonl(&mut reader, writer);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }

@@ -2,7 +2,7 @@ use super::*;
 use serde_json::json;
 
 #[test]
-fn test_jsonl_encode_ben_underflow() {
+fn test_encode_jsonl_to_ben_underflow() {
     let rle_vec: Vec<(u16, u16)> = vec![(1, 4), (2, 1), (3, 3)];
 
     let mut buffer: Vec<u8> = Vec::new();
@@ -27,7 +27,7 @@ fn test_jsonl_encode_ben_underflow() {
         0b01_11011_0,
     ]);
 
-    let output = jsonl_encode_ben(
+    let output = encode_jsonl_to_ben(
         json!(data).to_string().as_bytes(),
         writer,
         BenVariant::Standard,
@@ -39,7 +39,7 @@ fn test_jsonl_encode_ben_underflow() {
 }
 
 #[test]
-fn test_jsonl_encode_ben_exact() {
+fn test_encode_jsonl_to_ben_exact() {
     let rle_vec: Vec<(u16, u16)> = vec![
         (1, 4),
         (2, 1),
@@ -76,7 +76,7 @@ fn test_jsonl_encode_ben_exact() {
         0b001_11001_,
     ]);
 
-    let output = jsonl_encode_ben(
+    let output = encode_jsonl_to_ben(
         json!(data).to_string().as_bytes(),
         writer,
         BenVariant::Standard,
@@ -88,7 +88,7 @@ fn test_jsonl_encode_ben_exact() {
 }
 
 #[test]
-fn test_jsonl_encode_ben_16_bit_val() {
+fn test_encode_jsonl_to_ben_16_bit_val() {
     let rle_vec: Vec<(u16, u16)> = vec![(1, 4), (512, 1), (3, 3)];
 
     let mut buffer: Vec<u8> = Vec::new();
@@ -116,7 +116,7 @@ fn test_jsonl_encode_ben_16_bit_val() {
         0b0011011_0,
     ]);
 
-    let output = jsonl_encode_ben(
+    let output = encode_jsonl_to_ben(
         json!(data).to_string().as_bytes(),
         writer,
         BenVariant::Standard,
@@ -128,7 +128,7 @@ fn test_jsonl_encode_ben_16_bit_val() {
 }
 
 #[test]
-fn test_jsonl_encode_ben_16_bit_len() {
+fn test_encode_jsonl_to_ben_16_bit_len() {
     let rle_vec: Vec<(u16, u16)> = vec![(1, 4), (2, 512), (3, 3)];
 
     let mut buffer: Vec<u8> = Vec::new();
@@ -156,7 +156,7 @@ fn test_jsonl_encode_ben_16_bit_len() {
         0b0011_0000,
     ]);
 
-    let output = jsonl_encode_ben(
+    let output = encode_jsonl_to_ben(
         json!(data).to_string().as_bytes(),
         writer,
         BenVariant::Standard,
@@ -168,7 +168,7 @@ fn test_jsonl_encode_ben_16_bit_len() {
 }
 
 #[test]
-fn test_jsonl_encode_ben_max_val_65535() {
+fn test_encode_jsonl_to_ben_max_val_65535() {
     let rle_vec: Vec<(u16, u16)> = vec![(23, 4), (65535, 15), (8, 3)];
 
     let mut buffer: Vec<u8> = Vec::new();
@@ -199,7 +199,7 @@ fn test_jsonl_encode_ben_max_val_65535() {
         0b0011_0000,
     ]);
 
-    let output = jsonl_encode_ben(
+    let output = encode_jsonl_to_ben(
         json!(data).to_string().as_bytes(),
         writer,
         BenVariant::Standard,
@@ -211,7 +211,7 @@ fn test_jsonl_encode_ben_max_val_65535() {
 }
 
 #[test]
-fn test_jsonl_encode_ben_len_65535() {
+fn test_encode_jsonl_to_ben_len_65535() {
     let rle_vec: Vec<(u16, u16)> = vec![(23, 4), (60, 65535), (8, 3)];
 
     let mut buffer: Vec<u8> = Vec::new();
@@ -243,7 +243,7 @@ fn test_jsonl_encode_ben_len_65535() {
         0b11_000000,
     ]);
 
-    let output = jsonl_encode_ben(
+    let output = encode_jsonl_to_ben(
         json!(data).to_string().as_bytes(),
         writer,
         BenVariant::Standard,
@@ -255,7 +255,7 @@ fn test_jsonl_encode_ben_len_65535() {
 }
 
 #[test]
-fn jsonl_encode_ben_max_val_and_len_at_65535() {
+fn encode_jsonl_to_ben_max_val_and_len_at_65535() {
     let rle_vec: Vec<(u16, u16)> = vec![(1, 3), (65535, 65535), (8, 4)];
 
     let mut buffer: Vec<u8> = Vec::new();
@@ -290,7 +290,7 @@ fn jsonl_encode_ben_max_val_and_len_at_65535() {
         0b00000100_,
     ]);
 
-    let output = jsonl_encode_ben(
+    let output = encode_jsonl_to_ben(
         json!(data).to_string().as_bytes(),
         writer,
         BenVariant::Standard,
@@ -302,7 +302,7 @@ fn jsonl_encode_ben_max_val_and_len_at_65535() {
 }
 
 #[test]
-fn jsonl_encode_ben_single_element() {
+fn encode_jsonl_to_ben_single_element() {
     let rle_vec: Vec<(u16, u16)> = vec![(23, 1)];
 
     let mut buffer: Vec<u8> = Vec::new();
@@ -326,7 +326,7 @@ fn jsonl_encode_ben_single_element() {
         0b101111_00,
     ]);
 
-    let output = jsonl_encode_ben(
+    let output = encode_jsonl_to_ben(
         json!(data).to_string().as_bytes(),
         writer,
         BenVariant::Standard,
@@ -338,7 +338,7 @@ fn jsonl_encode_ben_single_element() {
 }
 
 #[test]
-fn jsonl_encode_ben_single_zero() {
+fn encode_jsonl_to_ben_single_zero() {
     let rle_vec: Vec<(u16, u16)> = vec![(0, 1)];
 
     let mut buffer: Vec<u8> = Vec::new();
@@ -362,7 +362,7 @@ fn jsonl_encode_ben_single_zero() {
         0b01_000000,
     ]);
 
-    let output = jsonl_encode_ben(
+    let output = encode_jsonl_to_ben(
         json!(data).to_string().as_bytes(),
         writer,
         BenVariant::Standard,
@@ -374,7 +374,7 @@ fn jsonl_encode_ben_single_zero() {
 }
 
 #[test]
-fn jsonl_encode_ben_multiple_simple_lines() {
+fn encode_jsonl_to_ben_multiple_simple_lines() {
     let rle_lst: Vec<Vec<(u16, u16)>> = vec![
         vec![(1, 4), (2, 4), (3, 4), (4, 4)],
         vec![(2, 2), (3, 7), (1, 1), (2, 1), (3, 1)],
@@ -444,14 +444,14 @@ fn jsonl_encode_ben_multiple_simple_lines() {
         0b01_000000,
     ]);
 
-    let output = jsonl_encode_ben(full_data.as_bytes(), writer, BenVariant::Standard);
+    let output = encode_jsonl_to_ben(full_data.as_bytes(), writer, BenVariant::Standard);
     if let Err(e) = output {
         panic!("Error {}", e);
     }
     assert_eq!(buffer, expected_output)
 }
 
-fn jsonl_encode_ben32<R: BufRead, W: Write>(reader: R, mut writer: W) -> std::io::Result<()> {
+fn encode_jsonl_to_ben32<R: BufRead, W: Write>(reader: R, mut writer: W) -> std::io::Result<()> {
     let mut line_num = 1;
 
     writer.write_all("STANDARD BEN FILE".as_bytes())?;
@@ -468,7 +468,7 @@ fn jsonl_encode_ben32<R: BufRead, W: Write>(reader: R, mut writer: W) -> std::io
 }
 
 #[test]
-fn test_jsonl_encode_ben32_simple() {
+fn test_encode_jsonl_to_ben32_simple() {
     let rle_vec: Vec<(u16, u16)> = vec![(1, 4), (2, 1), (3, 3)];
 
     let mut buffer: Vec<u8> = Vec::new();
@@ -484,7 +484,7 @@ fn test_jsonl_encode_ben32_simple() {
     let mut expected_output: Vec<u8> = b"STANDARD BEN FILE".to_vec();
     expected_output.extend(vec![0, 1, 0, 4, 0, 2, 0, 1, 0, 3, 0, 3, 0, 0, 0, 0]);
 
-    let output = jsonl_encode_ben32(json!(data).to_string().as_bytes(), writer);
+    let output = encode_jsonl_to_ben32(json!(data).to_string().as_bytes(), writer);
     if let Err(e) = output {
         panic!("Error: {}", e);
     }
@@ -492,7 +492,7 @@ fn test_jsonl_encode_ben32_simple() {
 }
 
 #[test]
-fn test_jsonl_encode_ben32_16_bit_val() {
+fn test_encode_jsonl_to_ben32_16_bit_val() {
     let rle_vec: Vec<(u16, u16)> = vec![(1, 4), (512, 1), (3, 3)];
 
     let mut buffer: Vec<u8> = Vec::new();
@@ -508,7 +508,7 @@ fn test_jsonl_encode_ben32_16_bit_val() {
     let mut expected_output: Vec<u8> = b"STANDARD BEN FILE".to_vec();
     expected_output.extend(vec![0, 1, 0, 4, 2, 0, 0, 1, 0, 3, 0, 3, 0, 0, 0, 0]);
 
-    let output = jsonl_encode_ben32(json!(data).to_string().as_bytes(), writer);
+    let output = encode_jsonl_to_ben32(json!(data).to_string().as_bytes(), writer);
     if let Err(e) = output {
         panic!("Error: {}", e);
     }
@@ -516,7 +516,7 @@ fn test_jsonl_encode_ben32_16_bit_val() {
 }
 
 #[test]
-fn test_jsonl_encode_ben32_16_bit_len() {
+fn test_encode_jsonl_to_ben32_16_bit_len() {
     let rle_vec: Vec<(u16, u16)> = vec![(1, 4), (2, 512), (3, 3)];
 
     let mut buffer: Vec<u8> = Vec::new();
@@ -532,7 +532,7 @@ fn test_jsonl_encode_ben32_16_bit_len() {
     let mut expected_output = b"STANDARD BEN FILE".to_vec();
     expected_output.extend(vec![0, 1, 0, 4, 0, 2, 2, 0, 0, 3, 0, 3, 0, 0, 0, 0]);
 
-    let output = jsonl_encode_ben32(json!(data).to_string().as_bytes(), writer);
+    let output = encode_jsonl_to_ben32(json!(data).to_string().as_bytes(), writer);
     if let Err(e) = output {
         panic!("Error: {}", e);
     }
@@ -540,7 +540,7 @@ fn test_jsonl_encode_ben32_16_bit_len() {
 }
 
 #[test]
-fn test_jsonl_encode_ben32_max_val_65535() {
+fn test_encode_jsonl_to_ben32_max_val_65535() {
     let rle_vec: Vec<(u16, u16)> = vec![(23, 4), (65535, 15), (8, 3)];
 
     let mut buffer: Vec<u8> = Vec::new();
@@ -556,7 +556,7 @@ fn test_jsonl_encode_ben32_max_val_65535() {
     let mut expected_output = b"STANDARD BEN FILE".to_vec();
     expected_output.extend(vec![0, 23, 0, 4, 255, 255, 0, 15, 0, 8, 0, 3, 0, 0, 0, 0]);
 
-    let output = jsonl_encode_ben32(json!(data).to_string().as_bytes(), writer);
+    let output = encode_jsonl_to_ben32(json!(data).to_string().as_bytes(), writer);
     if let Err(e) = output {
         panic!("Error: {}", e);
     }
@@ -564,7 +564,7 @@ fn test_jsonl_encode_ben32_max_val_65535() {
 }
 
 #[test]
-fn test_jsonl_encode_ben32_len_65535() {
+fn test_encode_jsonl_to_ben32_len_65535() {
     let rle_vec: Vec<(u16, u16)> = vec![(23, 4), (60, 65535), (8, 3)];
 
     let mut buffer: Vec<u8> = Vec::new();
@@ -580,7 +580,7 @@ fn test_jsonl_encode_ben32_len_65535() {
     let mut expected_output = b"STANDARD BEN FILE".to_vec();
     expected_output.extend(vec![0, 23, 0, 4, 0, 60, 255, 255, 0, 8, 0, 3, 0, 0, 0, 0]);
 
-    let output = jsonl_encode_ben32(json!(data).to_string().as_bytes(), writer);
+    let output = encode_jsonl_to_ben32(json!(data).to_string().as_bytes(), writer);
     if let Err(e) = output {
         panic!("Error: {}", e);
     }
@@ -588,7 +588,7 @@ fn test_jsonl_encode_ben32_len_65535() {
 }
 
 #[test]
-fn jsonl_encode_ben32_single_element() {
+fn encode_jsonl_to_ben32_single_element() {
     let rle_vec: Vec<(u16, u16)> = vec![(23, 1)];
 
     let mut buffer: Vec<u8> = Vec::new();
@@ -604,7 +604,7 @@ fn jsonl_encode_ben32_single_element() {
     let mut expected_output = b"STANDARD BEN FILE".to_vec();
     expected_output.extend(vec![0, 23, 0, 1, 0, 0, 0, 0]);
 
-    let output = jsonl_encode_ben32(json!(data).to_string().as_bytes(), writer);
+    let output = encode_jsonl_to_ben32(json!(data).to_string().as_bytes(), writer);
     if let Err(e) = output {
         panic!("Error: {}", e);
     }
@@ -612,7 +612,7 @@ fn jsonl_encode_ben32_single_element() {
 }
 
 #[test]
-fn jsonl_encode_ben32_multiple_simple_lines() {
+fn encode_jsonl_to_ben32_multiple_simple_lines() {
     let rle_lst: Vec<Vec<(u16, u16)>> = vec![
         vec![(1, 4), (2, 4), (3, 4), (4, 4)],
         vec![(2, 2), (3, 7), (1, 1), (2, 1), (3, 1)],
@@ -653,7 +653,7 @@ fn jsonl_encode_ben32_multiple_simple_lines() {
         0, 5, 0, 1, 0, 6, 0, 1, 0, 7, 0, 1, 0, 8, 0, 1, 0, 9, 0, 1, 0, 10, 0, 1, 0, 0, 0, 0,
     ]);
 
-    let output = jsonl_encode_ben32(full_data.as_bytes(), writer);
+    let output = encode_jsonl_to_ben32(full_data.as_bytes(), writer);
     if let Err(e) = output {
         panic!("Error {}", e);
     }

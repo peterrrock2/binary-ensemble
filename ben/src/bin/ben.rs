@@ -249,9 +249,9 @@ fn main() {
             };
 
             let possible_error = if args.save_all {
-                jsonl_encode_ben(reader, writer, BenVariant::Standard)
+                encode_jsonl_to_ben(reader, writer, BenVariant::Standard)
             } else {
-                jsonl_encode_ben(reader, writer, BenVariant::MkvChain)
+                encode_jsonl_to_ben(reader, writer, BenVariant::MkvChain)
             };
 
             match possible_error {
@@ -319,13 +319,13 @@ fn main() {
 
             if ben_and_xben {
                 if let Err(err) =
-                    ben_encode_xben(reader, writer, args.n_cpus, args.compression_level)
+                    encode_ben_to_xben(reader, writer, args.n_cpus, args.compression_level)
                 {
                     eprintln!("Error: {:?}", err);
                 }
             } else if jsonl_and_xben {
                 let possible_error = if args.save_all {
-                    jsonl_encode_xben(
+                    encode_jsonl_to_xben(
                         reader,
                         writer,
                         BenVariant::Standard,
@@ -333,7 +333,7 @@ fn main() {
                         args.compression_level,
                     )
                 } else {
-                    jsonl_encode_xben(
+                    encode_jsonl_to_xben(
                         reader,
                         writer,
                         BenVariant::MkvChain,
@@ -409,7 +409,7 @@ fn main() {
                     eprintln!("Error: {:?}", err);
                 }
             } else if jsonl_and_ben {
-                if let Err(err) = jsonl_decode_ben(reader, writer) {
+                if let Err(err) = decode_ben_to_jsonl(reader, writer) {
                     eprintln!("Error: {:?}", err);
                 }
             } else {
@@ -463,7 +463,7 @@ fn main() {
                 }
             }
 
-            if let Err(err) = jsonl_decode_xben(reader, writer) {
+            if let Err(err) = decode_xben_to_jsonl(reader, writer) {
                 eprintln!("Error: {:?}", err);
             }
         }

@@ -1,12 +1,12 @@
 #![allow(clippy::needless_collect)]
 
 use ben::decode::{
-    decode_ben_line, decode_xben_to_ben, jsonl_decode_ben, jsonl_decode_xben, xz_decompress,
+    decode_ben_line, decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl, xz_decompress,
     BenDecoder, DecoderInitError, SubsampleDecoder, XBenDecoder,
 };
 use ben::encode::{
-    ben_encode_xben, encode_ben_vec_from_rle, jsonl_encode_ben, jsonl_encode_xben, xz_compress,
-    BenEncoder,
+    encode_ben_to_xben, encode_ben_vec_from_rle, encode_jsonl_to_ben, encode_jsonl_to_xben,
+    xz_compress, BenEncoder,
 };
 use ben::BenVariant;
 
@@ -109,10 +109,10 @@ proptest! {
     fn fuzz_roundtrip_ben_standard(seq in strat_assignment_seq()) {
         let jsonl = jsonl_from_assignments(&seq);
         let mut ben = Vec::new();
-        jsonl_encode_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::Standard).unwrap();
+        encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::Standard).unwrap();
 
         let mut out = Vec::new();
-        jsonl_decode_ben(ben.as_slice(), &mut out).unwrap();
+        decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap();
 
         prop_assert_eq!(out, jsonl);
     }
@@ -122,10 +122,10 @@ proptest! {
     fn fuzz_roundtrip_ben_mkv(seq in strat_assignment_seq()) {
         let jsonl = jsonl_from_assignments(&seq);
         let mut ben = Vec::new();
-        jsonl_encode_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::MkvChain).unwrap();
+        encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::MkvChain).unwrap();
 
         let mut out = Vec::new();
-        jsonl_decode_ben(ben.as_slice(), &mut out).unwrap();
+        decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap();
 
         prop_assert_eq!(out, jsonl);
     }
@@ -138,7 +138,7 @@ proptest! {
         let jsonl = jsonl_from_assignments(&seq);
 
         let mut xben = Vec::new();
-        jsonl_encode_xben(
+        encode_jsonl_to_xben(
             BufReader::new(jsonl.as_slice()),
             &mut xben,
             BenVariant::Standard,
@@ -151,7 +151,7 @@ proptest! {
         decode_xben_to_ben(BufReader::new(xben.as_slice()), &mut ben).unwrap();
 
         let mut out = Vec::new();
-        jsonl_decode_ben(ben.as_slice(), &mut out).unwrap();
+        decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap();
 
         prop_assert_eq!(out, jsonl);
     }
@@ -163,7 +163,7 @@ proptest! {
         let jsonl = jsonl_from_assignments(&seq);
 
         let mut xben = Vec::new();
-        jsonl_encode_xben(
+        encode_jsonl_to_xben(
             BufReader::new(jsonl.as_slice()),
             &mut xben,
             BenVariant::MkvChain,
@@ -175,7 +175,7 @@ proptest! {
         decode_xben_to_ben(BufReader::new(xben.as_slice()), &mut ben).unwrap();
 
         let mut out = Vec::new();
-        jsonl_decode_ben(ben.as_slice(), &mut out).unwrap();
+        decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap();
 
         prop_assert_eq!(out, jsonl);
     }
@@ -187,7 +187,7 @@ proptest! {
         let jsonl = jsonl_from_assignments(&seq);
 
         let mut xben = Vec::new();
-        jsonl_encode_xben(
+        encode_jsonl_to_xben(
             BufReader::new(jsonl.as_slice()),
             &mut xben,
             BenVariant::MkvChain,
@@ -197,13 +197,13 @@ proptest! {
 
         // Path A: direct to JSONL
         let mut direct = Vec::new();
-        jsonl_decode_xben(BufReader::new(xben.as_slice()), &mut direct).unwrap();
+        decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut direct).unwrap();
 
         // Path B: XBEN -> BEN -> JSONL
         let mut ben = Vec::new();
         decode_xben_to_ben(BufReader::new(xben.as_slice()), &mut ben).unwrap();
         let mut via = Vec::new();
-        jsonl_decode_ben(ben.as_slice(), &mut via).unwrap();
+        decode_ben_to_jsonl(ben.as_slice(), &mut via).unwrap();
 
         prop_assert_eq!(direct, via);
     }
@@ -215,7 +215,7 @@ proptest! {
         let jsonl = jsonl_from_assignments(&seq);
 
         let mut xben = Vec::new();
-        jsonl_encode_xben(
+        encode_jsonl_to_xben(
             BufReader::new(jsonl.as_slice()),
             &mut xben,
             BenVariant::Standard,
@@ -230,7 +230,7 @@ proptest! {
 
         // Also decode via the library jsonl_decode_xben and compare.
         let mut direct = Vec::new();
-        jsonl_decode_xben(BufReader::new(xben.as_slice()), &mut direct).unwrap();
+        decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut direct).unwrap();
 
         prop_assert_eq!(iter_jsonl, direct);
     }
@@ -242,7 +242,7 @@ proptest! {
 
         // Build BEN(Standard)
         let mut ben = Vec::new();
-        jsonl_encode_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::Standard).unwrap();
+        encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::Standard).unwrap();
 
         // Iterate BenDecoder
         let mut dec = BenDecoder::new(ben.as_slice()).unwrap();
@@ -260,7 +260,7 @@ proptest! {
 
         // Build an XBEN with MKV to exercise counts in SubsampleDecoder
         let mut xben = Vec::new();
-        jsonl_encode_xben(
+        encode_jsonl_to_xben(
             BufReader::new(jsonl.as_slice()),
             &mut xben,
             BenVariant::MkvChain,
@@ -300,7 +300,7 @@ proptest! {
         let jsonl = jsonl_from_assignments(&seq);
 
         let mut xben = Vec::new();
-        jsonl_encode_xben(
+        encode_jsonl_to_xben(
             BufReader::new(jsonl.as_slice()),
             &mut xben,
             BenVariant::MkvChain,
@@ -335,7 +335,7 @@ proptest! {
         let jsonl = jsonl_from_assignments(&seq);
 
         let mut xben = Vec::new();
-        jsonl_encode_xben(
+        encode_jsonl_to_xben(
             BufReader::new(jsonl.as_slice()),
             &mut xben,
             BenVariant::MkvChain,
@@ -414,7 +414,7 @@ fn subsample_every_respects_offset() {
     let seq = vec![vec![1u16], vec![1u16]];
     let jsonl = jsonl_from_assignments(&seq);
     let mut xben = Vec::new();
-    jsonl_encode_xben(
+    encode_jsonl_to_xben(
         std::io::BufReader::new(jsonl.as_slice()),
         &mut xben,
         BenVariant::MkvChain,
@@ -458,7 +458,7 @@ fn benencoder_finish_flushes_once() {
     } // Forces enc to drop
 
     let mut out = Vec::new();
-    jsonl_decode_ben(ben_vec.as_slice(), &mut out).unwrap();
+    decode_ben_to_jsonl(ben_vec.as_slice(), &mut out).unwrap();
     assert_eq!(out, lines.as_bytes());
 }
 
@@ -472,7 +472,7 @@ fn xbenencoder_drop_flushes_tail_group() {
     // Scope to force Drop
     let xz = {
         let mut out = Vec::new();
-        jsonl_encode_xben(
+        encode_jsonl_to_xben(
             BufReader::new(jsonl.as_bytes()),
             &mut out,
             BenVariant::MkvChain,
@@ -487,7 +487,7 @@ fn xbenencoder_drop_flushes_tail_group() {
     decode_xben_to_ben(xz.as_slice(), &mut ben).unwrap();
 
     let mut round = Vec::new();
-    jsonl_decode_ben(ben.as_slice(), &mut round).unwrap();
+    decode_ben_to_jsonl(ben.as_slice(), &mut round).unwrap();
     assert_eq!(round, jsonl.as_bytes());
 }
 
@@ -542,7 +542,7 @@ fn xben_truncated_frame_reports_unexpected_eof() {
 {"assignment":[1],"sample":2}
 "#;
     let mut xz = Vec::new();
-    jsonl_encode_xben(
+    encode_jsonl_to_xben(
         std::io::BufReader::new(jsonl.as_bytes()),
         &mut xz,
         BenVariant::Standard,
@@ -594,7 +594,7 @@ fn encode_decode_ben32_odd_bit_packing_roundtrip() {
 }
 
 #[test]
-fn jsonl_encode_ben_rejects_bad_assignment_shapes() {
+fn encode_jsonl_to_ben_rejects_bad_assignment_shapes() {
     let bads = [
         r#"{"assignment": "not an array", "sample":1}"#,
         r#"{"assignment": [1,2,3.5], "sample":1}"#,
@@ -603,7 +603,7 @@ fn jsonl_encode_ben_rejects_bad_assignment_shapes() {
     ];
     for s in bads {
         let mut out = Vec::new();
-        let err = jsonl_encode_ben(BufReader::new(s.as_bytes()), &mut out, BenVariant::Standard)
+        let err = encode_jsonl_to_ben(BufReader::new(s.as_bytes()), &mut out, BenVariant::Standard)
             .err()
             .expect("expected invalid data");
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
@@ -627,7 +627,7 @@ fn subsample_by_indices_sorts_and_dedups() {
         b
     };
     let mut xz = Vec::new();
-    jsonl_encode_xben(
+    encode_jsonl_to_xben(
         std::io::BufReader::new(jsonl.as_slice()),
         &mut xz,
         BenVariant::Standard,
@@ -656,7 +656,7 @@ fn ben_encode_xben_respects_existing_ben_header() {
 {"assignment":[2,2],"sample":2}
 "#;
     let mut ben = Vec::new();
-    jsonl_encode_ben(
+    encode_jsonl_to_ben(
         BufReader::new(jsonl.as_bytes()),
         &mut ben,
         BenVariant::Standard,
@@ -665,7 +665,7 @@ fn ben_encode_xben_respects_existing_ben_header() {
 
     // Now convert BEN -> XBEN
     let mut xz = Vec::new();
-    ben_encode_xben(BufReader::new(ben.as_slice()), &mut xz, Some(1), Some(0))
+    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xz, Some(1), Some(0))
         .expect("ben->xben failed");
 
     // Decode back
@@ -674,7 +674,7 @@ fn ben_encode_xben_respects_existing_ben_header() {
 
     // Then to JSONL
     let mut jsonl_back = Vec::new();
-    jsonl_decode_ben(ben_back.as_slice(), &mut jsonl_back).unwrap();
+    decode_ben_to_jsonl(ben_back.as_slice(), &mut jsonl_back).unwrap();
     assert_eq!(jsonl_back, jsonl.as_bytes());
 }
 
@@ -683,7 +683,7 @@ fn xz_mt_params_are_capped_and_safe() {
     use std::io::BufReader;
     let jsonl = r#"{"assignment":[1,2,3],"sample":1}"#.to_string() + "\n";
     let mut xz = Vec::new();
-    jsonl_encode_xben(
+    encode_jsonl_to_xben(
         BufReader::new(jsonl.as_bytes()),
         &mut xz,
         BenVariant::Standard,
@@ -694,6 +694,6 @@ fn xz_mt_params_are_capped_and_safe() {
     let mut ben = Vec::new();
     decode_xben_to_ben(BufReader::new(xz.as_slice()), &mut ben).unwrap();
     let mut out = Vec::new();
-    jsonl_decode_ben(ben.as_slice(), &mut out).unwrap();
+    decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap();
     assert_eq!(out, jsonl.as_bytes());
 }

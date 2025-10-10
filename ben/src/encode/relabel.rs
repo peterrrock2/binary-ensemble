@@ -297,7 +297,7 @@ mod tests {
         let mut output = Vec::new();
         let writer = io::BufWriter::new(&mut output);
 
-        jsonl_encode_ben(input, writer, BenVariant::Standard).unwrap();
+        encode_jsonl_to_ben(input, writer, BenVariant::Standard).unwrap();
 
         let mut output2 = Vec::new();
         let writer2 = io::BufWriter::new(&mut output2);
@@ -305,7 +305,7 @@ mod tests {
 
         let mut output3 = Vec::new();
         let writer3 = io::BufWriter::new(&mut output3);
-        jsonl_decode_ben(output2.as_slice(), writer3).unwrap();
+        decode_ben_to_jsonl(output2.as_slice(), writer3).unwrap();
 
         let output_str = String::from_utf8(output3).unwrap();
 
@@ -344,7 +344,7 @@ mod tests {
         let mut output = Vec::new();
         let writer = io::BufWriter::new(&mut output);
 
-        jsonl_encode_ben(input, writer, BenVariant::MkvChain).unwrap();
+        encode_jsonl_to_ben(input, writer, BenVariant::MkvChain).unwrap();
 
         let mut output2 = Vec::new();
         let writer2 = io::BufWriter::new(&mut output2);
@@ -352,7 +352,7 @@ mod tests {
 
         let mut output3 = Vec::new();
         let writer3 = io::BufWriter::new(&mut output3);
-        jsonl_decode_ben(output2.as_slice(), writer3).unwrap();
+        decode_ben_to_jsonl(output2.as_slice(), writer3).unwrap();
 
         let output_str = String::from_utf8(output3).unwrap();
 
@@ -495,7 +495,7 @@ mod tests {
         let mut output = Vec::new();
         let writer = io::BufWriter::new(&mut output);
 
-        jsonl_encode_ben(input, writer, BenVariant::Standard).unwrap();
+        encode_jsonl_to_ben(input, writer, BenVariant::Standard).unwrap();
 
         let mut output2 = Vec::new();
         let writer2 = io::BufWriter::new(&mut output2);
@@ -503,7 +503,7 @@ mod tests {
 
         let mut output3 = Vec::new();
         let writer3 = io::BufWriter::new(&mut output3);
-        jsonl_decode_ben(output2.as_slice(), writer3).unwrap();
+        decode_ben_to_jsonl(output2.as_slice(), writer3).unwrap();
 
         let output_str = String::from_utf8(output3).unwrap();
 
@@ -557,7 +557,7 @@ mod tests {
         let mut output = Vec::new();
         let writer = io::BufWriter::new(&mut output);
 
-        jsonl_encode_ben(input, writer, BenVariant::MkvChain).unwrap();
+        encode_jsonl_to_ben(input, writer, BenVariant::MkvChain).unwrap();
 
         let mut output2 = Vec::new();
         let writer2 = io::BufWriter::new(&mut output2);
@@ -565,7 +565,7 @@ mod tests {
 
         let mut output3 = Vec::new();
         let writer3 = io::BufWriter::new(&mut output3);
-        jsonl_decode_ben(output2.as_slice(), writer3).unwrap();
+        decode_ben_to_jsonl(output2.as_slice(), writer3).unwrap();
 
         let output_str = String::from_utf8(output3).unwrap();
 

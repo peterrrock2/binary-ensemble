@@ -406,7 +406,7 @@ fn encode_ben32_line(data: Value) -> Vec<u8> {
 /// # Returns
 ///
 /// A Result type that contains the result of the operation
-pub fn jsonl_encode_xben<R: BufRead, W: Write>(
+pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
     reader: R,
     writer: W,
     variant: BenVariant,
@@ -625,7 +625,7 @@ pub fn encode_ben_vec_from_rle(rle_vec: Vec<(u16, u16)>) -> Vec<u8> {
 /// ```
 /// use std::io::{BufReader, BufWriter};
 /// use serde_json::json;
-/// use ben::{encode::jsonl_encode_ben, BenVariant};
+/// use ben::{encode::encode_jsonl_to_ben, BenVariant};
 ///
 /// let input = r#"{"assignment": [1,1,1,2,2,2], "sample": 1}"#.to_string()
 ///     + "\n"
@@ -635,7 +635,7 @@ pub fn encode_ben_vec_from_rle(rle_vec: Vec<(u16, u16)>) -> Vec<u8> {
 /// let mut write_buffer = Vec::new();
 /// let mut writer = BufWriter::new(&mut write_buffer);
 ///
-/// jsonl_encode_ben(reader, writer, BenVariant::Standard).unwrap();
+/// encode_jsonl_to_ben(reader, writer, BenVariant::Standard).unwrap();
 ///
 /// println!("{:?}", write_buffer);
 /// // This will output
@@ -645,7 +645,7 @@ pub fn encode_ben_vec_from_rle(rle_vec: Vec<(u16, u16)>) -> Vec<u8> {
 /// //  2, 106, 89]
 /// ```
 ///
-pub fn jsonl_encode_ben<R: BufRead, W: Write>(
+pub fn encode_jsonl_to_ben<R: BufRead, W: Write>(
     reader: R,
     writer: W,
     variant: BenVariant,
@@ -678,7 +678,7 @@ pub fn jsonl_encode_ben<R: BufRead, W: Write>(
 /// # Returns
 ///
 /// A Result type that contains the result of the operation
-pub fn ben_encode_xben<R: BufRead, W: Write>(
+pub fn encode_ben_to_xben<R: BufRead, W: Write>(
     mut reader: R,
     writer: W,
     n_threads: Option<u32>,

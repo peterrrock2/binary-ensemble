@@ -519,7 +519,7 @@ pub fn decode_ben_line<R: Read>(
 /// This function will return an error if the input reader contains invalid ben
 /// data or if the the decode method encounters while trying to extract a single
 /// assignment vector, that error is then propagated.
-pub fn jsonl_decode_ben<R: Read, W: Write>(reader: R, writer: W) -> io::Result<()> {
+pub fn decode_ben_to_jsonl<R: Read, W: Write>(reader: R, writer: W) -> io::Result<()> {
     let mut ben_decoder = BenDecoder::new(reader)?;
     ben_decoder.write_all_jsonl(writer)
 }
@@ -538,7 +538,7 @@ pub fn jsonl_decode_ben<R: Read, W: Write>(reader: R, writer: W) -> io::Result<(
 /// This function will return an error if the input reader contains invalid xben
 /// data or if the the decode method encounters while trying to extract a single
 /// assignment vector, that error is then propagated.
-pub fn jsonl_decode_xben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::Result<()> {
+pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::Result<()> {
     let mut decoder = XzDecoder::new(reader);
 
     let mut first_buffer = [0u8; 17];

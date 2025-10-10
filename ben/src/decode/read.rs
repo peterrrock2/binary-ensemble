@@ -197,7 +197,7 @@ pub fn extract_assignment_ben<R: Read>(
             tmp_reader.extend(n_bytes.to_be_bytes().to_vec());
             tmp_reader.extend(assign_bits);
 
-            jsonl_decode_ben(&mut tmp_reader.as_slice(), &mut writer)?;
+            decode_ben_to_jsonl(&mut tmp_reader.as_slice(), &mut writer)?;
             break;
         }
         r_sample += 1;
