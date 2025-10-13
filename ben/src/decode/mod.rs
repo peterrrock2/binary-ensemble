@@ -1023,6 +1023,13 @@ where
                 }
             }
 
+            // Early stop for Indices when we've consumed all targets.
+            if let Selection::Indices(ref mut it) = self.selection {
+                if it.peek().is_none() {
+                    return None;
+                }
+            }
+
             let rec = self.inner.next()?;
             let (assignment, count) = match rec {
                 Ok(x) => x,
