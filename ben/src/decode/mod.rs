@@ -15,8 +15,8 @@ pub mod read;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use serde_json::json;
-use std::io::BufReader; // type import
-use std::io::{self, BufRead, Error, Read, Write}; // trait imports
+use std::io::{self, BufRead, Read, Write}; // trait imports
+use std::io::{BufReader, Cursor, Error}; // type import
 use std::iter::Peekable;
 use xz2::read::XzDecoder;
 
@@ -110,6 +110,14 @@ pub struct BenDecoder<R: Read> {
     variant: BenVariant,
 }
 
+pub struct BenFrame {
+    pub max_val_bits: u8,
+    pub max_len_bits: u8,
+    pub raw_data: Vec<u8>,
+    pub count: u16,
+    pub n_bytes: u32,
+}
+
 impl<R: Read> BenDecoder<R> {
     /// Create a new BenDecoder from a reader.
     /// The reader must contain a valid BEN file.
@@ -159,12 +167,8 @@ impl<R: Read> BenDecoder<R> {
         }
         Ok(())
     }
-}
 
-impl<R: Read> Iterator for BenDecoder<R> {
-    type Item = io::Result<MkvRecord>;
-
-    fn next(&mut self) -> Option<io::Result<MkvRecord>> {
+    fn pop_frame_from_reader(&mut self) -> Option<io::Result<BenFrame>> {
         let mut tmp_buffer = [0u8];
         let max_val_bits: u8 = match self.reader.read_exact(&mut tmp_buffer) {
             Ok(()) => tmp_buffer[0],
@@ -187,11 +191,11 @@ impl<R: Read> Iterator for BenDecoder<R> {
             .read_u32::<BigEndian>()
             .expect(format!("Error when reading sample {}.", self.sample_count).as_str());
 
-        let assignment =
-            match decode_ben_line(&mut self.reader, max_val_bits, max_len_bits, n_bytes) {
-                Ok(output_rle) => rle_to_vec(output_rle),
-                Err(e) => return Some(Err(e)),
-            };
+        let mut raw_asssignment = vec![0u8; n_bytes as usize];
+
+        if let Err(e) = self.reader.read_exact(&mut raw_asssignment) {
+            return Some(Err(e));
+        }
 
         let count = if self.variant == BenVariant::MkvChain {
             self.reader
@@ -201,8 +205,67 @@ impl<R: Read> Iterator for BenDecoder<R> {
             1
         };
 
-        log!("Decoding sample: {}\r", self.sample_count + count as usize);
-        Some(Ok((assignment, count)))
+        Some(Ok(BenFrame {
+            max_val_bits,
+            max_len_bits,
+            n_bytes,
+            raw_data: raw_asssignment,
+            count,
+        }))
+    }
+}
+
+impl<R: Read> Iterator for BenDecoder<R> {
+    type Item = io::Result<MkvRecord>;
+
+    fn next(&mut self) -> Option<io::Result<MkvRecord>> {
+        let ben_frame = match self.pop_frame_from_reader() {
+            Some(Ok(frame)) => frame,
+            Some(Err(e)) => return Some(Err(e)),
+            None => return None,
+        };
+        let assignment = match decode_ben_line(
+            Cursor::new(ben_frame.raw_data),
+            ben_frame.max_val_bits,
+            ben_frame.max_len_bits,
+            ben_frame.n_bytes,
+        ) {
+            Ok(output_rle) => rle_to_vec(output_rle),
+            Err(e) => return Some(Err(e)),
+        };
+
+        log!(
+            "Decoding sample: {}\r",
+            self.sample_count + ben_frame.count as usize
+        );
+        Some(Ok((assignment, ben_frame.count)))
+    }
+}
+
+pub struct BenFrameDecoeder<R: Read> {
+    inner: BenDecoder<R>,
+}
+
+impl<R: Read> BenFrameDecoeder<R> {
+    pub fn new(reader: R) -> io::Result<Self> {
+        Ok(Self {
+            inner: BenDecoder::new(reader)?,
+        })
+    }
+}
+
+impl<R: Read> Iterator for BenFrameDecoeder<R> {
+    type Item = io::Result<BenFrame>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.pop_frame_from_reader()
+    }
+}
+
+impl<R: Read> BenDecoder<R> {
+    /// Consume this decoder and iterate raw ben frames instead of decoded assignments.
+    pub fn into_frames(self) -> BenFrameDecoeder<R> {
+        BenFrameDecoeder { inner: self }
     }
 }
 

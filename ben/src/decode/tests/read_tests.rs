@@ -42,11 +42,23 @@ fn test_extract_assignment_ben() {
     ]);
 
     let mut reader = input.as_slice();
-    let sample_number = 2;
 
-    let result = extract_assignment_ben(&mut reader, sample_number).unwrap();
+    assert_eq!(
+        extract_assignment_ben(&mut reader, 1).unwrap(),
+        vec![1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4]
+    );
 
-    assert_eq!(result, vec![2, 2, 3, 3, 3, 3, 3, 3, 3, 1, 2, 3]);
+    let mut reader = input.as_slice();
+    assert_eq!(
+        extract_assignment_ben(&mut reader, 2).unwrap(),
+        vec![2, 2, 3, 3, 3, 3, 3, 3, 3, 1, 2, 3]
+    );
+
+    let mut reader = input.as_slice();
+    assert_eq!(
+        extract_assignment_ben(&mut reader, 3).unwrap(),
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    );
 }
 
 #[test]

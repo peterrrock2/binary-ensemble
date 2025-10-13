@@ -8,7 +8,10 @@ use std::fmt::{self};
 use std::io::Cursor;
 use std::io::{self, Read};
 
-use super::{decode_ben32_line, decode_ben_to_jsonl, BenVariant, BigEndian, XBenDecoder};
+use super::{
+    decode_ben32_line, decode_ben_line, decode_ben_to_jsonl, rle_to_vec, BenDecoder, BenVariant,
+    BigEndian, XBenDecoder,
+};
 
 /// Types of errors that can occur during the extraction of assignments.
 #[derive(Debug)]
@@ -54,8 +57,11 @@ impl fmt::Display for SampleError {
             SampleErrorKind::SampleNotFound { sample_number } => {
                 write!(
                     f,
-                    "Sample number not found in file. Last sample is {}",
-                    sample_number
+                    "Sample number not found in file. \
+                    Failed to find sample '{}'. \
+                    Last sample seems to be '{}'",
+                    sample_number,
+                    sample_number - 1
                 )
             }
             SampleErrorKind::IoError(e) => {
@@ -144,79 +150,75 @@ pub fn extract_assignment_ben<R: Read>(
         });
     }
 
-    let mut check_buffer = [0u8; 17];
-    reader.read_exact(&mut check_buffer)?;
+    let inner_decoder = BenDecoder::new(&mut reader).expect("Failed to create XBenDecoder");
+    let frame_iterator = inner_decoder.into_frames();
 
-    let variant = match &check_buffer {
-        b"STANDARD BEN FILE" => BenVariant::Standard,
-        b"MKVCHAIN BEN FILE" => BenVariant::MkvChain,
-        _ => {
-            return Err(SampleError {
-                kind: SampleErrorKind::IoError(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Invalid file format",
-                )),
-            })
+    let mut current_sample = 1;
+    for frame in frame_iterator {
+        let frame = frame.map_err(SampleError::new_io_error)?;
+        if current_sample == sample_number || current_sample + frame.count as usize > sample_number
+        {
+            match decode_ben_line(
+                Cursor::new(&frame.raw_data),
+                frame.max_val_bits,
+                frame.max_len_bits,
+                frame.n_bytes,
+            ) {
+                Ok(assignment_rle) => return Ok(rle_to_vec(assignment_rle)),
+                Err(e) => return Err(SampleError::new_io_error(e)),
+            };
         }
-    };
-
-    let mut r_sample = 1;
-    let mut writer = Vec::new();
-    loop {
-        let mut tmp_buffer = [0u8];
-        let max_val_bits: u8 = match reader.read_exact(&mut tmp_buffer) {
-            Ok(()) => tmp_buffer[0],
-            Err(e) => {
-                if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                    return Err(SampleError {
-                        kind: SampleErrorKind::SampleNotFound {
-                            sample_number: r_sample,
-                        },
-                    });
-                }
-                return Err(e.into());
-            }
-        };
-        let max_len_bits = reader.read_u8()?;
-        let n_bytes = reader.read_u32::<BigEndian>()?;
-
-        let mut assign_bits: Vec<u8> = vec![0; n_bytes as usize];
-        reader.read_exact(&mut assign_bits)?;
-
-        let count_samples = if variant == BenVariant::MkvChain {
-            reader.read_u16::<BigEndian>()?
-        } else {
-            1
-        };
-
-        // Reader buffer gets thrown away after each iteration
-        // and only decoded if we are in the right sample.
-        // This speeds up the process significantly by not decoding all samples.
-        if r_sample == sample_number || r_sample + count_samples as usize > sample_number {
-            // Write the ben header that is expected by jsonl_decode_ben
-            let mut tmp_reader = b"STANDARD BEN FILE".to_vec();
-            // Write the actual ben data
-            tmp_reader.extend(vec![max_val_bits, max_len_bits]);
-            tmp_reader.extend(n_bytes.to_be_bytes().to_vec());
-            tmp_reader.extend(assign_bits);
-
-            decode_ben_to_jsonl(&mut tmp_reader.as_slice(), &mut writer)?;
-            break;
-        }
-        r_sample += 1;
+        current_sample += frame.count as usize;
     }
 
-    let decoded = serde_json::from_str::<Value>(&String::from_utf8(writer).unwrap())?;
-    let assignment = decoded["assignment"]
-        .as_array()
-        .unwrap()
-        .into_iter()
-        .map(|x| x.as_u64().unwrap() as u16)
-        .collect::<Vec<u16>>();
-
-    Ok(assignment)
+    Err(SampleError {
+        kind: SampleErrorKind::SampleNotFound {
+            sample_number: current_sample,
+        },
+    })
 }
 
+/// Extracts a single assignment from a binary-encoded data stream.
+///
+/// # Arguments
+///
+/// * `reader` - The reader to extract the assignment from.
+/// * `sample_number` - The sample number to extract.
+///
+/// # Returns
+///
+/// This function returns a `Result` containing a `Vec<u16>` of the assignment if successful,
+/// or a `SampleError` if an error occurred.
+///
+/// # Example
+///
+/// ```no_run
+/// use ben::decode::read::extract_assignment_ben;
+/// use std::{fs::File, io::BufReader};
+///
+/// let file = File::open("data.jsonl.xben").unwrap();
+/// let reader = BufReader::new(file);
+/// let sample_number = 2;
+///
+/// let result = extract_assignment_xben(reader, sample_number);
+/// match result {
+///     Ok(assignment) => {
+///         eprintln!("Extracted assignment: {:?}", assignment);
+///     }
+///     Err(e) => {
+///         eprintln!("Error: {}", e);
+///     }
+/// }
+/// ```
+///
+/// # Errors
+///
+/// This function can return a `SampleError` if an error occurs during the extraction process.
+/// The error can be one of the following:
+/// * `InvalidSampleNumber` - The sample number is invalid. All sample numbers must be greater than 0.
+/// * `SampleNotFound` - The sample number was not found in the file. The last sample number is provided.
+/// * `IoError` - An IO error occurred during the extraction process.
+/// * `JsonError` - A JSON error occurred during the extraction process.
 pub fn extract_assignment_xben<R: Read>(
     mut reader: R,
     sample_number: usize,
@@ -234,13 +236,13 @@ pub fn extract_assignment_xben<R: Read>(
     let mut current_sample = 1;
     for frame in frame_iterator {
         let frame = frame.map_err(SampleError::new_io_error)?;
-        current_sample += frame.1 as usize;
-        if current_sample >= sample_number {
+        if current_sample == sample_number || current_sample + frame.1 as usize > sample_number {
             match decode_ben32_line(Cursor::new(&frame.0), variant) {
                 Ok((assignment, _)) => return Ok(assignment),
                 Err(e) => return Err(SampleError::new_io_error(e)),
             };
         }
+        current_sample += frame.1 as usize;
     }
 
     Err(SampleError {
