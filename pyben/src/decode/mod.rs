@@ -1,6 +1,6 @@
 use ben::decode::{
-    decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl, BenDecoder, MkvRecord,
-    Selection, SubsampleDecoder, XBenDecoder,
+    build_frame_iter, decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl, BenDecoder,
+    MkvRecord, Selection, SubsampleFrameDecoder, XBenDecoder,
 };
 use pyo3::exceptions::{PyException, PyIOError};
 use pyo3::prelude::*;
@@ -17,15 +17,8 @@ pub struct PyBenDecoder {
     iter: DynIter,
     current_assignment: Option<Vec<u16>>,
     remaining_count: u16,
-}
-
-impl PyBenDecoder {
-    fn take_iter(&mut self) -> DynIter {
-        std::mem::replace(
-            &mut self.iter,
-            Box::new(std::iter::empty::<io::Result<MkvRecord>>()),
-        )
-    }
+    src_path: PathBuf,
+    mode: String,
 }
 
 #[pymethods]
@@ -63,6 +56,8 @@ impl PyBenDecoder {
             iter,
             current_assignment: None,
             remaining_count: 0,
+            src_path: file_path,
+            mode: mode.to_string(),
         })
     }
 
@@ -98,8 +93,19 @@ impl PyBenDecoder {
         indices.sort_unstable();
         indices.dedup();
         let sel = Selection::Indices(indices.into_iter().peekable());
-        let inner = slf.take_iter();
-        slf.iter = Box::new(SubsampleDecoder::new(inner, sel));
+
+        let frames = build_frame_iter(&slf.src_path, &slf.mode).map_err(|e| {
+            PyException::new_err(format!(
+                "Failed to create frame iterator from {}: {e}",
+                slf.src_path.display()
+            ))
+        })?;
+
+        let frame_decoder = SubsampleFrameDecoder::new(frames, sel);
+
+        slf.iter = Box::new(frame_decoder);
+        slf.current_assignment = None;
+        slf.remaining_count = 0;
         Ok(slf.into())
     }
 
@@ -115,8 +121,19 @@ impl PyBenDecoder {
             ));
         }
         let sel = Selection::Range { start, end };
-        let inner = slf.take_iter();
-        slf.iter = Box::new(SubsampleDecoder::new(inner, sel));
+
+        let frames = build_frame_iter(&slf.src_path, &slf.mode).map_err(|e| {
+            PyException::new_err(format!(
+                "Failed to create frame iterator from {}: {e}",
+                slf.src_path.display()
+            ))
+        })?;
+
+        let frame_decoder = SubsampleFrameDecoder::new(frames, sel);
+
+        slf.iter = Box::new(frame_decoder);
+        slf.current_assignment = None;
+        slf.remaining_count = 0;
         Ok(slf.into())
     }
 
@@ -130,8 +147,19 @@ impl PyBenDecoder {
             return Err(PyException::new_err("step and offset must be >= 1"));
         }
         let sel = Selection::Every { step, offset };
-        let inner = slf.take_iter();
-        slf.iter = Box::new(SubsampleDecoder::new(inner, sel));
+
+        let frames = build_frame_iter(&slf.src_path, &slf.mode).map_err(|e| {
+            PyException::new_err(format!(
+                "Failed to create frame iterator from {}: {e}",
+                slf.src_path.display()
+            ))
+        })?;
+
+        let frame_decoder = SubsampleFrameDecoder::new(frames, sel);
+
+        slf.iter = Box::new(frame_decoder);
+        slf.current_assignment = None;
+        slf.remaining_count = 0;
         Ok(slf.into())
     }
 }

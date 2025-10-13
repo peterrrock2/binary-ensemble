@@ -2,16 +2,12 @@
 //!
 //! This module provides functionality for extracting single assignment
 //! vectors from a BEN file.
-use byteorder::ReadBytesExt;
-use serde_json::{Error as SerdeError, Value};
+use serde_json::Error as SerdeError;
 use std::fmt::{self};
 use std::io::Cursor;
 use std::io::{self, Read};
 
-use super::{
-    decode_ben32_line, decode_ben_line, decode_ben_to_jsonl, rle_to_vec, BenDecoder, BenVariant,
-    BigEndian, XBenDecoder,
-};
+use super::{decode_ben32_line, decode_ben_line, rle_to_vec, BenDecoder, XBenDecoder};
 
 /// Types of errors that can occur during the extraction of assignments.
 #[derive(Debug)]
@@ -193,7 +189,7 @@ pub fn extract_assignment_ben<R: Read>(
 /// # Example
 ///
 /// ```no_run
-/// use ben::decode::read::extract_assignment_ben;
+/// use ben::decode::read::extract_assignment_xben;
 /// use std::{fs::File, io::BufReader};
 ///
 /// let file = File::open("data.jsonl.xben").unwrap();

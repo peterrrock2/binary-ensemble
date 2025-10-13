@@ -2,7 +2,7 @@
 
 use ben::decode::{
     decode_ben_line, decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl, xz_decompress,
-    BenDecoder, DecoderInitError, SubsampleDecoder, XBenDecoder,
+    BenDecoder, DecoderInitError, XBenDecoder,
 };
 use ben::encode::{
     encode_ben_to_xben, encode_ben_vec_from_rle, encode_jsonl_to_ben, encode_jsonl_to_xben,
@@ -53,13 +53,13 @@ fn jsonl_from_records(records: &[(Vec<u16>, u16)], start_at: usize) -> Vec<u8> {
     buf
 }
 
-/// Simplify collecting an iterator of io::Result<MkvRecord>.
-fn collect_records<I>(mut it: I) -> std::io::Result<Vec<(Vec<u16>, u16)>>
+/// Collect any iterator/into-iterator of `io::Result<MkvRecord>` into a Vec.
+fn collect_records<I>(it: I) -> std::io::Result<Vec<(Vec<u16>, u16)>>
 where
-    I: Iterator<Item = std::io::Result<(Vec<u16>, u16)>>,
+    I: IntoIterator<Item = std::io::Result<(Vec<u16>, u16)>>, // = MkvRecord
 {
     let mut out = Vec::new();
-    while let Some(rec) = it.next() {
+    for rec in it {
         out.push(rec?);
     }
     Ok(out)
@@ -274,7 +274,7 @@ proptest! {
         if want.is_empty() { want.push(1); }
 
         let xb = XBenDecoder::new(xben.as_slice()).unwrap();
-        let mut sub = SubsampleDecoder::by_indices(xb, want.clone());
+        let mut sub = xb.into_subsample_by_indices(want.clone());
         let recs = collect_records(&mut sub).unwrap();
 
         // Ground truth: take those rows from original seq.
@@ -317,7 +317,7 @@ proptest! {
         }
 
         let xb = XBenDecoder::new(xben.as_slice()).unwrap();
-        let mut sub = SubsampleDecoder::every(xb, step, offset);
+        let mut sub = xb.into_subsample_every(step, offset);
         let recs = collect_records(&mut sub).unwrap();
 
         let mut picked: Vec<Vec<u16>> = Vec::new();
@@ -350,7 +350,7 @@ proptest! {
         let truth: Vec<Vec<u16>> = (s..=e).map(|i| seq[i-1].clone()).collect();
 
         let xb = XBenDecoder::new(xben.as_slice()).unwrap();
-        let mut sub = SubsampleDecoder::by_range(xb, s, e);
+        let mut sub = xb.into_subsample_by_range(s, e);
         let recs = collect_records(&mut sub).unwrap();
 
         let mut picked: Vec<Vec<u16>> = Vec::new();
@@ -425,7 +425,7 @@ fn subsample_every_respects_offset() {
 
     // Keep every 1 starting at offset=2 -> only second sample.
     let xb = XBenDecoder::new(xben.as_slice()).unwrap();
-    let mut sub = SubsampleDecoder::every(xb, 1, 2);
+    let mut sub = xb.into_subsample_every(1, 2);
     let recs = collect_records(&mut sub).unwrap();
 
     let mut picked = Vec::new();
@@ -638,7 +638,7 @@ fn subsample_by_indices_sorts_and_dedups() {
     let xb = XBenDecoder::new(xz.as_slice()).unwrap();
 
     // Deliberately unsorted and duplicated indices
-    let mut sub = SubsampleDecoder::by_indices(xb, vec![5, 2, 2, 1, 5, 3]);
+    let mut sub = xb.into_subsample_by_indices(vec![5, 2, 2, 1, 5, 3]);
     let recs = collect_records(&mut sub).unwrap();
     let mut picked = Vec::new();
     for (a, c) in recs {

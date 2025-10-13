@@ -15,9 +15,11 @@ pub mod read;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use serde_json::json;
+use std::fs::File;
 use std::io::{self, BufRead, Read, Write}; // trait imports
 use std::io::{BufReader, Cursor, Error}; // type import
 use std::iter::Peekable;
+use std::path::PathBuf;
 use xz2::read::XzDecoder;
 
 use crate::utils::rle_to_vec;
@@ -110,6 +112,7 @@ pub struct BenDecoder<R: Read> {
     variant: BenVariant,
 }
 
+#[derive(Clone)]
 pub struct BenFrame {
     pub max_val_bits: u8,
     pub max_len_bits: u8,
@@ -167,13 +170,13 @@ impl<R: Read> BenDecoder<R> {
         }
         Ok(())
     }
-
     fn pop_frame_from_reader(&mut self) -> Option<io::Result<BenFrame>> {
-        let mut tmp_buffer = [0u8];
-        let max_val_bits: u8 = match self.reader.read_exact(&mut tmp_buffer) {
-            Ok(()) => tmp_buffer[0],
+        let mut b1 = [0u8; 1];
+        let max_val_bits = match self.reader.read_exact(&mut b1) {
+            Ok(()) => b1[0],
             Err(e) => {
                 if e.kind() == io::ErrorKind::UnexpectedEof {
+                    // clean EOF before starting a new frame
                     logln!();
                     logln!("Done!");
                     return None;
@@ -182,25 +185,27 @@ impl<R: Read> BenDecoder<R> {
             }
         };
 
-        let max_len_bits = self
-            .reader
-            .read_u8()
-            .expect(format!("Error when reading sample {}.", self.sample_count).as_str());
-        let n_bytes = self
-            .reader
-            .read_u32::<BigEndian>()
-            .expect(format!("Error when reading sample {}.", self.sample_count).as_str());
+        let mut b2 = [0u8; 1];
+        if let Err(e) = self.reader.read_exact(&mut b2) {
+            return Some(Err(e));
+        }
+        let max_len_bits = b2[0];
 
-        let mut raw_asssignment = vec![0u8; n_bytes as usize];
+        let n_bytes = match self.reader.read_u32::<BigEndian>() {
+            Ok(n) => n,
+            Err(e) => return Some(Err(e)),
+        };
 
-        if let Err(e) = self.reader.read_exact(&mut raw_asssignment) {
+        let mut raw_assignment = vec![0u8; n_bytes as usize];
+        if let Err(e) = self.reader.read_exact(&mut raw_assignment) {
             return Some(Err(e));
         }
 
         let count = if self.variant == BenVariant::MkvChain {
-            self.reader
-                .read_u16::<BigEndian>()
-                .expect(format!("Error when reading sample {}.", self.sample_count).as_str())
+            match self.reader.read_u16::<BigEndian>() {
+                Ok(c) => c,
+                Err(e) => return Some(Err(e)),
+            }
         } else {
             1
         };
@@ -209,10 +214,20 @@ impl<R: Read> BenDecoder<R> {
             max_val_bits,
             max_len_bits,
             n_bytes,
-            raw_data: raw_asssignment,
+            raw_data: raw_assignment,
             count,
         }))
     }
+}
+
+fn decode_ben_frame_to_assignment(frame: &BenFrame) -> io::Result<Vec<u16>> {
+    decode_ben_line(
+        Cursor::new(&frame.raw_data),
+        frame.max_val_bits,
+        frame.max_len_bits,
+        frame.n_bytes,
+    )
+    .map(rle_to_vec)
 }
 
 impl<R: Read> Iterator for BenDecoder<R> {
@@ -224,16 +239,10 @@ impl<R: Read> Iterator for BenDecoder<R> {
             Some(Err(e)) => return Some(Err(e)),
             None => return None,
         };
-        let assignment = match decode_ben_line(
-            Cursor::new(ben_frame.raw_data),
-            ben_frame.max_val_bits,
-            ben_frame.max_len_bits,
-            ben_frame.n_bytes,
-        ) {
-            Ok(output_rle) => rle_to_vec(output_rle),
+        let assignment = match decode_ben_frame_to_assignment(&ben_frame) {
+            Ok(assgn) => assgn,
             Err(e) => return Some(Err(e)),
         };
-
         log!(
             "Decoding sample: {}\r",
             self.sample_count + ben_frame.count as usize
@@ -686,7 +695,7 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
 
 pub struct XBenDecoder<R: Read> {
     xz: BufReader<XzDecoder<R>>,
-    variant: BenVariant,
+    pub variant: BenVariant,
     overflow: Vec<u8>,
     buf: Box<[u8]>, // reusable read buffer
 }
@@ -769,16 +778,28 @@ impl<R: Read> XBenDecoder<R> {
     }
 }
 
+fn decode_xben_frame_to_assignment(
+    frame_bytes: &[u8],
+    variant: BenVariant,
+) -> io::Result<Vec<u16>> {
+    let cursor = Cursor::new(frame_bytes);
+    let (assignment, _) = decode_ben32_line(cursor, variant)?;
+    Ok(assignment)
+}
+
 impl<R: Read> Iterator for XBenDecoder<R> {
     type Item = io::Result<MkvRecord>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             // If we already have a complete frame in overflow, decode and return it
-            if let Some((frame, consumed, count)) = self.pop_frame_from_overflow(&self.overflow) {
-                let variant = self.variant;
-                let res =
-                    decode_ben32_line(frame, variant).map(|(assignment, _)| (assignment, count));
+            if let Some((frame_bytes, consumed, count)) =
+                self.pop_frame_from_overflow(&self.overflow)
+            {
+                let res = match decode_xben_frame_to_assignment(frame_bytes, self.variant) {
+                    Ok(assignment) => Ok((assignment, count)),
+                    Err(e) => Err(e),
+                };
                 // drop the used bytes
                 self.overflow.drain(..consumed);
                 return Some(res);
@@ -872,6 +893,12 @@ impl<R: Read> XBenDecoder<R> {
     }
 }
 
+#[derive(Clone)]
+pub enum Frame {
+    Ben(BenFrame),             // from BenFrameDecoeder
+    XBen(Vec<u8>, BenVariant), // raw ben32 bytes + variant (count is carried beside)
+}
+
 /// What to subsample.
 pub enum Selection {
     Indices(Peekable<std::vec::IntoIter<usize>>), // 1-based, sorted
@@ -879,24 +906,26 @@ pub enum Selection {
     Range { start: usize, end: usize },           // inclusive, 1-based
 }
 
-/// Generic subsampling adapter over any `(Vec<u16>, u16)` stream.
-pub struct SubsampleDecoder<I> {
-    inner: I,
-    selection: Selection,
-    sample: usize, // number of samples fully processed so far (next is sample+1)
+fn decode_frame_to_assignment(frame: &Frame) -> io::Result<Vec<u16>> {
+    match frame {
+        Frame::Ben(f) => decode_ben_frame_to_assignment(f),
+        Frame::XBen(bytes, variant) => decode_xben_frame_to_assignment(bytes, *variant),
+    }
 }
 
-impl<I> SubsampleDecoder<I> {
-    /// Construct from any iterator + a Selection
-    ///
-    /// # Arguments
-    ///
-    /// * `inner` - An iterator over `(Vec<u16>, u16)` items
-    /// * `selection` - A Selection enum specifying which samples to keep
-    ///
-    /// # Returns
-    ///
-    /// A SubsampleDecoder that will yield only the selected samples
+pub struct SubsampleFrameDecoder<I>
+where
+    I: Iterator<Item = io::Result<(Frame, u16)>>,
+{
+    inner: I,
+    selection: Selection,
+    sample: usize, // processed so far (1-based)
+}
+
+impl<I> SubsampleFrameDecoder<I>
+where
+    I: Iterator<Item = io::Result<(Frame, u16)>>,
+{
     pub fn new(inner: I, selection: Selection) -> Self {
         Self {
             inner,
@@ -905,65 +934,31 @@ impl<I> SubsampleDecoder<I> {
         }
     }
 
-    /// Only selected (1-based) indices; `indices` must be sorted ascending and unique.
-    ///
-    /// # Arguments
-    ///
-    /// * `inner` - An iterator over `(Vec<u16>, u16)` items
-    /// * `indices` - A vector of 1-based indices to keep
-    ///
-    /// # Returns
-    ///
-    /// A SubsampleDecoder that yields only the selected samples
-    pub fn by_indices(inner: I, mut indices: Vec<usize>) -> Self {
-        indices.sort_unstable();
-        indices.dedup();
-        Self::new(inner, Selection::Indices(indices.into_iter().peekable()))
-    }
-
-    /// Every `step` samples starting at 1-based `offset` (e.g., offset=1, step=100 => 1,101,201,…).
-    ///
-    /// # Arguments
-    ///
-    /// * `inner` - An iterator over `(Vec<u16>, u16)` items
-    /// * `step` - The step size (must be >= 1)
-    /// * `offset` - The 1-based offset (must be >= 1)
-    ///
-    /// # Returns
-    ///
-    /// A SubsampleDecoder that yields every `step` samples starting at `offset`
-    pub fn every(inner: I, step: usize, offset: usize) -> Self {
-        assert!(step >= 1 && offset >= 1);
-        Self::new(inner, Selection::Every { step, offset })
+    pub fn by_indices<T>(inner: I, indices: T) -> Self
+    where
+        T: IntoIterator<Item = usize>,
+    {
+        let mut v: Vec<usize> = indices.into_iter().collect();
+        v.sort_unstable();
+        v.dedup();
+        Self::new(inner, Selection::Indices(v.into_iter().peekable()))
     }
 
     /// Inclusive 1-based range [start, end].
-    ///
-    /// # Arguments
-    ///
-    /// * `inner` - An iterator over `(Vec<u16>, u16)` items
-    /// * `start` - The 1-based start of the range (must be >= 1)
-    /// * `end` - The 1-based end of the range (must
-    ///
-    /// # Returns
-    ///
-    /// A SubsampleDecoder that yields samples in the inclusive range [start, end]
     pub fn by_range(inner: I, start: usize, end: usize) -> Self {
-        assert!(start >= 1 && end >= start);
+        assert!(
+            start >= 1 && end >= start,
+            "range must be 1-based and end >= start"
+        );
         Self::new(inner, Selection::Range { start, end })
     }
 
-    /// Count how many selected indices fall inside [lo, hi] (inclusive).
-    ///
-    /// # Arguments
-    ///
-    /// * `lo` - The lower bound of the range (inclusive)
-    /// * `hi` - The upper bound of the range (inclusive)
-    ///
-    /// # Returns
-    ///
-    /// The number of selected indices in the range [lo, hi]
-    /// (saturating at u16::MAX)
+    /// Every `step` samples starting from 1-based `offset`.
+    pub fn every(inner: I, step: usize, offset: usize) -> Self {
+        assert!(step >= 1 && offset >= 1, "step and offset must be >= 1");
+        Self::new(inner, Selection::Every { step, offset })
+    }
+
     fn count_selected_in(&mut self, lo: usize, hi: usize) -> u16 {
         match &mut self.selection {
             Selection::Indices(iter) => {
@@ -986,7 +981,6 @@ impl<I> SubsampleDecoder<I> {
                 if start > hi {
                     return 0;
                 }
-
                 let r = (start as isize - *offset as isize).rem_euclid(*step as isize) as usize;
                 let first = start + ((*step - r) % *step);
                 if first > hi {
@@ -1008,30 +1002,28 @@ impl<I> SubsampleDecoder<I> {
     }
 }
 
-impl<I> Iterator for SubsampleDecoder<I>
+impl<I> Iterator for SubsampleFrameDecoder<I>
 where
-    I: Iterator<Item = io::Result<MkvRecord>>,
+    I: Iterator<Item = io::Result<(Frame, u16)>>,
 {
-    type Item = io::Result<MkvRecord>;
+    type Item = io::Result<MkvRecord>; // (Vec<u16>, u16)
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            // Early stop for Range once we're past the end.
+            // early-exit for Range
             if let Selection::Range { end, .. } = self.selection {
                 if self.sample >= end {
                     return None;
                 }
             }
-
-            // Early stop for Indices when we've consumed all targets.
+            // early-exit for Indices
             if let Selection::Indices(ref mut it) = self.selection {
                 if it.peek().is_none() {
                     return None;
                 }
             }
 
-            let rec = self.inner.next()?;
-            let (assignment, count) = match rec {
+            let (frame, count) = match self.inner.next()? {
                 Ok(x) => x,
                 Err(e) => return Some(Err(e)),
             };
@@ -1040,15 +1032,133 @@ where
             let hi = self.sample + count as usize;
             let selected = self.count_selected_in(lo, hi);
 
-            // advance global sample counter regardless
+            // advance regardless
             self.sample = hi;
 
             if selected > 0 {
-                // Yield this assignment once, with how many selected samples it covers
-                return Some(Ok((assignment, selected)));
+                match decode_frame_to_assignment(&frame) {
+                    Ok(assignment) => return Some(Ok((assignment, selected))),
+                    Err(e) => return Some(Err(e)),
+                }
             }
-            // else skip and continue
         }
+    }
+}
+
+pub type FrameIter = Box<dyn Iterator<Item = io::Result<(Frame, u16)>> + Send>;
+
+pub fn build_frame_iter(file_path: &PathBuf, mode: &str) -> io::Result<FrameIter> {
+    let file = File::options().read(true).open(file_path)?;
+    let reader = BufReader::new(file);
+
+    match mode {
+        "ben" => {
+            // Ben -> BenFrameDecoeder
+            let frames = BenFrameDecoeder::new(reader)?; // Iterator<Item=io::Result<BenFrame>>
+            let mapped = frames.map(|res| {
+                res.map(|f| {
+                    let cnt = f.count;
+                    (Frame::Ben(f), cnt)
+                })
+            });
+            Ok(Box::new(mapped))
+        }
+        "xben" => {
+            // XBen -> XBenFrameDecoder (need variant)
+            let x = XBenDecoder::new(reader)?;
+            let variant = x.variant;
+            let frames = x.into_frames(); // Iterator<Item=io::Result<(Vec<u8>, u16)>>
+            let mapped =
+                frames.map(move |res| res.map(|(bytes, cnt)| (Frame::XBen(bytes, variant), cnt)));
+            Ok(Box::new(mapped))
+        }
+        _ => Err(io::Error::new(io::ErrorKind::InvalidInput, "Unknown mode")),
+    }
+}
+
+impl<R: Read + Send> BenDecoder<R> {
+    pub fn into_subsample_by_indices<T>(
+        self,
+        indices: T,
+    ) -> SubsampleFrameDecoder<impl Iterator<Item = io::Result<(Frame, u16)>> + Send>
+    where
+        T: IntoIterator<Item = usize>,
+    {
+        let frames = self.into_frames().map(|res| {
+            res.map(|f| {
+                let count = f.count;
+                (Frame::Ben(f), count)
+            })
+        });
+        SubsampleFrameDecoder::by_indices(frames, indices)
+    }
+
+    pub fn into_subsample_by_range(
+        self,
+        start: usize,
+        end: usize,
+    ) -> SubsampleFrameDecoder<impl Iterator<Item = io::Result<(Frame, u16)>> + Send> {
+        let frames = self.into_frames().map(|res| {
+            res.map(|f| {
+                let cnt = f.count;
+                (Frame::Ben(f), cnt)
+            })
+        });
+        SubsampleFrameDecoder::by_range(frames, start, end)
+    }
+
+    pub fn into_subsample_every(
+        self,
+        step: usize,
+        offset: usize,
+    ) -> SubsampleFrameDecoder<impl Iterator<Item = io::Result<(Frame, u16)>> + Send> {
+        let frames = self.into_frames().map(|res| {
+            res.map(|f| {
+                let cnt = f.count;
+                (Frame::Ben(f), cnt)
+            })
+        });
+        SubsampleFrameDecoder::every(frames, step, offset)
+    }
+}
+
+impl<R: Read + Send> XBenDecoder<R> {
+    pub fn into_subsample_by_indices<T>(
+        self,
+        indices: T,
+    ) -> SubsampleFrameDecoder<impl Iterator<Item = io::Result<(Frame, u16)>> + Send>
+    where
+        T: IntoIterator<Item = usize>,
+    {
+        let variant = self.variant; // ensure BenVariant: Copy
+        let frames = self
+            .into_frames()
+            .map(move |res| res.map(|(bytes, cnt)| (Frame::XBen(bytes, variant), cnt)));
+        SubsampleFrameDecoder::by_indices(Box::new(frames), indices)
+    }
+
+    pub fn into_subsample_by_range(
+        self,
+        start: usize,
+        end: usize,
+    ) -> SubsampleFrameDecoder<impl Iterator<Item = io::Result<(Frame, u16)>> + Send> {
+        let variant = self.variant;
+        let frames = self
+            .into_frames()
+            .map(move |res| res.map(|(bytes, cnt)| (Frame::XBen(bytes, variant), cnt)));
+        SubsampleFrameDecoder::by_range(Box::new(frames), start, end)
+    }
+
+    pub fn into_subsample_every(
+        self,
+        step: usize,
+        offset: usize,
+    ) -> SubsampleFrameDecoder<impl Iterator<Item = io::Result<(Frame, u16)>> + Send> {
+        let variant = self.variant;
+        let frames = self
+            .into_frames()
+            .map(move |res| res.map(|(bytes, cnt)| (Frame::XBen(bytes, variant), cnt)));
+        SubsampleFrameDecoder::every(Box::new(frames), step, offset)
     }
 }
 
