@@ -63,3 +63,15 @@ clean:
 	rm -rf pyben/pyben.*.pyd
 	rm -rf pyben/__pycache__
 	rm -rf .venv
+
+test-rust:
+	export PATH="$(CARGO_BIN):$(LOCAL_BIN):$$PATH"
+	cargo test
+
+test-python: pyben-develop
+	export PATH="$(CARGO_BIN):$(LOCAL_BIN):$$PATH"
+	cd pyben
+	uv run pytest
+
+
+test: test-rust test-python
