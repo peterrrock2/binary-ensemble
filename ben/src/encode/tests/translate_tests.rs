@@ -88,8 +88,8 @@ fn test_simple_translation_ben32_to_ben() {
 #[test]
 fn test_random_translation_ben32_to_ben() {
     let mut rng = ChaCha8Rng::seed_from_u64(42);
-    let uniform100 = Uniform::new(1, 101);
-    let uniform10 = Uniform::new(1, 11);
+    let uniform100 = Uniform::new(1, 101).expect("Could not make uniform sampler");
+    let uniform10 = Uniform::new(1, 11).expect("Could not make uniform sampler");
 
     let mut rle_lst: Vec<Vec<(u16, u16)>> = Vec::new();
 
@@ -181,8 +181,8 @@ fn test_simple_translation_ben_to_ben32() {
 #[test]
 fn test_random_translation_ben_to_ben32() {
     let mut rng = ChaCha8Rng::seed_from_u64(42);
-    let uniform100 = Uniform::new(1, 101);
-    let uniform10 = Uniform::new(1, 11);
+    let uniform100 = Uniform::new(1, 101).expect("Could not make uniform sampler");
+    let uniform10 = Uniform::new(1, 11).expect("Could not make uniform sampler");
 
     let mut rle_lst: Vec<Vec<(u16, u16)>> = Vec::new();
 

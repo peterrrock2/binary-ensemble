@@ -20,7 +20,7 @@ fn test_ben_pipeline() {
     let scale = 50.0;
     let gamma = Gamma::new(shape, scale).unwrap();
 
-    let mu = Uniform::new(1, 51);
+    let mu = Uniform::new(1, 51).expect("Could not make uniform sampler");
 
     // In-memory buffer for streaming
     let mut buffer = Cursor::new(Vec::new());
@@ -77,8 +77,8 @@ fn test_mkvben_pipeline() {
     let scale = 50.0;
     let gamma = Gamma::new(shape, scale).unwrap();
 
-    let mu = Uniform::new(1, 51);
-    let count = Uniform::new(1, 11);
+    let mu = Uniform::new(1, 51).expect("Could not make uniform sampler");
+    let count = Uniform::new(1, 11).expect("Could not make uniform sampler");
 
     // In-memory buffer for streaming
     let mut buffer = Cursor::new(Vec::new());
@@ -138,7 +138,7 @@ fn test_xben_pipeline() {
     let scale = 200.0;
     let gamma = Gamma::new(shape, scale).unwrap();
 
-    let mu = Uniform::new(1, 51);
+    let mu = Uniform::new(1, 51).expect("Could not make uniform sampler");
 
     // In-memory buffer for streaming
     let mut buffer = Vec::new();
@@ -203,8 +203,8 @@ fn test_xmkvben_pipeline() {
     let scale = 200.0;
     let gamma = Gamma::new(shape, scale).unwrap();
 
-    let mu = Uniform::new(1, 51);
-    let count = Uniform::new(1, 11);
+    let mu = Uniform::new(1, 51).expect("Could not make uniform sampler");
+    let count = Uniform::new(1, 11).expect("Could not make uniform sampler");
 
     // In-memory buffer for streaming
     let mut buffer = Vec::new();

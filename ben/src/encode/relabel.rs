@@ -436,7 +436,7 @@ mod tests {
         let seed = 129530786u64;
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
 
-        let mu = Uniform::new(1, 21);
+        let mu = Uniform::new(1, 21).expect("Could not make uniform sampler");
 
         let in_assign = (0..100_000)
             .map(|_| mu.sample(&mut rng) as u16)
