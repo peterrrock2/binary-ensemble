@@ -1,14 +1,13 @@
 use ben::decode::{
-    build_frame_iter, decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl, BenDecoder,
-    MkvRecord, Selection, SubsampleFrameDecoder, XBenDecoder,
+    build_frame_iter, count_samples_from_file, decode_ben_to_jsonl, decode_xben_to_ben,
+    decode_xben_to_jsonl, BenDecoder, MkvRecord, Selection, SubsampleFrameDecoder, XBenDecoder,
 };
-use pyo3::exceptions::{PyException, PyIOError};
+use pyo3::exceptions::{PyException, PyIOError, PyUserWarning};
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use std::path::PathBuf;
-
-pub mod read;
 
 type DynIter = Box<dyn Iterator<Item = io::Result<MkvRecord>> + Send>;
 
@@ -19,6 +18,8 @@ pub struct PyBenDecoder {
     remaining_count: u16,
     src_path: PathBuf,
     mode: String,
+    base_len: usize,
+    len_hint: usize,
 }
 
 #[pymethods]
@@ -26,12 +27,11 @@ impl PyBenDecoder {
     #[new]
     #[pyo3(signature = (file_path, mode = "ben"))]
     #[pyo3(text_signature = "(file_path, mode='ben')")]
-    fn new(file_path: PathBuf, mode: &str) -> PyResult<Self> {
+    fn new(py: Python<'_>, file_path: PathBuf, mode: &str) -> PyResult<Self> {
         let file = File::options().read(true).open(&file_path).map_err(|e| {
             PyIOError::new_err(format!("Failed to open {}: {e}", file_path.display()))
         })?;
         let reader = BufReader::new(file);
-
         let iter: DynIter = match mode {
             "ben" => {
                 let ben = BenDecoder::new(reader).map_err(|e| {
@@ -40,6 +40,19 @@ impl PyBenDecoder {
                 Box::new(ben)
             }
             "xben" => {
+                let warnings = py.import("warnings")?;
+                let kwargs = PyDict::new(py);
+                // kwargs.set_item("stacklevel", 2)?;
+
+                warnings.call_method(
+                    "warn",
+                    (
+                        "XBEN may take a second to start decoding.",
+                        py.get_type::<PyUserWarning>(),
+                    ),
+                    Some(&kwargs),
+                )?;
+
                 let xben = XBenDecoder::new(reader).map_err(|e| {
                     PyException::new_err(format!("Failed to create XBenDecoder: {e}"))
                 })?;
@@ -52,12 +65,24 @@ impl PyBenDecoder {
             }
         };
 
+        // Detach to get around the GIL
+        let base_len = py
+            .detach(|| count_samples_from_file(&file_path, mode))
+            .map_err(|e| {
+                PyException::new_err(format!(
+                    "Failed to count samples in {}: {e}",
+                    file_path.display()
+                ))
+            })?;
+
         Ok(Self {
             iter,
             current_assignment: None,
             remaining_count: 0,
             src_path: file_path,
             mode: mode.to_string(),
+            base_len: base_len,
+            len_hint: base_len,
         })
     }
 
@@ -85,6 +110,11 @@ impl PyBenDecoder {
         }
     }
 
+    // Because we want progress bars!!!
+    fn __len__(slf: PyRef<Self>) -> usize {
+        slf.len_hint
+    }
+
     #[pyo3(text_signature = "(self, indices, /)")]
     fn subsample_indices<'py>(
         mut slf: PyRefMut<'py, Self>,
@@ -92,6 +122,18 @@ impl PyBenDecoder {
     ) -> PyResult<Py<Self>> {
         indices.sort_unstable();
         indices.dedup();
+
+        if indices[0] <= 0 {
+            return Err(PyException::new_err("indices must be 1-based"));
+        }
+        if indices.last().unwrap() > &slf.base_len {
+            return Err(PyException::new_err(format!(
+                "indices must be <= number of samples in base data ({})",
+                slf.base_len
+            )));
+        }
+        slf.len_hint = indices.len();
+
         let sel = Selection::Indices(indices.into_iter().peekable());
 
         let frames = build_frame_iter(&slf.src_path, &slf.mode).map_err(|e| {
@@ -120,7 +162,15 @@ impl PyBenDecoder {
                 "range must be 1-based and end >= start",
             ));
         }
+        if end > slf.base_len {
+            return Err(PyException::new_err(format!(
+                "end must be <= number of samples in base data ({})",
+                slf.base_len
+            )));
+        }
+
         let sel = Selection::Range { start, end };
+        slf.len_hint = end - start + 1;
 
         let frames = build_frame_iter(&slf.src_path, &slf.mode).map_err(|e| {
             PyException::new_err(format!(
@@ -147,6 +197,8 @@ impl PyBenDecoder {
             return Err(PyException::new_err("step and offset must be >= 1"));
         }
         let sel = Selection::Every { step, offset };
+
+        slf.len_hint = (slf.base_len + step - 1 - (offset - 1)) / step;
 
         let frames = build_frame_iter(&slf.src_path, &slf.mode).map_err(|e| {
             PyException::new_err(format!(

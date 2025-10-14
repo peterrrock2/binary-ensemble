@@ -19,6 +19,7 @@ use std::fs::File;
 use std::io::{self, BufRead, Read, Write}; // trait imports
 use std::io::{BufReader, Cursor, Error}; // type import
 use std::iter::Peekable;
+use std::path::Path;
 use std::path::PathBuf;
 use xz2::read::XzDecoder;
 
@@ -286,6 +287,19 @@ impl<R: Read> BenDecoder<R> {
     /// Consume this decoder and iterate raw ben frames instead of decoded assignments.
     pub fn into_frames(self) -> BenFrameDecoeder<R> {
         BenFrameDecoeder { inner: self }
+    }
+}
+
+impl<R: Read> BenDecoder<R> {
+    /// Count how many samples remain in this BEN stream.
+    /// Consumes the decoder (fast: walks frames only).
+    pub fn count_samples(self) -> io::Result<usize> {
+        let mut total = 0usize;
+        for frame_res in self.into_frames() {
+            let f = frame_res?; // BenFrame
+            total += f.count as usize; // 1 for Standard; >1 for MKVCHAIN
+        }
+        Ok(total)
     }
 }
 
@@ -899,7 +913,6 @@ impl<R: Read> Iterator for XBenFrameDecoder<R> {
     }
 }
 
-// convenience to convert a decoder into frame iterator
 impl<R: Read> XBenDecoder<R> {
     /// Consumes the decoder and iterate raw ben32 frames instead of decoded assignments.
     pub fn into_frames(self) -> XBenFrameDecoder<R> {
@@ -907,13 +920,27 @@ impl<R: Read> XBenDecoder<R> {
     }
 }
 
+impl<R: Read> XBenDecoder<R> {
+    /// Count how many samples remain in this XBEN stream.
+    /// Consumes the decoder (fast: walks frames only).
+    pub fn count_samples(self) -> io::Result<usize> {
+        let mut total = 0usize;
+        for frame_res in self.into_frames() {
+            let (_bytes, cnt) = frame_res?; // raw ben32 bytes + repetition count
+            total += cnt as usize;
+        }
+        Ok(total)
+    }
+}
+
+/// A generalized frame object that can be either a BenFrame
+/// or a XBEN frame (raw bytes + variant).
 #[derive(Clone)]
 pub enum Frame {
     Ben(BenFrame),             // from BenFrameDecoeder
     XBen(Vec<u8>, BenVariant), // raw ben32 bytes + variant (count is carried beside)
 }
 
-/// What to subsample.
 pub enum Selection {
     Indices(Peekable<std::vec::IntoIter<usize>>), // 1-based, sorted
     Every { step: usize, offset: usize },         // 1-based
@@ -1110,6 +1137,17 @@ pub fn build_frame_iter(file_path: &PathBuf, mode: &str) -> io::Result<FrameIter
 }
 
 impl<R: Read + Send> BenDecoder<R> {
+    /// Create a subsample iterator from this decoder that iterates over specific indices.
+    /// These indices are 1-based.
+    ///
+    /// # Arguments
+    ///
+    /// * `indices` - A collection of 1-based indices to select.
+    ///
+    /// # Returns
+    ///
+    /// An io::Result containing a SubsampleFrameDecoder that yields
+    /// decoded assignments and their repetition counts.
     pub fn into_subsample_by_indices<T>(
         self,
         indices: T,
@@ -1250,6 +1288,16 @@ impl<R: Read + Send> XBenDecoder<R> {
             .map(move |res| res.map(|(bytes, cnt)| (Frame::XBen(bytes, variant), cnt)));
         SubsampleFrameDecoder::every(Box::new(frames), step, offset)
     }
+}
+
+pub fn count_samples_from_file(path: &Path, mode: &str) -> io::Result<usize> {
+    let iter = build_frame_iter(&path.to_path_buf(), mode)?;
+    let mut total = 0usize;
+    for item in iter {
+        let (_frame, cnt) = item?;
+        total += cnt as usize;
+    }
+    Ok(total)
 }
 
 #[cfg(test)]
