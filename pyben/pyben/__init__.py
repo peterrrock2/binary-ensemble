@@ -8,12 +8,10 @@ from ._core import (
     decompress_xben_to_jsonl,
     decompress_xben_to_ben,
 )
-from . import read
 
 __all__ = [
     "PyBenDecoder",
     "PyBenEncoder",
-    "read",
     "compress_jsonl_to_ben",
     "compress_ben_to_xben",
     "compress_jsonl_to_xben",
