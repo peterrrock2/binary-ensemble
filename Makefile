@@ -45,3 +45,21 @@ pyben-develop: ensure-rust ensure-uv
 	uv sync
 	uv run maturin develop
 
+release: ensure-rust ensure-uv
+	# Make sure freshly installed binaries are picked up in this shell
+	export PATH="$(CARGO_BIN):$(LOCAL_BIN):$$PATH"
+	cd pyben
+	uv sync
+	uv run maturin build --release
+
+clean:
+	cargo clean
+	cd pyben
+	rm -rf target
+	rm -rf dist
+	rm -rf pyben.egg-info
+	rm -rf src/pyben.c
+	rm -rf pyben/*abi3.so
+	rm -rf pyben/pyben.*.pyd
+	rm -rf pyben/__pycache__
+	rm -rf .venv
