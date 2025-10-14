@@ -69,14 +69,57 @@ class PyBenDecoder:
         ...
 
 class PyBenEncoder:
-    """Encoder for Binary Ensemble (.ben) files."""
+    """Encoder for Binary Ensemble (.ben) files.
+
+
+    The encoder supports writing assignments to a BEN file using a context manager and the `write`
+    method.
+
+
+    Example
+    -------
+
+    ```python
+    from pyben import PyBenEncoder
+
+    assignments = [
+        [1, 2, 1, 1, 2, 2],
+        [2, 1, 1, 2, 2, 1],
+        [1, 1, 2, 1, 2, 2],
+    ]
+
+    with PyBenEncoder("output.ben", overwrite=True) as encoder:
+        for assignment in assignments:
+            encoder.write(assignment)
+    ```
+    """
 
     def __init__(
         self,
         file_path: str | Path,
         overwrite: bool = False,
         variant: Literal["standard", "mkv_chain"] | None = None,
-    ) -> None: ...
+    ) -> None:
+        """Initializes the encoder and opens the underlying file.
+
+        Parameters
+        ----------
+        file_path :
+            Path to the output BEN file.
+        overwrite :
+            Whether to overwrite the output file if it exists. Defaults to False.
+        variant : {"standard", "markov"}, optional
+            Select BEN variant. If None, defaults to "markov" (equivalent to "mkv_chain").
+
+        Raises
+        ------
+        OSError
+            If the file cannot be opened.
+        Exception
+            If the underlying encoder fails to initialize.
+        """
+        ...
+
     def write(self, assignment: list[int]) -> None:
         """Write a single assignment to the BEN file.
 

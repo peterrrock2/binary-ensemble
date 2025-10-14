@@ -112,13 +112,14 @@ pub struct BenDecoder<R: Read> {
     variant: BenVariant,
 }
 
+/// A single frame from a BEN file.
 #[derive(Clone)]
 pub struct BenFrame {
-    pub max_val_bits: u8,
-    pub max_len_bits: u8,
-    pub raw_data: Vec<u8>,
-    pub count: u16,
-    pub n_bytes: u32,
+    pub max_val_bits: u8,  // number of bits used for each value
+    pub max_len_bits: u8,  // number of bits used for each run-length
+    pub count: u16,        // repetition count (1 for Standard)
+    pub n_bytes: u32,      // number of bytes used for the raw assignment data
+    pub raw_data: Vec<u8>, // raw bit-compressed BEN data
 }
 
 impl<R: Read> BenDecoder<R> {
@@ -148,6 +149,11 @@ impl<R: Read> BenDecoder<R> {
         }
     }
 
+    /// Write all decoded assignments to a writer in JSONL format.
+    ///
+    /// Arguments:
+    ///
+    /// * `writer`: A mutable reference to a writer where the JSONL output will be written.
     fn write_all_jsonl(&mut self, mut writer: impl Write) -> io::Result<()> {
         while let Some(result_tuple) = self.next() {
             match result_tuple {
@@ -170,6 +176,10 @@ impl<R: Read> BenDecoder<R> {
         }
         Ok(())
     }
+
+    /// Internal helper function that pops a single ben frame from the reader.
+    /// This frame may then either be decoded into an assignment vector
+    /// or returned as-is for further processing.
     fn pop_frame_from_reader(&mut self) -> Option<io::Result<BenFrame>> {
         let mut b1 = [0u8; 1];
         let max_val_bits = match self.reader.read_exact(&mut b1) {
@@ -220,6 +230,7 @@ impl<R: Read> BenDecoder<R> {
     }
 }
 
+/// Helper function to decode a ben frame into an assignment vector.
 fn decode_ben_frame_to_assignment(frame: &BenFrame) -> io::Result<Vec<u16>> {
     decode_ben_line(
         Cursor::new(&frame.raw_data),
@@ -693,6 +704,8 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
     Ok(())
 }
 
+/// Iterator over decoded assignments inside an XBEN stream.
+/// Yields `(assignment, count)` where `count` is the repetition count
 pub struct XBenDecoder<R: Read> {
     xz: BufReader<XzDecoder<R>>,
     pub variant: BenVariant,
@@ -778,6 +791,7 @@ impl<R: Read> XBenDecoder<R> {
     }
 }
 
+/// Helper function to decode a ben32 frame (raw bytes) into an assignment vector.
 fn decode_xben_frame_to_assignment(
     frame_bytes: &[u8],
     variant: BenVariant,
@@ -887,7 +901,7 @@ impl<R: Read> Iterator for XBenFrameDecoder<R> {
 
 // convenience to convert a decoder into frame iterator
 impl<R: Read> XBenDecoder<R> {
-    /// Consume this decoder and iterate raw ben32 frames instead of decoded assignments.
+    /// Consumes the decoder and iterate raw ben32 frames instead of decoded assignments.
     pub fn into_frames(self) -> XBenFrameDecoder<R> {
         XBenFrameDecoder { inner: self }
     }
@@ -906,6 +920,7 @@ pub enum Selection {
     Range { start: usize, end: usize },           // inclusive, 1-based
 }
 
+/// Decode a Frame (Ben or XBen) into an assignment vector.
 fn decode_frame_to_assignment(frame: &Frame) -> io::Result<Vec<u16>> {
     match frame {
         Frame::Ben(f) => decode_ben_frame_to_assignment(f),
@@ -934,6 +949,7 @@ where
         }
     }
 
+    /// 1-based indices, in any order (duplicates removed internally).
     pub fn by_indices<T>(inner: I, indices: T) -> Self
     where
         T: IntoIterator<Item = usize>,
@@ -959,6 +975,8 @@ where
         Self::new(inner, Selection::Every { step, offset })
     }
 
+    // Helper function to count how many selected samples are in the interval [lo, hi].
+    // Both lo and hi are 1-based, inclusive.
     fn count_selected_in(&mut self, lo: usize, hi: usize) -> u16 {
         match &mut self.selection {
             Selection::Indices(iter) => {
@@ -1047,6 +1065,21 @@ where
 
 pub type FrameIter = Box<dyn Iterator<Item = io::Result<(Frame, u16)>> + Send>;
 
+/// Build a frame iterator from a file path and mode ("ben" or "xben")
+///
+/// Frame iteration is useful for subsampling since you do not need to decode every frame
+/// into an assignment vector. Since the BEN standard includes information about the number
+/// of bytes used to encode each frame, reading through the file and extracting particular
+/// frames is incredibly fast.
+///
+/// # Arguments
+///
+/// * `file_path` - A PathBuf pointing to the BEN or XBEN file.
+/// * `mode` - A string slice indicating the file type: "ben" or "xben".
+///
+/// # Returns
+///
+/// An io::Result containing a boxed iterator over frames and their repetition counts.
 pub fn build_frame_iter(file_path: &PathBuf, mode: &str) -> io::Result<FrameIter> {
     let file = File::options().read(true).open(file_path)?;
     let reader = BufReader::new(file);
@@ -1093,6 +1126,17 @@ impl<R: Read + Send> BenDecoder<R> {
         SubsampleFrameDecoder::by_indices(frames, indices)
     }
 
+    /// Create a subsample iterator from this decoder that iterates over a range of samples.
+    ///
+    /// # Arguments
+    ///
+    /// * `start` - The 1-based start index (inclusive).
+    /// * `end` - The 1-based end index (inclusive).
+    ///
+    /// # Returns
+    ///
+    /// An io::Result containing a SubsampleFrameDecoder that yields
+    /// decoded assignments and their repetition counts.
     pub fn into_subsample_by_range(
         self,
         start: usize,
@@ -1107,6 +1151,18 @@ impl<R: Read + Send> BenDecoder<R> {
         SubsampleFrameDecoder::by_range(frames, start, end)
     }
 
+    /// Create a subsample iterator from this decoder that iterates every `step` samples
+    /// starting from 1-based `offset`.
+    ///
+    /// # Arguments
+    ///
+    /// * `step` - The step size (must be >= 1).
+    /// * `offset` - The 1-based offset to start from (must be >= 1).
+    ///
+    /// # Returns
+    ///
+    /// An io::Result containing a SubsampleFrameDecoder that yields
+    /// decoded assignments and their repetition counts.
     pub fn into_subsample_every(
         self,
         step: usize,
@@ -1123,6 +1179,17 @@ impl<R: Read + Send> BenDecoder<R> {
 }
 
 impl<R: Read + Send> XBenDecoder<R> {
+    /// Create a subsample iterator from this decoder that iterates over specific indices.
+    /// These indices are 1-based.
+    ///
+    /// # Arguments
+    ///
+    /// * `indices` - A collection of 1-based indices to select.
+    ///
+    /// # Returns
+    ///
+    /// An io::Result containing a SubsampleFrameDecoder that yields
+    /// decoded assignments and their repetition counts.
     pub fn into_subsample_by_indices<T>(
         self,
         indices: T,
@@ -1137,6 +1204,17 @@ impl<R: Read + Send> XBenDecoder<R> {
         SubsampleFrameDecoder::by_indices(Box::new(frames), indices)
     }
 
+    /// Create a subsample iterator from this decoder that iterates over a range of samples.
+    ///
+    /// # Arguments
+    ///
+    /// * `start` - The 1-based start index (inclusive).
+    /// * `end` - The 1-based end index (inclusive).
+    ///
+    /// # Returns
+    ///
+    /// An io::Result containing a SubsampleFrameDecoder that yields
+    /// decoded assignments and their repetition counts.
     pub fn into_subsample_by_range(
         self,
         start: usize,
@@ -1149,6 +1227,18 @@ impl<R: Read + Send> XBenDecoder<R> {
         SubsampleFrameDecoder::by_range(Box::new(frames), start, end)
     }
 
+    /// Create a subsample iterator from this decoder that iterates every `step` samples
+    /// starting from 1-based `offset`.
+    ///
+    /// # Arguments
+    ///
+    /// * `step` - The step size (must be >= 1).
+    /// * `offset` - The 1-based offset to start from (must be >= 1).
+    ///
+    /// # Returns
+    ///
+    /// An io::Result containing a SubsampleFrameDecoder that yields
+    /// decoded assignments and their repetition counts.
     pub fn into_subsample_every(
         self,
         step: usize,
