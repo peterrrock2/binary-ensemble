@@ -119,7 +119,27 @@ impl PyBenDecoder {
     fn subsample_indices<'py>(
         mut slf: PyRefMut<'py, Self>,
         mut indices: Vec<usize>,
+        py: Python<'_>,
     ) -> PyResult<Py<Self>> {
+        if !indices.iter().is_sorted() {
+            // We need to sort and deduplicate the indices
+            // This is a bit annoying, but it is necessary to ensure that we can
+            // efficiently iterate over the underlying data.
+            // We use unstable sort because we don't care about the order of equal elements
+            // and it is faster than stable sort.
+            let warnings = py.import("warnings")?;
+            let kwargs = PyDict::new(py);
+            // kwargs.set_item("stacklevel", 2)?;
+
+            warnings.call_method(
+                "warn",
+                (
+                    "Indices must be sorted and unique; sorting and deduplicating.",
+                    py.get_type::<PyUserWarning>(),
+                ),
+                Some(&kwargs),
+            )?;
+        }
         indices.sort_unstable();
         indices.dedup();
 
