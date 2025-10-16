@@ -61,8 +61,10 @@ clean:
 	rm -rf src/pyben.c
 	rm -rf pyben/*abi3.so
 	rm -rf pyben/pyben.*.pyd
-	rm -rf pyben/__pycache__
 	rm -rf .venv
+	rm -rf ./**/__pycache__
+	cd notebooks
+	rm -rf example_data
 
 test-rust:
 	export PATH="$(CARGO_BIN):$(LOCAL_BIN):$$PATH"
