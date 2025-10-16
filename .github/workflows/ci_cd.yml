@@ -108,6 +108,34 @@ jobs:
           name: wheels-windows
           path: ${{ env.PKG_DIR }}/${{ env.OUT_DIR }}/*
 
+  windows-arm64:
+    name: windows (ARM64, abi3)
+    runs-on: windows-11-arm
+    env:
+      PKG_DIR: pyben
+      OUT_DIR: dist
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python (ARM64)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          architecture: arm64
+      - name: Build wheel (win_arm64, abi3)
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: ${{ env.PKG_DIR }}
+          command: build
+          args: >-
+            --release
+            --locked
+            --out ${{ env.OUT_DIR }}
+            --target aarch64-pc-windows-msvc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-arm64
+          path: ${{ env.PKG_DIR }}/${{ env.OUT_DIR }}/*
+
   sdist:
     name: sdist
     runs-on: ubuntu-latest
@@ -128,7 +156,7 @@ jobs:
 
   # publish:
   #   name: Publish
-  #   needs: [linux, macos, windows, sdist]
+  #   needs: [linux, macos, windows, windows-arm64, sdist]
   #   runs-on: ubuntu-latest
   #   if: |
   #     startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'

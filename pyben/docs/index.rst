@@ -12,6 +12,15 @@ this package provides some easy tools for compressing and  decompressing ensembl
 districting plans, as well as some utilities for working with ensembles stored in the
 BEN and XBEN formats.
 
+Installation
+------------
+
+To install PyBen, you can just use pip!
+
+.. code-block:: bash
+
+    pip install py-ben
+
 
 .. toctree:: 
     :caption: PyBEN Tutorial
