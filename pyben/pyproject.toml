@@ -5,7 +5,7 @@ build-backend = "maturin"
 
 [project]
 name = "pyben"
-version = "0.1.0-alpha"
+version = "0.1.0"
 description = "Python bindings for the Binary Ensemble Package."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,7 +23,8 @@ filterwarnings = [
 
 [dependency-groups]
 dev = [
-    "ipykernel>=7.0.0",
+    "gerrychain[geo]>=0.3.2",
+    "ipykernel>=7.0.1",
     "ipywidgets>=8.1.7",
     "maturin>=1.9.6",
     "pytest>=8.4.2",
