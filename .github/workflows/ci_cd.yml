@@ -1,0 +1,171 @@
+name: Build & publish pyben wheels
+
+on:
+  push:
+    tags:
+      - "v*" # build & publish on tags like v1.2.3
+  workflow_dispatch: # manual runs
+
+env:
+  PKG_DIR: pyben
+  OUT_DIR: dist
+
+permissions:
+  contents: read
+  id-token: write # needed for PyPI Trusted Publishing
+
+jobs:
+  # -----------------------------
+  # Linux wheels (x86_64, aarch64)
+  # -----------------------------
+  linux:
+    name: linux ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build manylinux_2_28 wheels for all CPython versions
+
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: "2_28"
+          working-directory: ${{ env.PKG_DIR }}
+          args: >
+            build
+            --release
+            --locked
+            --out ${{ env.OUT_DIR }}
+
+      - name: List artifacts
+        run: ls -l ${{ env.PKG_DIR }}/${{ env.OUT_DIR }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-${{ matrix.target }}
+          path: ${{ env.PKG_DIR }}/${{ env.OUT_DIR }}/*
+
+  # -------------------------
+  # macOS universal2 (single job)
+  # -------------------------
+  macos:
+    name: macos universal2
+    runs-on: macos-14 # Apple Silicon runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add x86_64 target for universal2
+        run: rustup target add x86_64-apple-darwin
+
+      - name: Build universal2 wheels (all CPythons)
+        uses: PyO3/maturin-action@v1
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "10.13"
+        with:
+          manylinux: "off"
+          working-directory: ${{ env.PKG_DIR }}
+          args: >
+            build
+            --release
+            --locked
+            --universal2
+            --out ${{ env.OUT_DIR }}
+
+      - name: List artifacts
+        run: ls -l ${{ env.PKG_DIR }}/${{ env.OUT_DIR }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-universal2
+          path: ${{ env.PKG_DIR }}/${{ env.OUT_DIR }}/*
+
+  # ---------------------
+  # Windows wheels (x64)
+  # ---------------------
+  windows:
+    name: windows py${{ matrix.py }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        py: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.py }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py }}
+          architecture: x64
+
+      - name: Build wheel for this interpreter
+        uses: PyO3/maturin-action@v1
+        with:
+          manylinux: "off"
+          working-directory: ${{ env.PKG_DIR }}
+          args: >
+            build
+            --release
+            --locked
+            --interpreter python
+            --out ${{ env.OUT_DIR }}
+
+      - name: List artifacts
+        run: dir $env:PKG_DIR\$env:OUT_DIR
+        shell: pwsh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-py${{ matrix.py }}
+          path: ${{ env.PKG_DIR }}/${{ env.OUT_DIR }}/*
+
+  # -------------
+  # Source dist
+  # -------------
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          manylinux: "off"
+          working-directory: ${{ env.PKG_DIR }}
+          args: >
+            sdist
+            --locked
+            --out ${{ env.OUT_DIR }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: ${{ env.PKG_DIR }}/${{ env.OUT_DIR }}/*
+
+  # # -----------------------
+  # # Publish to PyPI on tags
+  # # -----------------------
+  # publish:
+  #   name: Publish to PyPI
+  #   if: startsWith(github.ref, 'refs/tags/')
+  #   needs: [linux, macos, windows, sdist]
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         path: collected
+  #     - name: Collect dists
+  #       run: |
+  #         mkdir -p upload
+  #         find collected -type f -name '*.whl' -exec cp {} upload/ \;
+  #         find collected -type f -name '*.tar.gz' -exec cp {} upload/ \;
+  #         ls -l upload
+  #     - name: Publish (Trusted Publishing)
+  #       uses: pypa/gh-action-pypi-publish@release/v1
+  #       with:
+  #         packages-dir: upload
+  #         # If you prefer API tokens instead of Trusted Publishing:
+  #         # password: ${{ secrets.PYPI_API_TOKEN }}

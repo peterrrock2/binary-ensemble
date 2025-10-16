@@ -63,7 +63,9 @@ clean:
 	rm -rf pyben/pyben.*.pyd
 	rm -rf .venv
 	rm -rf ./**/__pycache__
-	cd notebooks
+	cd docs
+	rm -rf _build
+	cd user
 	rm -rf example_data
 
 test-rust:
