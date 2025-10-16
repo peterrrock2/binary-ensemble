@@ -1,7 +1,10 @@
 python_tester.py  
 main.py
+.envrc
 
 dist/
 __pycache__
 *.pyc
 *.so
+
+docs/_build

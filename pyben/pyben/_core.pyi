@@ -36,6 +36,11 @@ class PyBenDecoder:
         ---------
         indices :
             Iterable of 1-based sample indices to keep.
+
+        Returns
+        -------
+        PyBenDecoder
+            The same decoder (fluent API).
         """
         ...
 
@@ -51,7 +56,8 @@ class PyBenDecoder:
 
         Returns
         -------
-            Returns the same decoder (fluent API).
+        PyBenDecoder
+            The same decoder (fluent API).
         """
         ...
 
@@ -65,6 +71,11 @@ class PyBenDecoder:
             Step size (keep every `step`-th sample).
         offset :
             1-based index of the first sample to keep (default: 1).
+
+        Returns
+        -------
+        PyBenDecoder
+            The same decoder (fluent API).
         """
         ...
 
@@ -79,19 +90,21 @@ class PyBenEncoder:
     Example
     -------
 
-    ```python
-    from pyben import PyBenEncoder
 
-    assignments = [
-        [1, 2, 1, 1, 2, 2],
-        [2, 1, 1, 2, 2, 1],
-        [1, 1, 2, 1, 2, 2],
-    ]
+    .. code-block:: python
 
-    with PyBenEncoder("output.ben", overwrite=True) as encoder:
-        for assignment in assignments:
-            encoder.write(assignment)
-    ```
+        from pyben import PyBenEncoder
+
+        assignments = [
+            [1, 2, 1, 1, 2, 2],
+            [2, 1, 1, 2, 2, 1],
+            [1, 1, 2, 1, 2, 2],
+        ]
+
+        with PyBenEncoder("output.ben", overwrite=True) as encoder:
+            for assignment in assignments:
+                encoder.write(assignment)
+
     """
 
     def __init__(

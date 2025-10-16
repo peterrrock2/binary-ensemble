@@ -42,14 +42,14 @@ pyben-develop: ensure-rust ensure-uv
 	# Make sure freshly installed binaries are picked up in this shell
 	export PATH="$(CARGO_BIN):$(LOCAL_BIN):$$PATH"
 	cd pyben
-	uv sync
+	uv sync --all-groups
 	uv run maturin develop
 
 release: ensure-rust ensure-uv
 	# Make sure freshly installed binaries are picked up in this shell
 	export PATH="$(CARGO_BIN):$(LOCAL_BIN):$$PATH"
 	cd pyben
-	uv sync
+	uv sync --all-groups
 	uv run maturin build --release
 
 clean:
