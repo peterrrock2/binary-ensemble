@@ -8,7 +8,9 @@ other ensemble generators (e.g. ForestRecom, Sequential Monte Carlo [SMC]).
 
 This is a package containing some Python bindings for the for the 
 `Binary-Ensemble <https://crates.io/crates/binary-ensemble>` Rust library. In particular,
-this package provides some easy tools for 
+this package provides some easy tools for compressing and  decompressing ensembles of
+districting plans, as well as some utilities for working with ensembles stored in the
+BEN and XBEN formats.
 
 
 .. toctree:: 

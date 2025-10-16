@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 
 [project]
-name = "pyben"
+name = "py-ben"
 version = "0.3.0"
 description = "Python bindings for the Binary Ensemble Package."
 readme = "README.md"
