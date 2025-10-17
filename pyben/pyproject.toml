@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 
 [project]
-name = "py-ben"
+name = "binary-ensemble"
 version = "0.3.0"
 description = "Python bindings for the Binary Ensemble Package."
 readme = "README.md"

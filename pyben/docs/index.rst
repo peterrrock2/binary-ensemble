@@ -19,7 +19,7 @@ To install PyBen, you can just use pip!
 
 .. code-block:: bash
 
-    pip install py-ben
+    pip install binary-ensemble
 
 
 .. toctree:: 
