@@ -332,3 +332,47 @@ def test_ben_to_xben_and_back(tmp_path: Path) -> None:
     decompress_ben_to_jsonl(ben2, out_jsonl, overwrite=True)
 
     assert src.read_bytes() == out_jsonl.read_bytes()
+
+
+def test_decoder_subsample_indices_rejects_empty_input(tmp_path: Path) -> None:
+    rng = random.Random(123)
+    seq = gen_sequence_standard(rng, 10)
+
+    src = tmp_path / "src.jsonl"
+    write_jsonl(seq, src)
+
+    ben = tmp_path / "out.ben"
+    compress_jsonl_to_ben(src, ben, overwrite=True, variant="standard")
+
+    dec = PyBenDecoder(ben, mode="ben")
+    with pytest.raises(Exception, match="indices must not be empty"):
+        dec.subsample_indices([])
+
+
+def test_decoder_subsample_every_rejects_offset_past_end(tmp_path: Path) -> None:
+    rng = random.Random(456)
+    seq = gen_sequence_standard(rng, 10)
+
+    src = tmp_path / "src.jsonl"
+    write_jsonl(seq, src)
+
+    ben = tmp_path / "out.ben"
+    compress_jsonl_to_ben(src, ben, overwrite=True, variant="standard")
+
+    dec = PyBenDecoder(ben, mode="ben")
+    with pytest.raises(Exception, match="offset must be <="):
+        dec.subsample_every(2, 99)
+
+
+def test_compress_helpers_reject_unknown_variants(tmp_path: Path) -> None:
+    rng = random.Random(789)
+    seq = gen_sequence_standard(rng, 5)
+
+    src = tmp_path / "src.jsonl"
+    write_jsonl(seq, src)
+
+    with pytest.raises(ValueError, match="Unknown variant"):
+        compress_jsonl_to_ben(src, tmp_path / "out.ben", overwrite=True, variant="weird")
+
+    with pytest.raises(ValueError, match="Unknown variant"):
+        compress_jsonl_to_xben(src, tmp_path / "out.xben", overwrite=True, variant="weird")

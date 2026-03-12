@@ -1,12 +1,12 @@
+use crate::common::{open_input, open_output, parse_variant, validate_input_output_paths};
 use ben::codec::encode::{encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben};
 use ben::io::writer::BenEncoder;
-use ben::BenVariant;
-use pyo3::exceptions::{PyException, PyIOError};
+use pyo3::exceptions::PyIOError;
 use pyo3::prelude::PyResult;
 use pyo3::{pyclass, pyfunction, pymethods};
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
-use std::path::{Path, PathBuf};
+use std::io::BufWriter;
+use std::path::PathBuf;
 
 #[pyclass]
 pub struct PyBenEncoder {
@@ -19,45 +19,10 @@ impl PyBenEncoder {
     #[pyo3(signature = (file_path, overwrite = false, variant = None))]
     #[pyo3(text_signature = "(file_path, overwrite=False, variant=None)")]
     fn new(file_path: PathBuf, overwrite: bool, variant: Option<String>) -> PyResult<Self> {
-        let ben_var = match variant.as_deref() {
-            Some("standard") => BenVariant::Standard,
-            Some("mkv_chain") => BenVariant::MkvChain,
-            Some(other) => {
-                return Err(PyException::new_err(format!(
-                    "Unknown variant: {}. Supported variants are 'standard' and 'mkv_chain'.",
-                    other
-                )))
-            }
-            _ => BenVariant::MkvChain,
-        };
+        let ben_var = parse_variant(variant.as_deref())?;
+        let writer = open_output(&file_path, overwrite)?;
 
-        let path = Path::new(&file_path);
-        let file = if overwrite {
-            File::options()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(&file_path)
-                .map_err(|e| {
-                    PyIOError::new_err(format!("Failed to create file {:?}: {}", file_path, e))
-                })?
-        } else {
-            if path.exists() {
-                return Err(PyIOError::new_err(format!(
-                    "File {:?} already exists. Use overwrite=True to overwrite it.",
-                    file_path
-                )));
-            }
-            File::options()
-                .write(true)
-                .create_new(true)
-                .open(&file_path)
-                .map_err(|e| {
-                    PyIOError::new_err(format!("Failed to create file {:?}: {}", file_path, e))
-                })?
-        };
-
-        let encoder = BenEncoder::new(BufWriter::new(file), ben_var);
+        let encoder = BenEncoder::new(writer, ben_var);
         Ok(PyBenEncoder {
             encoder: Some(encoder),
         })
@@ -111,42 +76,9 @@ pub fn compress_ben_to_xben(
     n_threads: Option<u32>,
     compression_level: Option<u32>,
 ) -> PyResult<()> {
-    // Basic validations
-    if in_file == out_file {
-        return Err(PyIOError::new_err("Input and output paths must differ."));
-    }
-    if !in_file.exists() {
-        return Err(PyIOError::new_err(format!(
-            "Input file {} does not exist.",
-            in_file.display()
-        )));
-    }
-    if out_file.exists() && !overwrite {
-        return Err(PyIOError::new_err(format!(
-            "Output file {} already exists (use overwrite=True to replace).",
-            out_file.display()
-        )));
-    }
-
-    // Open input (read-only, buffered)
-    let infile = File::open(&in_file)
-        .map_err(|e| PyIOError::new_err(format!("Failed to open {}: {e}", in_file.display())))?;
-    let reader = BufReader::new(infile);
-
-    // Open/create output according to overwrite flag
-    let out_open = if overwrite {
-        File::options()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&out_file)
-    } else {
-        File::options().write(true).create_new(true).open(&out_file)
-    };
-    let outfile = out_open
-        .map_err(|e| PyIOError::new_err(format!("Failed to create {}: {e}", out_file.display())))?;
-
-    let writer = BufWriter::new(outfile);
+    validate_input_output_paths(&in_file, &out_file)?;
+    let reader = open_input(&in_file)?;
+    let writer = open_output(&out_file, overwrite)?;
 
     encode_ben_to_xben(reader, writer, n_threads, compression_level).map_err(|e| {
         PyIOError::new_err(format!(
@@ -160,59 +92,19 @@ pub fn compress_ben_to_xben(
 }
 
 #[pyfunction]
-#[pyo3(signature = (in_file, out_file, overwrite=false, variant="markov"))]
-#[pyo3(text_signature = "(in_file, out_file, overwrite=false, variant='markov')")]
+#[pyo3(signature = (in_file, out_file, overwrite=false, variant="mkv_chain"))]
+#[pyo3(text_signature = "(in_file, out_file, overwrite=false, variant='mkv_chain')")]
 pub fn compress_jsonl_to_ben(
     in_file: PathBuf,
     out_file: PathBuf,
     overwrite: bool,
     variant: &str,
 ) -> PyResult<()> {
-    let ben_var = match variant {
-        "standard" => BenVariant::Standard,
-        "mkv_chain" | "markov" => BenVariant::MkvChain,
-        other => {
-            eprintln!(
-                "Warning: Unknown variant '{}', defaulting to 'markov'",
-                other
-            );
-            BenVariant::MkvChain
-        }
-    };
+    let ben_var = parse_variant(Some(variant))?;
+    validate_input_output_paths(&in_file, &out_file)?;
+    let reader = open_input(&in_file)?;
+    let writer = open_output(&out_file, overwrite)?;
 
-    if in_file == out_file {
-        return Err(PyIOError::new_err("Input and output paths must differ."));
-    }
-    if !in_file.exists() {
-        return Err(PyIOError::new_err(format!(
-            "Input file {} does not exist.",
-            in_file.display()
-        )));
-    }
-    if out_file.exists() && !overwrite {
-        return Err(PyIOError::new_err(format!(
-            "Output file {} already exists (use overwrite=True to replace).",
-            out_file.display()
-        )));
-    }
-    // Open input (read-only, buffered)
-    let infile = File::open(&in_file)
-        .map_err(|e| PyIOError::new_err(format!("Failed to open {}: {e}", in_file.display())))?;
-    let reader = BufReader::new(infile);
-
-    // Open/create output according to overwrite flag
-    let out_open = if overwrite {
-        File::options()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&out_file)
-    } else {
-        File::options().write(true).create_new(true).open(&out_file)
-    };
-    let outfile = out_open
-        .map_err(|e| PyIOError::new_err(format!("Failed to create {}: {e}", out_file.display())))?;
-    let writer = BufWriter::new(outfile);
     encode_jsonl_to_ben(reader, writer, ben_var).map_err(|e| {
         PyIOError::new_err(format!(
             "Failed to convert JSONL to BEN from {} to {}: {e}",
@@ -224,9 +116,9 @@ pub fn compress_jsonl_to_ben(
 }
 
 #[pyfunction]
-#[pyo3(signature = (in_file, out_file, overwrite=false, variant="markov", n_threads=None, compression_level=None))]
+#[pyo3(signature = (in_file, out_file, overwrite=false, variant="mkv_chain", n_threads=None, compression_level=None))]
 #[pyo3(
-    text_signature = "(in_file, out_file, overwrite=false, variant='markov', n_threads=None, compression_level=None)"
+    text_signature = "(in_file, out_file, overwrite=false, variant='mkv_chain', n_threads=None, compression_level=None)"
 )]
 pub fn compress_jsonl_to_xben(
     in_file: PathBuf,
@@ -236,54 +128,14 @@ pub fn compress_jsonl_to_xben(
     n_threads: Option<u32>,
     compression_level: Option<u32>,
 ) -> PyResult<()> {
-    let ben_var = match variant {
-        "standard" => BenVariant::Standard,
-        "mkv_chain" | "markov" => BenVariant::MkvChain,
-        other => {
-            eprintln!(
-                "Warning: Unknown variant '{}', defaulting to 'markov'",
-                other
-            );
-            BenVariant::MkvChain
-        }
-    };
+    let ben_var = parse_variant(Some(variant))?;
+    validate_input_output_paths(&in_file, &out_file)?;
+    let reader = open_input(&in_file)?;
+    let writer = open_output(&out_file, overwrite)?;
 
-    if in_file == out_file {
-        return Err(PyIOError::new_err("Input and output paths must differ."));
-    }
-    if !in_file.exists() {
-        return Err(PyIOError::new_err(format!(
-            "Input file {} does not exist.",
-            in_file.display()
-        )));
-    }
-    if out_file.exists() && !overwrite {
-        return Err(PyIOError::new_err(format!(
-            "Output file {} already exists (use overwrite=True to replace).",
-            out_file.display()
-        )));
-    }
-    // Open input (read-only, buffered)
-    let infile = File::open(&in_file)
-        .map_err(|e| PyIOError::new_err(format!("Failed to open {}: {e}", in_file.display())))?;
-    let reader = BufReader::new(infile);
-
-    // Open/create output according to overwrite flag
-    let out_open = if overwrite {
-        File::options()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&out_file)
-    } else {
-        File::options().write(true).create_new(true).open(&out_file)
-    };
-    let outfile = out_open
-        .map_err(|e| PyIOError::new_err(format!("Failed to create {}: {e}", out_file.display())))?;
-    let writer = BufWriter::new(outfile);
     encode_jsonl_to_xben(reader, writer, ben_var, n_threads, compression_level).map_err(|e| {
         PyIOError::new_err(format!(
-            "Failed to convert JSONL to BEN from {} to {}: {e}",
+            "Failed to convert JSONL to XBEN from {} to {}: {e}",
             in_file.display(),
             out_file.display()
         ))

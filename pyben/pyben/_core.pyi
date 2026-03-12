@@ -121,8 +121,8 @@ class PyBenEncoder:
             Path to the output BEN file.
         overwrite :
             Whether to overwrite the output file if it exists. Defaults to False.
-        variant : {"standard", "markov"}, optional
-            Select BEN variant. If None, defaults to "markov" (equivalent to "mkv_chain").
+        variant : {"standard", "mkv_chain"}, optional
+            Select BEN variant. If None, defaults to "mkv_chain".
 
         Raises
         ------
@@ -232,8 +232,8 @@ def compress_jsonl_to_ben(
         Path to the output BEN file.
     overwrite :
         Whether to overwrite the output file if it exists. Defaults to False.
-    variant : {"standard", "markov"}, optional
-        Select BEN variant. If None, defaults to "markov" (equivalent to "mkv_chain").
+    variant : {"standard", "mkv_chain"}, optional
+        Select BEN variant. If None, defaults to "mkv_chain".
 
     Raises
     ------
@@ -262,8 +262,8 @@ def compress_jsonl_to_xben(
         Path to the output XBEN file.
     overwrite :
         Whether to overwrite the output file if it exists. Defaults to False.
-    variant : {"standard", "markov"}, optional
-        Select BEN variant. If None, defaults to "markov" (equivalent to "mkv_chain").
+    variant : {"standard", "mkv_chain"}, optional
+        Select BEN variant. If None, defaults to "mkv_chain".
     n_threads :
         Number of threads to use for compression. If None, defaults to the number of CPU cores.
     compression_level :

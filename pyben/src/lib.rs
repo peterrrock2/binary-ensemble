@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction; // <-- needed for wrap_pyfunction!
 
+pub mod common;
 pub mod decode;
 pub mod encode;
 
