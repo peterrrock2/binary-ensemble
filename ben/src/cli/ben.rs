@@ -240,7 +240,7 @@ pub fn run() {
             logln!("Running in xencode mode");
 
             let mut ben_and_xben = args.ben_and_xben;
-            let mut jsonl_and_xben = args.ben_and_xben;
+            let mut jsonl_and_xben = args.jsonl_and_xben;
 
             if let Some(in_file) = args.input_file.as_ref() {
                 if in_file.ends_with(".ben") {
@@ -463,5 +463,210 @@ pub fn run() {
                 eprintln!("Error: {:?}", err);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::{CommandFactory, Parser};
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_path(name: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("ben-cli-ben-{name}-{nonce}"))
+    }
+
+    #[test]
+    fn clap_metadata_uses_package_version() {
+        let mut command = Args::command();
+        let help = command.render_long_help().to_string();
+
+        assert_eq!(command.get_version(), Some(env!("CARGO_PKG_VERSION")));
+        assert!(help.contains("Binary Ensemble CLI Tool"));
+        assert!(help.contains("--mode"));
+        assert!(help.contains("x-encode"));
+    }
+
+    #[test]
+    fn parse_encode_args() {
+        let args = Args::try_parse_from([
+            "ben",
+            "--mode",
+            "encode",
+            "--output-file",
+            "out.ben",
+            "--save-all",
+            "--verbose",
+            "input.jsonl",
+        ])
+        .unwrap();
+
+        assert_eq!(args.mode, Mode::Encode);
+        assert_eq!(args.input_file.as_deref(), Some("input.jsonl"));
+        assert_eq!(args.output_file.as_deref(), Some("out.ben"));
+        assert!(args.save_all);
+        assert!(args.verbose);
+    }
+
+    #[test]
+    fn parse_xencode_stream_flags() {
+        let args = Args::try_parse_from([
+            "ben",
+            "--mode",
+            "x-encode",
+            "--jsonl-and-xben",
+            "--ben-and-xben",
+            "--jsonl-and-ben",
+        ])
+        .unwrap();
+
+        assert_eq!(args.mode, Mode::XEncode);
+        assert!(args.jsonl_and_xben);
+        assert!(args.ben_and_xben);
+        assert!(args.jsonl_and_ben);
+    }
+
+    #[test]
+    fn encode_setup_derives_extensions() {
+        assert_eq!(
+            encode_setup(Mode::Encode, "samples.jsonl".to_string(), None, true).unwrap(),
+            "samples.jsonl.ben"
+        );
+        assert_eq!(
+            encode_setup(Mode::XEncode, "samples.ben".to_string(), None, true).unwrap(),
+            "samples.xben"
+        );
+        assert_eq!(
+            encode_setup(Mode::XzCompress, "samples.jsonl".to_string(), None, true).unwrap(),
+            "samples.jsonl.xz"
+        );
+    }
+
+    #[test]
+    fn encode_setup_respects_explicit_output() {
+        assert_eq!(
+            encode_setup(
+                Mode::Encode,
+                "ignored.jsonl".to_string(),
+                Some("custom-output.ben".to_string()),
+                true,
+            )
+            .unwrap(),
+            "custom-output.ben"
+        );
+    }
+
+    #[test]
+    fn encode_setup_checks_overwrite() {
+        let path = unique_path("existing.ben");
+        fs::write(&path, "already here").unwrap();
+
+        let err = encode_setup(
+            Mode::Encode,
+            "input.jsonl".to_string(),
+            Some(path.to_string_lossy().into_owned()),
+            true,
+        );
+        assert!(err.is_ok());
+
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn decode_setup_derives_ben_and_xben_outputs() {
+        assert_eq!(
+            decode_setup("samples.ben".to_string(), None, false, true).unwrap(),
+            "samples"
+        );
+        assert_eq!(
+            decode_setup("samples.xben".to_string(), None, false, true).unwrap(),
+            "samples.ben"
+        );
+        assert_eq!(
+            decode_setup("samples.xben".to_string(), None, true, true).unwrap(),
+            "samples"
+        );
+    }
+
+    #[test]
+    fn decode_setup_rejects_xz_input() {
+        let err = decode_setup("samples.xz".to_string(), None, false, true).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn decode_setup_rejects_unknown_input() {
+        let err = decode_setup("samples.data".to_string(), None, false, true).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn decode_setup_respects_explicit_output() {
+        assert_eq!(
+            decode_setup(
+                "samples.xben".to_string(),
+                Some("custom.jsonl".to_string()),
+                true,
+                true,
+            )
+            .unwrap(),
+            "custom.jsonl"
+        );
+    }
+
+    #[test]
+    fn open_reader_reads_file_contents() {
+        let path = unique_path("reader.txt");
+        fs::write(&path, "hello\nworld\n").unwrap();
+
+        let mut reader = open_reader(Some(path.to_str().unwrap()));
+        let mut content = String::new();
+        std::io::Read::read_to_string(&mut reader, &mut content).unwrap();
+
+        assert_eq!(content, "hello\nworld\n");
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn open_reader_accepts_stdin() {
+        let _reader = open_reader(None);
+    }
+
+    #[test]
+    fn open_writer_creates_file_and_writes() {
+        let path = unique_path("writer.txt");
+        {
+            let mut writer = open_writer(Some(path.to_str().unwrap()), false, true).unwrap();
+            writer.write_all(b"written").unwrap();
+        }
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "written");
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn open_writer_supports_stdout_and_print() {
+        let mut stdout_writer = open_writer(None, false, true).unwrap();
+        stdout_writer.write_all(b"").unwrap();
+
+        let mut print_writer = open_writer(Some("ignored.txt"), true, false).unwrap();
+        print_writer.write_all(b"").unwrap();
+    }
+
+    #[test]
+    fn open_derived_writer_creates_file() {
+        let path = unique_path("derived.txt");
+        {
+            let mut writer = open_derived_writer(path.to_string_lossy().into_owned());
+            writer.write_all(b"derived").unwrap();
+        }
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "derived");
+        fs::remove_file(path).unwrap();
     }
 }

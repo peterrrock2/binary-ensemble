@@ -206,3 +206,42 @@ pub fn run() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::{CommandFactory, Parser};
+
+    #[test]
+    fn clap_metadata_uses_package_version() {
+        let mut command = Args::command();
+        let help = command.render_long_help().to_string();
+
+        assert_eq!(command.get_version(), Some(env!("CARGO_PKG_VERSION")));
+        assert!(help.contains("Relabeling Binary Ensemble CLI Tool"));
+        assert!(help.contains("--shape-file"));
+        assert!(help.contains("canonicalize"));
+    }
+
+    #[test]
+    fn parse_json_mode_args() {
+        let args = Args::try_parse_from([
+            "reben",
+            "dual_graph.json",
+            "--mode",
+            "json",
+            "--key",
+            "GEOID20",
+            "--output-file",
+            "sorted.json",
+            "--verbose",
+        ])
+        .unwrap();
+
+        assert_eq!(args.mode, Mode::Json);
+        assert_eq!(args.input_file, "dual_graph.json");
+        assert_eq!(args.key.as_deref(), Some("GEOID20"));
+        assert_eq!(args.output_file.as_deref(), Some("sorted.json"));
+        assert!(args.verbose);
+    }
+}

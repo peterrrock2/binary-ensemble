@@ -3,6 +3,7 @@ use crate::io::reader::BenDecoder;
 use crate::io::writer::{BenEncoder, XBenEncoder};
 use crate::{logln, BenVariant};
 use clap::{Parser, ValueEnum};
+use serde_json::json;
 use pipe::pipe;
 use std::{
     fs::File,
@@ -132,8 +133,15 @@ fn assignment_decode_ben<R: Read, W: Write>(mut reader: R, mut writer: W) -> io:
 
     for result in ben_reader {
         match result {
-            Ok(assignment) => {
-                write!(writer, "{}\n", serde_json::to_string(&assignment).unwrap())?;
+            Ok((assignment, count)) => {
+                let assignment: Vec<usize> = assignment
+                    .into_iter()
+                    .map(|x| x.saturating_sub(1) as usize)
+                    .collect();
+                let line = serde_json::to_string(&assignment).unwrap();
+                for _ in 0..count {
+                    writeln!(writer, "{line}")?;
+                }
             }
             Err(e) => return Err(e),
         }
@@ -159,6 +167,97 @@ fn assignment_encode_ben<R: Read + BufRead, W: Write>(reader: R, writer: W) -> i
 fn assignment_encode_xben<R: Read + BufRead, W: Write>(reader: R, writer: W) -> io::Result<()> {
     let encoder = XzEncoder::new(writer, 9);
     let mut xben_writer = XBenEncoder::new(encoder, BenVariant::MkvChain);
-    xben_writer.write_ben_file(reader)?;
+
+    for line in reader.lines() {
+        let assignment: Vec<u16> = serde_json::from_str::<Vec<u16>>(&line.unwrap())
+            .unwrap()
+            .into_iter()
+            .map(|x| x as u16 + 1)
+            .collect();
+        xben_writer.write_json_value(json!({ "assignment": assignment }))?;
+    }
+
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::codec::decode::{decode_ben_to_jsonl, decode_xben_to_jsonl};
+    use crate::codec::encode::encode_jsonl_to_ben;
+    use clap::{CommandFactory, Parser};
+    use std::io::{BufReader, Cursor};
+
+    #[test]
+    fn clap_metadata_uses_package_version() {
+        let mut command = Args::command();
+        let help = command.render_long_help().to_string();
+
+        assert_eq!(command.get_version(), Some(env!("CARGO_PKG_VERSION")));
+        assert!(help.contains("PCOMPRESS"));
+        assert!(help.contains("--mode"));
+    }
+
+    #[test]
+    fn parse_pc_to_xben_args() {
+        let args = Args::try_parse_from([
+            "pben",
+            "--mode",
+            "pc-to-xben",
+            "--input-file",
+            "input.pc",
+            "--output-file",
+            "output.xben",
+            "--verbose",
+        ])
+        .unwrap();
+
+        assert_eq!(args.mode, Mode::PcToXben);
+        assert_eq!(args.input_file.as_deref(), Some("input.pc"));
+        assert_eq!(args.output_file.as_deref(), Some("output.xben"));
+        assert!(args.verbose);
+    }
+
+    #[test]
+    fn assignment_decode_ben_writes_json_lines() {
+        let jsonl = br#"{"assignment":[1,1,2],"sample":1}
+{"assignment":[2,3,3],"sample":2}
+"#;
+        let mut ben = Vec::new();
+        encode_jsonl_to_ben(BufReader::new(&jsonl[..]), &mut ben, BenVariant::Standard).unwrap();
+
+        let mut out = Vec::new();
+        assignment_decode_ben(Cursor::new(ben), &mut out).unwrap();
+
+        assert_eq!(String::from_utf8(out).unwrap(), "[0,0,1]\n[1,2,2]\n");
+    }
+
+    #[test]
+    fn assignment_encode_ben_offsets_values_and_writes_ben() {
+        let input = b"[0,0,1]\n[1,1,2]\n";
+        let mut ben = Vec::new();
+        assignment_encode_ben(BufReader::new(&input[..]), &mut ben).unwrap();
+
+        let mut out = Vec::new();
+        decode_ben_to_jsonl(Cursor::new(ben), &mut out).unwrap();
+
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(rendered.contains(r#""assignment":[1,1,2]"#));
+        assert!(rendered.contains(r#""assignment":[2,2,3]"#));
+    }
+
+    #[test]
+    fn assignment_encode_xben_offsets_values_and_writes_xben() {
+        let input = b"[0,1,1]\n[2,2,0]\n";
+
+        let mut xben = Vec::new();
+        assignment_encode_xben(BufReader::new(&input[..]), &mut xben).unwrap();
+
+        let mut out = Vec::new();
+        decode_xben_to_jsonl(Cursor::new(xben), &mut out).unwrap();
+
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(rendered.contains(r#""assignment":[1,2,2]"#));
+        assert!(rendered.contains(r#""assignment":[3,3,1]"#));
+    }
 }
