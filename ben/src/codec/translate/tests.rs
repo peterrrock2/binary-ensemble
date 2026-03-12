@@ -233,3 +233,101 @@ fn test_random_translation_ben_to_ben32() {
 
     assert_eq!(writer, &buffer);
 }
+
+#[test]
+fn test_ben32_to_ben_line_rejects_invalid_length() {
+    let err = ben32_to_ben_line(vec![1, 2, 3]).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert_eq!(err.to_string(), "Invalid ben32 data length");
+}
+
+#[test]
+fn test_ben32_to_ben_line_rejects_missing_terminator() {
+    let err = ben32_to_ben_line(vec![0, 1, 0, 2, 0, 0, 0, 1]).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert_eq!(
+        err.to_string(),
+        "Invalid ben32 data format. Missing end of line separator."
+    );
+}
+
+#[test]
+fn test_ben32_to_ben_lines_preserves_mkv_counts() {
+    let input = [
+        0, 7, 0, 3, 0, 0, 0, 0, 0, 5, // one ben32 record and count=5
+    ];
+
+    let mut output = Vec::new();
+    ben32_to_ben_lines(&input[..], &mut output, BenVariant::MkvChain).unwrap();
+
+    let count = u16::from_be_bytes([output[output.len() - 2], output[output.len() - 1]]);
+    assert_eq!(count, 5);
+}
+
+#[test]
+fn test_ben_to_ben32_lines_propagates_non_eof_read_errors() {
+    struct FailAfterFirstByte {
+        data: Vec<u8>,
+        reads: usize,
+    }
+
+    impl Read for FailAfterFirstByte {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.reads += 1;
+            if self.reads == 1 {
+                buf[0] = self.data[0];
+                Ok(1)
+            } else {
+                Err(io::Error::other("boom"))
+            }
+        }
+    }
+
+    let mut output = Vec::new();
+    let err = ben_to_ben32_lines(
+        FailAfterFirstByte {
+            data: vec![1],
+            reads: 0,
+        },
+        &mut output,
+        BenVariant::Standard,
+    )
+    .unwrap_err();
+
+    assert_eq!(err.kind(), io::ErrorKind::Other);
+    assert_eq!(err.to_string(), "boom");
+}
+
+#[test]
+fn test_ben32_to_ben_lines_propagates_non_eof_read_errors() {
+    struct BoomReader;
+
+    impl Read for BoomReader {
+        fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("boom"))
+        }
+    }
+
+    let err = ben32_to_ben_lines(BoomReader, Vec::new(), BenVariant::Standard).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::Other);
+    assert_eq!(err.to_string(), "boom");
+}
+
+#[test]
+fn test_ben_to_ben32_lines_mkv_roundtrip() {
+    let jsonl = r#"{"assignment":[4,4,4],"sample":1}
+{"assignment":[4,4,4],"sample":2}
+{"assignment":[7,8],"sample":3}
+"#;
+
+    let mut ben = Vec::new();
+    encode_jsonl_to_ben(jsonl.as_bytes(), &mut ben, BenVariant::MkvChain).unwrap();
+
+    let mut ben32 = Vec::new();
+    ben_to_ben32_lines(&ben[17..], &mut ben32, BenVariant::MkvChain).unwrap();
+
+    let mut round = Vec::new();
+    ben32_to_ben_lines(ben32.as_slice(), &mut round, BenVariant::MkvChain).unwrap();
+
+    assert_eq!(round, ben[17..]);
+}

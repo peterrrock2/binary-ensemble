@@ -259,6 +259,14 @@ fn test_encode_jsonl_to_ben_len_65535() {
 }
 
 #[test]
+fn test_encode_ben_vec_from_assign_matches_rle_entrypoint() {
+    let assign_vec = vec![4u16, 4, 4, 1, 1, 3, 3, 3, 2];
+    let direct = encode_ben_vec_from_assign(assign_vec.clone());
+    let via_rle = encode_ben_vec_from_rle(crate::util::rle::assign_to_rle(assign_vec));
+    assert_eq!(direct, via_rle);
+}
+
+#[test]
 fn encode_jsonl_to_ben_max_val_and_len_at_65535() {
     let rle_vec: Vec<(u16, u16)> = vec![(1, 3), (65535, 65535), (8, 4)];
 

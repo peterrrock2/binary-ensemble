@@ -1,7 +1,9 @@
 use super::*;
+use crate::codec::encode::xz_compress;
 use crate::util::rle::rle_to_vec;
 use crate::BenVariant;
 use serde_json::{json, Value};
+use std::io::{self, BufRead, BufReader};
 
 #[test]
 fn test_jsonl_decode_ben_underflow() {
@@ -263,6 +265,85 @@ fn test_decode_ben_max_val_and_len_at_65535() {
     });
 
     assert_eq!(output, (expected_output.to_string() + "\n").as_bytes());
+}
+
+#[test]
+fn test_jsonl_decode_ben32_propagates_non_eof_error() {
+    struct AlwaysErrBuf;
+
+    impl io::Read for AlwaysErrBuf {
+        fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("boom"))
+        }
+    }
+
+    impl BufRead for AlwaysErrBuf {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            Err(io::Error::other("boom"))
+        }
+
+        fn consume(&mut self, _amt: usize) {}
+    }
+
+    let err = jsonl_decode_ben32(AlwaysErrBuf, Vec::new(), 0, BenVariant::Standard).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::Other);
+    assert_eq!(err.to_string(), "boom");
+}
+
+#[test]
+fn test_decode_xben_to_ben_rejects_invalid_inner_header() {
+    let mut xz = Vec::new();
+    xz_compress(BufReader::new(b"BAD BAD BAD BAD!!".as_slice()), &mut xz, Some(1), Some(0))
+        .unwrap();
+
+    let err = decode_xben_to_ben(BufReader::new(xz.as_slice()), Vec::new()).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn test_decode_xben_to_jsonl_rejects_invalid_inner_header() {
+    let mut xz = Vec::new();
+    xz_compress(BufReader::new(b"BAD BAD BAD BAD!!".as_slice()), &mut xz, Some(1), Some(0))
+        .unwrap();
+
+    let err = decode_xben_to_jsonl(BufReader::new(xz.as_slice()), Vec::new()).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn test_decode_xben_to_ben_handles_partial_overflow_without_frame() {
+    let mut xz = Vec::new();
+    let mut inner = b"STANDARD BEN FILE".to_vec();
+    inner.extend_from_slice(&[1, 2, 3]);
+    xz_compress(BufReader::new(inner.as_slice()), &mut xz, Some(1), Some(0)).unwrap();
+
+    let mut out = Vec::new();
+    decode_xben_to_ben(BufReader::new(xz.as_slice()), &mut out).unwrap();
+    assert_eq!(out, b"STANDARD BEN FILE");
+}
+
+#[test]
+fn test_decode_xben_to_jsonl_handles_partial_overflow_without_frame() {
+    let mut xz = Vec::new();
+    let mut inner = b"STANDARD BEN FILE".to_vec();
+    inner.extend_from_slice(&[1, 2, 3]);
+    xz_compress(BufReader::new(inner.as_slice()), &mut xz, Some(1), Some(0)).unwrap();
+
+    let mut out = Vec::new();
+    decode_xben_to_jsonl(BufReader::new(xz.as_slice()), &mut out).unwrap();
+    assert!(out.is_empty());
+}
+
+#[test]
+fn test_decode_xben_to_ben_short_xz_stream_errors() {
+    let err = decode_xben_to_ben(BufReader::new([].as_slice()), Vec::new()).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn test_decode_xben_to_jsonl_short_xz_stream_errors() {
+    let err = decode_xben_to_jsonl(BufReader::new([].as_slice()), Vec::new()).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
 }
 
 #[test]

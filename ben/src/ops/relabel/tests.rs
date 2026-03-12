@@ -328,3 +328,79 @@ fn test_relabel_simple_file_with_map_mkv() {
 
     assert_eq!(output_str, out_file);
 }
+
+#[test]
+fn test_relabel_file_rejects_invalid_header() {
+    let err = relabel_ben_file(b"not a valid banner".as_slice(), Vec::new()).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert_eq!(err.to_string(), "Invalid file format");
+}
+
+#[test]
+fn test_relabel_file_with_map_rejects_invalid_header() {
+    let err = relabel_ben_file_with_map(
+        b"not a valid banner".as_slice(),
+        Vec::new(),
+        HashMap::new(),
+    )
+    .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert_eq!(err.to_string(), "Invalid file format");
+}
+
+#[test]
+fn test_relabel_lines_propagate_non_eof_reader_error() {
+    struct BoomReader {
+        returned_first: bool,
+    }
+
+    impl io::Read for BoomReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.returned_first {
+                return Err(io::Error::other("boom"));
+            }
+            self.returned_first = true;
+            buf[0] = 1;
+            Ok(1)
+        }
+    }
+
+    let err = relabel_ben_lines(
+        BoomReader {
+            returned_first: false,
+        },
+        Vec::new(),
+        BenVariant::Standard,
+    )
+    .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::Other);
+}
+
+#[test]
+fn test_relabel_lines_with_map_propagate_non_eof_reader_error() {
+    struct BoomReader {
+        returned_first: bool,
+    }
+
+    impl io::Read for BoomReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.returned_first {
+                return Err(io::Error::other("boom"));
+            }
+            self.returned_first = true;
+            buf[0] = 1;
+            Ok(1)
+        }
+    }
+
+    let err = relabel_ben_lines_with_map(
+        BoomReader {
+            returned_first: false,
+        },
+        Vec::new(),
+        HashMap::new(),
+        BenVariant::Standard,
+    )
+    .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::Other);
+}

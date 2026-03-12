@@ -7,13 +7,20 @@ use ben::codec::encode::{
     encode_ben_to_xben, encode_ben_vec_from_rle, encode_jsonl_to_ben, encode_jsonl_to_xben,
     xz_compress,
 };
-use ben::io::reader::{BenDecoder, DecoderInitError, XBenDecoder};
+use ben::io::reader::{
+    build_frame_iter, count_samples_from_file, BenDecoder, DecoderInitError, Frame,
+    SubsampleFrameDecoder, XBenDecoder,
+};
 use ben::io::writer::BenEncoder;
 use ben::BenVariant;
 
 use proptest::prelude::*;
 use serde_json::json;
+use std::error::Error as _;
+use std::fs;
 use std::io::{BufReader, Cursor, Write};
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // ---------- Helpers ----------
 
@@ -58,6 +65,17 @@ fn jsonl_from_records(records: &[(Vec<u16>, u16)], start_at: usize) -> Vec<u8> {
 fn collect_records<I>(it: I) -> std::io::Result<Vec<(Vec<u16>, u16)>>
 where
     I: IntoIterator<Item = std::io::Result<(Vec<u16>, u16)>>, // = MkvRecord
+{
+    let mut out = Vec::new();
+    for rec in it {
+        out.push(rec?);
+    }
+    Ok(out)
+}
+
+fn collect_frames<I>(it: I) -> std::io::Result<Vec<(ben::io::reader::Frame, u16)>>
+where
+    I: IntoIterator<Item = std::io::Result<(ben::io::reader::Frame, u16)>>,
 {
     let mut out = Vec::new();
     for rec in it {
@@ -697,4 +715,343 @@ fn xz_mt_params_are_capped_and_safe() {
     let mut out = Vec::new();
     decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap();
     assert_eq!(out, jsonl.as_bytes());
+}
+
+#[test]
+fn ben_encoder_write_assignment_path_roundtrips() {
+    let mut ben = Vec::new();
+    {
+        let mut enc = BenEncoder::new(&mut ben, BenVariant::Standard);
+        enc.write_assignment(vec![9u16, 9, 2, 2, 2]).unwrap();
+        enc.finish().unwrap();
+    }
+
+    let mut out = Vec::new();
+    decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap();
+    assert_eq!(out, br#"{"assignment":[9,9,2,2,2],"sample":1}
+"#);
+}
+
+#[test]
+fn ben_decoder_new_reports_short_header_as_io_error() {
+    let err = BenDecoder::new([1u8, 2, 3].as_slice()).err().unwrap();
+    match err {
+        DecoderInitError::Io(e) => assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof),
+        other => panic!("unexpected error: {other:?}"),
+    }
+}
+
+#[test]
+fn ben_decoder_write_all_jsonl_propagates_frame_errors() {
+    let mut malformed = b"STANDARD BEN FILE".to_vec();
+    malformed.extend_from_slice(&[3]); // start of a frame, but truncated
+
+    let mut decoder = BenDecoder::new(malformed.as_slice()).unwrap();
+    let err = decoder.write_all_jsonl(Vec::new()).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn ben_decoder_count_samples_propagates_frame_errors() {
+    let mut malformed = b"STANDARD BEN FILE".to_vec();
+    malformed.extend_from_slice(&[3]);
+
+    let err = BenDecoder::new(malformed.as_slice())
+        .unwrap()
+        .count_samples()
+        .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn xben_frame_decoder_new_and_truncated_iteration_paths() {
+    let jsonl = r#"{"assignment":[1,1,1],"sample":1}
+{"assignment":[2,2],"sample":2}
+"#;
+    let mut xz = Vec::new();
+    encode_jsonl_to_xben(
+        BufReader::new(jsonl.as_bytes()),
+        &mut xz,
+        BenVariant::Standard,
+        Some(1),
+        Some(0),
+    )
+    .unwrap();
+
+    let mut frames = ben::io::reader::XBenFrameDecoder::new(xz.as_slice()).unwrap();
+    assert!(frames.next().unwrap().is_ok());
+
+    let trimmed = &xz[..xz.len() - 1];
+    let mut frames = ben::io::reader::XBenFrameDecoder::new(trimmed).unwrap();
+    loop {
+        match frames.next() {
+            Some(Err(e)) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof);
+                break;
+            }
+            Some(Ok(_)) => continue,
+            None => panic!("expected truncated-frame error"),
+        }
+    }
+}
+
+#[test]
+fn xben_encoder_write_ben_file_without_banner_path_roundtrips() {
+    let mut payload_only = Vec::new();
+    {
+        let mut enc = BenEncoder::new(&mut payload_only, BenVariant::Standard);
+        enc.write_assignment(vec![5u16, 5, 7]).unwrap();
+        enc.finish().unwrap();
+    }
+    let payload_only = payload_only[17..].to_vec();
+
+    let mut xz = Vec::new();
+    {
+        let mt = xz2::stream::MtStreamBuilder::new()
+            .threads(1)
+            .preset(0)
+            .block_size(0)
+            .encoder()
+            .unwrap();
+        let encoder = xz2::write::XzEncoder::new_stream(&mut xz, mt);
+        let mut xben = ben::io::writer::XBenEncoder::new(encoder, BenVariant::Standard);
+        xben.write_ben_file(BufReader::new(payload_only.as_slice())).unwrap();
+    }
+
+    let mut ben = Vec::new();
+    decode_xben_to_ben(BufReader::new(xz.as_slice()), &mut ben).unwrap();
+
+    let mut out = Vec::new();
+    decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap();
+    assert_eq!(out, br#"{"assignment":[5,5,7],"sample":1}
+"#);
+}
+
+struct FailAfterN {
+    data: Vec<u8>,
+    pos: usize,
+    fail_at: usize,
+}
+
+impl std::io::Read for FailAfterN {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.pos >= self.fail_at {
+            return Err(std::io::Error::other("boom"));
+        }
+        if self.pos >= self.data.len() {
+            return Ok(0);
+        }
+        let n = buf.len().min(self.data.len() - self.pos).min(self.fail_at - self.pos);
+        buf[..n].copy_from_slice(&self.data[self.pos..self.pos + n]);
+        self.pos += n;
+        Ok(n)
+    }
+}
+
+#[test]
+fn ben_decoder_frame_read_error_paths() {
+    let banner = b"STANDARD BEN FILE".to_vec();
+
+    let err = BenDecoder::new(FailAfterN {
+        data: [banner.clone(), vec![3]].concat(),
+        pos: 0,
+        fail_at: 18,
+    })
+    .unwrap()
+    .next()
+    .unwrap()
+    .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::Other);
+
+    let err = BenDecoder::new(FailAfterN {
+        data: [banner.clone(), vec![3, 3, 0]].concat(),
+        pos: 0,
+        fail_at: 20,
+    })
+    .unwrap()
+    .next()
+    .unwrap()
+    .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::Other);
+
+    let err = BenDecoder::new(FailAfterN {
+        data: [banner.clone(), vec![3, 3, 0, 0, 0, 1]].concat(),
+        pos: 0,
+        fail_at: 23,
+    })
+    .unwrap()
+    .next()
+    .unwrap()
+    .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::Other);
+}
+
+#[test]
+fn ben_decoder_mkv_count_read_error_path() {
+    let mut ben = Vec::new();
+    encode_jsonl_to_ben(
+        BufReader::new(br#"{"assignment":[1,1],"sample":1}"#.as_slice()),
+        &mut ben,
+        BenVariant::MkvChain,
+    )
+    .unwrap();
+    let truncated = ben[..ben.len() - 1].to_vec();
+    let err = BenDecoder::new(truncated.as_slice())
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn subsample_frame_decoder_propagates_inner_and_decode_errors() {
+    let mut inner = SubsampleFrameDecoder::by_indices(
+        vec![Err(std::io::Error::other("boom"))].into_iter(),
+        vec![1],
+    );
+    let err = inner.next().unwrap().unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::Other);
+
+    let mut malformed = SubsampleFrameDecoder::by_indices(
+        vec![Ok((Frame::XBen(vec![1, 2, 3], BenVariant::Standard), 1))].into_iter(),
+        vec![1],
+    );
+    let err = malformed.next().unwrap().unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+}
+
+fn unique_temp_path(name: &str) -> PathBuf {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!("binary-ensemble-{name}-{nonce}.tmp"))
+}
+
+#[test]
+fn decoder_init_error_display_source_and_conversion_paths() {
+    let io_error = DecoderInitError::from(std::io::Error::other("boom"));
+    assert_eq!(io_error.to_string(), "IO error: boom");
+    assert!(io_error.source().is_some());
+
+    let xz_bytes = {
+        let mut buf = Vec::new();
+        xz_compress(BufReader::new(b"hello".as_slice()), &mut buf, Some(1), Some(0)).unwrap();
+        buf
+    };
+    let xz_header = xz_bytes[..17].to_vec();
+    let invalid = DecoderInitError::InvalidFileFormat(xz_header.clone());
+    let msg = invalid.to_string();
+    assert!(msg.contains("Compressed header detected"));
+    assert!(msg.contains("decode_xben_to_ben"));
+    assert!(invalid.source().is_none());
+
+    let generic = DecoderInitError::InvalidFileFormat(b"not a ben header!!".to_vec());
+    assert!(generic.to_string().contains("utf8-lossy"));
+
+    let io_err: std::io::Error = DecoderInitError::InvalidFileFormat(xz_header).into();
+    assert_eq!(io_err.kind(), std::io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn ben_decoder_and_xben_decoder_count_samples() {
+    let jsonl = r#"{"assignment":[1,1],"sample":1}
+{"assignment":[1,1],"sample":2}
+{"assignment":[2,2],"sample":3}
+"#;
+
+    let mut ben = Vec::new();
+    encode_jsonl_to_ben(BufReader::new(jsonl.as_bytes()), &mut ben, BenVariant::MkvChain).unwrap();
+    assert_eq!(BenDecoder::new(ben.as_slice()).unwrap().count_samples().unwrap(), 3);
+
+    let mut xben = Vec::new();
+    encode_jsonl_to_xben(
+        BufReader::new(jsonl.as_bytes()),
+        &mut xben,
+        BenVariant::MkvChain,
+        Some(1),
+        Some(0),
+    )
+    .unwrap();
+    assert_eq!(XBenDecoder::new(xben.as_slice()).unwrap().count_samples().unwrap(), 3);
+}
+
+#[test]
+fn build_frame_iter_and_count_samples_from_file_cover_public_file_api() {
+    let jsonl = r#"{"assignment":[1,1],"sample":1}
+{"assignment":[2,2],"sample":2}
+{"assignment":[2,2],"sample":3}
+"#;
+
+    let mut ben = Vec::new();
+    encode_jsonl_to_ben(BufReader::new(jsonl.as_bytes()), &mut ben, BenVariant::MkvChain).unwrap();
+    let ben_path = unique_temp_path("sample.ben");
+    fs::write(&ben_path, &ben).unwrap();
+
+    let mut xben = Vec::new();
+    encode_jsonl_to_xben(
+        BufReader::new(jsonl.as_bytes()),
+        &mut xben,
+        BenVariant::MkvChain,
+        Some(1),
+        Some(0),
+    )
+    .unwrap();
+    let xben_path = unique_temp_path("sample.xben");
+    fs::write(&xben_path, &xben).unwrap();
+
+    let ben_iter = build_frame_iter(&ben_path, "ben").unwrap();
+    assert_eq!(collect_frames(ben_iter).unwrap().len(), 2);
+
+    let xben_iter = build_frame_iter(&xben_path, "xben").unwrap();
+    assert_eq!(collect_frames(xben_iter).unwrap().len(), 2);
+
+    assert_eq!(count_samples_from_file(&ben_path, "ben").unwrap(), 3);
+    assert_eq!(count_samples_from_file(&xben_path, "xben").unwrap(), 3);
+
+    let err = build_frame_iter(&ben_path, "wat").err().unwrap();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+
+    fs::remove_file(ben_path).unwrap();
+    fs::remove_file(xben_path).unwrap();
+}
+
+#[test]
+fn ben_decoder_subsample_helpers_work_on_public_api() {
+    let jsonl = r#"{"assignment":[1],"sample":1}
+{"assignment":[2],"sample":2}
+{"assignment":[3],"sample":3}
+{"assignment":[4],"sample":4}
+"#;
+
+    let mut ben = Vec::new();
+    encode_jsonl_to_ben(BufReader::new(jsonl.as_bytes()), &mut ben, BenVariant::MkvChain).unwrap();
+
+    let mut by_indices = BenDecoder::new(ben.as_slice())
+        .unwrap()
+        .into_subsample_by_indices(vec![4, 1, 1, 3]);
+    let picked = collect_records(&mut by_indices).unwrap();
+    assert_eq!(
+        picked.into_iter().map(|(a, _)| a[0]).collect::<Vec<u16>>(),
+        vec![1, 3, 4]
+    );
+
+    let mut by_range = BenDecoder::new(ben.as_slice())
+        .unwrap()
+        .into_subsample_by_range(2, 3);
+    let picked = collect_records(&mut by_range).unwrap();
+    assert_eq!(
+        picked.into_iter().map(|(a, _)| a[0]).collect::<Vec<u16>>(),
+        vec![2, 3]
+    );
+
+    let mut every = BenDecoder::new(ben.as_slice())
+        .unwrap()
+        .into_subsample_every(2, 2);
+    let picked = collect_records(&mut every).unwrap();
+    assert_eq!(
+        picked.into_iter().map(|(a, _)| a[0]).collect::<Vec<u16>>(),
+        vec![2, 4]
+    );
 }
