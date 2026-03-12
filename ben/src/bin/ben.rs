@@ -1,6 +1,10 @@
-use ben::decode::read::extract_assignment_ben;
-use ben::decode::*;
-use ben::encode::*;
+use ben::codec::decode::{
+    decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl, xz_decompress,
+};
+use ben::codec::encode::{
+    encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben, xz_compress,
+};
+use ben::ops::extract::extract_assignment_ben;
 use ben::{logln, BenVariant};
 use clap::{Parser, ValueEnum};
 use std::{

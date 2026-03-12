@@ -1,4 +1,5 @@
-use ben::encode::{encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben, BenEncoder};
+use ben::codec::encode::{encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben};
+use ben::io::writer::BenEncoder;
 use ben::BenVariant;
 use pyo3::exceptions::{PyException, PyIOError};
 use pyo3::prelude::PyResult;

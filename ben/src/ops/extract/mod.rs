@@ -1,39 +1,27 @@
-//! Module documentation.
-//!
-//! This module provides functionality for extracting single assignment
-//! vectors from a BEN file.
+//! Sample extraction helpers for BEN and XBEN streams.
+
+use crate::codec::decode::{decode_ben32_line, decode_ben_line};
+use crate::io::reader::{BenDecoder, XBenDecoder};
+use crate::util::rle::rle_to_vec;
 use serde_json::Error as SerdeError;
-use std::fmt::{self};
+use std::fmt;
 use std::io::Cursor;
 use std::io::{self, Read};
 
-use super::{decode_ben32_line, decode_ben_line, rle_to_vec, BenDecoder, XBenDecoder};
-
-/// Types of errors that can occur during the extraction of assignments.
 #[derive(Debug)]
 pub enum SampleErrorKind {
-    /// Indicates the sample number is invalid. All sample numbers must be greater than 0.
     InvalidSampleNumber,
-    /// Indicates the sample number was not found in the file. The last sample number is provided.
     SampleNotFound { sample_number: usize },
-    /// Wrapper for IO errors.
     IoError(io::Error),
-    /// Wrapper for JSON errors.
     JsonError(SerdeError),
 }
 
-/// Error type for the extraction of assignments.
 #[derive(Debug)]
 pub struct SampleError {
     pub kind: SampleErrorKind,
 }
 
 impl SampleError {
-    /// Create a new error from an IO error.
-    ///
-    /// # Arguments
-    ///
-    /// * `error` - The IO error to wrap.
     pub fn new_io_error(error: io::Error) -> Self {
         SampleError {
             kind: SampleErrorKind::IoError(error),
@@ -53,19 +41,13 @@ impl fmt::Display for SampleError {
             SampleErrorKind::SampleNotFound { sample_number } => {
                 write!(
                     f,
-                    "Sample number not found in file. \
-                    Failed to find sample '{}'. \
-                    Last sample seems to be '{}'",
+                    "Sample number not found in file. Failed to find sample '{}'. Last sample seems to be '{}'",
                     sample_number,
                     sample_number - 1
                 )
             }
-            SampleErrorKind::IoError(e) => {
-                write!(f, "IO Error: {}", e)
-            }
-            SampleErrorKind::JsonError(e) => {
-                write!(f, "JSON Error: {}", e)
-            }
+            SampleErrorKind::IoError(e) => write!(f, "IO Error: {}", e),
+            SampleErrorKind::JsonError(e) => write!(f, "JSON Error: {}", e),
         }
     }
 }
@@ -95,47 +77,6 @@ impl From<SerdeError> for SampleError {
     }
 }
 
-/// Extracts a single assignment from a binary-encoded data stream.
-///
-/// # Arguments
-///
-/// * `reader` - The reader to extract the assignment from.
-/// * `sample_number` - The sample number to extract.
-///
-/// # Returns
-///
-/// This function returns a `Result` containing a `Vec<u16>` of the assignment if successful,
-/// or a `SampleError` if an error occurred.
-///
-/// # Example
-///
-/// ```no_run
-/// use ben::decode::read::extract_assignment_ben;
-/// use std::{fs::File, io::BufReader};
-///
-/// let file = File::open("data.jsonl.ben").unwrap();
-/// let reader = BufReader::new(file);
-/// let sample_number = 2;
-///
-/// let result = extract_assignment_ben(reader, sample_number);
-/// match result {
-///     Ok(assignment) => {
-///         eprintln!("Extracted assignment: {:?}", assignment);
-///     }
-///     Err(e) => {
-///         eprintln!("Error: {}", e);
-///     }
-/// }
-/// ```
-///
-/// # Errors
-///
-/// This function can return a `SampleError` if an error occurs during the extraction process.
-/// The error can be one of the following:
-/// * `InvalidSampleNumber` - The sample number is invalid. All sample numbers must be greater than 0.
-/// * `SampleNotFound` - The sample number was not found in the file. The last sample number is provided.
-/// * `IoError` - An IO error occurred during the extraction process.
-/// * `JsonError` - A JSON error occurred during the extraction process.
 pub fn extract_assignment_ben<R: Read>(
     mut reader: R,
     sample_number: usize,
@@ -174,47 +115,6 @@ pub fn extract_assignment_ben<R: Read>(
     })
 }
 
-/// Extracts a single assignment from a binary-encoded data stream.
-///
-/// # Arguments
-///
-/// * `reader` - The reader to extract the assignment from.
-/// * `sample_number` - The sample number to extract.
-///
-/// # Returns
-///
-/// This function returns a `Result` containing a `Vec<u16>` of the assignment if successful,
-/// or a `SampleError` if an error occurred.
-///
-/// # Example
-///
-/// ```no_run
-/// use ben::decode::read::extract_assignment_xben;
-/// use std::{fs::File, io::BufReader};
-///
-/// let file = File::open("data.jsonl.xben").unwrap();
-/// let reader = BufReader::new(file);
-/// let sample_number = 2;
-///
-/// let result = extract_assignment_xben(reader, sample_number);
-/// match result {
-///     Ok(assignment) => {
-///         eprintln!("Extracted assignment: {:?}", assignment);
-///     }
-///     Err(e) => {
-///         eprintln!("Error: {}", e);
-///     }
-/// }
-/// ```
-///
-/// # Errors
-///
-/// This function can return a `SampleError` if an error occurs during the extraction process.
-/// The error can be one of the following:
-/// * `InvalidSampleNumber` - The sample number is invalid. All sample numbers must be greater than 0.
-/// * `SampleNotFound` - The sample number was not found in the file. The last sample number is provided.
-/// * `IoError` - An IO error occurred during the extraction process.
-/// * `JsonError` - A JSON error occurred during the extraction process.
 pub fn extract_assignment_xben<R: Read>(
     mut reader: R,
     sample_number: usize,
@@ -248,10 +148,5 @@ pub fn extract_assignment_xben<R: Read>(
     })
 }
 
-// #[cfg(test)]
-// mod tests {
-//     include!("tests/read_tests.rs");
-// }
 #[cfg(test)]
-#[path = "tests/read_tests.rs"]
 mod tests;

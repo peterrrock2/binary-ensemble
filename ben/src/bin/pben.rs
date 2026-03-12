@@ -1,5 +1,5 @@
-use ben::decode::*;
-use ben::encode::*;
+use ben::io::reader::BenDecoder;
+use ben::io::writer::{BenEncoder, XBenEncoder};
 use ben::{logln, BenVariant};
 use clap::{Parser, ValueEnum};
 use pcompress;

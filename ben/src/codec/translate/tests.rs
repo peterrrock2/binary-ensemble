@@ -1,15 +1,17 @@
 use super::*;
-use crate::encode::*;
+use crate::codec::encode::{encode_ben32_line, encode_jsonl_to_ben};
+use crate::util::rle::rle_to_vec;
+use crate::BenVariant;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Uniform};
 use serde_json::{json, Value};
-use std::io::BufRead;
+use std::io::{self, BufRead, Error, Read, Write};
 
 fn encode_jsonl_to_ben32<R: BufRead, W: Write>(reader: R, mut writer: W) -> std::io::Result<()> {
     writer.write_all("STANDARD BEN FILE".as_bytes())?;
     for line_result in reader.lines() {
-        let line = line_result?; // Handle potential I/O errors for each line
+        let line = line_result?;
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
 
         writer.write_all(&encode_ben32_line(data))?;

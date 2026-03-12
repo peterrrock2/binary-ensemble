@@ -1,13 +1,14 @@
 #![allow(clippy::needless_collect)]
 
-use ben::decode::{
+use ben::codec::decode::{
     decode_ben_line, decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl, xz_decompress,
-    BenDecoder, DecoderInitError, XBenDecoder,
 };
-use ben::encode::{
+use ben::codec::encode::{
     encode_ben_to_xben, encode_ben_vec_from_rle, encode_jsonl_to_ben, encode_jsonl_to_xben,
-    xz_compress, BenEncoder,
+    xz_compress,
 };
+use ben::io::reader::{BenDecoder, DecoderInitError, XBenDecoder};
+use ben::io::writer::BenEncoder;
 use ben::BenVariant;
 
 use proptest::prelude::*;

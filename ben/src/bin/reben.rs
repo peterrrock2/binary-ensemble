@@ -1,7 +1,7 @@
 use ben::{
-    encode::relabel::{relabel_ben_file, relabel_ben_file_with_map},
+    json::graph::sort_json_file_by_key,
     logln,
-    utils::*,
+    ops::relabel::{relabel_ben_file, relabel_ben_file_with_map},
 };
 use clap::{Parser, ValueEnum};
 use serde_json::{json, Value};

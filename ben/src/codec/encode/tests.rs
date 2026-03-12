@@ -1,5 +1,9 @@
 use super::*;
+use crate::util::rle::rle_to_vec;
+use crate::BenVariant;
 use serde_json::json;
+use serde_json::Value;
+use std::io::{BufRead, Write};
 
 #[test]
 fn test_encode_jsonl_to_ben_underflow() {
@@ -458,12 +462,12 @@ fn encode_jsonl_to_ben32<R: BufRead, W: Write>(reader: R, mut writer: W) -> std:
     for line_result in reader.lines() {
         eprint!("Encoding line: {}\r", line_num);
         line_num += 1;
-        let line = line_result?; // Handle potential I/O errors for each line
+        let line = line_result?;
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
 
         writer.write_all(&encode_ben32_line(data))?;
     }
-    eprintln!("Done!"); // Print newline after progress bar
+    eprintln!("Done!");
     Ok(())
 }
 

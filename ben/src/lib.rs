@@ -18,9 +18,11 @@
 //! - `reben`: A tool for relabeling BEN files to improve compression ratios.
 //!
 
-pub mod decode;
-pub mod encode;
-pub mod utils;
+pub mod codec;
+pub mod io;
+pub mod json;
+pub mod ops;
+pub mod util;
 
 #[macro_export]
 macro_rules! log {

@@ -1,19 +1,12 @@
 use super::*;
+use crate::util::rle::rle_to_vec;
+use crate::BenVariant;
 use serde_json::{json, Value};
 
 #[test]
 fn test_jsonl_decode_ben_underflow() {
     let mut input: Vec<u8> = b"STANDARD BEN FILE".to_vec();
-    input.extend(vec![
-        2,
-        3,
-        0,
-        0,
-        0,
-        2, // N Bytes
-        0b01100_100,
-        0b01_11011_0,
-    ]);
+    input.extend(vec![2, 3, 0, 0, 0, 2, 0b01100_100, 0b01_11011_0]);
 
     let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
@@ -234,12 +227,12 @@ fn test_jsonl_decode_ben_max_len_65535() {
 fn test_decode_ben_max_val_and_len_at_65535() {
     let mut input: Vec<u8> = b"STANDARD BEN FILE".to_vec();
     input.extend(vec![
-        16, // Max Val Bits
-        16, // Max Len Bits
+        16,
+        16,
         0,
         0,
         0,
-        12, // N Bytes
+        12,
         0b00000000,
         0b00000001,
         0b00000000,

@@ -2,9 +2,6 @@ use super::*;
 
 #[test]
 fn test_extract_assignment_ben() {
-    // [1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4],
-    // [2,2,3,3,3,3,3,3,3,1,2,3]
-    // [1,2,3,4,5,6,7,8,9,10]
     let mut input: Vec<u8> = b"STANDARD BEN FILE".to_vec();
     input.extend(vec![
         3,
@@ -63,9 +60,6 @@ fn test_extract_assignment_ben() {
 
 #[test]
 fn test_extract_assignment_sample_too_large() {
-    // [1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4],
-    // [2,2,3,3,3,3,3,3,3,1,2,3]
-    // [1,2,3,4,5,6,7,8,9,10]
     let mut input: Vec<u8> = b"STANDARD BEN FILE".to_vec();
     input.extend(vec![
         3,
