@@ -18,6 +18,7 @@
 //! - `reben`: A tool for relabeling BEN files to improve compression ratios.
 //!
 
+pub mod cli;
 pub mod codec;
 pub mod io;
 pub mod json;
