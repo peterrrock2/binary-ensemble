@@ -5,7 +5,7 @@ use std::io::{self, Error, Read, Write};
 
 use crate::codec::decode::decode_ben_line;
 use crate::codec::encode::encode_ben_vec_from_rle;
-use crate::{log, logln, BenVariant};
+use crate::{progress, BenVariant};
 
 fn ben32_to_ben_line(ben32_vec: Vec<u8>) -> io::Result<Vec<u8>> {
     let mut buffer = [0u8; 4];
@@ -123,7 +123,7 @@ pub fn ben_to_ben32_lines<R: Read, W: Write>(
         let max_len_bits = reader.read_u8()?;
         let n_bytes = reader.read_u32::<BigEndian>()?;
 
-        log!("Encoding line: {}\r", sample_number);
+        progress!("Encoding line: {}\r", sample_number);
 
         match variant {
             BenVariant::Standard => {
@@ -144,8 +144,8 @@ pub fn ben_to_ben32_lines<R: Read, W: Write>(
         }
     }
 
-    logln!();
-    logln!("Done!");
+    tracing::trace!("");
+    tracing::trace!("Done!");
     Ok(())
 }
 

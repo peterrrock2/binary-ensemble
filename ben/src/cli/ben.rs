@@ -6,7 +6,7 @@ use crate::codec::encode::{
     encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben, xz_compress,
 };
 use crate::ops::extract::extract_assignment_ben;
-use crate::{logln, BenVariant};
+use crate::BenVariant;
 use clap::{Parser, ValueEnum};
 use std::{
     fs::File,
@@ -201,7 +201,7 @@ pub fn run() {
 
     match args.mode {
         Mode::Encode => {
-            logln!("Running in encode mode");
+            tracing::trace!("Running in encode mode");
 
             let reader = open_reader(args.input_file.as_deref());
             let writer = match args.input_file.as_ref() {
@@ -237,7 +237,7 @@ pub fn run() {
             }
         }
         Mode::XEncode => {
-            logln!("Running in xencode mode");
+            tracing::trace!("Running in xencode mode");
 
             let mut ben_and_xben = args.ben_and_xben;
             let mut jsonl_and_xben = args.jsonl_and_xben;
@@ -305,7 +305,7 @@ pub fn run() {
             }
         }
         Mode::Decode => {
-            logln!("Running in decode mode");
+            tracing::trace!("Running in decode mode");
 
             let mut ben_and_xben = args.ben_and_xben;
             let mut jsonl_and_ben = args.jsonl_and_ben;
@@ -352,7 +352,7 @@ pub fn run() {
             }
         }
         Mode::XDecode => {
-            logln!("Running in x-decode mode");
+            tracing::trace!("Running in x-decode mode");
 
             let reader = open_reader(args.input_file.as_deref());
             let writer = match args.input_file.as_ref() {
@@ -380,7 +380,7 @@ pub fn run() {
             }
         }
         Mode::Read => {
-            logln!("Running in read mode");
+            tracing::trace!("Running in read mode");
             let reader = BufReader::new(
                 File::open(
                     &args
@@ -410,7 +410,7 @@ pub fn run() {
                 });
         }
         Mode::XzCompress => {
-            logln!("Running in xz compress mode");
+            tracing::trace!("Running in xz compress mode");
 
             let in_file_name = args
                 .input_file
@@ -432,10 +432,10 @@ pub fn run() {
             if let Err(err) = xz_compress(reader, writer, args.n_cpus, args.compression_level) {
                 eprintln!("Error: {:?}", err);
             }
-            logln!("Done!");
+            tracing::trace!("Done!");
         }
         Mode::XzDecompress => {
-            logln!("Running in xz decompress mode");
+            tracing::trace!("Running in xz decompress mode");
 
             let in_file_name = args
                 .input_file

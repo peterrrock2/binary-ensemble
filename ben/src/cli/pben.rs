@@ -1,7 +1,7 @@
 use crate::cli::common::set_verbose;
 use crate::io::reader::BenDecoder;
 use crate::io::writer::{BenEncoder, XBenEncoder};
-use crate::{logln, BenVariant};
+use crate::BenVariant;
 use clap::{Parser, ValueEnum};
 use serde_json::json;
 use pipe::pipe;
@@ -57,7 +57,7 @@ pub fn run() -> Result<()> {
 
     match args.mode {
         Mode::BenToPc => {
-            logln!("Converting BEN to PCOMPRESS");
+            tracing::trace!("Converting BEN to PCOMPRESS");
 
             let ben_reader: Box<dyn Read + Send> = match args.input_file {
                 Some(file) => Box::new(BufReader::new(File::open(&file).unwrap())),
@@ -80,7 +80,7 @@ pub fn run() -> Result<()> {
             Ok(())
         }
         Mode::PcToBen => {
-            logln!("Converting PCOMPRESS to BEN");
+            tracing::trace!("Converting PCOMPRESS to BEN");
 
             let mut pcompress_reader: BufReader<Box<dyn Read + Send>> = match args.input_file {
                 Some(file) => BufReader::new(Box::new(BufReader::new(File::open(&file).unwrap()))),
@@ -103,7 +103,7 @@ pub fn run() -> Result<()> {
             assignment_encode_ben(&mut buf_pipe_reader, &mut ben_writer)
         }
         Mode::PcToXben => {
-            logln!("Converting PCOMPRESS to XBEN");
+            tracing::trace!("Converting PCOMPRESS to XBEN");
 
             let mut pcompress_reader: BufReader<Box<dyn Read + Send>> = match args.input_file {
                 Some(file) => BufReader::new(Box::new(BufReader::new(File::open(&file).unwrap()))),

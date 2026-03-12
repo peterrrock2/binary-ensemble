@@ -1,6 +1,6 @@
 use crate::codec::decode::{decode_ben32_line, decode_ben_line};
 use crate::util::rle::rle_to_vec;
-use crate::{log, logln, BenVariant};
+use crate::{progress, BenVariant};
 use byteorder::{BigEndian, ReadBytesExt};
 use serde_json::json;
 use std::fs::File;
@@ -151,8 +151,8 @@ impl<R: Read> BenDecoder<R> {
             Ok(()) => b1[0],
             Err(e) => {
                 if e.kind() == io::ErrorKind::UnexpectedEof {
-                    logln!();
-                    logln!("Done!");
+                    tracing::trace!("");
+                    tracing::trace!("Done!");
                     return None;
                 }
                 return Some(Err(e));
@@ -230,7 +230,7 @@ impl<R: Read> Iterator for BenDecoder<R> {
             Ok(assgn) => assgn,
             Err(e) => return Some(Err(e)),
         };
-        log!(
+        progress!(
             "Decoding sample: {}\r",
             self.sample_count + ben_frame.count as usize
         );

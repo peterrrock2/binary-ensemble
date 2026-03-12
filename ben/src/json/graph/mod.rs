@@ -1,6 +1,6 @@
 //! JSON graph helpers used by relabeling workflows.
 
-use crate::{log, logln};
+use crate::progress;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{Read, Result, Write};
@@ -12,10 +12,10 @@ pub fn sort_json_file_by_key<R: Read, W: Write>(
     mut writer: W,
     key: &str,
 ) -> Result<HashMap<usize, usize>> {
-    logln!("Loading JSON file...");
+    tracing::trace!("Loading JSON file...");
     let mut data: Value = serde_json::from_reader(reader).unwrap();
 
-    logln!("Sorting JSON file by key: {}", key);
+    tracing::trace!("Sorting JSON file by key: {}", key);
     if let Some(nodes) = data["nodes"].as_array_mut() {
         nodes.sort_by(|a, b| {
             let extract_value = |val: &Value| -> StdResult<u64, String> {
@@ -39,18 +39,18 @@ pub fn sort_json_file_by_key<R: Read, W: Write>(
     let mut rev_node_map = HashMap::new();
     if let Some(nodes) = data["nodes"].as_array_mut() {
         for (i, node) in nodes.iter_mut().enumerate() {
-            log!("Relabeling node: {}\r", i + 1);
+            progress!("Relabeling node: {}\r", i + 1);
             node_map.insert(node["id"].to_string().parse::<usize>().unwrap(), i);
             rev_node_map.insert(i, node["id"].to_string().parse::<usize>().unwrap());
             node["id"] = json!(i);
         }
     }
-    logln!();
+    tracing::trace!("");
 
     let mut edge_array = Vec::new();
     if let Some(edges) = data["adjacency"].as_array() {
         for i in 0..edges.len() {
-            log!("Relabeling edge: {}\r", i + 1);
+            progress!("Relabeling edge: {}\r", i + 1);
             let edge_list_location =
                 rev_node_map[&data["nodes"][i]["id"].to_string().parse::<usize>().unwrap()];
             let mut new_edge_lst = edges[edge_list_location].as_array().unwrap().clone();
@@ -61,11 +61,11 @@ pub fn sort_json_file_by_key<R: Read, W: Write>(
             edge_array.push(new_edge_lst);
         }
     }
-    logln!();
+    tracing::trace!("");
 
     data["adjacency"] = json!(edge_array);
 
-    logln!("Writing new json to file...");
+    tracing::trace!("Writing new json to file...");
     writer.write_all(serde_json::to_string(&data).unwrap().as_bytes())?;
 
     Ok(node_map)

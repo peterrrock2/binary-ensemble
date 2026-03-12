@@ -3,7 +3,7 @@
 use crate::codec::decode::decode_ben_line;
 use crate::codec::encode::encode_ben_vec_from_rle;
 use crate::util::rle::{assign_to_rle, rle_to_vec};
-use crate::{log, logln, BenVariant};
+use crate::{progress, BenVariant};
 use byteorder::{BigEndian, ReadBytesExt};
 use std::collections::HashMap;
 use std::io::{self, Error, Read, Write};
@@ -58,10 +58,10 @@ pub fn relabel_ben_lines<R: Read, W: Write>(
 
         sample_number += count_occurrences as usize;
 
-        log!("Relabeling line: {}\r", sample_number);
+        progress!("Relabeling line: {}\r", sample_number);
     }
-    logln!();
-    logln!("Done!");
+    tracing::trace!("");
+    tracing::trace!("Done!");
 
     Ok(())
 }
@@ -136,10 +136,10 @@ pub fn relabel_ben_lines_with_map<R: Read, W: Write>(
         };
 
         sample_number += count_occurrences as usize;
-        log!("Relabeling line: {}\r", sample_number);
+        progress!("Relabeling line: {}\r", sample_number);
     }
-    logln!();
-    logln!("Done!");
+    tracing::trace!("");
+    tracing::trace!("Done!");
 
     Ok(())
 }

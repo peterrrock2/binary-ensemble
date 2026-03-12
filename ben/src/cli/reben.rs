@@ -1,7 +1,6 @@
 use crate::cli::common::set_verbose;
 use crate::{
     json::graph::sort_json_file_by_key,
-    logln,
     ops::relabel::{relabel_ben_file, relabel_ben_file_with_map},
 };
 use clap::{Parser, ValueEnum};
@@ -108,7 +107,7 @@ pub fn run() {
             let reader = BufReader::new(input_file);
 
             if args.map_file.is_none() && args.key.is_none() {
-                logln!("Canonicalizing assignment vectors in ben file.");
+                tracing::trace!("Canonicalizing assignment vectors in ben file.");
 
                 let output_file_name = match args.output_file {
                     Some(name) => name,
@@ -137,7 +136,7 @@ pub fn run() {
             let mut map_file_name = String::new();
             if let Some(key) = args.key {
                 if let Some(shape) = args.shape_file {
-                    logln!("Creating map file for key: {}", key);
+                    tracing::trace!("Creating map file for key: {}", key);
 
                     let output_file_name = shape.trim_end_matches(".json").to_owned()
                         + format!("_sorted_by_{}.json", key).as_str();
@@ -200,7 +199,7 @@ pub fn run() {
                 File::create(&output_file_name).expect("Could not create output file.");
             let writer = BufWriter::new(output_file);
 
-            logln!("Relabeling ben file according to map file {}", map_file_name,);
+            tracing::trace!("Relabeling ben file according to map file {}", map_file_name,);
 
             relabel_ben_file_with_map(reader, writer, new_to_old_node_map).unwrap();
         }

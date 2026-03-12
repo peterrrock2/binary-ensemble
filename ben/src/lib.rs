@@ -22,28 +22,14 @@ pub mod cli;
 pub mod codec;
 pub mod io;
 pub mod json;
+pub mod logging;
 pub mod ops;
 pub mod util;
 
 #[macro_export]
-macro_rules! log {
+macro_rules! progress {
     ($($arg:tt)*) => {{
-        if let Ok(log_level) = std::env::var("RUST_LOG") {
-            if log_level.to_lowercase() == "trace" {
-                eprint!($($arg)*);
-            }
-        }
-    }}
-}
-
-#[macro_export]
-macro_rules! logln {
-    ($($arg:tt)*) => {{
-        if let Ok(log_level) = std::env::var("RUST_LOG") {
-            if log_level.to_lowercase() == "trace" {
-                eprintln!($($arg)*);
-            }
-        }
+        $crate::logging::trace_progress(format_args!($($arg)*));
     }}
 }
 

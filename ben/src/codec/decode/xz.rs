@@ -1,6 +1,6 @@
 use crate::codec::decode::jsonl_decode_ben32;
 use crate::codec::translate::ben32_to_ben_lines;
-use crate::{log, logln, BenVariant};
+use crate::{progress, BenVariant};
 use std::io::{self, BufRead, Error, Read, Write};
 use xz2::read::XzDecoder;
 
@@ -49,7 +49,7 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
                     if overflow[i - 3..=i] == [0, 0, 0, 0] {
                         last_valid_assignment = i + 1;
                         line_count += 1;
-                        log!("Decoding sample: {}\r", line_count);
+                        progress!("Decoding sample: {}\r", line_count);
                     }
                 }
             }
@@ -60,7 +60,7 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
                         let lines = &overflow[i + 1..i + 3];
                         let n_lines = u16::from_be_bytes([lines[0], lines[1]]);
                         line_count += n_lines as usize;
-                        log!("Decoding sample: {}\r", line_count);
+                        progress!("Decoding sample: {}\r", line_count);
                     }
                 }
             }
@@ -73,8 +73,8 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
         ben32_to_ben_lines(&overflow[0..last_valid_assignment], &mut writer, variant)?;
         overflow = overflow[last_valid_assignment..].to_vec();
     }
-    logln!();
-    logln!("Done!");
+    tracing::trace!("");
+    tracing::trace!("Done!");
     Ok(())
 }
 
@@ -132,7 +132,7 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
                     if overflow[i - 3..=i] == [0, 0, 0, 0] {
                         last_valid_assignment = i + 1;
                         line_count += 1;
-                        log!("Decoding sample: {}\r", line_count);
+                        progress!("Decoding sample: {}\r", line_count);
                     }
                 }
             }
@@ -143,7 +143,7 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
                         let lines = &overflow[i + 1..i + 3];
                         let n_lines = u16::from_be_bytes([lines[0], lines[1]]);
                         line_count += n_lines as usize;
-                        log!("Decoding sample: {}\r", line_count);
+                        progress!("Decoding sample: {}\r", line_count);
                     }
                 }
             }
@@ -162,7 +162,7 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
         overflow.drain(..last_valid_assignment);
         starting_sample = line_count;
     }
-    logln!();
-    logln!("Done!");
+    tracing::trace!("");
+    tracing::trace!("Done!");
     Ok(())
 }

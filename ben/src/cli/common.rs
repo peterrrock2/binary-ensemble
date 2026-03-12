@@ -2,9 +2,10 @@ use std::io::{self, Result};
 use std::path::Path;
 
 pub fn set_verbose(verbose: bool) {
-    if verbose {
+    if verbose && std::env::var_os("RUST_LOG").is_none() {
         std::env::set_var("RUST_LOG", "trace");
     }
+    crate::logging::init_logging();
 }
 
 pub fn check_overwrite(file_name: &str, overwrite: bool) -> Result<()> {
@@ -27,7 +28,13 @@ pub fn check_overwrite(file_name: &str, overwrite: bool) -> Result<()> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::{Mutex, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     fn unique_path(name: &str) -> std::path::PathBuf {
         let nonce = SystemTime::now()
@@ -39,9 +46,27 @@ mod tests {
 
     #[test]
     fn set_verbose_sets_rust_log() {
+        let _guard = env_lock().lock().unwrap();
         std::env::remove_var("RUST_LOG");
         set_verbose(true);
         assert_eq!(std::env::var("RUST_LOG").as_deref(), Ok("trace"));
+    }
+
+    #[test]
+    fn set_verbose_preserves_existing_log_level() {
+        let _guard = env_lock().lock().unwrap();
+        std::env::set_var("RUST_LOG", "debug");
+        set_verbose(true);
+        assert_eq!(std::env::var("RUST_LOG").as_deref(), Ok("debug"));
+        std::env::remove_var("RUST_LOG");
+    }
+
+    #[test]
+    fn set_verbose_initializes_logger_without_setting_trace() {
+        let _guard = env_lock().lock().unwrap();
+        std::env::remove_var("RUST_LOG");
+        set_verbose(false);
+        assert!(std::env::var("RUST_LOG").is_err());
     }
 
     #[test]

@@ -1,5 +1,5 @@
 use crate::io::writer::{BenEncoder, XBenEncoder};
-use crate::{log, logln, BenVariant};
+use crate::{progress, BenVariant};
 use serde_json::Value;
 use std::io::{BufRead, Result, Write};
 use xz2::stream::MtStreamBuilder;
@@ -35,7 +35,7 @@ pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
     let mut line_num = 1;
 
     for line_result in reader.lines() {
-        log!("Encoding line: {}\r", line_num);
+        progress!("Encoding line: {}\r", line_num);
         line_num += 1;
         let line = line_result?;
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
@@ -43,8 +43,8 @@ pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
         ben_encoder.write_json_value(data)?;
     }
 
-    logln!();
-    logln!("Done!");
+    tracing::trace!("");
+    tracing::trace!("Done!");
 
     Ok(())
 }
@@ -57,14 +57,14 @@ pub fn encode_jsonl_to_ben<R: BufRead, W: Write>(
     let mut line_num = 1;
     let mut ben_encoder = BenEncoder::new(writer, variant);
     for line_result in reader.lines() {
-        log!("Encoding line: {}\r", line_num);
+        progress!("Encoding line: {}\r", line_num);
         line_num += 1;
         let line = line_result?;
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
 
         ben_encoder.write_json_value(data)?;
     }
-    logln!();
-    logln!("Done!");
+    tracing::trace!("");
+    tracing::trace!("Done!");
     Ok(())
 }
