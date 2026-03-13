@@ -1,8 +1,14 @@
 use crate::util::rle::assign_to_rle;
 use serde_json::Value;
+use std::io;
 
-pub(crate) fn encode_ben32_line(data: Value) -> Vec<u8> {
-    let assign_vec = data["assignment"].as_array().unwrap();
+pub(crate) fn encode_ben32_line(data: Value) -> io::Result<Vec<u8>> {
+    let assign_vec = data["assignment"].as_array().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "'assignment' field either missing or is not an array of integers",
+        )
+    })?;
     let mut prev_assign: u16 = 0;
     let mut count: u16 = 0;
     let mut first = true;
@@ -10,7 +16,21 @@ pub(crate) fn encode_ben32_line(data: Value) -> Vec<u8> {
     let mut ret = Vec::new();
 
     for assignment in assign_vec {
-        let assign = assignment.as_u64().unwrap() as u16;
+        let assign_u64 = assignment.as_u64().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "The value '{}' could not be unwrapped as an unsigned 64 bit integer.",
+                    assignment
+                ),
+            )
+        })?;
+        let assign = u16::try_from(assign_u64).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("The value '{}' is too large to fit in a u16.", assign_u64),
+            )
+        })?;
         if first {
             prev_assign = assign;
             count = 1;
@@ -33,7 +53,7 @@ pub(crate) fn encode_ben32_line(data: Value) -> Vec<u8> {
     }
 
     ret.extend([0, 0, 0, 0]);
-    ret
+    Ok(ret)
 }
 
 pub fn encode_ben_vec_from_assign(assign_vec: Vec<u16>) -> Vec<u8> {

@@ -14,7 +14,7 @@ fn encode_jsonl_to_ben32<R: BufRead, W: Write>(reader: R, mut writer: W) -> std:
         let line = line_result?;
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
 
-        writer.write_all(&encode_ben32_line(data))?;
+        writer.write_all(&encode_ben32_line(data)?)?;
     }
     Ok(())
 }

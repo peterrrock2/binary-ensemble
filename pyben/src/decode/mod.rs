@@ -12,15 +12,45 @@ use std::path::PathBuf;
 
 type DynIter = Box<dyn Iterator<Item = io::Result<MkvRecord>> + Send>;
 
+#[derive(Clone)]
+enum DecoderMode {
+    Ben,
+    XBen,
+}
+
+impl DecoderMode {
+    fn parse(mode: &str) -> PyResult<Self> {
+        match mode {
+            "ben" => Ok(Self::Ben),
+            "xben" => Ok(Self::XBen),
+            _ => Err(PyException::new_err(
+                "Unknown mode. Supported modes are 'ben' and 'xben'.",
+            )),
+        }
+    }
+
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ben => "ben",
+            Self::XBen => "xben",
+        }
+    }
+}
+
+#[derive(Clone)]
+struct DecoderSource {
+    path: PathBuf,
+    mode: DecoderMode,
+}
+
 #[pyclass(module = "pyben", unsendable)]
 pub struct PyBenDecoder {
+    source: DecoderSource,
     iter: DynIter,
     current_assignment: Option<Vec<u16>>,
     remaining_count: u16,
-    src_path: PathBuf,
-    mode: String,
-    base_len: usize,
-    len_hint: usize,
+    base_len: Option<usize>,
+    len_hint: Option<usize>,
 }
 
 #[pymethods]
@@ -29,58 +59,20 @@ impl PyBenDecoder {
     #[pyo3(signature = (file_path, mode = "ben"))]
     #[pyo3(text_signature = "(file_path, mode='ben')")]
     fn new(py: Python<'_>, file_path: PathBuf, mode: &str) -> PyResult<Self> {
-        let reader = open_input(&file_path)?;
-        let iter: DynIter = match mode {
-            "ben" => {
-                let ben = BenDecoder::new(reader).map_err(|e| {
-                    PyException::new_err(format!("Failed to create BenDecoder: {e}"))
-                })?;
-                Box::new(ben)
-            }
-            "xben" => {
-                let warnings = py.import("warnings")?;
-                let kwargs = PyDict::new(py);
-                // kwargs.set_item("stacklevel", 2)?;
-
-                warnings.call_method(
-                    "warn",
-                    (
-                        "XBEN may take a second to start decoding.",
-                        py.get_type::<PyUserWarning>(),
-                    ),
-                    Some(&kwargs),
-                )?;
-
-                let xben = XBenDecoder::new(reader).map_err(|e| {
-                    PyException::new_err(format!("Failed to create XBenDecoder: {e}"))
-                })?;
-                Box::new(xben)
-            }
-            _ => {
-                return Err(PyException::new_err(
-                    "Unknown mode. Supported modes are 'ben' and 'xben'.",
-                ));
-            }
+        let mode = DecoderMode::parse(mode)?;
+        let source = DecoderSource {
+            path: file_path,
+            mode,
         };
-
-        // Detach to get around the GIL
-        let base_len = py
-            .detach(|| count_samples_from_file(&file_path, mode))
-            .map_err(|e| {
-                PyException::new_err(format!(
-                    "Failed to count samples in {}: {e}",
-                    file_path.display()
-                ))
-            })?;
+        let iter = build_iter(py, &source)?;
 
         Ok(Self {
+            source,
             iter,
             current_assignment: None,
             remaining_count: 0,
-            src_path: file_path,
-            mode: mode.to_string(),
-            base_len: base_len,
-            len_hint: base_len,
+            base_len: None,
+            len_hint: None,
         })
     }
 
@@ -113,8 +105,21 @@ impl PyBenDecoder {
     }
 
     // Because we want progress bars!!!
-    fn __len__(slf: PyRef<Self>) -> usize {
-        slf.len_hint
+    fn __len__(mut slf: PyRefMut<Self>, py: Python<'_>) -> PyResult<usize> {
+        if let Some(len_hint) = slf.len_hint {
+            return Ok(len_hint);
+        }
+
+        let base_len = ensure_base_len(&mut slf, py)?;
+        slf.len_hint = Some(base_len);
+        Ok(base_len)
+    }
+
+    #[pyo3(text_signature = "(self)")]
+    fn count_samples(mut slf: PyRefMut<Self>, py: Python<'_>) -> PyResult<usize> {
+        let base_len = ensure_base_len(&mut slf, py)?;
+        slf.len_hint = Some(base_len);
+        Ok(base_len)
     }
 
     #[pyo3(text_signature = "(self, indices, /)")]
@@ -148,31 +153,20 @@ impl PyBenDecoder {
         if indices.is_empty() {
             return Err(PyException::new_err("indices must not be empty"));
         }
+        let base_len = ensure_base_len(&mut slf, py)?;
         if indices[0] <= 0 {
             return Err(PyException::new_err("indices must be 1-based"));
         }
-        if indices.last().unwrap() > &slf.base_len {
+        if indices.last().unwrap() > &base_len {
             return Err(PyException::new_err(format!(
                 "indices must be <= number of samples in base data ({})",
-                slf.base_len
+                base_len
             )));
         }
-        slf.len_hint = indices.len();
+        let len_hint = indices.len();
 
         let sel = Selection::Indices(indices.into_iter().peekable());
-
-        let frames = build_frame_iter(&slf.src_path, &slf.mode).map_err(|e| {
-            PyException::new_err(format!(
-                "Failed to create frame iterator from {}: {e}",
-                slf.src_path.display()
-            ))
-        })?;
-
-        let frame_decoder = SubsampleFrameDecoder::new(frames, sel);
-
-        slf.iter = Box::new(frame_decoder);
-        slf.current_assignment = None;
-        slf.remaining_count = 0;
+        reset_with_selection(&mut slf, sel, len_hint)?;
         Ok(slf.into())
     }
 
@@ -181,34 +175,24 @@ impl PyBenDecoder {
         mut slf: PyRefMut<'py, Self>,
         start: usize,
         end: usize,
+        py: Python<'_>,
     ) -> PyResult<Py<Self>> {
         if start == 0 || end < start {
             return Err(PyException::new_err(
                 "range must be 1-based and end >= start",
             ));
         }
-        if end > slf.base_len {
+        let base_len = ensure_base_len(&mut slf, py)?;
+        if end > base_len {
             return Err(PyException::new_err(format!(
                 "end must be <= number of samples in base data ({})",
-                slf.base_len
+                base_len
             )));
         }
 
         let sel = Selection::Range { start, end };
-        slf.len_hint = end - start + 1;
-
-        let frames = build_frame_iter(&slf.src_path, &slf.mode).map_err(|e| {
-            PyException::new_err(format!(
-                "Failed to create frame iterator from {}: {e}",
-                slf.src_path.display()
-            ))
-        })?;
-
-        let frame_decoder = SubsampleFrameDecoder::new(frames, sel);
-
-        slf.iter = Box::new(frame_decoder);
-        slf.current_assignment = None;
-        slf.remaining_count = 0;
+        let len_hint = end - start + 1;
+        reset_with_selection(&mut slf, sel, len_hint)?;
         Ok(slf.into())
     }
 
@@ -217,34 +201,95 @@ impl PyBenDecoder {
         mut slf: PyRefMut<'py, Self>,
         step: usize,
         offset: usize,
+        py: Python<'_>,
     ) -> PyResult<Py<Self>> {
         if step == 0 || offset == 0 {
             return Err(PyException::new_err("step and offset must be >= 1"));
         }
-        if offset > slf.base_len {
+        let base_len = ensure_base_len(&mut slf, py)?;
+        if offset > base_len {
             return Err(PyException::new_err(format!(
                 "offset must be <= number of samples in base data ({})",
-                slf.base_len
+                base_len
             )));
         }
         let sel = Selection::Every { step, offset };
-
-        slf.len_hint = (slf.base_len + step - 1 - (offset - 1)) / step;
-
-        let frames = build_frame_iter(&slf.src_path, &slf.mode).map_err(|e| {
-            PyException::new_err(format!(
-                "Failed to create frame iterator from {}: {e}",
-                slf.src_path.display()
-            ))
-        })?;
-
-        let frame_decoder = SubsampleFrameDecoder::new(frames, sel);
-
-        slf.iter = Box::new(frame_decoder);
-        slf.current_assignment = None;
-        slf.remaining_count = 0;
+        let len_hint = (base_len + step - 1 - (offset - 1)) / step;
+        reset_with_selection(&mut slf, sel, len_hint)?;
         Ok(slf.into())
     }
+}
+
+fn warn_xben_startup(py: Python<'_>) -> PyResult<()> {
+    let warnings = py.import("warnings")?;
+    let kwargs = PyDict::new(py);
+
+    warnings.call_method(
+        "warn",
+        (
+            "XBEN may take a second to start decoding.",
+            py.get_type::<PyUserWarning>(),
+        ),
+        Some(&kwargs),
+    )?;
+
+    Ok(())
+}
+
+fn build_iter(py: Python<'_>, source: &DecoderSource) -> PyResult<DynIter> {
+    let reader = open_input(&source.path)?;
+    match source.mode {
+        DecoderMode::Ben => {
+            let ben = BenDecoder::new(reader)
+                .map_err(|e| PyException::new_err(format!("Failed to create BenDecoder: {e}")))?;
+            Ok(Box::new(ben))
+        }
+        DecoderMode::XBen => {
+            warn_xben_startup(py)?;
+            let xben = XBenDecoder::new(reader)
+                .map_err(|e| PyException::new_err(format!("Failed to create XBenDecoder: {e}")))?;
+            Ok(Box::new(xben))
+        }
+    }
+}
+
+fn build_frames(source: &DecoderSource) -> PyResult<ben::io::reader::FrameIter> {
+    build_frame_iter(&source.path, source.mode.as_str()).map_err(|e| {
+        PyException::new_err(format!(
+            "Failed to create frame iterator from {}: {e}",
+            source.path.display()
+        ))
+    })
+}
+
+fn reset_with_selection(
+    decoder: &mut PyBenDecoder,
+    selection: Selection,
+    len_hint: usize,
+) -> PyResult<()> {
+    let frames = build_frames(&decoder.source)?;
+    let frame_decoder = SubsampleFrameDecoder::new(frames, selection);
+    decoder.iter = Box::new(frame_decoder);
+    decoder.current_assignment = None;
+    decoder.remaining_count = 0;
+    decoder.len_hint = Some(len_hint);
+    Ok(())
+}
+
+fn ensure_base_len(decoder: &mut PyBenDecoder, py: Python<'_>) -> PyResult<usize> {
+    if let Some(base_len) = decoder.base_len {
+        return Ok(base_len);
+    }
+
+    let path = decoder.source.path.clone();
+    let mode = decoder.source.mode.as_str().to_string();
+    let base_len = py
+        .detach(|| count_samples_from_file(&path, &mode))
+        .map_err(|e| {
+            PyException::new_err(format!("Failed to count samples in {}: {e}", path.display()))
+        })?;
+    decoder.base_len = Some(base_len);
+    Ok(base_len)
 }
 
 #[pyfunction]

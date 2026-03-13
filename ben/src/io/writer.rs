@@ -155,7 +155,7 @@ impl<W: Write> XBenEncoder<W> {
     }
 
     pub fn write_json_value(&mut self, data: Value) -> Result<()> {
-        let encoded = encode_ben32_line(data);
+        let encoded = encode_ben32_line(data)?;
         match self.variant {
             BenVariant::Standard => {
                 self.encoder.write_all(&encoded)?;

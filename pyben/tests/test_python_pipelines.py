@@ -5,6 +5,7 @@ from typing import Iterable, List
 
 import pytest
 
+import pyben
 from pyben import (
     PyBenDecoder,
     PyBenEncoder,
@@ -376,3 +377,349 @@ def test_compress_helpers_reject_unknown_variants(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Unknown variant"):
         compress_jsonl_to_xben(src, tmp_path / "out.xben", overwrite=True, variant="weird")
+
+
+def test_module_exports_are_exposed() -> None:
+    expected = {
+        "PyBenDecoder",
+        "PyBenEncoder",
+        "compress_jsonl_to_ben",
+        "compress_ben_to_xben",
+        "compress_jsonl_to_xben",
+        "decompress_ben_to_jsonl",
+        "decompress_xben_to_jsonl",
+        "decompress_xben_to_ben",
+    }
+    assert expected.issubset(set(pyben.__all__))
+    for name in expected:
+        assert hasattr(pyben, name)
+    assert hasattr(pyben, "_core")
+
+
+def test_pybenencoder_defaults_and_markov_alias_work(tmp_path: Path) -> None:
+    samples = [[1, 1, 2], [1, 1, 2], [2, 3, 3]]
+
+    default_ben = tmp_path / "default.ben"
+    with PyBenEncoder(default_ben, overwrite=True) as enc:
+        for sample in samples:
+            enc.write(sample)
+    assert list(PyBenDecoder(default_ben, mode="ben")) == samples
+
+    src = tmp_path / "src.jsonl"
+    write_jsonl(samples, src)
+
+    alias_ben = tmp_path / "alias.ben"
+    alias_xben = tmp_path / "alias.xben"
+    compress_jsonl_to_ben(src, alias_ben, overwrite=True, variant="markov")
+    compress_jsonl_to_xben(
+        src,
+        alias_xben,
+        overwrite=True,
+        variant="markov",
+        n_threads=1,
+        compression_level=1,
+    )
+    assert list(PyBenDecoder(alias_ben, mode="ben")) == samples
+    assert list(PyBenDecoder(alias_xben, mode="xben")) == samples
+
+
+def test_pybenencoder_close_and_write_error_paths(tmp_path: Path) -> None:
+    out = tmp_path / "out.ben"
+    enc = PyBenEncoder(out, overwrite=True, variant="standard")
+    enc.write([1, 2, 3])
+    enc.close()
+    enc.close()
+    with pytest.raises(OSError, match="already been closed"):
+        enc.write([1, 2, 3])
+
+    ctx_path = tmp_path / "ctx.ben"
+    with PyBenEncoder(ctx_path, overwrite=True, variant="standard") as ctx_enc:
+        ctx_enc.write([4, 5, 6])
+    assert list(PyBenDecoder(ctx_path, mode="ben")) == [[4, 5, 6]]
+
+
+def test_pybenencoder_rejects_overwrite_and_unknown_variant(tmp_path: Path) -> None:
+    out = tmp_path / "out.ben"
+    out.write_bytes(b"existing")
+
+    with pytest.raises(ValueError, match="Unknown variant"):
+        PyBenEncoder(tmp_path / "bad.ben", overwrite=False, variant="weird")
+
+    with pytest.raises(OSError, match="already exists"):
+        PyBenEncoder(out, overwrite=False, variant="standard")
+
+    with pytest.raises(OSError, match="Failed to create"):
+        PyBenEncoder(
+            tmp_path / "missing-dir" / "out.ben",
+            overwrite=False,
+            variant="standard",
+        )
+
+
+def test_compress_helpers_reject_same_path_missing_input_and_bad_json(tmp_path: Path) -> None:
+    src = tmp_path / "src.jsonl"
+    write_jsonl([[1, 1, 2]], src)
+
+    with pytest.raises(OSError, match="must differ"):
+        compress_jsonl_to_ben(src, src, overwrite=True, variant="standard")
+
+    with pytest.raises(OSError, match="does not exist"):
+        compress_jsonl_to_ben(
+            tmp_path / "missing.jsonl",
+            tmp_path / "out.ben",
+            overwrite=True,
+            variant="standard",
+        )
+
+    bad_json = tmp_path / "bad.jsonl"
+    bad_json.write_text("not json\n", encoding="utf-8")
+    with pytest.raises(OSError, match="Failed to convert JSONL to BEN"):
+        compress_jsonl_to_ben(
+            bad_json,
+            tmp_path / "bad.ben",
+            overwrite=True,
+            variant="standard",
+        )
+
+    bad_assign = tmp_path / "bad_assign.jsonl"
+    bad_assign.write_text('{"assignment":"bad","sample":1}\n', encoding="utf-8")
+    with pytest.raises(OSError, match="Failed to convert JSONL to XBEN"):
+        compress_jsonl_to_xben(
+            bad_assign,
+            tmp_path / "bad.xben",
+            overwrite=True,
+            variant="standard",
+            n_threads=1,
+            compression_level=1,
+        )
+
+    with pytest.raises(OSError, match="Failed to create"):
+        compress_jsonl_to_ben(
+            src,
+            tmp_path / "missing-dir" / "out.ben",
+            overwrite=True,
+            variant="standard",
+        )
+
+
+def test_compress_ben_to_xben_rejects_same_path_missing_input_invalid_header_and_existing_output(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(OSError, match="does not exist"):
+        compress_ben_to_xben(
+            tmp_path / "missing.ben",
+            tmp_path / "out.xben",
+            overwrite=True,
+            n_threads=1,
+            compression_level=1,
+        )
+
+    bad_ben = tmp_path / "bad.ben"
+    bad_ben.write_bytes(b"garbage")
+
+    with pytest.raises(OSError, match="must differ"):
+        compress_ben_to_xben(
+            bad_ben,
+            bad_ben,
+            overwrite=True,
+            n_threads=1,
+            compression_level=1,
+        )
+
+    with pytest.raises(OSError, match="Failed to convert BEN to XBEN"):
+        compress_ben_to_xben(
+            bad_ben,
+            tmp_path / "out.xben",
+            overwrite=True,
+            n_threads=1,
+            compression_level=1,
+        )
+
+    src = tmp_path / "src.jsonl"
+    write_jsonl([[1, 2, 3]], src)
+    ben = tmp_path / "good.ben"
+    compress_jsonl_to_ben(src, ben, overwrite=True, variant="standard")
+    out = tmp_path / "exists.xben"
+    out.write_bytes(b"exists")
+    with pytest.raises(OSError, match="already exists"):
+        compress_ben_to_xben(
+            ben,
+            out,
+            overwrite=False,
+            n_threads=1,
+            compression_level=1,
+        )
+
+
+def test_decoder_constructor_and_mode_errors(tmp_path: Path) -> None:
+    with pytest.raises(Exception, match="Unknown mode"):
+        PyBenDecoder(tmp_path / "missing.ben", mode="weird")
+
+    with pytest.raises(OSError, match="Failed to open"):
+        PyBenDecoder(tmp_path / "missing.ben", mode="ben")
+
+    bad_ben = tmp_path / "bad.ben"
+    bad_ben.write_bytes(b"garbage")
+    with pytest.raises(Exception, match="Failed to create BenDecoder"):
+        PyBenDecoder(bad_ben, mode="ben")
+
+    bad_xben = tmp_path / "bad.xben"
+    bad_xben.write_bytes(b"garbage")
+    with pytest.warns(UserWarning, match="XBEN may take a second"):
+        with pytest.raises(Exception, match="Failed to create XBenDecoder"):
+            PyBenDecoder(bad_xben, mode="xben")
+
+
+def test_decoder_len_and_count_samples_are_lazy_and_cached(tmp_path: Path) -> None:
+    samples = [[1, 1, 2], [1, 1, 2], [2, 3, 3], [4]]
+    src = tmp_path / "src.jsonl"
+    write_jsonl(samples, src)
+
+    ben = tmp_path / "out.ben"
+    compress_jsonl_to_ben(src, ben, overwrite=True, variant="mkv_chain")
+
+    dec = PyBenDecoder(ben, mode="ben")
+    assert len(dec) == len(samples)
+    assert dec.count_samples() == len(samples)
+    assert list(dec) == samples
+
+    gone = PyBenDecoder(ben, mode="ben")
+    assert len(gone) == len(samples)
+    ben.unlink()
+    with pytest.raises(Exception, match="Failed to create frame iterator"):
+        gone.subsample_range(1, 2)
+
+
+def test_decoder_xben_len_count_and_warning(tmp_path: Path) -> None:
+    samples = [[1, 1], [1, 1], [2, 2], [3, 3]]
+    src = tmp_path / "src.jsonl"
+    write_jsonl(samples, src)
+
+    xben = tmp_path / "out.xben"
+    compress_jsonl_to_xben(
+        src, xben, overwrite=True, variant="mkv_chain", n_threads=1, compression_level=1
+    )
+
+    with pytest.warns(UserWarning, match="XBEN may take a second"):
+        dec = PyBenDecoder(xben, mode="xben")
+    assert len(dec) == len(samples)
+    assert dec.count_samples() == len(samples)
+    assert list(dec) == samples
+
+
+def test_decoder_subsample_validations_and_warning_paths(tmp_path: Path) -> None:
+    samples = [[1], [2], [3], [4], [5]]
+    src = tmp_path / "src.jsonl"
+    write_jsonl(samples, src)
+
+    ben = tmp_path / "out.ben"
+    compress_jsonl_to_ben(src, ben, overwrite=True, variant="standard")
+
+    with pytest.warns(UserWarning, match="sorted and unique"):
+        got = list(PyBenDecoder(ben, mode="ben").subsample_indices([5, 1, 1, 3]))
+    assert got == [samples[0], samples[2], samples[4]]
+
+    with pytest.raises(Exception, match="indices must be 1-based"):
+        PyBenDecoder(ben, mode="ben").subsample_indices([0, 1])
+
+    with pytest.raises(Exception, match="indices must be <="):
+        PyBenDecoder(ben, mode="ben").subsample_indices([6])
+
+    with pytest.raises(Exception, match="range must be 1-based"):
+        PyBenDecoder(ben, mode="ben").subsample_range(0, 2)
+
+    with pytest.raises(Exception, match="end must be <="):
+        PyBenDecoder(ben, mode="ben").subsample_range(1, 99)
+
+    with pytest.raises(Exception, match="step and offset must be >= 1"):
+        PyBenDecoder(ben, mode="ben").subsample_every(0, 1)
+
+    with pytest.raises(Exception, match="offset must be <="):
+        PyBenDecoder(ben, mode="ben").subsample_every(2, 99)
+
+    assert list(PyBenDecoder(ben, mode="ben").subsample_range(2, 4)) == samples[1:4]
+    assert list(PyBenDecoder(ben, mode="ben").subsample_every(2, 2)) == samples[1::2]
+
+
+def test_decoder_count_and_subsample_fail_cleanly_if_source_disappears(tmp_path: Path) -> None:
+    src = tmp_path / "src.jsonl"
+    write_jsonl([[1], [2], [3]], src)
+
+    ben = tmp_path / "out.ben"
+    compress_jsonl_to_ben(src, ben, overwrite=True, variant="standard")
+
+    dec = PyBenDecoder(ben, mode="ben")
+    ben.unlink()
+
+    with pytest.raises(Exception, match="Failed to count samples"):
+        dec.count_samples()
+
+
+def test_decoder_reports_zero_count_and_bad_frame_errors(tmp_path: Path) -> None:
+    src = tmp_path / "src.jsonl"
+    write_jsonl([[1, 1, 2]], src)
+
+    mkv_ben = tmp_path / "mkv.ben"
+    compress_jsonl_to_ben(src, mkv_ben, overwrite=True, variant="mkv_chain")
+    data = bytearray(mkv_ben.read_bytes())
+    data[-2:] = b"\x00\x00"
+    mkv_ben.write_bytes(data)
+    with pytest.raises(Exception, match="zero-count"):
+        next(iter(PyBenDecoder(mkv_ben, mode="ben")))
+
+    standard_ben = tmp_path / "standard.ben"
+    compress_jsonl_to_ben(src, standard_ben, overwrite=True, variant="standard")
+    truncated = standard_ben.read_bytes()[:-1]
+    bad_ben = tmp_path / "truncated.ben"
+    bad_ben.write_bytes(truncated)
+    dec = PyBenDecoder(bad_ben, mode="ben")
+    with pytest.raises(Exception, match="Error decoding next item"):
+        next(iter(dec))
+
+
+def test_decode_helpers_reject_same_paths_missing_inputs_existing_output_and_invalid_headers(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(OSError, match="does not exist"):
+        decompress_ben_to_jsonl(
+            tmp_path / "missing.ben",
+            tmp_path / "out.jsonl",
+            overwrite=True,
+        )
+
+    bad_ben = tmp_path / "bad.ben"
+    bad_ben.write_bytes(b"garbage")
+    with pytest.raises(OSError, match="Failed to convert BEN to JSONL"):
+        decompress_ben_to_jsonl(
+            bad_ben,
+            tmp_path / "out.jsonl",
+            overwrite=True,
+        )
+
+    bad_xben = tmp_path / "bad.xben"
+    bad_xben.write_bytes(b"garbage")
+    with pytest.raises(OSError, match="Failed to convert XBEN to BEN"):
+        decompress_xben_to_ben(
+            bad_xben,
+            tmp_path / "out.ben",
+            overwrite=True,
+        )
+
+    with pytest.raises(OSError, match="must differ"):
+        decompress_xben_to_jsonl(
+            bad_xben,
+            bad_xben,
+            overwrite=True,
+        )
+
+    src = tmp_path / "src.jsonl"
+    write_jsonl([[1, 2, 3]], src)
+    ben = tmp_path / "good.ben"
+    xben = tmp_path / "good.xben"
+    compress_jsonl_to_ben(src, ben, overwrite=True, variant="standard")
+    compress_ben_to_xben(ben, xben, overwrite=True, n_threads=1, compression_level=1)
+
+    out = tmp_path / "exists.jsonl"
+    out.write_text("exists\n", encoding="utf-8")
+    with pytest.raises(OSError, match="already exists"):
+        decompress_ben_to_jsonl(ben, out, overwrite=False)

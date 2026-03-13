@@ -5,6 +5,10 @@ class PyBenDecoder:
     """Iterator over assignments in a BEN or XBEN file.
     Open a decoder over a BEN (`.ben`) or XBEN (`.xben`) file.
 
+    Construction is lazy with respect to sample counting: opening the decoder does
+    not scan the whole file. The first call to :func:`len` or :meth:`count_samples`
+    will count samples and cache the result.
+
     Parameters
     ----------
     file_path :
@@ -25,6 +29,23 @@ class PyBenDecoder:
     ) -> None: ...
     def __iter__(self) -> Iterator[list[int]]: ...
     def __next__(self) -> list[int]: ...
+    def __len__(self) -> int:
+        """Return the number of samples.
+
+        Notes
+        -----
+        The first call may require a full scan of the underlying file and can be
+        expensive for very large BEN/XBEN datasets. The result is cached after
+        the first successful count.
+        """
+        ...
+    def count_samples(self) -> int:
+        """Count and cache the total number of samples in the source file.
+
+        This is equivalent to calling :func:`len`, but is more explicit about
+        the fact that the first call may perform a full-file scan.
+        """
+        ...
     def subsample_indices(self, indices: Iterable[int]) -> "PyBenDecoder":
         """Keep only the given **1-based** sample indices.
 
@@ -47,6 +68,9 @@ class PyBenDecoder:
     def subsample_range(self, start: int, end: int) -> "PyBenDecoder":
         """Keep only samples in the inclusive **1-based** range [start, end].
 
+        The base sample count is computed on demand if needed for bounds
+        validation.
+
         Arguments
         ---------
         start :
@@ -64,6 +88,9 @@ class PyBenDecoder:
     def subsample_every(self, step: int, offset: int = 1) -> "PyBenDecoder":
         """Keep every `step`-th sample starting at **1-based** `offset`.
         Returns the same decoder (fluent API).
+
+        The base sample count is computed on demand if needed for bounds
+        validation.
 
         Arguments
         ---------
