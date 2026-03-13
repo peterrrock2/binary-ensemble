@@ -1,7 +1,7 @@
-use ben::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben};
-use ben::codec::encode::{encode_jsonl_to_ben, encode_jsonl_to_xben};
-use ben::util::rle::rle_to_vec;
-use ben::BenVariant;
+use binary_ensemble::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben};
+use binary_ensemble::codec::encode::{encode_jsonl_to_ben, encode_jsonl_to_xben};
+use binary_ensemble::util::rle::rle_to_vec;
+use binary_ensemble::BenVariant;
 use serde_json::json;
 use std::io::{Cursor, Read, Write};
 

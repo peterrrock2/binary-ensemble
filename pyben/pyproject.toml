@@ -5,7 +5,7 @@ build-backend = "maturin"
 
 [project]
 name = "binary-ensemble"
-version = "0.3.0"
+dynamic = ["version"]
 description = "Python bindings for the Binary Ensemble Package."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,7 +13,7 @@ requires-python = ">=3.11"
 
 [tool.maturin]
 python-source = "."
-module-name = "pyben._core"
+module-name = "binary_ensemble._core"
 bindings = "pyo3"
 
 [tool.pytest.ini_options]
@@ -42,4 +42,3 @@ dev = [
     "pytest>=8.4.2",
     "tqdm>=4.67.1",
 ]
-

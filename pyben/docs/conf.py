@@ -52,7 +52,7 @@ templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 autoapi_type = "python"
-autoapi_dirs = ["../pyben"]
+autoapi_dirs = ["../binary_ensemble"]
 autoapi_clean = True
 autoapi_keep_files = False
 autoapi_ignore = [

@@ -1,6 +1,6 @@
 use crate::common::{open_input, open_output, validate_input_output_paths};
-use ben::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl};
-use ben::io::reader::{
+use binary_ensemble::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl};
+use binary_ensemble::io::reader::{
     build_frame_iter, count_samples_from_file, BenDecoder, MkvRecord, Selection,
     SubsampleFrameDecoder, XBenDecoder,
 };
@@ -43,7 +43,7 @@ struct DecoderSource {
     mode: DecoderMode,
 }
 
-#[pyclass(module = "pyben", unsendable)]
+#[pyclass(module = "binary_ensemble", unsendable)]
 pub struct PyBenDecoder {
     source: DecoderSource,
     iter: DynIter,
@@ -253,7 +253,7 @@ fn build_iter(py: Python<'_>, source: &DecoderSource) -> PyResult<DynIter> {
     }
 }
 
-fn build_frames(source: &DecoderSource) -> PyResult<ben::io::reader::FrameIter> {
+fn build_frames(source: &DecoderSource) -> PyResult<binary_ensemble::io::reader::FrameIter> {
     build_frame_iter(&source.path, source.mode.as_str()).map_err(|e| {
         PyException::new_err(format!(
             "Failed to create frame iterator from {}: {e}",

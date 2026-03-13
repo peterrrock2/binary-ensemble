@@ -1,6 +1,6 @@
-use ben::codec::decode::decode_ben_to_jsonl;
-use ben::codec::encode::encode_jsonl_to_ben;
-use ben::BenVariant;
+use binary_ensemble::codec::decode::decode_ben_to_jsonl;
+use binary_ensemble::codec::encode::encode_jsonl_to_ben;
+use binary_ensemble::BenVariant;
 use serde_json::Value;
 use std::fs;
 use std::io::BufReader;

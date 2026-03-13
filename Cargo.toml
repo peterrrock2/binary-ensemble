@@ -11,3 +11,6 @@ exclude = [
   "tests/*",
   "TODO.md",
 ]
+
+[workspace.package]
+version = "1.0.0"

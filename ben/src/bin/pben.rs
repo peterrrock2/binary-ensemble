@@ -1,3 +1,3 @@
 fn main() -> std::io::Result<()> {
-    ben::cli::pben::run()
+    binary_ensemble::cli::pben::run()
 }

@@ -1,6 +1,6 @@
 [package]
 name = "binary-ensemble"
-version = "0.3.0"
+version.workspace = true
 edition = "2021"
 authors = ["Peter Rock <peter.r.rock2@gmail.com>"]
 exclude = ["example/"]
@@ -12,7 +12,7 @@ repository = "https://github.com/peterrrock2/binary-ensemble"
 description = "A CLI tool for working with and compressing ensembles of districting plans"
 
 [lib]
-name = "ben"
+name = "binary_ensemble"
 
 [dependencies]
 byteorder = "1.5.0"

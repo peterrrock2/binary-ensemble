@@ -5,8 +5,8 @@ from typing import Iterable, List
 
 import pytest
 
-import pyben
-from pyben import (
+import binary_ensemble
+from binary_ensemble import (
     PyBenDecoder,
     PyBenEncoder,
     compress_ben_to_xben,
@@ -390,10 +390,10 @@ def test_module_exports_are_exposed() -> None:
         "decompress_xben_to_jsonl",
         "decompress_xben_to_ben",
     }
-    assert expected.issubset(set(pyben.__all__))
+    assert expected.issubset(set(binary_ensemble.__all__))
     for name in expected:
-        assert hasattr(pyben, name)
-    assert hasattr(pyben, "_core")
+        assert hasattr(binary_ensemble, name)
+    assert hasattr(binary_ensemble, "_core")
 
 
 def test_pybenencoder_defaults_and_markov_alias_work(tmp_path: Path) -> None:

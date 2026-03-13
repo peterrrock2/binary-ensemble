@@ -89,7 +89,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "binary-ensemble"
-version = "0.3.0"
+version = "1.0.0"
 dependencies = [
  "byteorder",
  "clap 4.5.48",
@@ -521,7 +521,7 @@ dependencies = [
 
 [[package]]
 name = "pyben"
-version = "0.3.0"
+version = "1.0.0"
 dependencies = [
  "binary-ensemble",
  "byteorder",

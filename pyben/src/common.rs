@@ -1,4 +1,4 @@
-use ben::BenVariant;
+use binary_ensemble::BenVariant;
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::PyResult;
 use std::fs::File;

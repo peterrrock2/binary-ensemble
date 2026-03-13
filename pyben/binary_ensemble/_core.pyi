@@ -120,7 +120,7 @@ class PyBenEncoder:
 
     .. code-block:: python
 
-        from pyben import PyBenEncoder
+        from binary_ensemble import PyBenEncoder
 
         assignments = [
             [1, 2, 1, 1, 2, 2],

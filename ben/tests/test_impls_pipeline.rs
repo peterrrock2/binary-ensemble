@@ -1,18 +1,18 @@
 #![allow(clippy::needless_collect)]
 
-use ben::codec::decode::{
+use binary_ensemble::codec::decode::{
     decode_ben_line, decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl, xz_decompress,
 };
-use ben::codec::encode::{
+use binary_ensemble::codec::encode::{
     encode_ben_to_xben, encode_ben_vec_from_rle, encode_jsonl_to_ben, encode_jsonl_to_xben,
     xz_compress,
 };
-use ben::io::reader::{
+use binary_ensemble::io::reader::{
     build_frame_iter, count_samples_from_file, BenDecoder, DecoderInitError, Frame,
     SubsampleFrameDecoder, XBenDecoder,
 };
-use ben::io::writer::BenEncoder;
-use ben::BenVariant;
+use binary_ensemble::io::writer::BenEncoder;
+use binary_ensemble::BenVariant;
 
 use proptest::prelude::*;
 use serde_json::json;
@@ -73,9 +73,9 @@ where
     Ok(out)
 }
 
-fn collect_frames<I>(it: I) -> std::io::Result<Vec<(ben::io::reader::Frame, u16)>>
+fn collect_frames<I>(it: I) -> std::io::Result<Vec<(binary_ensemble::io::reader::Frame, u16)>>
 where
-    I: IntoIterator<Item = std::io::Result<(ben::io::reader::Frame, u16)>>,
+    I: IntoIterator<Item = std::io::Result<(binary_ensemble::io::reader::Frame, u16)>>,
 {
     let mut out = Vec::new();
     for rec in it {
@@ -778,11 +778,11 @@ fn xben_frame_decoder_new_and_truncated_iteration_paths() {
     )
     .unwrap();
 
-    let mut frames = ben::io::reader::XBenFrameDecoder::new(xz.as_slice()).unwrap();
+    let mut frames = binary_ensemble::io::reader::XBenFrameDecoder::new(xz.as_slice()).unwrap();
     assert!(frames.next().unwrap().is_ok());
 
     let trimmed = &xz[..xz.len() - 1];
-    let mut frames = ben::io::reader::XBenFrameDecoder::new(trimmed).unwrap();
+    let mut frames = binary_ensemble::io::reader::XBenFrameDecoder::new(trimmed).unwrap();
     loop {
         match frames.next() {
             Some(Err(e)) => {
@@ -814,7 +814,7 @@ fn xben_encoder_write_ben_file_without_banner_path_roundtrips() {
             .encoder()
             .unwrap();
         let encoder = xz2::write::XzEncoder::new_stream(&mut xz, mt);
-        let mut xben = ben::io::writer::XBenEncoder::new(encoder, BenVariant::Standard);
+        let mut xben = binary_ensemble::io::writer::XBenEncoder::new(encoder, BenVariant::Standard);
         xben.write_ben_file(BufReader::new(payload_only.as_slice())).unwrap();
     }
 

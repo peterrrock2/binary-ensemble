@@ -1,3 +1,3 @@
 fn main() {
-    ben::cli::reben::run();
+    binary_ensemble::cli::reben::run();
 }
