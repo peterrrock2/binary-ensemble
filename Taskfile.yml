@@ -1,0 +1,267 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: "3"
+
+vars:
+  CARGO_BIN: '{{.HOME}}/.cargo/bin'
+  LOCAL_BIN: '{{.HOME}}/.local/bin'
+  LLVM_BIN: '{{.HOME}}/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/bin'
+  COV_TARGET_DIR: '{{.ROOT_DIR}}/target/llvm-cov-target'
+  PYBEN_TEST_PATHS: 'tests/test_python_pipelines.py'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task: help
+
+  help:
+    desc: List available tasks
+    silent: true
+    cmds:
+      - task --list-all
+
+  ensure-rust-linux: &ensure-rust-unix
+    desc: Install Rust if it is not already available
+    internal: true
+    silent: true
+    status:
+      - command -v rustc
+    cmds:
+      - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+
+  ensure-rust-darwin: *ensure-rust-unix
+
+  ensure-rust-windows:
+    desc: Install Rust if it is not already available
+    internal: true
+    silent: true
+    status:
+      - where rustc
+    cmds:
+      - powershell -ExecutionPolicy ByPass -Command "irm https://win.rustup.rs/x86_64 | iex"
+
+  ensure-uv-linux: &ensure-uv-unix
+    desc: Install uv if it is not already available
+    internal: true
+    silent: true
+    status:
+      - command -v uv
+    cmds:
+      - curl -LsSf https://astral.sh/uv/install.sh | sh
+
+  ensure-uv-darwin: *ensure-uv-unix
+
+  ensure-uv-windows:
+    desc: Install uv if it is not already available
+    internal: true
+    silent: true
+    status:
+      - where uv
+    cmds:
+      - powershell -ExecutionPolicy ByPass -Command "irm https://astral.sh/uv/install.ps1 | iex"
+
+  ensure-toolchain:
+    desc: Ensure Rust and uv are installed
+    silent: true
+    deps:
+      - ensure-rust-{{OS}}
+      - ensure-uv-{{OS}}
+
+  pyben-sync:
+    desc: Sync the pyben development environment
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    dir: pyben
+    cmds:
+      - uv sync --all-groups
+
+  pyben-develop:
+    desc: Build the editable pyben extension
+    silent: true
+    deps:
+      - pyben-sync
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    dir: pyben
+    cmds:
+      - uv run maturin develop
+
+  release:
+    desc: Build a release wheel for pyben
+    silent: true
+    deps:
+      - pyben-sync
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    dir: pyben
+    cmds:
+      - uv run maturin build --release
+
+  test-rust:
+    desc: Run Rust tests for the workspace
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cargo test
+
+  test-python:
+    desc: Run the pyben Python tests
+    silent: true
+    deps:
+      - pyben-develop
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    dir: pyben
+    cmds:
+      - uv run pytest {{.CLI_ARGS | default .PYBEN_TEST_PATHS}}
+
+  test:
+    desc: Run Rust and Python tests
+    silent: true
+    cmds:
+      - task: test-rust
+      - task: test-python
+
+  coverage-ben:
+    desc: Run Rust coverage for the ben crate
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cargo llvm-cov --package binary-ensemble --summary-only --ignore-filename-regex '(^|/)bin/'
+
+  coverage-pyben:
+    desc: Run Python-driven Rust coverage for pyben
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cargo llvm-cov clean --workspace
+      - cargo llvm-cov -p pyben --no-report
+      - >-
+        bash -lc 'eval "$(cargo llvm-cov show-env --sh)";
+        export CARGO_TARGET_DIR="{{.COV_TARGET_DIR}}";
+        cd "{{.ROOT_DIR}}/pyben";
+        uv run maturin develop --target-dir "{{.COV_TARGET_DIR}}";
+        uv run pytest {{.CLI_ARGS | default .PYBEN_TEST_PATHS}}'
+      - >-
+        {{.LLVM_BIN}}/llvm-profdata merge -sparse
+        {{.ROOT_DIR}}/target/*.profraw
+        {{.COV_TARGET_DIR}}/*.profraw
+        -o /tmp/pyben.profdata
+      - >-
+        {{.LLVM_BIN}}/llvm-cov report
+        {{.COV_TARGET_DIR}}/debug/libpyben_core.so
+        -instr-profile=/tmp/pyben.profdata
+        --ignore-filename-regex='/.cargo/registry|/rustc/|^/mnt/.*/ben/src/'
+
+  coverage-pyben-html:
+    desc: Generate an HTML Rust coverage report for pyben at /tmp/pyben-coverage.html
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cargo llvm-cov clean --workspace
+      - cargo llvm-cov -p pyben --no-report
+      - >-
+        bash -lc 'eval "$(cargo llvm-cov show-env --sh)";
+        export CARGO_TARGET_DIR="{{.COV_TARGET_DIR}}";
+        cd "{{.ROOT_DIR}}/pyben";
+        uv run maturin develop --target-dir "{{.COV_TARGET_DIR}}";
+        uv run pytest {{.CLI_ARGS | default .PYBEN_TEST_PATHS}}'
+      - >-
+        {{.LLVM_BIN}}/llvm-profdata merge -sparse
+        {{.ROOT_DIR}}/target/*.profraw
+        {{.COV_TARGET_DIR}}/*.profraw
+        -o /tmp/pyben.profdata
+      - >-
+        bash -lc '{{.LLVM_BIN}}/llvm-cov show {{.COV_TARGET_DIR}}/debug/libpyben_core.so
+        -instr-profile=/tmp/pyben.profdata
+        --ignore-filename-regex='\"'\"'/.cargo/registry|/rustc/|^/mnt/.*/ben/src/'\"'\"'
+        --format=html > /tmp/pyben-coverage.html'
+
+  coverage-summary:
+    desc: Run ben and pyben coverage and print both reports plus a combined summary table
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+      TERM: xterm-256color
+      CLICOLOR_FORCE: "1"
+    cmds:
+      - >-
+        bash -lc '
+        ben_report_file=/tmp/ben-coverage-report.txt;
+        pyben_report_file=/tmp/pyben-coverage-report.txt;
+
+        cargo llvm-cov --color always --package binary-ensemble --summary-only --ignore-filename-regex '"'"'(^|/)bin/'"'"' > "$ben_report_file";
+        ben_total="$(awk '"'"'$1=="TOTAL"{print $10}'"'"' "$ben_report_file")";
+
+        cargo llvm-cov clean --workspace >/dev/null;
+        cargo llvm-cov -p pyben --no-report >/dev/null;
+        eval "$(cargo llvm-cov show-env --sh)";
+        export CARGO_TARGET_DIR="{{.COV_TARGET_DIR}}";
+        cd "{{.ROOT_DIR}}/pyben";
+        uv run maturin develop --target-dir "{{.COV_TARGET_DIR}}" >/dev/null;
+        uv run pytest {{.CLI_ARGS | default .PYBEN_TEST_PATHS}} >/dev/null;
+        cd "{{.ROOT_DIR}}";
+        {{.LLVM_BIN}}/llvm-profdata merge -sparse target/*.profraw {{.COV_TARGET_DIR}}/*.profraw -o /tmp/pyben.profdata >/dev/null;
+        {{.LLVM_BIN}}/llvm-cov report {{.COV_TARGET_DIR}}/debug/libpyben_core.so -instr-profile=/tmp/pyben.profdata --ignore-filename-regex='"'"'/.cargo/registry|/rustc/|^/mnt/.*/ben/src/'"'"' > "$pyben_report_file";
+        pyben_total="$(awk '"'"'$1=="TOTAL"{print $10}'"'"' "$pyben_report_file")";
+
+        printf "\n%s\n\n" "BEN COVERAGE";
+        cat "$ben_report_file";
+        printf "\n%s\n\n" "PYBEN COVERAGE";
+        cat "$pyben_report_file";
+        printf "\n%-10s %-10s\n" "Target" "Lines";
+        printf "%-10s %-10s\n" "ben" "${ben_total:-n/a}";
+        printf "%-10s %-10s\n" "pyben" "${pyben_total:-n/a}";
+        '
+
+  clean-linux: &clean-unix
+    desc: Clean build artifacts
+    internal: true
+    silent: true
+    cmds:
+      - cargo clean
+      - rm -rf pyben/target pyben/dist pyben/pyben.egg-info pyben/src/pyben.c
+      - rm -rf pyben/pyben/*abi3.so pyben/pyben/pyben.*.pyd
+      - rm -rf pyben/.venv
+      - find . -type d -name "__pycache__" -exec rm -rf {} +
+      - rm -rf docs/_build docs/user/example_data
+
+  clean-darwin: *clean-unix
+
+  clean-windows:
+    desc: Clean build artifacts
+    internal: true
+    silent: true
+    cmds:
+      - cargo clean
+      - cmd /c "if exist pyben\\target rmdir /s /q pyben\\target"
+      - cmd /c "if exist pyben\\dist rmdir /s /q pyben\\dist"
+      - cmd /c "if exist pyben\\pyben.egg-info rmdir /s /q pyben\\pyben.egg-info"
+      - cmd /c "if exist pyben\\.venv rmdir /s /q pyben\\.venv"
+      - powershell -NoProfile -Command "Get-ChildItem -Path . -Directory -Filter __pycache__ -Recurse | Remove-Item -Recurse -Force"
+      - cmd /c "if exist docs\\_build rmdir /s /q docs\\_build"
+      - cmd /c "if exist docs\\user\\example_data rmdir /s /q docs\\user\\example_data"
+
+  clean:
+    desc: Clean build artifacts
+    silent: true
+    cmds:
+      - task: clean-{{OS}}
