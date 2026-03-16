@@ -304,22 +304,19 @@ fn test_sort_json_file_by_reverse_cuthill_mckee() {
 }
 
 #[test]
-fn test_sort_json_file_by_spectral_ordering() {
+fn test_sort_json_file_by_nested_dissection() {
     let mut output = Vec::new();
     let mapping = sort_json_file_by_ordering(
         path_graph_json(),
         &mut output,
-        GraphOrderingMethod::Spectral,
+        GraphOrderingMethod::NestedDissection,
     )
     .unwrap();
     let output_json: Value = serde_json::from_slice(&output).unwrap();
 
-    let endpoint_positions = [mapping[&0], mapping[&3]];
-    let middle_positions = [mapping[&1], mapping[&2]];
-
-    assert!(endpoint_positions.contains(&0));
-    assert!(endpoint_positions.contains(&3));
-    assert!(middle_positions.contains(&1));
-    assert!(middle_positions.contains(&2));
+    let positions = [mapping[&0], mapping[&1], mapping[&2], mapping[&3]];
+    let mut sorted = positions;
+    sorted.sort_unstable();
+    assert_eq!(sorted, [0, 1, 2, 3]);
     assert_eq!(output_json["nodes"].as_array().unwrap().len(), 4);
 }

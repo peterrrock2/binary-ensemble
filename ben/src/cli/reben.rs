@@ -22,8 +22,8 @@ enum Mode {
 #[derive(Parser, Debug, Clone, ValueEnum, PartialEq)]
 /// Topology-based ordering methods for JSON graph relabeling.
 enum OrderingMethod {
-    /// Spectral ordering based on the graph Laplacian.
-    Spectral,
+    /// Nested dissection ordering based on recursive graph separators.
+    NestedDissection,
     /// Reverse Cuthill-McKee ordering.
     ReverseCuthillMckee,
 }
@@ -245,14 +245,14 @@ pub fn run() {
 
 fn to_graph_ordering(ordering: &OrderingMethod) -> GraphOrderingMethod {
     match ordering {
-        OrderingMethod::Spectral => GraphOrderingMethod::Spectral,
+        OrderingMethod::NestedDissection => GraphOrderingMethod::NestedDissection,
         OrderingMethod::ReverseCuthillMckee => GraphOrderingMethod::ReverseCuthillMckee,
     }
 }
 
 fn ordering_method_name(ordering: &OrderingMethod) -> &'static str {
     match ordering {
-        OrderingMethod::Spectral => "spectral",
+        OrderingMethod::NestedDissection => "nested-dissection",
         OrderingMethod::ReverseCuthillMckee => "reverse-cuthill-mckee",
     }
 }
@@ -312,12 +312,12 @@ mod tests {
             "--mode",
             "json",
             "--ordering",
-            "spectral",
+            "nested-dissection",
         ])
         .unwrap();
 
         assert_eq!(args.mode, Mode::Json);
-        assert_eq!(args.ordering, Some(OrderingMethod::Spectral));
+        assert_eq!(args.ordering, Some(OrderingMethod::NestedDissection));
         assert!(args.key.is_none());
     }
 }
