@@ -57,9 +57,48 @@ pub fn relabel_ben_lines<R: Read, W: Write>(
     mut writer: W,
     variant: BenVariant,
 ) -> io::Result<()> {
+    relabel_ben_lines_impl(&mut reader, &mut writer, variant, None)
+}
+
+/// Canonicalize up to a bounded number of samples from a BEN frame stream.
+///
+/// Labels are reassigned in first-seen order within each assignment vector,
+/// which can improve downstream compression ratios.
+///
+/// # Arguments
+///
+/// * `reader` - The BEN input stream without its 17-byte file banner.
+/// * `writer` - The destination for the relabeled BEN frames.
+/// * `variant` - The BEN variant, used to determine whether repetition counts
+///   follow each frame.
+/// * `max_samples` - The maximum number of expanded samples to write.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after up to `max_samples` samples have been relabeled and
+/// written.
+pub fn relabel_ben_lines_limit<R: Read, W: Write>(
+    mut reader: R,
+    mut writer: W,
+    variant: BenVariant,
+    max_samples: usize,
+) -> io::Result<()> {
+    relabel_ben_lines_impl(&mut reader, &mut writer, variant, Some(max_samples))
+}
+
+/// Shared implementation for canonical BEN relabeling.
+fn relabel_ben_lines_impl<R: Read, W: Write>(
+    mut reader: R,
+    mut writer: W,
+    variant: BenVariant,
+    max_samples: Option<usize>,
+) -> io::Result<()> {
     let mut sample_number = 0;
     let mut label_map = HashMap::new();
     loop {
+        if max_samples.is_some_and(|limit| sample_number >= limit) {
+            break;
+        }
         let mut tmp_buffer = [0u8];
         let max_val_bits = match reader.read_exact(&mut tmp_buffer) {
             Ok(_) => tmp_buffer[0],
@@ -91,16 +130,21 @@ pub fn relabel_ben_lines<R: Read, W: Write>(
             *val = new_val;
         }
 
-        let relabeled = encode_ben_vec_from_rle(ben_line);
-        writer.write_all(&relabeled)?;
-
         let count_occurrences = if variant == BenVariant::MkvChain {
             let count = reader.read_u16::<BigEndian>()?;
-            writer.write_all(&count.to_be_bytes())?;
-            count
+            let out_count = max_samples
+                .map(|limit| ((limit - sample_number).min(count as usize)) as u16)
+                .unwrap_or(count);
+            out_count
         } else {
             1
         };
+
+        let relabeled = encode_ben_vec_from_rle(ben_line);
+        writer.write_all(&relabeled)?;
+        if variant == BenVariant::MkvChain {
+            writer.write_all(&count_occurrences.to_be_bytes())?;
+        }
 
         sample_number += count_occurrences as usize;
 
@@ -123,6 +167,35 @@ pub fn relabel_ben_lines<R: Read, W: Write>(
 ///
 /// Returns `Ok(())` after the full BEN file has been relabeled.
 pub fn relabel_ben_file<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::Result<()> {
+    relabel_ben_file_impl(&mut reader, &mut writer, None)
+}
+
+/// Relabel at most `max_samples` expanded samples from a BEN file, preserving
+/// its leading BEN banner.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including its banner.
+/// * `writer` - The destination for the relabeled BEN file.
+/// * `max_samples` - The maximum number of expanded samples to write.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after up to `max_samples` samples have been relabeled.
+pub fn relabel_ben_file_limit<R: Read, W: Write>(
+    mut reader: R,
+    mut writer: W,
+    max_samples: usize,
+) -> io::Result<()> {
+    relabel_ben_file_impl(&mut reader, &mut writer, Some(max_samples))
+}
+
+/// Shared implementation for BEN-file canonical relabeling.
+fn relabel_ben_file_impl<R: Read, W: Write>(
+    mut reader: R,
+    mut writer: W,
+    max_samples: Option<usize>,
+) -> io::Result<()> {
     let mut check_buffer = [0u8; 17];
     reader.read_exact(&mut check_buffer)?;
 
@@ -139,7 +212,7 @@ pub fn relabel_ben_file<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::
 
     writer.write_all(&check_buffer)?;
 
-    relabel_ben_lines(&mut reader, &mut writer, variant)?;
+    relabel_ben_lines_impl(&mut reader, &mut writer, variant, max_samples)?;
 
     Ok(())
 }
@@ -167,12 +240,65 @@ pub fn relabel_ben_lines_with_map<R: Read, W: Write>(
     new_to_old_node_map: HashMap<usize, usize>,
     variant: BenVariant,
 ) -> io::Result<()> {
+    relabel_ben_lines_with_map_impl(
+        &mut reader,
+        &mut writer,
+        new_to_old_node_map,
+        variant,
+        None,
+    )
+}
+
+/// Relabel BEN frames using an externally supplied node map, up to a bounded
+/// number of expanded samples.
+///
+/// # Arguments
+///
+/// * `reader` - The BEN input stream without its 17-byte file banner.
+/// * `writer` - The destination for the relabeled BEN frames.
+/// * `new_to_old_node_map` - The permutation describing how node positions
+///   should be reordered.
+/// * `variant` - The BEN variant, used to determine whether repetition counts
+///   follow each frame.
+/// * `max_samples` - The maximum number of expanded samples to write.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after up to `max_samples` samples have been relabeled and
+/// written.
+pub fn relabel_ben_lines_with_map_limit<R: Read, W: Write>(
+    mut reader: R,
+    mut writer: W,
+    new_to_old_node_map: HashMap<usize, usize>,
+    variant: BenVariant,
+    max_samples: usize,
+) -> io::Result<()> {
+    relabel_ben_lines_with_map_impl(
+        &mut reader,
+        &mut writer,
+        new_to_old_node_map,
+        variant,
+        Some(max_samples),
+    )
+}
+
+/// Shared implementation for mapped BEN relabeling.
+fn relabel_ben_lines_with_map_impl<R: Read, W: Write>(
+    mut reader: R,
+    mut writer: W,
+    new_to_old_node_map: HashMap<usize, usize>,
+    variant: BenVariant,
+    max_samples: Option<usize>,
+) -> io::Result<()> {
     let mut sample_number = 0;
     let permutation = dense_permutation(&new_to_old_node_map)?;
     let mut assignment_vec = Vec::new();
     let mut new_assignment_vec = vec![0u16; permutation.len()];
     let mut new_rle = Vec::new();
     loop {
+        if max_samples.is_some_and(|limit| sample_number >= limit) {
+            break;
+        }
         let mut tmp_buffer = [0u8];
         let max_val_bits = match reader.read_exact(&mut tmp_buffer) {
             Ok(_) => tmp_buffer[0],
@@ -207,16 +333,21 @@ pub fn relabel_ben_lines_with_map<R: Read, W: Write>(
 
         assign_slice_to_rle(&new_assignment_vec, &mut new_rle);
 
-        let relabeled = encode_ben_vec_from_rle(new_rle.clone());
-        writer.write_all(&relabeled)?;
-
         let count_occurrences = if variant == BenVariant::MkvChain {
             let count = reader.read_u16::<BigEndian>()?;
-            writer.write_all(&count.to_be_bytes())?;
-            count
+            let out_count = max_samples
+                .map(|limit| ((limit - sample_number).min(count as usize)) as u16)
+                .unwrap_or(count);
+            out_count
         } else {
             1
         };
+
+        let relabeled = encode_ben_vec_from_rle(new_rle.clone());
+        writer.write_all(&relabeled)?;
+        if variant == BenVariant::MkvChain {
+            writer.write_all(&count_occurrences.to_be_bytes())?;
+        }
 
         sample_number += count_occurrences as usize;
         progress!("Relabeling line: {}\r", sample_number);
@@ -244,6 +375,44 @@ pub fn relabel_ben_file_with_map<R: Read, W: Write>(
     mut writer: W,
     new_to_old_node_map: HashMap<usize, usize>,
 ) -> io::Result<()> {
+    relabel_ben_file_with_map_impl(&mut reader, &mut writer, new_to_old_node_map, None)
+}
+
+/// Relabel at most `max_samples` expanded samples from a BEN file using an
+/// externally supplied node map.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including its banner.
+/// * `writer` - The destination for the relabeled BEN file.
+/// * `new_to_old_node_map` - The permutation describing how node positions
+///   should be reordered.
+/// * `max_samples` - The maximum number of expanded samples to write.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after up to `max_samples` samples have been relabeled.
+pub fn relabel_ben_file_with_map_limit<R: Read, W: Write>(
+    mut reader: R,
+    mut writer: W,
+    new_to_old_node_map: HashMap<usize, usize>,
+    max_samples: usize,
+) -> io::Result<()> {
+    relabel_ben_file_with_map_impl(
+        &mut reader,
+        &mut writer,
+        new_to_old_node_map,
+        Some(max_samples),
+    )
+}
+
+/// Shared implementation for BEN-file mapped relabeling.
+fn relabel_ben_file_with_map_impl<R: Read, W: Write>(
+    mut reader: R,
+    mut writer: W,
+    new_to_old_node_map: HashMap<usize, usize>,
+    max_samples: Option<usize>,
+) -> io::Result<()> {
     let mut check_buffer = [0u8; 17];
     reader.read_exact(&mut check_buffer)?;
 
@@ -260,7 +429,13 @@ pub fn relabel_ben_file_with_map<R: Read, W: Write>(
 
     writer.write_all(&check_buffer)?;
 
-    relabel_ben_lines_with_map(&mut reader, &mut writer, new_to_old_node_map, variant)?;
+    relabel_ben_lines_with_map_impl(
+        &mut reader,
+        &mut writer,
+        new_to_old_node_map,
+        variant,
+        max_samples,
+    )?;
 
     Ok(())
 }

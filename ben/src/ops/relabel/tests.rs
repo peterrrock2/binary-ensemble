@@ -135,6 +135,33 @@ fn test_relabel_simple_file_mkv() {
 }
 
 #[test]
+fn test_relabel_simple_file_mkv_with_limit() {
+    let file = concat!(
+        "{\"assignment\":[1,2,3],\"sample\":1}\n",
+        "{\"assignment\":[1,2,3],\"sample\":2}\n",
+        "{\"assignment\":[1,2,3],\"sample\":3}\n",
+        "{\"assignment\":[2,3,1],\"sample\":4}\n"
+    );
+
+    let mut encoded = Vec::new();
+    encode_jsonl_to_ben(file.as_bytes(), io::BufWriter::new(&mut encoded), BenVariant::MkvChain)
+        .unwrap();
+
+    let mut relabeled = Vec::new();
+    relabel_ben_file_limit(encoded.as_slice(), io::BufWriter::new(&mut relabeled), 2).unwrap();
+
+    let mut decoded = Vec::new();
+    decode_ben_to_jsonl(relabeled.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
+
+    let output_str = String::from_utf8(decoded).unwrap();
+    let expected = concat!(
+        "{\"assignment\":[1,2,3],\"sample\":1}\n",
+        "{\"assignment\":[1,2,3],\"sample\":2}\n"
+    );
+    assert_eq!(output_str, expected);
+}
+
+#[test]
 fn test_relabel_ben_line_with_map() {
     let in_assign = vec![2, 3, 1, 4, 5, 5, 3, 4, 2];
     let in_rle = assign_to_rle(in_assign);
@@ -327,6 +354,41 @@ fn test_relabel_simple_file_with_map_mkv() {
     );
 
     assert_eq!(output_str, out_file);
+}
+
+#[test]
+fn test_relabel_simple_file_with_map_mkv_limit_truncates_counts() {
+    let file = concat!(
+        "{\"assignment\":[1,2,3],\"sample\":1}\n",
+        "{\"assignment\":[1,2,3],\"sample\":2}\n",
+        "{\"assignment\":[1,2,3],\"sample\":3}\n",
+        "{\"assignment\":[3,1,2],\"sample\":4}\n"
+    );
+
+    let new_to_old_map: HashMap<usize, usize> = [(0, 1), (1, 2), (2, 0)].iter().cloned().collect();
+
+    let mut encoded = Vec::new();
+    encode_jsonl_to_ben(file.as_bytes(), io::BufWriter::new(&mut encoded), BenVariant::MkvChain)
+        .unwrap();
+
+    let mut relabeled = Vec::new();
+    relabel_ben_file_with_map_limit(
+        encoded.as_slice(),
+        io::BufWriter::new(&mut relabeled),
+        new_to_old_map,
+        2,
+    )
+    .unwrap();
+
+    let mut decoded = Vec::new();
+    decode_ben_to_jsonl(relabeled.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
+
+    let output_str = String::from_utf8(decoded).unwrap();
+    let expected = concat!(
+        "{\"assignment\":[2,3,1],\"sample\":1}\n",
+        "{\"assignment\":[2,3,1],\"sample\":2}\n"
+    );
+    assert_eq!(output_str, expected);
 }
 
 #[test]

@@ -1,7 +1,10 @@
 use crate::cli::common::set_verbose;
 use crate::{
     json::graph::{sort_json_file_by_key, sort_json_file_by_ordering, GraphOrderingMethod},
-    ops::relabel::{relabel_ben_file, relabel_ben_file_with_map},
+    ops::relabel::{
+        relabel_ben_file, relabel_ben_file_limit, relabel_ben_file_with_map,
+        relabel_ben_file_with_map_limit,
+    },
 };
 use clap::{Parser, ValueEnum};
 use serde_json::{json, Value};
@@ -22,8 +25,9 @@ enum Mode {
 #[derive(Parser, Debug, Clone, ValueEnum, PartialEq)]
 /// Topology-based ordering methods for JSON graph relabeling.
 enum OrderingMethod {
-    /// Nested dissection ordering based on recursive graph separators.
-    NestedDissection,
+    /// Minimum-linear-arrangement heuristic based on graph adjacency alone.
+    #[clap(alias = "mla")]
+    MinimumLinearArrangement,
     /// Reverse Cuthill-McKee ordering.
     ReverseCuthillMckee,
 }
@@ -67,6 +71,9 @@ struct Args {
     /// the assignment vectors in the BEN file.
     #[arg(short, long)]
     mode: Mode,
+    /// Only relabel the first `n` expanded samples in BEN mode.
+    #[arg(long)]
+    n_items: Option<usize>,
     /// Verbosity level for the program.
     #[arg(short, long)]
     verbose: bool,
@@ -79,6 +86,9 @@ pub fn run() {
 
     match &args.mode {
         Mode::Json => {
+            if args.n_items.is_some() {
+                panic!("--n-items is only supported in BEN mode.");
+            }
             let input_file = File::open(&args.input_file).expect("Could not open input file.");
             let reader = BufReader::new(input_file);
             let label = relabeling_label(args.key.as_deref(), args.ordering.as_ref())
@@ -143,7 +153,11 @@ pub fn run() {
                     File::create(&output_file_name).expect("Could not create output file.");
                 let writer = BufWriter::new(output_file);
 
-                relabel_ben_file(reader, writer).unwrap();
+                if let Some(limit) = args.n_items {
+                    relabel_ben_file_limit(reader, writer, limit).unwrap();
+                } else {
+                    relabel_ben_file(reader, writer).unwrap();
+                }
                 return;
             }
 
@@ -238,21 +252,28 @@ pub fn run() {
 
             tracing::trace!("Relabeling ben file according to map file {}", map_file_name,);
 
-            relabel_ben_file_with_map(reader, writer, new_to_old_node_map).unwrap();
+            if let Some(limit) = args.n_items {
+                relabel_ben_file_with_map_limit(reader, writer, new_to_old_node_map, limit)
+                    .unwrap();
+            } else {
+                relabel_ben_file_with_map(reader, writer, new_to_old_node_map).unwrap();
+            }
         }
     }
 }
 
 fn to_graph_ordering(ordering: &OrderingMethod) -> GraphOrderingMethod {
     match ordering {
-        OrderingMethod::NestedDissection => GraphOrderingMethod::NestedDissection,
+        OrderingMethod::MinimumLinearArrangement => {
+            GraphOrderingMethod::MinimumLinearArrangement
+        }
         OrderingMethod::ReverseCuthillMckee => GraphOrderingMethod::ReverseCuthillMckee,
     }
 }
 
 fn ordering_method_name(ordering: &OrderingMethod) -> &'static str {
     match ordering {
-        OrderingMethod::NestedDissection => "nested-dissection",
+        OrderingMethod::MinimumLinearArrangement => "minimum-linear-arrangement",
         OrderingMethod::ReverseCuthillMckee => "reverse-cuthill-mckee",
     }
 }
@@ -312,12 +333,28 @@ mod tests {
             "--mode",
             "json",
             "--ordering",
-            "nested-dissection",
+            "minimum-linear-arrangement",
         ])
         .unwrap();
 
         assert_eq!(args.mode, Mode::Json);
-        assert_eq!(args.ordering, Some(OrderingMethod::NestedDissection));
+        assert_eq!(args.ordering, Some(OrderingMethod::MinimumLinearArrangement));
         assert!(args.key.is_none());
+    }
+
+    #[test]
+    fn parse_ben_mode_n_items_args() {
+        let args = Args::try_parse_from([
+            "reben",
+            "samples.jsonl.ben",
+            "--mode",
+            "ben",
+            "--n-items",
+            "25",
+        ])
+        .unwrap();
+
+        assert_eq!(args.mode, Mode::Ben);
+        assert_eq!(args.n_items, Some(25));
     }
 }

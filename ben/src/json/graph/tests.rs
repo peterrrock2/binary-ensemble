@@ -304,12 +304,12 @@ fn test_sort_json_file_by_reverse_cuthill_mckee() {
 }
 
 #[test]
-fn test_sort_json_file_by_nested_dissection() {
+fn test_sort_json_file_by_minimum_linear_arrangement() {
     let mut output = Vec::new();
     let mapping = sort_json_file_by_ordering(
         path_graph_json(),
         &mut output,
-        GraphOrderingMethod::NestedDissection,
+        GraphOrderingMethod::MinimumLinearArrangement,
     )
     .unwrap();
     let output_json: Value = serde_json::from_slice(&output).unwrap();

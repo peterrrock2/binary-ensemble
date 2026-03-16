@@ -10,8 +10,8 @@ use std::result::Result as StdResult;
 /// Topology-based graph ordering methods supported by `reben`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GraphOrderingMethod {
-    /// Order nodes using a recursive nested-dissection heuristic.
-    NestedDissection,
+    /// Order nodes using a minimum-linear-arrangement heuristic.
+    MinimumLinearArrangement,
     /// Order nodes using Reverse Cuthill-McKee.
     ReverseCuthillMckee,
 }
@@ -123,7 +123,7 @@ pub fn sort_json_file_by_ordering<R: Read, W: Write>(
     tracing::trace!("Sorting JSON file by ordering method: {:?}", method);
 
     let order = match method {
-        GraphOrderingMethod::NestedDissection => nested_dissection_order(&graph),
+        GraphOrderingMethod::MinimumLinearArrangement => minimum_linear_arrangement_order(&graph),
         GraphOrderingMethod::ReverseCuthillMckee => reverse_cuthill_mckee_order(&graph),
     };
 
@@ -241,131 +241,81 @@ fn connected_components(graph: &GraphJson) -> Vec<Vec<usize>> {
 
 fn reverse_cuthill_mckee_order(graph: &GraphJson) -> Vec<usize> {
     let mut order = Vec::with_capacity(graph.nodes.len());
+
+    for component in connected_components(graph) {
+        order.extend(reverse_cuthill_mckee_component(graph, &component));
+    }
+
+    order
+}
+
+fn reverse_cuthill_mckee_component(graph: &GraphJson, component: &[usize]) -> Vec<usize> {
     let degrees = graph
         .adjacency_indices
         .iter()
         .map(Vec::len)
         .collect::<Vec<_>>();
-
-    for component in connected_components(graph) {
-        let component_set = component.iter().copied().collect::<std::collections::HashSet<_>>();
-        let start = component
-            .iter()
-            .copied()
-            .min_by_key(|&node| (degrees[node], graph.node_ids[node]))
-            .unwrap();
-
-        let mut visited = HashMap::new();
-        let mut queue = VecDeque::from([start]);
-        visited.insert(start, true);
-        let mut component_order = Vec::with_capacity(component.len());
-
-        while let Some(node) = queue.pop_front() {
-            component_order.push(node);
-            let mut neighbors = graph.adjacency_indices[node]
-                .iter()
-                .copied()
-                .filter(|neighbor| component_set.contains(neighbor) && !visited.contains_key(neighbor))
-                .collect::<Vec<_>>();
-            neighbors.sort_by_key(|&neighbor| (degrees[neighbor], graph.node_ids[neighbor]));
-            for neighbor in neighbors {
-                visited.insert(neighbor, true);
-                queue.push_back(neighbor);
-            }
-        }
-
-        component_order.reverse();
-        order.extend(component_order);
-    }
-
-    order
-}
-
-fn nested_dissection_order(graph: &GraphJson) -> Vec<usize> {
-    let mut order = Vec::with_capacity(graph.nodes.len());
-
-    for component in connected_components(graph) {
-        order.extend(nested_dissection_component(graph, component));
-    }
-
-    order
-}
-
-fn nested_dissection_component(graph: &GraphJson, component: Vec<usize>) -> Vec<usize> {
-    if component.len() <= 8 {
-        let mut base = component;
-        base.sort_by_key(|&node| graph.node_ids[node]);
-        return base;
-    }
-
-    let component_mask = subset_mask(graph.nodes.len(), &component);
+    let component_set = component.iter().copied().collect::<std::collections::HashSet<_>>();
     let start = component
         .iter()
         .copied()
-        .min_by_key(|&node| (graph.adjacency_indices[node].len(), graph.node_ids[node]))
+        .min_by_key(|&node| (degrees[node], graph.node_ids[node]))
         .unwrap();
-    let a = farthest_node_in_subset(graph, start, &component_mask);
-    let (b, dist_from_a) = farthest_node_with_distances(graph, a, &component_mask);
-    let dist_from_b = bfs_distances(graph, b, &component_mask);
 
-    let Some(max_dist) = dist_from_a.iter().flatten().copied().max() else {
-        let mut base = component;
-        base.sort_by_key(|&node| graph.node_ids[node]);
-        return base;
-    };
+    let mut visited = vec![false; graph.nodes.len()];
+    let mut queue = VecDeque::from([start]);
+    visited[start] = true;
+    let mut component_order = Vec::with_capacity(component.len());
 
-    let separator_target = max_dist / 2;
-    let mut separator = component
-        .iter()
-        .copied()
-        .filter(|&node| dist_from_a[node] == Some(separator_target))
-        .collect::<Vec<_>>();
-
-    if separator.is_empty() {
-        let best_delta = component
-            .iter()
-            .filter_map(|&node| Some((node, dist_from_a[node]?, dist_from_b[node]?)))
-            .map(|(_, da, db)| da.abs_diff(db))
-            .min()
-            .unwrap_or(0);
-        separator = component
+    while let Some(node) = queue.pop_front() {
+        component_order.push(node);
+        let mut neighbors = graph.adjacency_indices[node]
             .iter()
             .copied()
-            .filter(|&node| {
-                matches!(
-                    (dist_from_a[node], dist_from_b[node]),
-                    (Some(da), Some(db)) if da.abs_diff(db) == best_delta
-                )
-            })
-            .collect();
+            .filter(|neighbor| component_set.contains(neighbor) && !visited[*neighbor])
+            .collect::<Vec<_>>();
+        neighbors.sort_by_key(|&neighbor| (degrees[neighbor], graph.node_ids[neighbor]));
+        for neighbor in neighbors {
+            visited[neighbor] = true;
+            queue.push_back(neighbor);
+        }
     }
 
-    separator.sort_by_key(|&node| graph.node_ids[node]);
-    let separator_mask = subset_mask(graph.nodes.len(), &separator);
-    let remaining = component
-        .iter()
-        .copied()
-        .filter(|node| !separator_mask[*node])
-        .collect::<Vec<_>>();
-    let mut subcomponents = connected_components_in_subset(graph, &remaining);
-    if subcomponents.len() <= 1 {
-        let mut fallback = component;
-        fallback.sort_by_key(|&node| graph.node_ids[node]);
-        return fallback;
+    component_order.reverse();
+    component_order
+}
+
+fn minimum_linear_arrangement_order(graph: &GraphJson) -> Vec<usize> {
+    let mut order = Vec::with_capacity(graph.nodes.len());
+
+    for component in connected_components(graph) {
+        order.extend(minimum_linear_arrangement_component(graph, &component));
     }
 
-    subcomponents.sort_by_key(|part| {
-        part.iter()
-            .filter_map(|&node| dist_from_a[node])
-            .min()
-            .unwrap_or(usize::MAX)
-    });
+    order
+}
 
-    let mut order = Vec::with_capacity(component.len());
-    for subcomponent in subcomponents {
-        order.extend(nested_dissection_component(graph, subcomponent));
+fn minimum_linear_arrangement_component(graph: &GraphJson, component: &[usize]) -> Vec<usize> {
+    if component.len() <= 2 {
+        return component.to_vec();
     }
-    order.extend(separator);
+
+    let component_mask = subset_mask(graph.nodes.len(), component);
+    let mut order = reverse_cuthill_mckee_component(graph, component);
+
+    for _ in 0..8 {
+        let positions = positions_for_order(graph.nodes.len(), &order);
+        order.sort_by(|&a, &b| {
+            let a_score = barycenter_score(graph, a, &positions, &component_mask);
+            let b_score = barycenter_score(graph, b, &positions, &component_mask);
+            a_score
+                .partial_cmp(&b_score)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| graph.node_ids[a].cmp(&graph.node_ids[b]))
+        });
+        local_adjacent_improvement(graph, &mut order, &component_mask);
+    }
+
     order
 }
 
@@ -377,72 +327,79 @@ fn subset_mask(size: usize, nodes: &[usize]) -> Vec<bool> {
     mask
 }
 
-fn bfs_distances(graph: &GraphJson, start: usize, allowed: &[bool]) -> Vec<Option<usize>> {
-    let mut distances = vec![None; graph.nodes.len()];
-    let mut queue = VecDeque::from([start]);
-    distances[start] = Some(0);
-
-    while let Some(node) = queue.pop_front() {
-        let distance = distances[node].unwrap();
-        for &neighbor in &graph.adjacency_indices[node] {
-            if allowed[neighbor] && distances[neighbor].is_none() {
-                distances[neighbor] = Some(distance + 1);
-                queue.push_back(neighbor);
-            }
-        }
+fn positions_for_order(size: usize, order: &[usize]) -> Vec<usize> {
+    let mut positions = vec![usize::MAX; size];
+    for (idx, &node) in order.iter().enumerate() {
+        positions[node] = idx;
     }
-
-    distances
+    positions
 }
 
-fn farthest_node_in_subset(graph: &GraphJson, start: usize, allowed: &[bool]) -> usize {
-    farthest_node_with_distances(graph, start, allowed).0
-}
-
-fn farthest_node_with_distances(
+fn barycenter_score(
     graph: &GraphJson,
-    start: usize,
-    allowed: &[bool],
-) -> (usize, Vec<Option<usize>>) {
-    let distances = bfs_distances(graph, start, allowed);
-    let farthest = distances
-        .iter()
-        .enumerate()
-        .filter(|(idx, distance)| allowed[*idx] && distance.is_some())
-        .max_by_key(|(idx, distance)| (distance.unwrap(), graph.node_ids[*idx]))
-        .map(|(idx, _)| idx)
-        .unwrap_or(start);
-    (farthest, distances)
-}
-
-fn connected_components_in_subset(graph: &GraphJson, nodes: &[usize]) -> Vec<Vec<usize>> {
-    let allowed = subset_mask(graph.nodes.len(), nodes);
-    let mut seen = vec![false; graph.nodes.len()];
-    let mut components = Vec::new();
-
-    for &start in nodes {
-        if seen[start] {
-            continue;
+    node: usize,
+    positions: &[usize],
+    component_mask: &[bool],
+) -> f64 {
+    let mut sum = 0.0;
+    let mut count = 0.0;
+    for &neighbor in &graph.adjacency_indices[node] {
+        if component_mask[neighbor] {
+            sum += positions[neighbor] as f64;
+            count += 1.0;
         }
-        let mut queue = VecDeque::from([start]);
-        let mut component = Vec::new();
-        seen[start] = true;
-
-        while let Some(node) = queue.pop_front() {
-            component.push(node);
-            for &neighbor in &graph.adjacency_indices[node] {
-                if allowed[neighbor] && !seen[neighbor] {
-                    seen[neighbor] = true;
-                    queue.push_back(neighbor);
-                }
-            }
-        }
-
-        component.sort_by_key(|&node| graph.node_ids[node]);
-        components.push(component);
     }
 
-    components
+    if count == 0.0 {
+        positions[node] as f64
+    } else {
+        sum / count
+    }
+}
+
+fn local_adjacent_improvement(graph: &GraphJson, order: &mut [usize], component_mask: &[bool]) {
+    if order.len() < 2 {
+        return;
+    }
+
+    let mut improved = true;
+    while improved {
+        improved = false;
+        let mut positions = positions_for_order(graph.nodes.len(), order);
+        for idx in 0..order.len() - 1 {
+            let current_cost = node_span_cost(graph, order[idx], &positions, component_mask)
+                + node_span_cost(graph, order[idx + 1], &positions, component_mask);
+
+            order.swap(idx, idx + 1);
+            positions[order[idx]] = idx;
+            positions[order[idx + 1]] = idx + 1;
+
+            let swapped_cost = node_span_cost(graph, order[idx], &positions, component_mask)
+                + node_span_cost(graph, order[idx + 1], &positions, component_mask);
+
+            if swapped_cost <= current_cost {
+                improved = swapped_cost < current_cost;
+            } else {
+                order.swap(idx, idx + 1);
+                positions[order[idx]] = idx;
+                positions[order[idx + 1]] = idx + 1;
+            }
+        }
+    }
+}
+
+fn node_span_cost(
+    graph: &GraphJson,
+    node: usize,
+    positions: &[usize],
+    component_mask: &[bool],
+) -> usize {
+    graph.adjacency_indices[node]
+        .iter()
+        .copied()
+        .filter(|&neighbor| component_mask[neighbor])
+        .map(|neighbor| positions[node].abs_diff(positions[neighbor]))
+        .sum()
 }
 
 #[cfg(test)]

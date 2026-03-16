@@ -892,6 +892,103 @@ fn reben_cli_json_and_ben_modes_work() {
 }
 
 #[test]
+fn reben_cli_can_limit_ben_relabeling_to_first_n_items() {
+    let temp = TempDir::new("reben-limit");
+    let graph_path = temp.path().join("dual_graph.json");
+    let jsonl_path = temp.path().join("samples.jsonl");
+    let ben_path = temp.path().join("samples.jsonl.ben");
+    let canonical_path = temp.path().join("canonicalized_first_one.ben");
+    let map_path = temp.path().join("dual_graph_sorted_by_GEOID20_map.json");
+    let map_relabel_path = temp.path().join("map_relabel_first_one.ben");
+
+    fs::write(&graph_path, sample_graph()).unwrap();
+    fs::write(
+        &jsonl_path,
+        r#"{"assignment":[9,9,4],"sample":1}
+{"assignment":[4,7,7],"sample":2}
+"#,
+    )
+    .unwrap();
+
+    let mut ben_bytes = Vec::new();
+    encode_jsonl_to_ben(
+        BufReader::new(fs::File::open(&jsonl_path).unwrap()),
+        &mut ben_bytes,
+        BenVariant::Standard,
+    )
+    .unwrap();
+    fs::write(&ben_path, ben_bytes).unwrap();
+
+    let sort_graph = run(
+        "reben",
+        &[
+            graph_path.to_str().unwrap(),
+            "--mode",
+            "json",
+            "--key",
+            "GEOID20",
+        ],
+        temp.path(),
+    );
+    assert_success(&sort_graph);
+    assert!(map_path.exists());
+
+    let canonicalize = run(
+        "reben",
+        &[
+            ben_path.to_str().unwrap(),
+            "--mode",
+            "ben",
+            "--n-items",
+            "1",
+            "--output-file",
+            canonical_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_success(&canonicalize);
+
+    let relabel = run(
+        "reben",
+        &[
+            ben_path.to_str().unwrap(),
+            "--mode",
+            "ben",
+            "--map-file",
+            map_path.to_str().unwrap(),
+            "--n-items",
+            "1",
+            "--output-file",
+            map_relabel_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_success(&relabel);
+
+    let mut canonical_jsonl = Vec::new();
+    decode_ben_to_jsonl(
+        BufReader::new(fs::File::open(&canonical_path).unwrap()),
+        &mut canonical_jsonl,
+    )
+    .unwrap();
+    assert_eq!(
+        String::from_utf8(canonical_jsonl).unwrap(),
+        "{\"assignment\":[1,1,2],\"sample\":1}\n"
+    );
+
+    let mut relabeled_jsonl = Vec::new();
+    decode_ben_to_jsonl(
+        BufReader::new(fs::File::open(&map_relabel_path).unwrap()),
+        &mut relabeled_jsonl,
+    )
+    .unwrap();
+    assert_eq!(
+        String::from_utf8(relabeled_jsonl).unwrap(),
+        "{\"assignment\":[9,4,9],\"sample\":1}\n"
+    );
+}
+
+#[test]
 fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations() {
     let temp = TempDir::new("reben-more");
     let graph_path = temp.path().join("shape.json");
@@ -966,31 +1063,31 @@ fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations
 }
 
 #[test]
-fn reben_cli_supports_nested_dissection_and_rcm_orderings() {
+fn reben_cli_supports_mla_and_rcm_orderings() {
     let temp = TempDir::new("reben-orderings");
     let graph_path = temp.path().join("shape.json");
-    let nested_path = temp.path().join("nested.json");
+    let mla_path = temp.path().join("mla.json");
     let rcm_path = temp.path().join("rcm.json");
 
     fs::write(&graph_path, sample_graph()).unwrap();
 
-    let nested = run(
+    let mla = run(
         "reben",
         &[
             graph_path.to_str().unwrap(),
             "--mode",
             "json",
             "--ordering",
-            "nested-dissection",
+            "minimum-linear-arrangement",
             "--output-file",
-            nested_path.to_str().unwrap(),
+            mla_path.to_str().unwrap(),
         ],
         temp.path(),
     );
-    assert_success(&nested);
+    assert_success(&mla);
     assert!(temp
         .path()
-        .join("shape_sorted_by_nested-dissection_map.json")
+        .join("shape_sorted_by_minimum-linear-arrangement_map.json")
         .exists());
 
     let rcm = run(
@@ -1012,14 +1109,14 @@ fn reben_cli_supports_nested_dissection_and_rcm_orderings() {
         .join("shape_sorted_by_reverse-cuthill-mckee_map.json")
         .exists());
 
-    let nested_json: Value =
-        serde_json::from_str(&fs::read_to_string(&nested_path).unwrap()).unwrap();
+    let mla_json: Value =
+        serde_json::from_str(&fs::read_to_string(&mla_path).unwrap()).unwrap();
     let rcm_json: Value = serde_json::from_str(&fs::read_to_string(&rcm_path).unwrap()).unwrap();
     assert_eq!(
-        nested_json["nodes"].as_array().unwrap().len(),
+        mla_json["nodes"].as_array().unwrap().len(),
         rcm_json["nodes"].as_array().unwrap().len()
     );
-    assert!(!nested_json["nodes"].as_array().unwrap().is_empty());
+    assert!(!mla_json["nodes"].as_array().unwrap().is_empty());
 }
 
 #[test]
