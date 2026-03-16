@@ -104,6 +104,12 @@ pub fn encode_ben_to_xben<R: BufRead, W: Write>(
     let mut ben_encoder = match &check_buffer {
         b"STANDARD BEN FILE" => XBenEncoder::new(encoder, BenVariant::Standard),
         b"MKVCHAIN BEN FILE" => XBenEncoder::new(encoder, BenVariant::MkvChain),
+        b"TWODELTA BEN FILE" => {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "TwoDelta BEN streams cannot yet be translated to XBEN",
+            ));
+        }
         _ => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,

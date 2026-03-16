@@ -1,8 +1,7 @@
 //! Sample extraction helpers for BEN and XBEN streams.
 
-use crate::codec::decode::{decode_ben32_line, decode_ben_line};
+use crate::codec::decode::decode_ben32_line;
 use crate::io::reader::{BenDecoder, XBenDecoder};
-use crate::util::rle::rle_to_vec;
 use serde_json::Error as SerdeError;
 use std::fmt;
 use std::io::Cursor;
@@ -113,25 +112,14 @@ pub fn extract_assignment_ben<R: Read>(
         });
     }
 
-    let inner_decoder = BenDecoder::new(&mut reader).expect("Failed to create XBenDecoder");
-    let frame_iterator = inner_decoder.into_frames();
-
     let mut current_sample = 1;
-    for frame in frame_iterator {
-        let frame = frame.map_err(SampleError::new_io_error)?;
-        if current_sample == sample_number || current_sample + frame.count as usize > sample_number
-        {
-            match decode_ben_line(
-                Cursor::new(&frame.raw_data),
-                frame.max_val_bits,
-                frame.max_len_bits,
-                frame.n_bytes,
-            ) {
-                Ok(assignment_rle) => return Ok(rle_to_vec(assignment_rle)),
-                Err(e) => return Err(SampleError::new_io_error(e)),
-            };
+    let inner_decoder = BenDecoder::new(&mut reader).expect("Failed to create XBenDecoder");
+    for record in inner_decoder {
+        let (assignment, count) = record.map_err(SampleError::new_io_error)?;
+        if current_sample == sample_number || current_sample + count as usize > sample_number {
+            return Ok(assignment);
         }
-        current_sample += frame.count as usize;
+        current_sample += count as usize;
     }
 
     Err(SampleError {

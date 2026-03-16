@@ -1,4 +1,5 @@
 use crate::codec::decode::{decode_ben32_line, decode_ben_line};
+use crate::codec::encode::{encode_ben_vec_from_assign, TwoDeltaFrame};
 use crate::util::rle::rle_to_vec;
 use crate::{progress, BenVariant};
 use byteorder::{BigEndian, ReadBytesExt};
@@ -117,6 +118,8 @@ pub struct BenDecoder<R: Read> {
     reader: R,
     sample_count: usize,
     variant: BenVariant,
+    previous_assignment: Option<Vec<u16>>,
+    twodelta_consumed_first_frame: bool,
 }
 
 #[derive(Clone)]
@@ -135,6 +138,20 @@ pub struct BenFrame {
     pub n_bytes: u32,
     /// Packed BEN payload for this frame.
     pub raw_data: Vec<u8>,
+}
+
+enum StoredBenFrame {
+    Ben(BenFrame),
+    TwoDelta { frame: TwoDeltaFrame, count: u16 },
+}
+
+impl StoredBenFrame {
+    fn count(&self) -> u16 {
+        match self {
+            Self::Ben(frame) => frame.count,
+            Self::TwoDelta { count, .. } => *count,
+        }
+    }
 }
 
 impl<R: Read> BenDecoder<R> {
@@ -162,11 +179,22 @@ impl<R: Read> BenDecoder<R> {
                 reader,
                 sample_count: 0,
                 variant: BenVariant::Standard,
+                previous_assignment: None,
+                twodelta_consumed_first_frame: false,
             }),
             b"MKVCHAIN BEN FILE" => Ok(BenDecoder {
                 reader,
                 sample_count: 0,
                 variant: BenVariant::MkvChain,
+                previous_assignment: None,
+                twodelta_consumed_first_frame: false,
+            }),
+            b"TWODELTA BEN FILE" => Ok(BenDecoder {
+                reader,
+                sample_count: 0,
+                variant: BenVariant::TwoDelta,
+                previous_assignment: None,
+                twodelta_consumed_first_frame: false,
             }),
             _ => Err(DecoderInitError::InvalidFileFormat(check_buffer.to_vec())),
         }
@@ -205,13 +233,8 @@ impl<R: Read> BenDecoder<R> {
         Ok(())
     }
 
-    /// Read and return the next raw BEN frame from the underlying stream.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Some(Ok(...))` for the next frame, `Some(Err(...))` for a read
-    /// failure, or `None` at a clean end of stream.
-    fn pop_frame_from_reader(&mut self) -> Option<io::Result<BenFrame>> {
+    /// Read and return the next raw BEN frame stored in standard BEN layout.
+    fn pop_standard_frame_from_reader(&mut self, with_count: bool) -> Option<io::Result<BenFrame>> {
         let mut b1 = [0u8; 1];
         let max_val_bits = match self.reader.read_exact(&mut b1) {
             Ok(()) => b1[0],
@@ -241,7 +264,7 @@ impl<R: Read> BenDecoder<R> {
             return Some(Err(e));
         }
 
-        let count = if self.variant == BenVariant::MkvChain {
+        let count = if with_count {
             match self.reader.read_u16::<BigEndian>() {
                 Ok(c) => c,
                 Err(e) => return Some(Err(e)),
@@ -257,6 +280,78 @@ impl<R: Read> BenDecoder<R> {
             raw_data: raw_assignment,
             count,
         }))
+    }
+
+    /// Read and return the next raw TwoDelta frame from the underlying stream.
+    fn pop_twodelta_frame_from_reader(&mut self) -> Option<io::Result<StoredBenFrame>> {
+        let pair_a = match self.reader.read_u16::<BigEndian>() {
+            Ok(value) => value,
+            Err(e) => {
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    tracing::trace!("");
+                    tracing::trace!("Done!");
+                    return None;
+                }
+                return Some(Err(e));
+            }
+        };
+
+        let pair_b = match self.reader.read_u16::<BigEndian>() {
+            Ok(value) => value,
+            Err(e) => return Some(Err(e)),
+        };
+
+        let mut bits = [0u8; 1];
+        if let Err(e) = self.reader.read_exact(&mut bits) {
+            return Some(Err(e));
+        }
+        let max_len_bits = bits[0];
+
+        let n_bytes = match self.reader.read_u32::<BigEndian>() {
+            Ok(value) => value,
+            Err(e) => return Some(Err(e)),
+        };
+
+        let mut payload = vec![0u8; n_bytes as usize];
+        if let Err(e) = self.reader.read_exact(&mut payload) {
+            return Some(Err(e));
+        }
+
+        let count = match self.reader.read_u16::<BigEndian>() {
+            Ok(value) => value,
+            Err(e) => return Some(Err(e)),
+        };
+
+        Some(Ok(StoredBenFrame::TwoDelta {
+            frame: TwoDeltaFrame::from_parts((pair_a, pair_b), max_len_bits, payload),
+            count,
+        }))
+    }
+
+    /// Read and return the next stored frame from the underlying BEN stream.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(Ok(...))` for the next frame, `Some(Err(...))` for a read
+    /// failure, or `None` at a clean end of stream.
+    fn pop_frame_from_reader(&mut self) -> Option<io::Result<StoredBenFrame>> {
+        match self.variant {
+            BenVariant::Standard => self
+                .pop_standard_frame_from_reader(false)
+                .map(|res| res.map(StoredBenFrame::Ben)),
+            BenVariant::MkvChain => self
+                .pop_standard_frame_from_reader(true)
+                .map(|res| res.map(StoredBenFrame::Ben)),
+            BenVariant::TwoDelta => {
+                if !self.twodelta_consumed_first_frame {
+                    self.twodelta_consumed_first_frame = true;
+                    self.pop_standard_frame_from_reader(true)
+                        .map(|res| res.map(StoredBenFrame::Ben))
+                } else {
+                    self.pop_twodelta_frame_from_reader()
+                }
+            }
+        }
     }
 
     /// Consume this decoder and iterate over raw BEN frames instead of
@@ -278,10 +373,10 @@ impl<R: Read> BenDecoder<R> {
     ///
     /// Returns the number of remaining samples in the stream.
     pub fn count_samples(self) -> io::Result<usize> {
+        let mut this = self;
         let mut total = 0usize;
-        for frame_res in self.into_frames() {
-            let f = frame_res?;
-            total += f.count as usize;
+        while let Some(frame_res) = this.pop_frame_from_reader() {
+            total += frame_res?.count() as usize;
         }
         Ok(total)
     }
@@ -306,23 +401,119 @@ fn decode_ben_frame_to_assignment(frame: &BenFrame) -> io::Result<Vec<u16>> {
     .map(rle_to_vec)
 }
 
+/// Decode the run-length payload of a TwoDelta frame.
+fn decode_twodelta_run_lengths(frame: &TwoDeltaFrame) -> io::Result<Vec<u16>> {
+    let mut items = Vec::new();
+    let mut buffer: u32 = 0;
+    let mut n_bits_in_buff: u16 = 0;
+    let mut current: Option<u16> = None;
+
+    for &byte in frame.payload() {
+        buffer |= (byte as u32).to_be() >> n_bits_in_buff;
+        n_bits_in_buff += 8;
+
+        if n_bits_in_buff >= frame.max_len_bits() as u16 && current.is_none() {
+            current = Some((buffer >> (32 - frame.max_len_bits())) as u16);
+            buffer <<= frame.max_len_bits();
+            n_bits_in_buff -= frame.max_len_bits() as u16;
+        }
+
+        if let Some(item) = current.take() {
+            if item > 0 {
+                items.push(item);
+            }
+        }
+
+        while n_bits_in_buff >= frame.max_len_bits() as u16 {
+            let item = (buffer >> (32 - frame.max_len_bits())) as u16;
+            buffer <<= frame.max_len_bits();
+            n_bits_in_buff -= frame.max_len_bits() as u16;
+            if item > 0 {
+                items.push(item);
+            }
+        }
+    }
+
+    Ok(items)
+}
+
+/// Decode a raw TwoDelta frame into a full assignment vector.
+fn decode_twodelta_frame_to_assignment(
+    previous_assignment: &[u16],
+    frame: &TwoDeltaFrame,
+) -> io::Result<Vec<u16>> {
+    let mut pair_positions = Vec::new();
+    pair_positions.reserve(previous_assignment.len());
+    let (first, second) = frame.pair();
+
+    for (idx, &assignment) in previous_assignment.iter().enumerate() {
+        if assignment == first || assignment == second {
+            pair_positions.push(idx);
+        }
+    }
+
+    let run_lengths = decode_twodelta_run_lengths(frame)?;
+    let expected_total: usize = run_lengths.iter().map(|&len| len as usize).sum();
+    if expected_total != pair_positions.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "TwoDelta payload does not match the previous assignment's pair positions",
+        ));
+    }
+
+    let mut assignment = previous_assignment.to_vec();
+    let mut write_idx = 0usize;
+    let mut current_value = first;
+
+    for run_len in run_lengths {
+        for _ in 0..run_len {
+            assignment[pair_positions[write_idx]] = current_value;
+            write_idx += 1;
+        }
+        current_value = if current_value == first { second } else { first };
+    }
+
+    Ok(assignment)
+}
+
+fn decode_stored_frame_to_assignment(
+    previous_assignment: Option<&[u16]>,
+    frame: &StoredBenFrame,
+) -> io::Result<Vec<u16>> {
+    match frame {
+        StoredBenFrame::Ben(frame) => decode_ben_frame_to_assignment(frame),
+        StoredBenFrame::TwoDelta { frame, .. } => decode_twodelta_frame_to_assignment(
+            previous_assignment.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "TwoDelta frame encountered before an initial BEN frame",
+                )
+            })?,
+            frame,
+        ),
+    }
+}
+
 impl<R: Read> Iterator for BenDecoder<R> {
     type Item = io::Result<MkvRecord>;
 
     /// Decode and return the next assignment from the BEN stream.
     fn next(&mut self) -> Option<io::Result<MkvRecord>> {
-        let ben_frame = match self.pop_frame_from_reader() {
+        let frame = match self.pop_frame_from_reader() {
             Some(Ok(frame)) => frame,
             Some(Err(e)) => return Some(Err(e)),
             None => return None,
         };
-        let assignment = match decode_ben_frame_to_assignment(&ben_frame) {
+        let assignment = match decode_stored_frame_to_assignment(self.previous_assignment.as_deref(), &frame)
+        {
             Ok(assgn) => assgn,
             Err(e) => return Some(Err(e)),
         };
-        self.sample_count += ben_frame.count as usize;
+        let count = frame.count();
+        self.previous_assignment = Some(assignment.clone());
+        self.sample_count += count as usize;
         progress!("Decoding sample: {}\r", self.sample_count);
-        Some(Ok((assignment, ben_frame.count)))
+        Some(Ok((assignment, count)))
     }
 }
 
@@ -353,7 +544,32 @@ impl<R: Read> Iterator for BenFrameDecoeder<R> {
 
     /// Return the next raw BEN frame from the input stream.
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.pop_frame_from_reader()
+        match self.inner.variant {
+            BenVariant::Standard | BenVariant::MkvChain => match self.inner.pop_frame_from_reader() {
+                Some(Ok(StoredBenFrame::Ben(frame))) => Some(Ok(frame)),
+                Some(Ok(StoredBenFrame::TwoDelta { .. })) => Some(Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "unexpected TwoDelta frame in non-TwoDelta BEN stream",
+                ))),
+                Some(Err(err)) => Some(Err(err)),
+                None => None,
+            },
+            BenVariant::TwoDelta => match self.inner.next() {
+                Some(Ok((assignment, count))) => {
+                    let encoded = encode_ben_vec_from_assign(&assignment);
+                    let raw_data = encoded.as_slice()[6..].to_vec();
+                    Some(Ok(BenFrame {
+                        max_val_bits: encoded.max_val_bits(),
+                        max_len_bits: encoded.max_len_bits(),
+                        count,
+                        n_bytes: encoded.n_bytes(),
+                        raw_data,
+                    }))
+                }
+                Some(Err(err)) => Some(Err(err)),
+                None => None,
+            },
+        }
     }
 }
 
@@ -443,6 +659,9 @@ impl<R: Read> XBenDecoder<R> {
                     }
                 }
                 None
+            }
+            BenVariant::TwoDelta => {
+                panic!("not implemented");
             }
         }
     }

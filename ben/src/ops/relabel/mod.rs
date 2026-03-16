@@ -141,7 +141,7 @@ fn relabel_ben_lines_impl<R: Read, W: Write>(
         };
 
         let relabeled = encode_ben_vec_from_rle(ben_line);
-        writer.write_all(&relabeled)?;
+        writer.write_all(relabeled.as_slice())?;
         if variant == BenVariant::MkvChain {
             writer.write_all(&count_occurrences.to_be_bytes())?;
         }
@@ -344,7 +344,7 @@ fn relabel_ben_lines_with_map_impl<R: Read, W: Write>(
         };
 
         let relabeled = encode_ben_vec_from_rle(new_rle.clone());
-        writer.write_all(&relabeled)?;
+        writer.write_all(relabeled.as_slice())?;
         if variant == BenVariant::MkvChain {
             writer.write_all(&count_occurrences.to_be_bytes())?;
         }

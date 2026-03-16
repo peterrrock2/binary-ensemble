@@ -1,4 +1,4 @@
-use crate::util::rle::assign_to_rle;
+use super::types::{BenFrame, IdVec, TwoDeltaFrame};
 use serde_json::Value;
 use std::io;
 
@@ -13,7 +13,7 @@ use std::io;
 ///
 /// Returns the encoded ben32 frame bytes terminated by the four-byte `0`
 /// sentinel.
-pub(crate) fn encode_ben32_line(data: Value) -> io::Result<Vec<u8>> {
+pub(crate) fn encode_ben32_line(data: Value) -> io::Result<IdVec> {
     let assign_vec = data["assignment"].as_array().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidData,
@@ -64,7 +64,7 @@ pub(crate) fn encode_ben32_line(data: Value) -> io::Result<Vec<u8>> {
     }
 
     ret.extend([0, 0, 0, 0]);
-    Ok(ret)
+    Ok(IdVec::U8(ret))
 }
 
 /// Encode a full assignment vector into a single BEN frame.
@@ -76,9 +76,8 @@ pub(crate) fn encode_ben32_line(data: Value) -> io::Result<Vec<u8>> {
 /// # Returns
 ///
 /// Returns the encoded BEN frame bytes, including the per-frame header.
-pub fn encode_ben_vec_from_assign(assign_vec: Vec<u16>) -> Vec<u8> {
-    let rle_vec: Vec<(u16, u16)> = assign_to_rle(assign_vec);
-    encode_ben_vec_from_rle(rle_vec)
+pub fn encode_ben_vec_from_assign(assign_vec: impl AsRef<[u16]>) -> BenFrame {
+    BenFrame::from_assignment(assign_vec)
 }
 
 /// Encode a run-length encoded assignment vector into a BEN frame.
@@ -94,59 +93,141 @@ pub fn encode_ben_vec_from_assign(assign_vec: Vec<u16>) -> Vec<u8> {
 /// # Returns
 ///
 /// Returns the encoded BEN frame bytes, including the per-frame header.
-pub fn encode_ben_vec_from_rle(rle_vec: Vec<(u16, u16)>) -> Vec<u8> {
-    let mut output_vec: Vec<u8> = Vec::new();
+pub fn encode_ben_vec_from_rle(rle_vec: Vec<(u16, u16)>) -> BenFrame {
+    BenFrame::from_rle(rle_vec)
+}
 
-    let max_val: u16 = rle_vec.iter().max_by_key(|x| x.0).unwrap().0;
-    let max_len: u16 = rle_vec.iter().max_by_key(|x| x.1).unwrap().1;
-    let max_val_bits: u8 = (16 - max_val.leading_zeros() as u8).max(1);
-    let max_len_bits: u8 = 16 - max_len.leading_zeros() as u8;
-    let assign_bits: u32 = (max_val_bits + max_len_bits) as u32;
-    let n_bytes: u32 = if (assign_bits * rle_vec.len() as u32).is_multiple_of(8) {
-        (assign_bits * rle_vec.len() as u32) / 8
+/// Encode a sample transition as a TwoDelta frame.
+///
+/// The transition is valid only when all changed positions involve exactly two
+/// assignment ids and positions outside that pair remain unchanged.
+///
+/// # Arguments
+///
+/// * `previous_assignment` - The previous full assignment vector.
+/// * `new_assignment` - The next full assignment vector.
+///
+/// # Returns
+///
+/// Returns a serialized TwoDelta frame describing the transition.
+pub fn encode_twodelta_vec(
+    previous_assignment: impl AsRef<[u16]>,
+    new_assignment: impl AsRef<[u16]>,
+) -> io::Result<TwoDeltaFrame> {
+    let previous_assignment = previous_assignment.as_ref();
+    let new_assignment = new_assignment.as_ref();
+
+    if previous_assignment.len() != new_assignment.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "TwoDelta requires assignment vectors of equal length",
+        ));
+    }
+
+    let mut pair_ids = [0u16; 2];
+    let mut pair_len = 0usize;
+    for (&previous, &current) in previous_assignment.iter().zip(new_assignment.iter()) {
+        if previous == current {
+            continue;
+        }
+        for value in [previous, current] {
+            if !pair_ids[..pair_len].contains(&value) {
+                if pair_len == 2 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "TwoDelta transitions may involve at most two assignment ids",
+                    ));
+                }
+                pair_ids[pair_len] = value;
+                pair_len += 1;
+            }
+        }
+    }
+
+    if pair_len == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "TwoDelta cannot encode identical assignments as a delta frame",
+        ));
+    }
+
+    let pair = if pair_len == 1 {
+        (pair_ids[0], pair_ids[0])
     } else {
-        (assign_bits * rle_vec.len() as u32) / 8 + 1
+        (pair_ids[0], pair_ids[1])
     };
 
-    output_vec.push(max_val_bits);
-    output_vec.push(max_len_bits);
-    output_vec.extend(n_bytes.to_be_bytes().as_slice());
+    let mut pair_positions = Vec::new();
+    pair_positions.reserve(previous_assignment.len());
+    for (idx, (&previous, &current)) in previous_assignment
+        .iter()
+        .zip(new_assignment.iter())
+        .enumerate()
+    {
+        let previous_in_pair = previous == pair.0 || previous == pair.1;
+        let current_in_pair = current == pair.0 || current == pair.1;
 
-    let mut remainder: u32 = 0;
-    let mut remainder_bits: u8 = 0;
-
-    for (val, len) in rle_vec {
-        let mut new_val: u32 = (remainder << max_val_bits) | (val as u32);
-
-        let mut buff: u8;
-
-        let mut n_bits_left: u8 = remainder_bits + max_val_bits;
-
-        while n_bits_left >= 8 {
-            n_bits_left -= 8;
-            buff = (new_val >> n_bits_left) as u8;
-            output_vec.push(buff);
-            new_val &= !((0xFFFFFFFF as u32) << n_bits_left);
+        if previous_in_pair != current_in_pair {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "TwoDelta requires the changed id pair to occupy the same positions",
+            ));
         }
 
-        new_val = (new_val << max_len_bits) | (len as u32);
-        n_bits_left += max_len_bits;
-
-        while n_bits_left >= 8 {
-            n_bits_left -= 8;
-            buff = (new_val >> n_bits_left) as u8;
-            output_vec.push(buff);
-            new_val &= !((0xFFFFFFFF as u32) << n_bits_left);
+        if !previous_in_pair && previous != current {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "TwoDelta found a change outside the selected id pair",
+            ));
         }
 
-        remainder_bits = n_bits_left;
-        remainder = new_val;
+        if previous_in_pair {
+            pair_positions.push(idx);
+        }
     }
 
-    if remainder_bits > 0 {
-        let buff = (remainder << (8 - remainder_bits)) as u8;
-        output_vec.push(buff);
+    if pair_positions.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "TwoDelta requires at least one occurrence of the selected id pair",
+        ));
     }
 
-    output_vec
+    let first_value = new_assignment[pair_positions[0]];
+    let second_value = if pair.0 == pair.1 {
+        pair.0
+    } else if first_value == pair.0 {
+        pair.1
+    } else {
+        pair.0
+    };
+    let ordered_pair = (first_value, second_value);
+
+    let mut run_lengths = Vec::new();
+    let mut current_value = first_value;
+    let mut current_run = 0u16;
+
+    for &idx in &pair_positions {
+        let value = new_assignment[idx];
+        if value != ordered_pair.0 && value != ordered_pair.1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "TwoDelta payload encountered an assignment outside the selected id pair",
+            ));
+        }
+
+        if value == current_value {
+            current_run += 1;
+        } else {
+            run_lengths.push(current_run);
+            current_value = value;
+            current_run = 1;
+        }
+    }
+
+    if current_run > 0 {
+        run_lengths.push(current_run);
+    }
+
+    Ok(TwoDeltaFrame::from_run_lengths(ordered_pair, run_lengths))
 }

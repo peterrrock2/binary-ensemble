@@ -9,9 +9,9 @@
 /// # Returns
 ///
 /// Returns the assignment vector as `(value, count)` pairs.
-pub fn assign_to_rle(assign_vec: Vec<u16>) -> Vec<(u16, u16)> {
+pub fn assign_to_rle(assign_vec: impl AsRef<[u16]>) -> Vec<(u16, u16)> {
     let mut rle_vec: Vec<(u16, u16)> = Vec::new();
-    assign_slice_to_rle(&assign_vec, &mut rle_vec);
+    assign_slice_to_rle(assign_vec.as_ref(), &mut rle_vec);
     rle_vec
 }
 

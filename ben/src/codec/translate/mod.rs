@@ -47,7 +47,7 @@ fn ben32_to_ben_line(ben32_vec: Vec<u8>) -> io::Result<Vec<u8>> {
         ));
     }
 
-    Ok(encode_ben_vec_from_rle(ben32_rle))
+    Ok(encode_ben_vec_from_rle(ben32_rle).into_bytes())
 }
 
 /// Translate a stream of ben32 frames into BEN frames.
@@ -191,6 +191,12 @@ pub fn ben_to_ben32_lines<R: Read, W: Write>(
                 sample_number += n_reps as usize;
                 writer.write_all(&ben32_vec)?;
                 writer.write_all(&n_reps.to_be_bytes())?;
+            }
+            BenVariant::TwoDelta => {
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "TwoDelta BEN streams cannot yet be translated to ben32/XBEN",
+                ));
             }
         }
     }

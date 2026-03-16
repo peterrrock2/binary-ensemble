@@ -4,8 +4,8 @@ use binary_ensemble::codec::decode::{
     decode_ben_line, decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl, xz_decompress,
 };
 use binary_ensemble::codec::encode::{
-    encode_ben_to_xben, encode_ben_vec_from_rle, encode_jsonl_to_ben, encode_jsonl_to_xben,
-    xz_compress,
+    encode_ben_to_xben, encode_ben_vec_from_assign, encode_ben_vec_from_rle, encode_jsonl_to_ben,
+    encode_jsonl_to_xben, xz_compress,
 };
 use binary_ensemble::io::reader::{
     build_frame_iter, count_samples_from_file, BenDecoder, DecoderInitError, Frame,
@@ -1054,4 +1054,80 @@ fn ben_decoder_subsample_helpers_work_on_public_api() {
         picked.into_iter().map(|(a, _)| a[0]).collect::<Vec<u16>>(),
         vec![2, 4]
     );
+}
+
+#[test]
+fn twodelta_roundtrips_and_counts_repeated_frames() {
+    let assignments = vec![
+        vec![1u16, 1, 2, 2, 3, 3],
+        vec![1u16, 1, 2, 2, 3, 3],
+        vec![1u16, 2, 2, 1, 3, 3],
+        vec![1u16, 2, 2, 1, 3, 3],
+        vec![2u16, 2, 1, 1, 3, 3],
+    ];
+
+    let mut ben = Vec::new();
+    {
+        let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta);
+        for assignment in &assignments {
+            encoder.write_assignment(assignment.clone()).unwrap();
+        }
+        encoder.finish().unwrap();
+    }
+
+    let records = collect_records(BenDecoder::new(ben.as_slice()).unwrap()).unwrap();
+    assert_eq!(
+        records,
+        vec![
+            (assignments[0].clone(), 2),
+            (assignments[2].clone(), 2),
+            (assignments[4].clone(), 1),
+        ]
+    );
+
+    let mut jsonl = Vec::new();
+    decode_ben_to_jsonl(ben.as_slice(), &mut jsonl).unwrap();
+    assert_eq!(jsonl, jsonl_from_assignments(&assignments));
+
+    let frames = BenDecoder::new(ben.as_slice()).unwrap().into_frames();
+    assert_eq!(collect_frames(frames.map(|res| res.map(|f| (Frame::Ben(f.clone()), f.count)))).unwrap().len(), 3);
+}
+
+#[test]
+fn twodelta_first_frame_carries_repeat_trailer() {
+    let first = vec![1u16, 1, 2, 2, 3, 3];
+    let second = vec![1u16, 2, 2, 1, 3, 3];
+
+    let mut ben = Vec::new();
+    {
+        let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta);
+        encoder.write_assignment(first.clone()).unwrap();
+        encoder.write_assignment(first.clone()).unwrap();
+        encoder.write_assignment(second).unwrap();
+        encoder.finish().unwrap();
+    }
+
+    let expected_first = encode_ben_vec_from_assign(&first);
+    assert_eq!(&ben[..17], b"TWODELTA BEN FILE");
+    assert_eq!(
+        &ben[17..17 + expected_first.as_slice().len()],
+        expected_first.as_slice()
+    );
+    let count_offset = 17 + expected_first.as_slice().len();
+    assert_eq!(
+        u16::from_be_bytes([ben[count_offset], ben[count_offset + 1]]),
+        2
+    );
+}
+
+#[test]
+fn twodelta_rejects_non_pair_transition() {
+    let mut ben = Vec::new();
+    let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta);
+    encoder.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
+    let err = encoder
+        .write_assignment(vec![1u16, 3, 2, 4])
+        .err()
+        .unwrap();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
 }

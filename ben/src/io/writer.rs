@@ -1,17 +1,33 @@
-use crate::codec::encode::encode_ben32_line;
-use crate::codec::encode::encode_ben_vec_from_rle;
+use crate::codec::encode::{
+    encode_ben32_line, encode_ben_vec_from_assign, encode_twodelta_vec, BenFrame, IdVec,
+    TwoDeltaFrame,
+};
 use crate::codec::translate::ben_to_ben32_lines;
-use crate::util::rle::assign_to_rle;
 use crate::BenVariant;
 use serde_json::Value;
 use std::io::{self, BufRead, Result, Write};
 use xz2::write::XzEncoder;
 
+enum BufferedBenFrame {
+    Ben(BenFrame),
+    TwoDelta(TwoDeltaFrame),
+}
+
+impl BufferedBenFrame {
+    fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Ben(frame) => frame.as_slice(),
+            Self::TwoDelta(frame) => frame.as_slice(),
+        }
+    }
+}
+
 /// A struct to make the writing of BEN files easier and more ergonomic.
 pub struct BenEncoder<W: Write> {
     writer: W,
-    previous_sample: Vec<u8>,
-    count: u16,
+    previous_sample: Vec<u16>,
+    previous_encoded_sample: Option<BufferedBenFrame>,
+    sample_count: u16,
     variant: BenVariant,
     complete: bool,
 }
@@ -29,53 +45,37 @@ impl<W: Write> BenEncoder<W> {
     /// Returns a new encoder ready to accept assignments or RLE frames.
     pub fn new(mut writer: W, variant: BenVariant) -> Self {
         match variant {
-            BenVariant::Standard => {
-                writer.write_all(b"STANDARD BEN FILE").unwrap();
-            }
-            BenVariant::MkvChain => {
-                writer.write_all(b"MKVCHAIN BEN FILE").unwrap();
-            }
-        }
+            BenVariant::Standard => writer.write_all(b"STANDARD BEN FILE").unwrap(),
+            BenVariant::MkvChain => writer.write_all(b"MKVCHAIN BEN FILE").unwrap(),
+            BenVariant::TwoDelta => writer.write_all(b"TWODELTA BEN FILE").unwrap(),
+        };
+
         BenEncoder {
             writer,
             previous_sample: Vec::new(),
-            count: 0,
+            previous_encoded_sample: None,
+            sample_count: 0,
             complete: false,
             variant,
         }
     }
 
-    /// Encode and write a run-length encoded assignment vector as one BEN frame.
-    ///
-    /// # Arguments
-    ///
-    /// * `rle_vec` - The assignment vector in `(value, count)` form.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` after the frame has been queued or written.
-    pub fn write_rle(&mut self, rle_vec: Vec<(u16, u16)>) -> Result<()> {
-        match self.variant {
-            BenVariant::Standard => {
-                let encoded = encode_ben_vec_from_rle(rle_vec);
-                self.writer.write_all(&encoded)?;
-                Ok(())
-            }
-            BenVariant::MkvChain => {
-                let encoded = encode_ben_vec_from_rle(rle_vec);
-                if encoded == self.previous_sample {
-                    self.count += 1;
-                } else {
-                    if self.count > 0 {
-                        self.writer.write_all(&self.previous_sample)?;
-                        self.writer.write_all(&self.count.to_be_bytes())?;
-                    }
-                    self.previous_sample = encoded;
-                    self.count = 1;
-                }
-                Ok(())
-            }
+    fn flush_pending_frame(&mut self) -> Result<()> {
+        if self.sample_count == 0 {
+            return Ok(());
         }
+
+        let encoded = self
+            .previous_encoded_sample
+            .as_ref()
+            .expect("missing previous BEN frame");
+        self.writer.write_all(encoded.as_slice())?;
+
+        if matches!(self.variant, BenVariant::MkvChain | BenVariant::TwoDelta) {
+            self.writer.write_all(&self.sample_count.to_be_bytes())?;
+        }
+
+        Ok(())
     }
 
     /// Encode and write a full assignment vector.
@@ -88,9 +88,52 @@ impl<W: Write> BenEncoder<W> {
     ///
     /// Returns `Ok(())` after the assignment has been queued or written.
     pub fn write_assignment(&mut self, assign_vec: Vec<u16>) -> Result<()> {
-        let rle_vec = assign_to_rle(assign_vec);
-        self.write_rle(rle_vec)?;
-        Ok(())
+        match self.variant {
+            BenVariant::Standard => {
+                let encoded = encode_ben_vec_from_assign(&assign_vec);
+                self.writer.write_all(encoded.as_slice())?;
+                Ok(())
+            }
+            BenVariant::MkvChain => {
+                let repeated = assign_vec == self.previous_sample;
+                if repeated {
+                    self.sample_count += 1;
+                    return Ok(());
+                }
+
+                if self.sample_count > 0 {
+                    self.flush_pending_frame()?;
+                }
+
+                let encoded = encode_ben_vec_from_assign(&assign_vec);
+                self.previous_encoded_sample = Some(BufferedBenFrame::Ben(encoded));
+                self.previous_sample = assign_vec;
+                self.sample_count = 1;
+
+                Ok(())
+            }
+            BenVariant::TwoDelta => {
+                if self.previous_sample.is_empty() {
+                    let encoded = encode_ben_vec_from_assign(&assign_vec);
+                    self.previous_encoded_sample = Some(BufferedBenFrame::Ben(encoded));
+                    self.previous_sample = assign_vec;
+                    self.sample_count = 1;
+                    return Ok(());
+                }
+
+                if assign_vec == self.previous_sample {
+                    self.sample_count += 1;
+                    return Ok(());
+                }
+
+                let encoded = encode_twodelta_vec(&self.previous_sample, &assign_vec)?;
+                self.flush_pending_frame()?;
+                self.previous_encoded_sample = Some(BufferedBenFrame::TwoDelta(encoded));
+                self.previous_sample = assign_vec;
+                self.sample_count = 1;
+                Ok(())
+            }
+        }
     }
 
     /// Encode and write a JSON assignment record.
@@ -134,9 +177,7 @@ impl<W: Write> BenEncoder<W> {
             })
             .collect::<Result<Vec<u16>>>()?;
 
-        let rle_vec = assign_to_rle(converted_vec);
-        self.write_rle(rle_vec)?;
-        Ok(())
+        self.write_assignment(converted_vec)
     }
 
     /// Flush any buffered repetition state to the underlying writer.
@@ -151,14 +192,8 @@ impl<W: Write> BenEncoder<W> {
         if self.complete {
             return Ok(());
         }
-        if self.variant == BenVariant::MkvChain && self.count > 0 {
-            self.writer
-                .write_all(&self.previous_sample)
-                .expect("Error while writing last line to file");
-            self.writer
-                .write_all(&self.count.to_be_bytes())
-                .expect("Error while writing last count to file");
-        }
+        self.flush_pending_frame()
+            .expect("Error while flushing trailing BEN frame");
         self.complete = true;
         Ok(())
     }
@@ -174,7 +209,7 @@ impl<W: Write> Drop for BenEncoder<W> {
 /// A struct to make the writing of XBEN files easier and more ergonomic.
 pub struct XBenEncoder<W: Write> {
     encoder: XzEncoder<W>,
-    previous_sample: Vec<u8>,
+    previous_sample: IdVec,
     count: u16,
     variant: BenVariant,
 }
@@ -197,7 +232,7 @@ impl<W: Write> XBenEncoder<W> {
                 encoder.write_all(b"STANDARD BEN FILE").unwrap();
                 XBenEncoder {
                     encoder,
-                    previous_sample: Vec::new(),
+                    previous_sample: IdVec::U8(Vec::new()),
                     count: 0,
                     variant: BenVariant::Standard,
                 }
@@ -206,10 +241,13 @@ impl<W: Write> XBenEncoder<W> {
                 encoder.write_all(b"MKVCHAIN BEN FILE").unwrap();
                 XBenEncoder {
                     encoder,
-                    previous_sample: Vec::new(),
+                    previous_sample: IdVec::U8(Vec::new()),
                     count: 0,
                     variant: BenVariant::MkvChain,
                 }
+            }
+            BenVariant::TwoDelta => {
+                panic!("not implemented");
             }
         }
     }
@@ -227,19 +265,23 @@ impl<W: Write> XBenEncoder<W> {
         let encoded = encode_ben32_line(data)?;
         match self.variant {
             BenVariant::Standard => {
-                self.encoder.write_all(&encoded)?;
+                self.encoder.write_all(encoded.as_u8_slice()?)?;
             }
             BenVariant::MkvChain => {
                 if encoded == self.previous_sample {
                     self.count += 1;
                 } else {
                     if self.count > 0 {
-                        self.encoder.write_all(&self.previous_sample)?;
+                        self.encoder
+                            .write_all(self.previous_sample.as_u8_slice()?)?;
                         self.encoder.write_all(&self.count.to_be_bytes())?;
                     }
                     self.previous_sample = encoded;
                     self.count = 1;
                 }
+            }
+            BenVariant::TwoDelta => {
+                panic!("not implemented");
             }
         }
         Ok(())
@@ -275,7 +317,11 @@ impl<W: Write> Drop for XBenEncoder<W> {
     fn drop(&mut self) {
         if self.variant == BenVariant::MkvChain && self.count > 0 {
             self.encoder
-                .write_all(&self.previous_sample)
+                .write_all(
+                    self.previous_sample
+                        .as_u8_slice()
+                        .expect("Error writing last line to file"),
+                )
                 .expect("Error writing last line to file");
             self.encoder
                 .write_all(&self.count.to_be_bytes())

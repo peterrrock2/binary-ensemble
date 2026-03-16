@@ -77,6 +77,9 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
                     }
                 }
             }
+            BenVariant::TwoDelta => {
+                panic!("not implemented");
+            }
         }
 
         if last_valid_assignment == 0 {
@@ -180,6 +183,9 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
                         progress!("Decoding sample: {}\r", line_count);
                     }
                 }
+            }
+            BenVariant::TwoDelta => {
+                panic!("not implemented");
             }
         }
 
