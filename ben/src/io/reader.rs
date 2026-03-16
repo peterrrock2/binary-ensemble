@@ -186,11 +186,11 @@ impl<R: Read> BenDecoder<R> {
         while let Some(result_tuple) = self.next() {
             match result_tuple {
                 Ok((assignment, count)) => {
-                    for _ in 0..count {
-                        self.sample_count += 1;
+                    let starting_sample = self.sample_count + 1 - count as usize;
+                    for offset in 0..count as usize {
                         let line = json!({
                             "assignment": assignment,
-                            "sample": self.sample_count,
+                            "sample": starting_sample + offset,
                         })
                         .to_string()
                             + "\n";
@@ -320,10 +320,8 @@ impl<R: Read> Iterator for BenDecoder<R> {
             Ok(assgn) => assgn,
             Err(e) => return Some(Err(e)),
         };
-        progress!(
-            "Decoding sample: {}\r",
-            self.sample_count + ben_frame.count as usize
-        );
+        self.sample_count += ben_frame.count as usize;
+        progress!("Decoding sample: {}\r", self.sample_count);
         Some(Ok((assignment, ben_frame.count)))
     }
 }
