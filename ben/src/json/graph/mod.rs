@@ -370,18 +370,13 @@ fn connected_components_generic(adjacency: &[Vec<usize>], labels: &[usize]) -> V
 }
 
 fn rcm_component_generic(adjacency: &[Vec<usize>], labels: &[usize], component: &[usize]) -> Vec<usize> {
-    let component_set = component.iter().copied().collect::<HashSet<_>>();
+    let component_mask = subset_mask(adjacency.len(), component);
+    let local_degree = local_degree_in_subset(adjacency, &component_mask, component);
     let start = component
         .iter()
         .copied()
         .min_by_key(|&node| {
-            (
-                adjacency[node]
-                    .iter()
-                    .filter(|&&neighbor| component_set.contains(&neighbor))
-                    .count(),
-                labels[node],
-            )
+            (local_degree[node], labels[node])
         })
         .unwrap();
 
@@ -395,17 +390,9 @@ fn rcm_component_generic(adjacency: &[Vec<usize>], labels: &[usize], component: 
         let mut neighbors = adjacency[node]
             .iter()
             .copied()
-            .filter(|neighbor| component_set.contains(neighbor) && !visited[*neighbor])
+            .filter(|&neighbor| component_mask[neighbor] && !visited[neighbor])
             .collect::<Vec<_>>();
-        neighbors.sort_by_key(|&neighbor| {
-            (
-                adjacency[neighbor]
-                    .iter()
-                    .filter(|&&next| component_set.contains(&next))
-                    .count(),
-                labels[neighbor],
-            )
-        });
+        neighbors.sort_by_key(|&neighbor| (local_degree[neighbor], labels[neighbor]));
         for neighbor in neighbors {
             visited[neighbor] = true;
             queue.push_back(neighbor);
@@ -459,29 +446,30 @@ fn greedy_cluster_partition(
     max_cluster_size: usize,
 ) -> Vec<Vec<usize>> {
     let component_mask = subset_mask(adjacency.len(), component);
+    let local_degree = local_degree_in_subset(adjacency, &component_mask, component);
     let mut assigned = vec![false; adjacency.len()];
-    let mut remaining = component.len();
+    let mut unassigned = component.to_vec();
+    unassigned.sort_by_key(|&node| (local_degree[node], labels[node]));
+    let mut remaining = unassigned.len();
     let mut clusters = Vec::new();
+    let mut seed_marks = vec![0usize; adjacency.len()];
+    let mut mark_epoch = 1usize;
 
     while remaining > 0 {
-        let seed = component
+        let seed = unassigned
             .iter()
             .copied()
-            .filter(|&node| !assigned[node])
-            .min_by_key(|&node| {
-                (
-                    adjacency[node]
-                        .iter()
-                        .filter(|&&neighbor| component_mask[neighbor] && !assigned[neighbor])
-                        .count(),
-                    labels[node],
-                )
-            })
+            .find(|&node| !assigned[node])
             .unwrap();
 
         let mut cluster = vec![seed];
         assigned[seed] = true;
         remaining -= 1;
+        for &neighbor in &adjacency[seed] {
+            if component_mask[neighbor] {
+                seed_marks[neighbor] = mark_epoch;
+            }
+        }
 
         let mut candidates = adjacency[seed]
             .iter()
@@ -491,14 +479,11 @@ fn greedy_cluster_partition(
         candidates.sort_by_key(|&neighbor| {
             let shared = adjacency[neighbor]
                 .iter()
-                .filter(|&&next| component_mask[next] && adjacency[seed].contains(&next))
+                .filter(|&&next| component_mask[next] && seed_marks[next] == mark_epoch)
                 .count();
             (
                 Reverse(shared),
-                adjacency[neighbor]
-                    .iter()
-                    .filter(|&&next| component_mask[next] && !assigned[next])
-                    .count(),
+                local_degree[neighbor],
                 labels[neighbor],
             )
         });
@@ -509,10 +494,27 @@ fn greedy_cluster_partition(
             cluster.push(neighbor);
         }
 
+        mark_epoch = mark_epoch.wrapping_add(1);
+        if mark_epoch == 0 {
+            seed_marks.fill(0);
+            mark_epoch = 1;
+        }
+
         clusters.push(cluster);
     }
 
     clusters
+}
+
+fn local_degree_in_subset(adjacency: &[Vec<usize>], subset_mask: &[bool], subset: &[usize]) -> Vec<usize> {
+    let mut local_degree = vec![0usize; adjacency.len()];
+    for &node in subset {
+        local_degree[node] = adjacency[node]
+            .iter()
+            .filter(|&&neighbor| subset_mask[neighbor])
+            .count();
+    }
+    local_degree
 }
 
 fn build_coarse_graph(
