@@ -1120,6 +1120,37 @@ fn reben_cli_supports_mla_and_rcm_orderings() {
 }
 
 #[test]
+fn reben_cli_supports_multi_level_cluster_ordering() {
+    let temp = TempDir::new("reben-mlc");
+    let graph_path = temp.path().join("shape.json");
+    let mlc_path = temp.path().join("mlc.json");
+
+    fs::write(&graph_path, sample_graph()).unwrap();
+
+    let mlc = run(
+        "reben",
+        &[
+            graph_path.to_str().unwrap(),
+            "--mode",
+            "json",
+            "--ordering",
+            "multi-level-cluster",
+            "--output-file",
+            mlc_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_success(&mlc);
+    assert!(temp
+        .path()
+        .join("shape_sorted_by_multi-level-cluster_map.json")
+        .exists());
+
+    let mlc_json: Value = serde_json::from_str(&fs::read_to_string(&mlc_path).unwrap()).unwrap();
+    assert!(!mlc_json["nodes"].as_array().unwrap().is_empty());
+}
+
+#[test]
 fn pben_cli_converts_between_formats() {
     let temp = TempDir::new("pben");
     let jsonl_path = temp.path().join("samples.jsonl");

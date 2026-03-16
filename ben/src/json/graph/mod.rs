@@ -2,8 +2,8 @@
 
 use crate::progress;
 use serde_json::{json, Value};
-use std::cmp::Ordering;
-use std::collections::{HashMap, VecDeque};
+use std::cmp::{Ordering, Reverse};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, Read, Result, Write};
 use std::result::Result as StdResult;
 
@@ -12,6 +12,8 @@ use std::result::Result as StdResult;
 pub enum GraphOrderingMethod {
     /// Order nodes using a minimum-linear-arrangement heuristic.
     MinimumLinearArrangement,
+    /// Order nodes using recursive multilevel clustering.
+    MultiLevelCluster,
     /// Order nodes using Reverse Cuthill-McKee.
     ReverseCuthillMckee,
 }
@@ -124,6 +126,7 @@ pub fn sort_json_file_by_ordering<R: Read, W: Write>(
 
     let order = match method {
         GraphOrderingMethod::MinimumLinearArrangement => minimum_linear_arrangement_order(&graph),
+        GraphOrderingMethod::MultiLevelCluster => multi_level_cluster_order(&graph),
         GraphOrderingMethod::ReverseCuthillMckee => reverse_cuthill_mckee_order(&graph),
     };
 
@@ -295,6 +298,10 @@ fn minimum_linear_arrangement_order(graph: &GraphJson) -> Vec<usize> {
     order
 }
 
+fn multi_level_cluster_order(graph: &GraphJson) -> Vec<usize> {
+    multilevel_cluster_order_generic(&graph.adjacency_indices, &graph.node_ids)
+}
+
 fn minimum_linear_arrangement_component(graph: &GraphJson, component: &[usize]) -> Vec<usize> {
     if component.len() <= 2 {
         return component.to_vec();
@@ -325,6 +332,233 @@ fn subset_mask(size: usize, nodes: &[usize]) -> Vec<bool> {
         mask[node] = true;
     }
     mask
+}
+
+fn connected_components_generic(adjacency: &[Vec<usize>], labels: &[usize]) -> Vec<Vec<usize>> {
+    let mut seen = vec![false; adjacency.len()];
+    let mut components = Vec::new();
+
+    for start in 0..adjacency.len() {
+        if seen[start] {
+            continue;
+        }
+        let mut queue = VecDeque::from([start]);
+        let mut component = Vec::new();
+        seen[start] = true;
+
+        while let Some(node) = queue.pop_front() {
+            component.push(node);
+            for &neighbor in &adjacency[node] {
+                if !seen[neighbor] {
+                    seen[neighbor] = true;
+                    queue.push_back(neighbor);
+                }
+            }
+        }
+
+        components.push(component);
+    }
+
+    components.sort_by_key(|component| {
+        component
+            .iter()
+            .map(|&node| labels[node])
+            .min()
+            .unwrap_or(usize::MAX)
+    });
+    components
+}
+
+fn rcm_component_generic(adjacency: &[Vec<usize>], labels: &[usize], component: &[usize]) -> Vec<usize> {
+    let component_set = component.iter().copied().collect::<HashSet<_>>();
+    let start = component
+        .iter()
+        .copied()
+        .min_by_key(|&node| {
+            (
+                adjacency[node]
+                    .iter()
+                    .filter(|&&neighbor| component_set.contains(&neighbor))
+                    .count(),
+                labels[node],
+            )
+        })
+        .unwrap();
+
+    let mut visited = vec![false; adjacency.len()];
+    let mut queue = VecDeque::from([start]);
+    let mut order = Vec::with_capacity(component.len());
+    visited[start] = true;
+
+    while let Some(node) = queue.pop_front() {
+        order.push(node);
+        let mut neighbors = adjacency[node]
+            .iter()
+            .copied()
+            .filter(|neighbor| component_set.contains(neighbor) && !visited[*neighbor])
+            .collect::<Vec<_>>();
+        neighbors.sort_by_key(|&neighbor| {
+            (
+                adjacency[neighbor]
+                    .iter()
+                    .filter(|&&next| component_set.contains(&next))
+                    .count(),
+                labels[neighbor],
+            )
+        });
+        for neighbor in neighbors {
+            visited[neighbor] = true;
+            queue.push_back(neighbor);
+        }
+    }
+
+    order.reverse();
+    order
+}
+
+fn multilevel_cluster_order_generic(adjacency: &[Vec<usize>], labels: &[usize]) -> Vec<usize> {
+    let mut order = Vec::with_capacity(adjacency.len());
+    for component in connected_components_generic(adjacency, labels) {
+        order.extend(multilevel_cluster_component_generic(adjacency, labels, &component));
+    }
+    order
+}
+
+fn multilevel_cluster_component_generic(
+    adjacency: &[Vec<usize>],
+    labels: &[usize],
+    component: &[usize],
+) -> Vec<usize> {
+    if component.len() <= 8 {
+        return rcm_component_generic(adjacency, labels, component);
+    }
+
+    let clusters = greedy_cluster_partition(adjacency, labels, component, 6);
+    if clusters.len() <= 1 || clusters.len() == component.len() {
+        return rcm_component_generic(adjacency, labels, component);
+    }
+
+    let cluster_orders = clusters
+        .iter()
+        .map(|cluster| rcm_component_generic(adjacency, labels, cluster))
+        .collect::<Vec<_>>();
+    let (coarse_adjacency, coarse_labels) = build_coarse_graph(adjacency, labels, &clusters);
+    let coarse_order = multilevel_cluster_order_generic(&coarse_adjacency, &coarse_labels);
+
+    let mut order = Vec::with_capacity(component.len());
+    for cluster_idx in coarse_order {
+        order.extend(cluster_orders[cluster_idx].iter().copied());
+    }
+    order
+}
+
+fn greedy_cluster_partition(
+    adjacency: &[Vec<usize>],
+    labels: &[usize],
+    component: &[usize],
+    max_cluster_size: usize,
+) -> Vec<Vec<usize>> {
+    let component_mask = subset_mask(adjacency.len(), component);
+    let mut assigned = vec![false; adjacency.len()];
+    let mut remaining = component.len();
+    let mut clusters = Vec::new();
+
+    while remaining > 0 {
+        let seed = component
+            .iter()
+            .copied()
+            .filter(|&node| !assigned[node])
+            .min_by_key(|&node| {
+                (
+                    adjacency[node]
+                        .iter()
+                        .filter(|&&neighbor| component_mask[neighbor] && !assigned[neighbor])
+                        .count(),
+                    labels[node],
+                )
+            })
+            .unwrap();
+
+        let mut cluster = vec![seed];
+        assigned[seed] = true;
+        remaining -= 1;
+
+        let mut candidates = adjacency[seed]
+            .iter()
+            .copied()
+            .filter(|&neighbor| component_mask[neighbor] && !assigned[neighbor])
+            .collect::<Vec<_>>();
+        candidates.sort_by_key(|&neighbor| {
+            let shared = adjacency[neighbor]
+                .iter()
+                .filter(|&&next| component_mask[next] && adjacency[seed].contains(&next))
+                .count();
+            (
+                Reverse(shared),
+                adjacency[neighbor]
+                    .iter()
+                    .filter(|&&next| component_mask[next] && !assigned[next])
+                    .count(),
+                labels[neighbor],
+            )
+        });
+
+        for neighbor in candidates.into_iter().take(max_cluster_size.saturating_sub(1)) {
+            assigned[neighbor] = true;
+            remaining -= 1;
+            cluster.push(neighbor);
+        }
+
+        clusters.push(cluster);
+    }
+
+    clusters
+}
+
+fn build_coarse_graph(
+    adjacency: &[Vec<usize>],
+    labels: &[usize],
+    clusters: &[Vec<usize>],
+) -> (Vec<Vec<usize>>, Vec<usize>) {
+    let mut cluster_of = vec![usize::MAX; adjacency.len()];
+    for (cluster_idx, cluster) in clusters.iter().enumerate() {
+        for &node in cluster {
+            cluster_of[node] = cluster_idx;
+        }
+    }
+
+    let mut coarse_sets = vec![HashSet::new(); clusters.len()];
+    for (cluster_idx, cluster) in clusters.iter().enumerate() {
+        for &node in cluster {
+            for &neighbor in &adjacency[node] {
+                let neighbor_cluster = cluster_of[neighbor];
+                if neighbor_cluster != cluster_idx && neighbor_cluster != usize::MAX {
+                    coarse_sets[cluster_idx].insert(neighbor_cluster);
+                }
+            }
+        }
+    }
+
+    let coarse_adjacency = coarse_sets
+        .into_iter()
+        .map(|neighbors| {
+            let mut neighbors = neighbors.into_iter().collect::<Vec<_>>();
+            neighbors.sort_unstable();
+            neighbors
+        })
+        .collect::<Vec<_>>();
+    let coarse_labels = clusters
+        .iter()
+        .map(|cluster| {
+            cluster
+                .iter()
+                .map(|&node| labels[node])
+                .min()
+                .unwrap_or(usize::MAX)
+        })
+        .collect::<Vec<_>>();
+
+    (coarse_adjacency, coarse_labels)
 }
 
 fn positions_for_order(size: usize, order: &[usize]) -> Vec<usize> {

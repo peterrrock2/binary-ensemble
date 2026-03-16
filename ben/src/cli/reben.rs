@@ -28,6 +28,9 @@ enum OrderingMethod {
     /// Minimum-linear-arrangement heuristic based on graph adjacency alone.
     #[clap(alias = "mla")]
     MinimumLinearArrangement,
+    /// Recursive multilevel clustering based on local neighborhoods.
+    #[clap(alias = "mlc")]
+    MultiLevelCluster,
     /// Reverse Cuthill-McKee ordering.
     ReverseCuthillMckee,
 }
@@ -267,6 +270,7 @@ fn to_graph_ordering(ordering: &OrderingMethod) -> GraphOrderingMethod {
         OrderingMethod::MinimumLinearArrangement => {
             GraphOrderingMethod::MinimumLinearArrangement
         }
+        OrderingMethod::MultiLevelCluster => GraphOrderingMethod::MultiLevelCluster,
         OrderingMethod::ReverseCuthillMckee => GraphOrderingMethod::ReverseCuthillMckee,
     }
 }
@@ -274,6 +278,7 @@ fn to_graph_ordering(ordering: &OrderingMethod) -> GraphOrderingMethod {
 fn ordering_method_name(ordering: &OrderingMethod) -> &'static str {
     match ordering {
         OrderingMethod::MinimumLinearArrangement => "minimum-linear-arrangement",
+        OrderingMethod::MultiLevelCluster => "multi-level-cluster",
         OrderingMethod::ReverseCuthillMckee => "reverse-cuthill-mckee",
     }
 }
@@ -333,12 +338,12 @@ mod tests {
             "--mode",
             "json",
             "--ordering",
-            "minimum-linear-arrangement",
+            "multi-level-cluster",
         ])
         .unwrap();
 
         assert_eq!(args.mode, Mode::Json);
-        assert_eq!(args.ordering, Some(OrderingMethod::MinimumLinearArrangement));
+        assert_eq!(args.ordering, Some(OrderingMethod::MultiLevelCluster));
         assert!(args.key.is_none());
     }
 

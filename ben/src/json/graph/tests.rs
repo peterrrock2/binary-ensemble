@@ -320,3 +320,21 @@ fn test_sort_json_file_by_minimum_linear_arrangement() {
     assert_eq!(sorted, [0, 1, 2, 3]);
     assert_eq!(output_json["nodes"].as_array().unwrap().len(), 4);
 }
+
+#[test]
+fn test_sort_json_file_by_multi_level_cluster() {
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_ordering(
+        path_graph_json(),
+        &mut output,
+        GraphOrderingMethod::MultiLevelCluster,
+    )
+    .unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    let positions = [mapping[&0], mapping[&1], mapping[&2], mapping[&3]];
+    let mut sorted = positions;
+    sorted.sort_unstable();
+    assert_eq!(sorted, [0, 1, 2, 3]);
+    assert_eq!(output_json["nodes"].as_array().unwrap().len(), 4);
+}
