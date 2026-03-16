@@ -1,6 +1,23 @@
 use super::*;
 use serde_json::Value;
 
+fn path_graph_json() -> &'static [u8] {
+    br#"{
+        "nodes": [
+            {"id": 0},
+            {"id": 1},
+            {"id": 2},
+            {"id": 3}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 0}, {"id": 2}],
+            [{"id": 1}, {"id": 3}],
+            [{"id": 2}]
+        ]
+    }"#
+}
+
 #[test]
 fn test_relabel_small_file() {
     let input = r#"{
@@ -266,4 +283,43 @@ fn test_sort_json_file_by_key_without_nodes_or_edges() {
     assert!(mapping.is_empty());
     assert_eq!(output_json["graph"], serde_json::json!([]));
     assert_eq!(output_json["directed"], false);
+}
+
+#[test]
+fn test_sort_json_file_by_reverse_cuthill_mckee() {
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_ordering(
+        path_graph_json(),
+        &mut output,
+        GraphOrderingMethod::ReverseCuthillMckee,
+    )
+    .unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(mapping.get(&3), Some(&0));
+    assert_eq!(mapping.get(&2), Some(&1));
+    assert_eq!(mapping.get(&1), Some(&2));
+    assert_eq!(mapping.get(&0), Some(&3));
+    assert_eq!(output_json["adjacency"][0][0]["id"], 1);
+}
+
+#[test]
+fn test_sort_json_file_by_spectral_ordering() {
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_ordering(
+        path_graph_json(),
+        &mut output,
+        GraphOrderingMethod::Spectral,
+    )
+    .unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    let endpoint_positions = [mapping[&0], mapping[&3]];
+    let middle_positions = [mapping[&1], mapping[&2]];
+
+    assert!(endpoint_positions.contains(&0));
+    assert!(endpoint_positions.contains(&3));
+    assert!(middle_positions.contains(&1));
+    assert!(middle_positions.contains(&2));
+    assert_eq!(output_json["nodes"].as_array().unwrap().len(), 4);
 }

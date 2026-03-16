@@ -944,7 +944,8 @@ fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations
         temp.path(),
     );
     assert_failure(&both);
-    assert!(String::from_utf8_lossy(&both.stderr).contains("Cannot provide both a map file and a key"));
+    assert!(String::from_utf8_lossy(&both.stderr)
+        .contains("Cannot provide both a map file and a sorting option"));
 
     let missing_shape = run(
         "reben",
@@ -962,6 +963,60 @@ fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations
 
     let sorted_json: Value = serde_json::from_str(&fs::read_to_string(generated_graph).unwrap()).unwrap();
     assert_eq!(sorted_json["nodes"][0]["GEOID20"], "A");
+}
+
+#[test]
+fn reben_cli_supports_spectral_and_rcm_orderings() {
+    let temp = TempDir::new("reben-orderings");
+    let graph_path = temp.path().join("shape.json");
+    let spectral_path = temp.path().join("spectral.json");
+    let rcm_path = temp.path().join("rcm.json");
+
+    fs::write(&graph_path, sample_graph()).unwrap();
+
+    let spectral = run(
+        "reben",
+        &[
+            graph_path.to_str().unwrap(),
+            "--mode",
+            "json",
+            "--ordering",
+            "spectral",
+            "--output-file",
+            spectral_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_success(&spectral);
+    assert!(temp.path().join("shape_sorted_by_spectral_map.json").exists());
+
+    let rcm = run(
+        "reben",
+        &[
+            graph_path.to_str().unwrap(),
+            "--mode",
+            "json",
+            "--ordering",
+            "reverse-cuthill-mckee",
+            "--output-file",
+            rcm_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_success(&rcm);
+    assert!(temp
+        .path()
+        .join("shape_sorted_by_reverse-cuthill-mckee_map.json")
+        .exists());
+
+    let spectral_json: Value =
+        serde_json::from_str(&fs::read_to_string(&spectral_path).unwrap()).unwrap();
+    let rcm_json: Value = serde_json::from_str(&fs::read_to_string(&rcm_path).unwrap()).unwrap();
+    assert_eq!(
+        spectral_json["nodes"].as_array().unwrap().len(),
+        rcm_json["nodes"].as_array().unwrap().len()
+    );
+    assert!(!spectral_json["nodes"].as_array().unwrap().is_empty());
 }
 
 #[test]

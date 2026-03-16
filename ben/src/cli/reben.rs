@@ -1,6 +1,6 @@
 use crate::cli::common::set_verbose;
 use crate::{
-    json::graph::sort_json_file_by_key,
+    json::graph::{sort_json_file_by_key, sort_json_file_by_ordering, GraphOrderingMethod},
     ops::relabel::{relabel_ben_file, relabel_ben_file_with_map},
 };
 use clap::{Parser, ValueEnum};
@@ -17,6 +17,15 @@ enum Mode {
     Json,
     /// Relabel or canonicalize a BEN file.
     Ben,
+}
+
+#[derive(Parser, Debug, Clone, ValueEnum, PartialEq)]
+/// Topology-based ordering methods for JSON graph relabeling.
+enum OrderingMethod {
+    /// Spectral ordering based on the graph Laplacian.
+    Spectral,
+    /// Reverse Cuthill-McKee ordering.
+    ReverseCuthillMckee,
 }
 
 #[derive(Parser, Debug)]
@@ -40,6 +49,9 @@ struct Args {
     /// Key to sort the JSON or BEN file by.
     #[arg(short, long)]
     key: Option<String>,
+    /// Topology-based ordering method to use instead of a key sort.
+    #[arg(long, value_enum)]
+    ordering: Option<OrderingMethod>,
     /// Shape file to use for sorting the BEN file. Only needed
     /// in BEN mode when a map is not provided.
     #[arg(short, long)]
@@ -48,9 +60,9 @@ struct Args {
     #[arg(short = 'p', long)]
     map_file: Option<String>,
     /// Mode to run the program in (either JSON or BEN).
-    /// The JSON mode will sort a JSON file by a given key.
-    /// The BEN mode will relabel a BEN file according to a map file
-    /// or a key (the latter also requires a dual-graph file). If no
+    /// The JSON mode will sort a JSON file by a given key or graph-ordering
+    /// method. The BEN mode will relabel a BEN file according to a map file
+    /// or a graph-ordering request (which also requires a dual-graph file). If no
     /// map file or key is provided, the BEN mode will canonicalize
     /// the assignment vectors in the BEN file.
     #[arg(short, long)]
@@ -69,14 +81,14 @@ pub fn run() {
         Mode::Json => {
             let input_file = File::open(&args.input_file).expect("Could not open input file.");
             let reader = BufReader::new(input_file);
-
-            let key = args.key.as_ref().expect("No key provided.");
+            let label = relabeling_label(args.key.as_deref(), args.ordering.as_ref())
+                .expect("Provide either --key or --ordering.");
 
             let output_file_name = match args.output_file {
                 Some(name) => name,
                 None => {
                     args.input_file.trim_end_matches(".json").to_owned()
-                        + format!("_sorted_by_{}.json", key).as_str()
+                        + format!("_sorted_by_{}.json", label).as_str()
                 }
             };
 
@@ -84,10 +96,18 @@ pub fn run() {
                 File::create(&output_file_name).expect("Could not create output file.");
             let writer = BufWriter::new(output_file);
 
-            let map = sort_json_file_by_key(reader, writer, key);
+            let map = if let Some(key) = args.key.as_ref() {
+                sort_json_file_by_key(reader, writer, key)
+            } else {
+                sort_json_file_by_ordering(
+                    reader,
+                    writer,
+                    to_graph_ordering(args.ordering.as_ref().unwrap()),
+                )
+            };
 
             let map_file_name = args.input_file.trim_end_matches(".json").to_owned()
-                + format!("_sorted_by_{}", key).as_str()
+                + format!("_sorted_by_{}", label).as_str()
                 + "_map.json";
             let map_file = File::create(map_file_name).expect("Could not create map file.");
             let mut map_writer = BufWriter::new(map_file);
@@ -95,7 +115,8 @@ pub fn run() {
             let map_json = json!({
                 "input_file": args.input_file,
                 "output_file": output_file_name,
-                "key": key,
+                "key": args.key.as_ref(),
+                "ordering_method": args.ordering.as_ref().map(ordering_method_name),
                 "relabeling_old_to_new_nodes_map": map.unwrap()
             });
 
@@ -107,7 +128,7 @@ pub fn run() {
             let input_file = File::open(&args.input_file).expect("Could not open input file.");
             let reader = BufReader::new(input_file);
 
-            if args.map_file.is_none() && args.key.is_none() {
+            if args.map_file.is_none() && args.key.is_none() && args.ordering.is_none() {
                 tracing::trace!("Canonicalizing assignment vectors in ben file.");
 
                 let output_file_name = match args.output_file {
@@ -126,21 +147,23 @@ pub fn run() {
                 return;
             }
 
-            if args.map_file.is_some() && args.key.is_some() {
+            if args.map_file.is_some() && (args.key.is_some() || args.ordering.is_some()) {
                 panic!(concat!(
-                    "Cannot provide both a map file and a key. ",
-                    "Please provide either the map file or the key and the ",
+                    "Cannot provide both a map file and a sorting option. ",
+                    "Please provide either the map file or the key/ordering and the ",
                     "(JSON formatted) dual-graph file needed to generate a map file."
                 ));
             }
 
             let mut map_file_name = String::new();
-            if let Some(key) = args.key {
+            if args.key.is_some() || args.ordering.is_some() {
                 if let Some(shape) = args.shape_file {
-                    tracing::trace!("Creating map file for key: {}", key);
+                    let label =
+                        relabeling_label(args.key.as_deref(), args.ordering.as_ref()).unwrap();
+                    tracing::trace!("Creating map file for ordering: {}", label);
 
                     let output_file_name = shape.trim_end_matches(".json").to_owned()
-                        + format!("_sorted_by_{}.json", key).as_str();
+                        + format!("_sorted_by_{}.json", label).as_str();
 
                     let output_file =
                         File::create(&output_file_name).expect("Could not create output file.");
@@ -148,10 +171,18 @@ pub fn run() {
 
                     let shape_reader =
                         BufReader::new(File::open(&shape).expect("Could not open shape file."));
-                    let map = sort_json_file_by_key(shape_reader, writer, &key);
+                    let map = if let Some(key) = args.key.as_ref() {
+                        sort_json_file_by_key(shape_reader, writer, key)
+                    } else {
+                        sort_json_file_by_ordering(
+                            shape_reader,
+                            writer,
+                            to_graph_ordering(args.ordering.as_ref().unwrap()),
+                        )
+                    };
 
                     map_file_name = shape.trim_end_matches(".json").to_owned()
-                        + format!("_sorted_by_{}", key).as_str()
+                        + format!("_sorted_by_{}", label).as_str()
                         + "_map.json";
                     let map_file =
                         File::create(&map_file_name).expect("Could not create map file.");
@@ -160,7 +191,8 @@ pub fn run() {
                     let map_json = json!({
                         "input_file": args.input_file,
                         "output_file": output_file_name,
-                        "key": key,
+                        "key": args.key.as_ref(),
+                        "ordering_method": args.ordering.as_ref().map(ordering_method_name),
                         "relabeling_old_to_new_nodes_map": map.unwrap()
                     });
 
@@ -168,7 +200,7 @@ pub fn run() {
                         .write_all(map_json.to_string().as_bytes())
                         .expect("Could not write map file.");
                 } else {
-                    panic!("{}", format!("No shape file provided to go with key {:}", key));
+                    panic!("No shape file provided to go with the requested ordering.");
                 }
             }
 
@@ -187,13 +219,17 @@ pub fn run() {
                 .map(|(k, v)| (v.as_u64().unwrap() as usize, k.parse::<usize>().unwrap()))
                 .collect::<std::collections::HashMap<usize, usize>>();
 
-            let key = data["key"].as_str().unwrap();
+            let label = data["key"]
+                .as_str()
+                .map(ToOwned::to_owned)
+                .or_else(|| data["ordering_method"].as_str().map(ToOwned::to_owned))
+                .unwrap_or_else(|| "map".to_string());
 
             let output_file_name = match args.output_file {
                 Some(name) => name,
                 None => {
                     args.input_file.trim_end_matches(".jsonl.ben").to_owned()
-                        + format!("_sorted_by_{}.jsonl.ben", key).as_str()
+                        + format!("_sorted_by_{}.jsonl.ben", label).as_str()
                 }
             };
             let output_file =
@@ -204,6 +240,29 @@ pub fn run() {
 
             relabel_ben_file_with_map(reader, writer, new_to_old_node_map).unwrap();
         }
+    }
+}
+
+fn to_graph_ordering(ordering: &OrderingMethod) -> GraphOrderingMethod {
+    match ordering {
+        OrderingMethod::Spectral => GraphOrderingMethod::Spectral,
+        OrderingMethod::ReverseCuthillMckee => GraphOrderingMethod::ReverseCuthillMckee,
+    }
+}
+
+fn ordering_method_name(ordering: &OrderingMethod) -> &'static str {
+    match ordering {
+        OrderingMethod::Spectral => "spectral",
+        OrderingMethod::ReverseCuthillMckee => "reverse-cuthill-mckee",
+    }
+}
+
+fn relabeling_label(key: Option<&str>, ordering: Option<&OrderingMethod>) -> Option<String> {
+    match (key, ordering) {
+        (Some(_), Some(_)) => panic!("Provide either --key or --ordering, not both."),
+        (Some(key), None) => Some(key.to_string()),
+        (None, Some(ordering)) => Some(ordering_method_name(ordering).to_string()),
+        (None, None) => None,
     }
 }
 
@@ -243,5 +302,22 @@ mod tests {
         assert_eq!(args.key.as_deref(), Some("GEOID20"));
         assert_eq!(args.output_file.as_deref(), Some("sorted.json"));
         assert!(args.verbose);
+    }
+
+    #[test]
+    fn parse_json_mode_ordering_args() {
+        let args = Args::try_parse_from([
+            "reben",
+            "dual_graph.json",
+            "--mode",
+            "json",
+            "--ordering",
+            "spectral",
+        ])
+        .unwrap();
+
+        assert_eq!(args.mode, Mode::Json);
+        assert_eq!(args.ordering, Some(OrderingMethod::Spectral));
+        assert!(args.key.is_none());
     }
 }
