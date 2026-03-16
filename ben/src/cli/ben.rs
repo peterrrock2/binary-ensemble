@@ -106,6 +106,18 @@ struct Args {
     compression_level: Option<u32>,
 }
 
+/// Derive the output path for encode-style CLI modes.
+///
+/// # Arguments
+///
+/// * `mode` - The encode-oriented CLI mode being executed.
+/// * `input_file_name` - The input file path supplied by the user.
+/// * `output_file_name` - An optional explicit output path.
+/// * `overwrite` - Whether to skip overwrite prompting.
+///
+/// # Returns
+///
+/// Returns the resolved output path.
 fn encode_setup(
     mode: Mode,
     input_file_name: String,
@@ -135,6 +147,19 @@ fn encode_setup(
     Ok(out_file_name)
 }
 
+/// Derive the output path for decode-style CLI modes.
+///
+/// # Arguments
+///
+/// * `in_file_name` - The input file path supplied by the user.
+/// * `out_file_name` - An optional explicit output path.
+/// * `full_decode` - Whether the decode should go all the way to JSONL instead
+///   of stopping at BEN.
+/// * `overwrite` - Whether to skip overwrite prompting.
+///
+/// # Returns
+///
+/// Returns the resolved output path.
 fn decode_setup(
     in_file_name: String,
     out_file_name: Option<String>,
@@ -170,6 +195,15 @@ fn decode_setup(
     Ok(out_file_name)
 }
 
+/// Open either the requested input file or stdin.
+///
+/// # Arguments
+///
+/// * `input_file` - An optional input file path.
+///
+/// # Returns
+///
+/// Returns a buffered reader for the requested file or stdin.
 fn open_reader(input_file: Option<&str>) -> DynReader {
     match input_file {
         Some(path) => Box::new(BufReader::new(File::open(path).unwrap())),
@@ -177,6 +211,17 @@ fn open_reader(input_file: Option<&str>) -> DynReader {
     }
 }
 
+/// Open either the requested output file or stdout.
+///
+/// # Arguments
+///
+/// * `output_file` - An optional output file path.
+/// * `print` - Whether output should be forced to stdout.
+/// * `overwrite` - Whether to skip overwrite prompting for file outputs.
+///
+/// # Returns
+///
+/// Returns a buffered writer for the requested file or stdout.
 fn open_writer(output_file: Option<&str>, print: bool, overwrite: bool) -> Result<DynWriter> {
     if print {
         return Ok(Box::new(BufWriter::new(io::stdout())));
@@ -191,10 +236,20 @@ fn open_writer(output_file: Option<&str>, print: bool, overwrite: bool) -> Resul
     }
 }
 
+/// Open a writer for a path computed by one of the setup helpers.
+///
+/// # Arguments
+///
+/// * `path` - The output path to create.
+///
+/// # Returns
+///
+/// Returns a buffered writer for `path`.
 fn open_derived_writer(path: String) -> DynWriter {
     Box::new(BufWriter::new(File::create(path).unwrap()))
 }
 
+/// Parse CLI arguments and execute the selected `ben` sub-mode.
 pub fn run() {
     let args = Args::parse();
     set_verbose(args.verbose);

@@ -60,6 +60,7 @@ struct Args {
     verbose: bool,
 }
 
+/// Parse CLI arguments and execute the selected `reben` mode.
 pub fn run() {
     let args = Args::parse();
     set_verbose(args.verbose);

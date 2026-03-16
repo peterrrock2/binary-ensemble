@@ -51,6 +51,7 @@ struct Args {
     verbose: bool,
 }
 
+/// Parse CLI arguments and execute the selected `pben` conversion.
 pub fn run() -> Result<()> {
     let args = Args::parse();
     set_verbose(args.verbose);
@@ -128,6 +129,7 @@ pub fn run() -> Result<()> {
     }
 }
 
+/// Decode BEN and emit one zero-based assignment vector per line for PCOMPRESS.
 fn assignment_decode_ben<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::Result<()> {
     let ben_reader = BenDecoder::new(&mut reader)?;
 
@@ -150,6 +152,7 @@ fn assignment_decode_ben<R: Read, W: Write>(mut reader: R, mut writer: W) -> io:
     Ok(())
 }
 
+/// Read zero-based assignment vectors and encode them as BEN.
 fn assignment_encode_ben<R: Read + BufRead, W: Write>(reader: R, writer: W) -> io::Result<()> {
     let mut ben_writer = BenEncoder::new(writer, BenVariant::MkvChain);
 
@@ -164,6 +167,7 @@ fn assignment_encode_ben<R: Read + BufRead, W: Write>(reader: R, writer: W) -> i
     Ok(())
 }
 
+/// Read zero-based assignment vectors and encode them as XBEN.
 fn assignment_encode_xben<R: Read + BufRead, W: Write>(reader: R, writer: W) -> io::Result<()> {
     let encoder = XzEncoder::new(writer, 9);
     let mut xben_writer = XBenEncoder::new(encoder, BenVariant::MkvChain);

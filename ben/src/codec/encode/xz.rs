@@ -4,6 +4,22 @@ use std::io::{self, BufRead, Result, Write};
 use xz2::stream::MtStreamBuilder;
 use xz2::write::XzEncoder;
 
+/// Compress an arbitrary byte stream with XZ/LZMA2.
+///
+/// This is a general-purpose helper used by the XBEN tooling, but it can also
+/// be used for plain XZ compression when BEN-specific framing is not needed.
+///
+/// # Arguments
+///
+/// * `reader` - The input byte stream to compress.
+/// * `writer` - The destination for the compressed XZ bytes.
+/// * `n_threads` - Optional XZ encoder thread count. When omitted, a safe
+///   default is chosen.
+/// * `compression_level` - Optional XZ compression level in the range `0..=9`.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after the input stream has been fully compressed.
 pub fn xz_compress<R: BufRead, W: Write>(
     mut reader: R,
     writer: W,
@@ -41,6 +57,22 @@ pub fn xz_compress<R: BufRead, W: Write>(
     Ok(())
 }
 
+/// Convert an existing BEN stream into an XBEN stream.
+///
+/// The input must begin with a BEN banner so that the variant can be preserved
+/// in the compressed output.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including its banner.
+/// * `writer` - The destination for the compressed XBEN bytes.
+/// * `n_threads` - Optional XZ encoder thread count. When omitted, a safe
+///   default is chosen.
+/// * `compression_level` - Optional XZ compression level in the range `0..=9`.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after the BEN stream has been translated and compressed.
 pub fn encode_ben_to_xben<R: BufRead, W: Write>(
     mut reader: R,
     writer: W,

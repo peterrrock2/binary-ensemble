@@ -17,6 +17,16 @@ pub struct BenEncoder<W: Write> {
 }
 
 impl<W: Write> BenEncoder<W> {
+    /// Create a new BEN writer and immediately emit the BEN banner.
+    ///
+    /// # Arguments
+    ///
+    /// * `writer` - The destination that will receive the BEN stream.
+    /// * `variant` - The BEN variant to encode.
+    ///
+    /// # Returns
+    ///
+    /// Returns a new encoder ready to accept assignments or RLE frames.
     pub fn new(mut writer: W, variant: BenVariant) -> Self {
         match variant {
             BenVariant::Standard => {
@@ -35,6 +45,15 @@ impl<W: Write> BenEncoder<W> {
         }
     }
 
+    /// Encode and write a run-length encoded assignment vector as one BEN frame.
+    ///
+    /// # Arguments
+    ///
+    /// * `rle_vec` - The assignment vector in `(value, count)` form.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after the frame has been queued or written.
     pub fn write_rle(&mut self, rle_vec: Vec<(u16, u16)>) -> Result<()> {
         match self.variant {
             BenVariant::Standard => {
@@ -59,12 +78,33 @@ impl<W: Write> BenEncoder<W> {
         }
     }
 
+    /// Encode and write a full assignment vector.
+    ///
+    /// # Arguments
+    ///
+    /// * `assign_vec` - The full assignment vector to encode.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after the assignment has been queued or written.
     pub fn write_assignment(&mut self, assign_vec: Vec<u16>) -> Result<()> {
         let rle_vec = assign_to_rle(assign_vec);
         self.write_rle(rle_vec)?;
         Ok(())
     }
 
+    /// Encode and write a JSON assignment record.
+    ///
+    /// The input must contain an `assignment` array of integers. Other fields
+    /// are ignored.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - A JSON object containing an `assignment` array.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after the record has been validated and encoded.
     pub fn write_json_value(&mut self, data: Value) -> Result<()> {
         let assign_vec = data["assignment"].as_array().ok_or_else(|| {
             io::Error::new(
@@ -99,6 +139,14 @@ impl<W: Write> BenEncoder<W> {
         Ok(())
     }
 
+    /// Flush any buffered repetition state to the underlying writer.
+    ///
+    /// This matters for [`BenVariant::MkvChain`], where repeated consecutive
+    /// samples are emitted only once together with their repetition count.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` once any buffered repetition state has been flushed.
     pub fn finish(&mut self) -> Result<()> {
         if self.complete {
             return Ok(());
@@ -117,6 +165,7 @@ impl<W: Write> BenEncoder<W> {
 }
 
 impl<W: Write> Drop for BenEncoder<W> {
+    /// Flush any buffered BEN state during drop.
     fn drop(&mut self) {
         let _ = self.finish();
     }
@@ -131,6 +180,17 @@ pub struct XBenEncoder<W: Write> {
 }
 
 impl<W: Write> XBenEncoder<W> {
+    /// Create a new XBEN writer around an already-configured XZ encoder.
+    ///
+    /// # Arguments
+    ///
+    /// * `encoder` - The configured XZ encoder that will receive the ben32
+    ///   payload.
+    /// * `variant` - The BEN variant to encode inside the compressed stream.
+    ///
+    /// # Returns
+    ///
+    /// Returns a new XBEN encoder ready to accept assignments or BEN frames.
     pub fn new(mut encoder: XzEncoder<W>, variant: BenVariant) -> Self {
         match variant {
             BenVariant::Standard => {
@@ -154,6 +214,15 @@ impl<W: Write> XBenEncoder<W> {
         }
     }
 
+    /// Encode and write a JSON assignment record into the compressed XBEN stream.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - A JSON object containing an `assignment` array.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after the record has been validated and encoded.
     pub fn write_json_value(&mut self, data: Value) -> Result<()> {
         let encoded = encode_ben32_line(data)?;
         match self.variant {
@@ -176,6 +245,18 @@ impl<W: Write> XBenEncoder<W> {
         Ok(())
     }
 
+    /// Read BEN frames from `reader` and write them into this XBEN stream.
+    ///
+    /// If the source still contains the 17-byte BEN banner, it is consumed and
+    /// replaced by the banner already written by this encoder.
+    ///
+    /// # Arguments
+    ///
+    /// * `reader` - The BEN input stream, with or without its banner.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after the BEN stream has been translated into XBEN.
     pub fn write_ben_file(&mut self, mut reader: impl BufRead) -> Result<()> {
         let peek = reader.fill_buf()?;
         let has_banner = peek.len() >= 17
@@ -190,6 +271,7 @@ impl<W: Write> XBenEncoder<W> {
 }
 
 impl<W: Write> Drop for XBenEncoder<W> {
+    /// Flush any buffered XBEN repetition state during drop.
     fn drop(&mut self) {
         if self.variant == BenVariant::MkvChain && self.count > 0 {
             self.encoder

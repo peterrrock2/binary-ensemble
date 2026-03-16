@@ -7,6 +7,17 @@ use std::io::{Read, Result, Write};
 use std::result::Result as StdResult;
 
 /// Sorts a JSON-formatted NetworkX graph file by a key.
+///
+/// # Arguments
+///
+/// * `reader` - The source JSON graph in the NetworkX node-link style used by
+///   the relabeling workflow.
+/// * `writer` - The destination for the sorted JSON graph.
+/// * `key` - The node attribute used to determine the new ordering.
+///
+/// # Returns
+///
+/// Returns a map from the original node id to the new node id.
 pub fn sort_json_file_by_key<R: Read, W: Write>(
     reader: R,
     mut writer: W,

@@ -1,6 +1,23 @@
 use crate::io::reader::BenDecoder;
 use std::io::{self, Read, Write};
 
+/// Decode a single BEN frame payload into run-length encoded assignments.
+///
+/// This function expects only the packed payload bytes for one BEN frame, not
+/// the leading per-frame BEN header.
+///
+/// # Arguments
+///
+/// * `reader` - A reader positioned at the packed payload bytes for a single
+///   BEN frame.
+/// * `max_val_bits` - The number of bits used to encode each label value.
+/// * `max_len_bits` - The number of bits used to encode each run length.
+/// * `n_bytes` - The number of payload bytes to read from `reader`.
+///
+/// # Returns
+///
+/// Returns the decoded run-length encoded assignment vector as `(value, count)`
+/// pairs.
 pub fn decode_ben_line<R: Read>(
     mut reader: R,
     max_val_bits: u8,
@@ -77,6 +94,20 @@ pub fn decode_ben_line<R: Read>(
     Ok(output_rle)
 }
 
+/// Decode a BEN stream into JSONL assignment records.
+///
+/// Each decoded sample is written as a JSON object containing an `assignment`
+/// vector and a 1-based `sample` index.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including the 17-byte BEN banner.
+/// * `writer` - The destination that will receive one JSON object per decoded
+///   sample.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after the stream has been fully decoded and written.
 pub fn decode_ben_to_jsonl<R: Read, W: Write>(reader: R, writer: W) -> io::Result<()> {
     let mut ben_decoder = BenDecoder::new(reader)?;
     ben_decoder.write_all_jsonl(writer)

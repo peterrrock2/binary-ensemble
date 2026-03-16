@@ -9,6 +9,7 @@ use std::io::Cursor;
 use std::io::{self, Read};
 
 #[derive(Debug)]
+/// Error categories returned when extracting an individual sample from a file.
 pub enum SampleErrorKind {
     InvalidSampleNumber,
     SampleNotFound { sample_number: usize },
@@ -17,11 +18,22 @@ pub enum SampleErrorKind {
 }
 
 #[derive(Debug)]
+/// Error returned by sample extraction helpers.
 pub struct SampleError {
+    /// The underlying extraction failure category.
     pub kind: SampleErrorKind,
 }
 
 impl SampleError {
+    /// Wrap a plain I/O error as a [`SampleError`].
+    ///
+    /// # Arguments
+    ///
+    /// * `error` - The underlying I/O error.
+    ///
+    /// # Returns
+    ///
+    /// Returns a new [`SampleError`] with [`SampleErrorKind::IoError`].
     pub fn new_io_error(error: io::Error) -> Self {
         SampleError {
             kind: SampleErrorKind::IoError(error),
@@ -30,6 +42,7 @@ impl SampleError {
 }
 
 impl fmt::Display for SampleError {
+    /// Format the sample extraction error for display.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.kind {
             SampleErrorKind::InvalidSampleNumber => {
@@ -53,6 +66,7 @@ impl fmt::Display for SampleError {
 }
 
 impl std::error::Error for SampleError {
+    /// Return the underlying source error when one exists.
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match &self.kind {
             SampleErrorKind::InvalidSampleNumber => None,
@@ -64,12 +78,14 @@ impl std::error::Error for SampleError {
 }
 
 impl From<io::Error> for SampleError {
+    /// Wrap a plain I/O error as a sample extraction error.
     fn from(error: io::Error) -> Self {
         SampleError::new_io_error(error)
     }
 }
 
 impl From<SerdeError> for SampleError {
+    /// Wrap a JSON parsing error as a sample extraction error.
     fn from(error: SerdeError) -> Self {
         SampleError {
             kind: SampleErrorKind::JsonError(error),
@@ -77,6 +93,16 @@ impl From<SerdeError> for SampleError {
     }
 }
 
+/// Extract a single 1-based sample from an uncompressed BEN stream.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including its 17-byte banner.
+/// * `sample_number` - The 1-based sample index to retrieve.
+///
+/// # Returns
+///
+/// Returns the decoded assignment vector for the requested sample.
 pub fn extract_assignment_ben<R: Read>(
     mut reader: R,
     sample_number: usize,
@@ -115,6 +141,16 @@ pub fn extract_assignment_ben<R: Read>(
     })
 }
 
+/// Extract a single 1-based sample from an XBEN stream.
+///
+/// # Arguments
+///
+/// * `reader` - The compressed XBEN input stream.
+/// * `sample_number` - The 1-based sample index to retrieve.
+///
+/// # Returns
+///
+/// Returns the decoded assignment vector for the requested sample.
 pub fn extract_assignment_xben<R: Read>(
     mut reader: R,
     sample_number: usize,

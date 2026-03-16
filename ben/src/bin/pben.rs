@@ -1,3 +1,4 @@
+/// Entry point for the `pben` CLI binary.
 fn main() -> std::io::Result<()> {
     binary_ensemble::cli::pben::run()
 }

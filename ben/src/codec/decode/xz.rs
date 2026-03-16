@@ -4,6 +4,19 @@ use crate::{progress, BenVariant};
 use std::io::{self, BufRead, Error, Read, Write};
 use xz2::read::XzDecoder;
 
+/// Decode an XBEN stream into an equivalent BEN stream.
+///
+/// The output begins with the normal BEN banner followed by uncompressed BEN
+/// frames.
+///
+/// # Arguments
+///
+/// * `reader` - The compressed XBEN input stream.
+/// * `writer` - The destination for the uncompressed BEN stream.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after the full XBEN stream has been decoded into BEN.
 pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::Result<()> {
     let mut decoder = XzDecoder::new(reader);
 
@@ -78,6 +91,16 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
     Ok(())
 }
 
+/// Decompress a general XZ byte stream without applying any BEN-specific logic.
+///
+/// # Arguments
+///
+/// * `reader` - The compressed XZ stream.
+/// * `writer` - The destination for the decompressed bytes.
+///
+/// # Returns
+///
+/// Returns `Ok(())` once the compressed stream has been fully expanded.
 pub fn xz_decompress<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::Result<()> {
     let mut decoder = XzDecoder::new(reader);
     let mut buffer = [0u8; 4096];
@@ -92,6 +115,17 @@ pub fn xz_decompress<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::Resu
     Ok(())
 }
 
+/// Decode an XBEN stream directly into JSONL assignment records.
+///
+/// # Arguments
+///
+/// * `reader` - The compressed XBEN input stream.
+/// * `writer` - The destination that will receive one JSON object per decoded
+///   sample.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after the XBEN stream has been fully decoded into JSONL.
 pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::Result<()> {
     let mut decoder = XzDecoder::new(reader);
 

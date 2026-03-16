@@ -1,6 +1,14 @@
 //! Utility functions for run-length encoding assignment vectors.
 
 /// Convert a vector of assignments to a run-length encoded (RLE) vector.
+///
+/// # Arguments
+///
+/// * `assign_vec` - The full assignment vector.
+///
+/// # Returns
+///
+/// Returns the assignment vector as `(value, count)` pairs.
 pub fn assign_to_rle(assign_vec: Vec<u16>) -> Vec<(u16, u16)> {
     let mut prev_assign: u16 = 0;
     let mut count: u16 = 0;
@@ -30,6 +38,14 @@ pub fn assign_to_rle(assign_vec: Vec<u16>) -> Vec<(u16, u16)> {
 }
 
 /// Convert a run-length encoded (RLE) vector to a vector of assignments.
+///
+/// # Arguments
+///
+/// * `rle_vec` - The run-length encoded assignment vector.
+///
+/// # Returns
+///
+/// Returns the expanded assignment vector.
 pub fn rle_to_vec(rle_vec: Vec<(u16, u16)>) -> Vec<u16> {
     let mut output_vec: Vec<u16> = Vec::new();
     for (val, len) in rle_vec {

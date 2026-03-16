@@ -7,6 +7,15 @@ use crate::codec::decode::decode_ben_line;
 use crate::codec::encode::encode_ben_vec_from_rle;
 use crate::{progress, BenVariant};
 
+/// Convert a single ben32 frame into a BEN frame payload.
+///
+/// # Arguments
+///
+/// * `ben32_vec` - The ben32 frame bytes, including the four-byte terminator.
+///
+/// # Returns
+///
+/// Returns the encoded BEN frame payload and header.
 fn ben32_to_ben_line(ben32_vec: Vec<u8>) -> io::Result<Vec<u8>> {
     let mut buffer = [0u8; 4];
     let mut ben32_rle: Vec<(u16, u16)> = Vec::new();
@@ -41,6 +50,21 @@ fn ben32_to_ben_line(ben32_vec: Vec<u8>) -> io::Result<Vec<u8>> {
     Ok(encode_ben_vec_from_rle(ben32_rle))
 }
 
+/// Translate a stream of ben32 frames into BEN frames.
+///
+/// This is primarily used while decoding XBEN, where the compressed payload is
+/// stored in ben32 form.
+///
+/// # Arguments
+///
+/// * `reader` - The ben32 input stream.
+/// * `writer` - The destination for the translated BEN frames.
+/// * `variant` - The BEN variant, used to determine whether repetition counts
+///   follow each ben32 frame.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after the input stream has been fully translated.
 pub fn ben32_to_ben_lines<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,
@@ -82,6 +106,18 @@ pub fn ben32_to_ben_lines<R: Read, W: Write>(
     Ok(())
 }
 
+/// Convert a single BEN frame payload into its ben32 representation.
+///
+/// # Arguments
+///
+/// * `reader` - A reader positioned at the BEN frame payload.
+/// * `max_val_bits` - The number of bits used to encode each label value.
+/// * `max_len_bits` - The number of bits used to encode each run length.
+/// * `n_bytes` - The number of payload bytes to read.
+///
+/// # Returns
+///
+/// Returns the ben32 frame bytes, including the four-byte terminator.
 fn ben_to_ben32_line<R: Read>(
     reader: R,
     max_val_bits: u8,
@@ -102,6 +138,21 @@ fn ben_to_ben32_line<R: Read>(
     Ok(ben32_vec)
 }
 
+/// Translate a BEN stream into ben32 frames.
+///
+/// This is the format used inside XBEN after the outer XZ compression layer is
+/// removed.
+///
+/// # Arguments
+///
+/// * `reader` - The BEN input stream without its 17-byte file banner.
+/// * `writer` - The destination for the translated ben32 frames.
+/// * `variant` - The BEN variant, used to determine whether repetition counts
+///   follow each translated frame.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after the input stream has been fully translated.
 pub fn ben_to_ben32_lines<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,

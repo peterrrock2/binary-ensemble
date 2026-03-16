@@ -2,6 +2,17 @@ use crate::util::rle::assign_to_rle;
 use serde_json::Value;
 use std::io;
 
+/// Encode a JSON assignment record into the ben32 frame representation used by
+/// XBEN streams.
+///
+/// # Arguments
+///
+/// * `data` - A JSON object containing an `assignment` array.
+///
+/// # Returns
+///
+/// Returns the encoded ben32 frame bytes terminated by the four-byte `0`
+/// sentinel.
 pub(crate) fn encode_ben32_line(data: Value) -> io::Result<Vec<u8>> {
     let assign_vec = data["assignment"].as_array().ok_or_else(|| {
         io::Error::new(
@@ -56,11 +67,33 @@ pub(crate) fn encode_ben32_line(data: Value) -> io::Result<Vec<u8>> {
     Ok(ret)
 }
 
+/// Encode a full assignment vector into a single BEN frame.
+///
+/// # Arguments
+///
+/// * `assign_vec` - The full assignment vector to encode.
+///
+/// # Returns
+///
+/// Returns the encoded BEN frame bytes, including the per-frame header.
 pub fn encode_ben_vec_from_assign(assign_vec: Vec<u16>) -> Vec<u8> {
     let rle_vec: Vec<(u16, u16)> = assign_to_rle(assign_vec);
     encode_ben_vec_from_rle(rle_vec)
 }
 
+/// Encode a run-length encoded assignment vector into a BEN frame.
+///
+/// The returned byte vector contains the per-frame BEN header followed by the
+/// packed `(value, run_length)` payload.
+///
+/// # Arguments
+///
+/// * `rle_vec` - The run-length encoded assignment vector as `(value, count)`
+///   pairs.
+///
+/// # Returns
+///
+/// Returns the encoded BEN frame bytes, including the per-frame header.
 pub fn encode_ben_vec_from_rle(rle_vec: Vec<(u16, u16)>) -> Vec<u8> {
     let mut output_vec: Vec<u8> = Vec::new();
 

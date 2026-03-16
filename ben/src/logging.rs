@@ -4,6 +4,16 @@ use std::sync::Once;
 
 static INIT_LOGGER: Once = Once::new();
 
+/// Initialize the global `tracing` subscriber used by the BEN CLIs.
+///
+/// The subscriber reads `RUST_LOG` when present and otherwise defaults to
+/// logging being disabled. Initialization is guarded so it is safe to call
+/// multiple times.
+///
+/// # Returns
+///
+/// This function does not return a value. Repeated calls after the first are
+/// no-ops.
 pub fn init_logging() {
     INIT_LOGGER.call_once(|| {
         let filter = EnvFilter::try_from_default_env()
@@ -24,6 +34,19 @@ pub fn init_logging() {
     });
 }
 
+/// Emit a progress update to stderr when trace logging is enabled.
+///
+/// This helper exists for progress-style output such as `"Encoding line: 42\r"`
+/// that should redraw the current terminal line instead of creating a normal
+/// structured log event.
+///
+/// # Arguments
+///
+/// * `args` - The formatted progress message to emit.
+///
+/// # Returns
+///
+/// This function does not return a value.
 pub fn trace_progress(args: std::fmt::Arguments<'_>) {
     if tracing::enabled!(Level::TRACE) {
         eprint!("{args}");

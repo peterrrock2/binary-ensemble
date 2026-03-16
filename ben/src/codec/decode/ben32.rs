@@ -3,6 +3,19 @@ use byteorder::{BigEndian, ReadBytesExt};
 use serde_json::json;
 use std::io::{self, BufRead, Write};
 
+/// Decode a single ben32 frame into an assignment vector and repetition count.
+///
+/// This helper is crate-private because ben32 is an implementation detail of
+/// XBEN, but it underpins both the stream decoders and the translation logic.
+///
+/// # Arguments
+///
+/// * `reader` - A reader positioned at the start of a single ben32 frame.
+/// * `variant` - The BEN variant used to interpret the frame tail.
+///
+/// # Returns
+///
+/// Returns the expanded assignment vector together with its repetition count.
 pub(crate) fn decode_ben32_line<R: BufRead>(
     mut reader: R,
     variant: BenVariant,
@@ -42,6 +55,19 @@ pub(crate) fn decode_ben32_line<R: BufRead>(
     Ok((output_vec, count))
 }
 
+/// Decode a ben32 stream into JSONL assignment records.
+///
+/// # Arguments
+///
+/// * `reader` - The ben32 input stream.
+/// * `writer` - The destination for the JSONL output.
+/// * `starting_sample` - The 0-based sample offset that should be added to the
+///   emitted sample numbers.
+/// * `variant` - The BEN variant used to interpret repetition counts.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after the ben32 stream has been fully decoded.
 pub(crate) fn jsonl_decode_ben32<R: BufRead, W: Write>(
     mut reader: R,
     mut writer: W,

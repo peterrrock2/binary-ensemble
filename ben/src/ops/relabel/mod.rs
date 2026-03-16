@@ -8,6 +8,21 @@ use byteorder::{BigEndian, ReadBytesExt};
 use std::collections::HashMap;
 use std::io::{self, Error, Read, Write};
 
+/// Canonicalize the labels used inside each BEN frame.
+///
+/// Labels are reassigned in first-seen order within each assignment vector,
+/// which can improve downstream compression ratios.
+///
+/// # Arguments
+///
+/// * `reader` - The BEN input stream without its 17-byte file banner.
+/// * `writer` - The destination for the relabeled BEN frames.
+/// * `variant` - The BEN variant, used to determine whether repetition counts
+///   follow each frame.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after all frames have been relabeled and written.
 pub fn relabel_ben_lines<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,
@@ -66,6 +81,16 @@ pub fn relabel_ben_lines<R: Read, W: Write>(
     Ok(())
 }
 
+/// Relabel an entire BEN file, preserving its leading BEN banner.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including its banner.
+/// * `writer` - The destination for the relabeled BEN file.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after the full BEN file has been relabeled.
 pub fn relabel_ben_file<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::Result<()> {
     let mut check_buffer = [0u8; 17];
     reader.read_exact(&mut check_buffer)?;
@@ -88,6 +113,23 @@ pub fn relabel_ben_file<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::
     Ok(())
 }
 
+/// Relabel BEN frames using an externally supplied node map.
+///
+/// `new_to_old_node_map` maps the new node index to the position that should be
+/// read from the original assignment vector.
+///
+/// # Arguments
+///
+/// * `reader` - The BEN input stream without its 17-byte file banner.
+/// * `writer` - The destination for the relabeled BEN frames.
+/// * `new_to_old_node_map` - The permutation describing how node positions
+///   should be reordered.
+/// * `variant` - The BEN variant, used to determine whether repetition counts
+///   follow each frame.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after all frames have been relabeled and written.
 pub fn relabel_ben_lines_with_map<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,
@@ -144,6 +186,18 @@ pub fn relabel_ben_lines_with_map<R: Read, W: Write>(
     Ok(())
 }
 
+/// Relabel an entire BEN file using an externally supplied node map.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including its banner.
+/// * `writer` - The destination for the relabeled BEN file.
+/// * `new_to_old_node_map` - The permutation describing how node positions
+///   should be reordered.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after the full BEN file has been relabeled.
 pub fn relabel_ben_file_with_map<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,
