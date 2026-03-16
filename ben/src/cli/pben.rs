@@ -1,4 +1,4 @@
-use crate::cli::common::set_verbose;
+use crate::cli::common::{check_overwrite, set_verbose};
 use crate::io::reader::BenDecoder;
 use crate::io::writer::{BenEncoder, XBenEncoder};
 use crate::BenVariant;
@@ -60,13 +60,18 @@ pub fn run() -> Result<()> {
         Mode::BenToPc => {
             tracing::trace!("Converting BEN to PCOMPRESS");
 
-            let ben_reader: Box<dyn Read + Send> = match args.input_file {
-                Some(file) => Box::new(BufReader::new(File::open(&file).unwrap())),
+            let ben_reader: Box<dyn Read + Send> = match args.input_file.as_ref() {
+                Some(file) => Box::new(BufReader::new(File::open(file).unwrap())),
                 None => Box::new(io::stdin()),
             };
 
-            let mut pcompress_writer: BufWriter<Box<dyn io::Write>> = match args.output_file {
-                Some(file) => BufWriter::new(Box::new(File::create(&file).unwrap())),
+            let mut pcompress_writer: BufWriter<Box<dyn io::Write>> = match resolved_output_path(
+                Mode::BenToPc,
+                args.input_file.as_deref(),
+                args.output_file.as_deref(),
+                args.overwrite,
+            )? {
+                Some(file) => BufWriter::new(Box::new(File::create(file).unwrap())),
                 None => BufWriter::new(Box::new(io::stdout())),
             };
 
@@ -83,13 +88,18 @@ pub fn run() -> Result<()> {
         Mode::PcToBen => {
             tracing::trace!("Converting PCOMPRESS to BEN");
 
-            let mut pcompress_reader: BufReader<Box<dyn Read + Send>> = match args.input_file {
-                Some(file) => BufReader::new(Box::new(BufReader::new(File::open(&file).unwrap()))),
+            let mut pcompress_reader: BufReader<Box<dyn Read + Send>> = match args.input_file.as_ref() {
+                Some(file) => BufReader::new(Box::new(BufReader::new(File::open(file).unwrap()))),
                 None => BufReader::new(Box::new(io::stdin())),
             };
 
-            let mut ben_writer: BufWriter<Box<dyn io::Write>> = match args.output_file {
-                Some(file) => BufWriter::new(Box::new(File::create(&file).unwrap())),
+            let mut ben_writer: BufWriter<Box<dyn io::Write>> = match resolved_output_path(
+                Mode::PcToBen,
+                args.input_file.as_deref(),
+                args.output_file.as_deref(),
+                args.overwrite,
+            )? {
+                Some(file) => BufWriter::new(Box::new(File::create(file).unwrap())),
                 None => BufWriter::new(Box::new(io::stdout())),
             };
 
@@ -106,13 +116,18 @@ pub fn run() -> Result<()> {
         Mode::PcToXben => {
             tracing::trace!("Converting PCOMPRESS to XBEN");
 
-            let mut pcompress_reader: BufReader<Box<dyn Read + Send>> = match args.input_file {
-                Some(file) => BufReader::new(Box::new(BufReader::new(File::open(&file).unwrap()))),
+            let mut pcompress_reader: BufReader<Box<dyn Read + Send>> = match args.input_file.as_ref() {
+                Some(file) => BufReader::new(Box::new(BufReader::new(File::open(file).unwrap()))),
                 None => BufReader::new(Box::new(io::stdin())),
             };
 
-            let mut ben_writer: BufWriter<Box<dyn io::Write>> = match args.output_file {
-                Some(file) => BufWriter::new(Box::new(File::create(&file).unwrap())),
+            let mut ben_writer: BufWriter<Box<dyn io::Write>> = match resolved_output_path(
+                Mode::PcToXben,
+                args.input_file.as_deref(),
+                args.output_file.as_deref(),
+                args.overwrite,
+            )? {
+                Some(file) => BufWriter::new(Box::new(File::create(file).unwrap())),
                 None => BufWriter::new(Box::new(io::stdout())),
             };
 
@@ -129,18 +144,53 @@ pub fn run() -> Result<()> {
     }
 }
 
+/// Resolve the output file path for a `pben` mode.
+fn resolved_output_path(
+    mode: Mode,
+    input_file: Option<&str>,
+    output_file: Option<&str>,
+    overwrite: bool,
+) -> io::Result<Option<String>> {
+    let Some(path) = output_file
+        .map(ToOwned::to_owned)
+        .or_else(|| input_file.map(|input| derive_output_path(mode, input)))
+    else {
+        return Ok(None);
+    };
+
+    check_overwrite(&path, overwrite)?;
+    Ok(Some(path))
+}
+
+/// Derive the default output file name for a `pben` conversion mode.
+fn derive_output_path(mode: Mode, input_file: &str) -> String {
+    match mode {
+        Mode::BenToPc => input_file
+            .strip_suffix(".ben")
+            .map(|prefix| format!("{prefix}.pcompress"))
+            .unwrap_or_else(|| format!("{input_file}.pcompress")),
+        Mode::PcToBen => input_file
+            .strip_suffix(".pcompress")
+            .or_else(|| input_file.strip_suffix(".pc"))
+            .map(|prefix| format!("{prefix}.ben"))
+            .unwrap_or_else(|| format!("{input_file}.ben")),
+        Mode::PcToXben => input_file
+            .strip_suffix(".pcompress")
+            .or_else(|| input_file.strip_suffix(".pc"))
+            .map(|prefix| format!("{prefix}.xben"))
+            .unwrap_or_else(|| format!("{input_file}.xben")),
+    }
+}
+
 /// Decode BEN and emit one zero-based assignment vector per line for PCOMPRESS.
 fn assignment_decode_ben<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::Result<()> {
     let ben_reader = BenDecoder::new(&mut reader)?;
+    let mut line = String::new();
 
     for result in ben_reader {
         match result {
             Ok((assignment, count)) => {
-                let assignment: Vec<usize> = assignment
-                    .into_iter()
-                    .map(|x| x.saturating_sub(1) as usize)
-                    .collect();
-                let line = serde_json::to_string(&assignment).unwrap();
+                render_zero_based_assignment_line(&assignment, &mut line);
                 for _ in 0..count {
                     writeln!(writer, "{line}")?;
                 }
@@ -150,6 +200,19 @@ fn assignment_decode_ben<R: Read, W: Write>(mut reader: R, mut writer: W) -> io:
     }
 
     Ok(())
+}
+
+/// Render a BEN assignment vector as a zero-based JSON array for PCOMPRESS.
+fn render_zero_based_assignment_line(assignment: &[u16], output: &mut String) {
+    output.clear();
+    output.push('[');
+    for (idx, value) in assignment.iter().enumerate() {
+        if idx > 0 {
+            output.push(',');
+        }
+        output.push_str(&value.saturating_sub(1).to_string());
+    }
+    output.push(']');
 }
 
 /// Read zero-based assignment vectors and encode them as BEN.
@@ -220,6 +283,13 @@ mod tests {
         assert_eq!(args.input_file.as_deref(), Some("input.pc"));
         assert_eq!(args.output_file.as_deref(), Some("output.xben"));
         assert!(args.verbose);
+    }
+
+    #[test]
+    fn derive_output_path_replaces_expected_suffixes() {
+        assert_eq!(derive_output_path(Mode::BenToPc, "plans.ben"), "plans.pcompress");
+        assert_eq!(derive_output_path(Mode::PcToBen, "plans.pcompress"), "plans.ben");
+        assert_eq!(derive_output_path(Mode::PcToXben, "plans.pc"), "plans.xben");
     }
 
     #[test]
