@@ -64,20 +64,73 @@ fn is_repeated_assignment(previous_sample: &[u16], assign_vec: &[u16]) -> bool {
 /// Determines whether the assignments are identical (repeated) or differ by
 /// exactly one swapped pair of values, which qualifies for delta encoding.
 ///
+/// When `masks` are available the pair is detected in O(K) where K is the
+/// number of unique label values, by checking each label's mask positions for
+/// changes rather than scanning the full assignment array.
+///
 /// # Arguments
 ///
 /// * `previous_sample` - The previous assignment vector.
 /// * `assign_vec` - The current assignment vector.
+/// * `masks` - An optional index map from each label value to its sorted
+///   positions in the previous assignment.
 ///
 /// # Returns
 ///
 /// Returns an `AssignmentHints` with `is_repeated` set if the vectors match,
 /// or `delta_pair` set if all differences involve exactly two values.
-fn analyze_twodelta_transition(previous_sample: &[u16], assign_vec: &[u16]) -> AssignmentHints {
+fn analyze_twodelta_transition(
+    previous_sample: &[u16],
+    assign_vec: &[u16],
+    masks: Option<&HashMap<u16, Vec<usize>>>,
+) -> AssignmentHints {
     if previous_sample.is_empty() || previous_sample.len() != assign_vec.len() {
         return AssignmentHints::default();
     }
 
+    // Fast path: use masks to find the pair in O(K) instead of O(N).
+    if let Some(masks) = masks {
+        if previous_sample == assign_vec {
+            return AssignmentHints {
+                is_repeated: true,
+                delta_pair: None,
+            };
+        }
+
+        // Check each label's mask positions. Only labels involved in the swap
+        // will have any changed positions; all others short-circuit immediately.
+        let mut pair: Option<(u16, u16)> = None;
+        for (&label, positions) in masks {
+            for &pos in positions {
+                if assign_vec[pos] != label {
+                    let other = assign_vec[pos];
+                    match pair {
+                        None => {
+                            pair = Some((label, other));
+                            break;
+                        }
+                        Some((a, b)) => {
+                            if (label == a || label == b) && (other == a || other == b) {
+                                break;
+                            }
+                            // More than two values involved.
+                            return AssignmentHints {
+                                is_repeated: false,
+                                delta_pair: None,
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        return AssignmentHints {
+            is_repeated: false,
+            delta_pair: pair,
+        };
+    }
+
+    // Slow path: full O(N) scan when masks are not available.
     let Some(first_mismatch) = previous_sample
         .iter()
         .zip(assign_vec.iter())
@@ -488,7 +541,12 @@ impl<W: Write> BenEncoder<W> {
     /// Returns `Ok(())` after the assignment has been queued or written.
     pub fn write_assignment(&mut self, assign_vec: Vec<u16>) -> Result<()> {
         let hints = if self.variant == BenVariant::TwoDelta {
-            analyze_twodelta_transition(&self.previous_sample, &assign_vec)
+            let masks = if self.previous_masks.is_empty() {
+                None
+            } else {
+                Some(&self.previous_masks)
+            };
+            analyze_twodelta_transition(&self.previous_sample, &assign_vec, masks)
         } else {
             AssignmentHints::default()
         };
@@ -568,6 +626,53 @@ impl<W: Write> XBenEncoder<W> {
         self.rebuild_previous_masks();
         self.previous_frame = frame;
         self.count = count;
+    }
+
+    /// Update the value-to-position masks incrementally for a two-delta transition.
+    ///
+    /// Instead of rebuilding the entire mask HashMap, only the positions belonging
+    /// to the two swapped values are repartitioned. This is O(pair_positions)
+    /// rather than O(assignment_length).
+    ///
+    /// # Arguments
+    ///
+    /// * `new_sample` - The new assignment vector after the transition.
+    /// * `pair` - The two values involved in the delta swap.
+    fn update_masks_for_delta(&mut self, new_sample: &[u16], pair: (u16, u16)) {
+        if pair.0 == pair.1 {
+            return;
+        }
+
+        let pos_a = self.previous_masks.remove(&pair.0).unwrap_or_default();
+        let pos_b = self.previous_masks.remove(&pair.1).unwrap_or_default();
+
+        let mut new_a = Vec::with_capacity(pos_a.len() + pos_b.len());
+        let mut new_b = Vec::with_capacity(pos_a.len() + pos_b.len());
+
+        let (mut i, mut j) = (0, 0);
+        while i < pos_a.len() || j < pos_b.len() {
+            let pos = if j >= pos_b.len() || (i < pos_a.len() && pos_a[i] < pos_b[j]) {
+                let p = pos_a[i];
+                i += 1;
+                p
+            } else {
+                let p = pos_b[j];
+                j += 1;
+                p
+            };
+            if new_sample[pos] == pair.0 {
+                new_a.push(pos);
+            } else {
+                new_b.push(pos);
+            }
+        }
+
+        if !new_a.is_empty() {
+            self.previous_masks.insert(pair.0, new_a);
+        }
+        if !new_b.is_empty() {
+            self.previous_masks.insert(pair.1, new_b);
+        }
     }
 
     /// Flush the buffered frame and its repetition count to the XZ encoder.
@@ -667,7 +772,13 @@ impl<W: Write> XBenEncoder<W> {
                     return Ok(());
                 }
 
-                let hints = analyze_twodelta_transition(&self.previous_assignment, &assign_vec);
+                let masks = if self.previous_masks.is_empty() {
+                    None
+                } else {
+                    Some(&self.previous_masks)
+                };
+                let hints =
+                    analyze_twodelta_transition(&self.previous_assignment, &assign_vec, masks);
                 if hints.is_repeated {
                     self.count += 1;
                     return Ok(());
@@ -680,7 +791,16 @@ impl<W: Write> XBenEncoder<W> {
                     Some(&self.previous_masks),
                 )?;
                 self.flush_pending_frame()?;
-                self.set_previous_assignment(assign_vec, encoded, 1);
+
+                if let Some(pair) = hints.delta_pair {
+                    self.update_masks_for_delta(&assign_vec, pair);
+                    self.previous_assignment = assign_vec;
+                } else {
+                    self.previous_assignment = assign_vec;
+                    self.rebuild_previous_masks();
+                }
+                self.previous_frame = encoded;
+                self.count = 1;
                 Ok(())
             }
         }

@@ -495,16 +495,15 @@ fn decode_twodelta_run_lengths(frame: &TwoDeltaFrame) -> io::Result<Vec<u16>> {
 ///
 /// Returns the updated assignment vector.
 fn apply_twodelta_runs_to_assignment(
-    previous_assignment: &[u16],
+    mut assignment: Vec<u16>,
     pair: (u16, u16),
     run_lengths: &[u16],
 ) -> io::Result<Vec<u16>> {
     let mut pair_positions = Vec::new();
-    pair_positions.reserve(previous_assignment.len());
     let (first, second) = pair;
 
-    for (idx, &assignment) in previous_assignment.iter().enumerate() {
-        if assignment == first || assignment == second {
+    for (idx, &val) in assignment.iter().enumerate() {
+        if val == first || val == second {
             pair_positions.push(idx);
         }
     }
@@ -517,7 +516,6 @@ fn apply_twodelta_runs_to_assignment(
         ));
     }
 
-    let mut assignment = previous_assignment.to_vec();
     let mut write_idx = 0usize;
     let mut current_value = first;
 
@@ -547,7 +545,7 @@ fn apply_twodelta_runs_to_assignment(
 ///
 /// Returns the reconstructed assignment vector.
 fn decode_twodelta_frame_to_assignment(
-    previous_assignment: &[u16],
+    previous_assignment: Vec<u16>,
     frame: &TwoDeltaFrame,
 ) -> io::Result<Vec<u16>> {
     let run_lengths = decode_twodelta_run_lengths(frame)?;
@@ -566,13 +564,13 @@ fn decode_twodelta_frame_to_assignment(
 ///
 /// Returns the expanded assignment vector.
 fn decode_stored_frame_to_assignment(
-    previous_assignment: Option<&[u16]>,
+    previous_assignment: &mut Option<Vec<u16>>,
     frame: &StoredBenFrame,
 ) -> io::Result<Vec<u16>> {
     match frame {
         StoredBenFrame::Ben(frame) => decode_ben_frame_to_assignment(frame),
         StoredBenFrame::TwoDelta { frame, .. } => decode_twodelta_frame_to_assignment(
-            previous_assignment.ok_or_else(|| {
+            previous_assignment.take().ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
                     "TwoDelta frame encountered before an initial BEN frame",
@@ -594,7 +592,7 @@ impl<R: Read> Iterator for BenDecoder<R> {
             None => return None,
         };
         let assignment =
-            match decode_stored_frame_to_assignment(self.previous_assignment.as_deref(), &frame) {
+            match decode_stored_frame_to_assignment(&mut self.previous_assignment, &frame) {
                 Ok(assgn) => assgn,
                 Err(e) => return Some(Err(e)),
             };
@@ -937,7 +935,7 @@ impl<R: Read> Iterator for XBenDecoder<R> {
                                 let assignment = match frame {
                                     XBenTwoDeltaFrame::Full { runs } => Ok(rle_to_vec(runs)),
                                     XBenTwoDeltaFrame::Delta { pair, run_lengths } => {
-                                        match self.previous_assignment.as_deref() {
+                                        match self.previous_assignment.take() {
                                             Some(previous_assignment) => {
                                                 apply_twodelta_runs_to_assignment(
                                                     previous_assignment,
