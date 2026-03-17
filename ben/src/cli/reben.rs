@@ -28,9 +28,6 @@ enum Mode {
 #[derive(Parser, Debug, Clone, ValueEnum, PartialEq)]
 /// Topology-based ordering methods for JSON graph relabeling.
 enum OrderingMethod {
-    /// Minimum-linear-arrangement heuristic based on graph adjacency alone.
-    #[clap(alias = "mla")]
-    MinimumLinearArrangement,
     /// Recursive multilevel clustering based on local neighborhoods.
     #[clap(alias = "mlc")]
     MultiLevelCluster,
@@ -348,7 +345,6 @@ pub fn run() {
 /// Returns the corresponding `GraphOrderingMethod`.
 fn to_graph_ordering(ordering: &OrderingMethod) -> GraphOrderingMethod {
     match ordering {
-        OrderingMethod::MinimumLinearArrangement => GraphOrderingMethod::MinimumLinearArrangement,
         OrderingMethod::MultiLevelCluster => GraphOrderingMethod::MultiLevelCluster,
         OrderingMethod::ReverseCuthillMckee => GraphOrderingMethod::ReverseCuthillMckee,
     }
@@ -365,7 +361,6 @@ fn to_graph_ordering(ordering: &OrderingMethod) -> GraphOrderingMethod {
 /// Returns a static string identifying the ordering method.
 fn ordering_method_name(ordering: &OrderingMethod) -> &'static str {
     match ordering {
-        OrderingMethod::MinimumLinearArrangement => "minimum-linear-arrangement",
         OrderingMethod::MultiLevelCluster => "multi-level-cluster",
         OrderingMethod::ReverseCuthillMckee => "reverse-cuthill-mckee",
     }

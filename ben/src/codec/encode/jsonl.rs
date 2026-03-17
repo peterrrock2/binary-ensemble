@@ -29,6 +29,7 @@ pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
     variant: BenVariant,
     n_threads: Option<u32>,
     compression_level: Option<u32>,
+    chunk_size: Option<usize>,
 ) -> Result<()> {
     let mut n_cpus: u32 = n_threads.unwrap_or(1);
     n_cpus = n_cpus
@@ -49,6 +50,9 @@ pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
         .expect("init MT encoder");
     let encoder = XzEncoder::new_stream(writer, mt);
     let mut ben_encoder = XBenEncoder::new(encoder, variant);
+    if let Some(cs) = chunk_size {
+        ben_encoder = ben_encoder.with_chunk_size(cs);
+    }
 
     let mut line_num = 1;
 

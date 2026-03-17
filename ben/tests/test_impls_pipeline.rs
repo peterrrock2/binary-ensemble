@@ -245,6 +245,7 @@ proptest! {
             BenVariant::Standard,
             Some(threads),
             Some(level),
+            None,
         ).unwrap();
 
         // Decode XBEN -> BEN -> JSONL
@@ -270,6 +271,7 @@ proptest! {
             BenVariant::MkvChain,
             Some(threads),
             Some(level),
+            None,
         ).unwrap();
 
         let mut ben = Vec::new();
@@ -294,6 +296,7 @@ proptest! {
             BenVariant::TwoDelta,
             Some(threads),
             Some(level),
+            None,
         ).unwrap();
 
         let mut ben = Vec::new();
@@ -318,6 +321,7 @@ proptest! {
             BenVariant::MkvChain,
             Some(threads),
             Some(level),
+            None,
         ).unwrap();
 
         // Path A: direct to JSONL
@@ -346,6 +350,7 @@ proptest! {
             BenVariant::Standard,
             Some(threads),
             Some(level),
+            None,
         ).unwrap();
 
         let mut dec = XBenDecoder::new(xben.as_slice()).unwrap();
@@ -373,6 +378,7 @@ proptest! {
             BenVariant::TwoDelta,
             Some(threads),
             Some(level),
+            None,
         ).unwrap();
 
         let mut dec = XBenDecoder::new(xben.as_slice()).unwrap();
@@ -430,6 +436,7 @@ proptest! {
             BenVariant::MkvChain,
             Some(threads),
             Some(level),
+            None,
         ).unwrap();
 
         // Choose some indices to keep (1-based). We derive from seq length.
@@ -470,6 +477,7 @@ proptest! {
             BenVariant::MkvChain,
             Some(threads),
             Some(level),
+            None,
         ).unwrap();
 
         let n = seq.len();
@@ -505,6 +513,7 @@ proptest! {
             BenVariant::MkvChain,
             Some(threads),
             Some(level),
+            None,
         ).unwrap();
 
         let n = seq.len();
@@ -617,6 +626,7 @@ fn subsample_every_respects_offset() {
         BenVariant::MkvChain,
         Some(1),
         Some(0),
+        None,
     )
     .unwrap();
 
@@ -675,6 +685,7 @@ fn xbenencoder_drop_flushes_tail_group() {
             BenVariant::MkvChain,
             Some(1),
             Some(0),
+            None,
         )
         .unwrap();
         out
@@ -745,6 +756,7 @@ fn xben_truncated_frame_reports_unexpected_eof() {
         BenVariant::Standard,
         Some(1),
         Some(0),
+        None,
     )
     .unwrap();
 
@@ -830,6 +842,7 @@ fn subsample_by_indices_sorts_and_dedups() {
         BenVariant::Standard,
         Some(1),
         Some(0),
+        None,
     )
     .unwrap();
     let xb = XBenDecoder::new(xz.as_slice()).unwrap();
@@ -869,7 +882,7 @@ fn ben_encode_xben_respects_existing_ben_header() {
         encode_jsonl_to_ben(BufReader::new(jsonl.as_bytes()), &mut ben, variant).unwrap();
 
         let mut xz = Vec::new();
-        encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xz, Some(1), Some(0))
+        encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xz, Some(1), Some(0), None)
             .expect("ben->xben failed");
 
         let mut ben_back = Vec::new();
@@ -892,6 +905,7 @@ fn xz_mt_params_are_capped_and_safe() {
         BenVariant::Standard,
         Some(10_000),
         Some(42),
+        None,
     )
     .unwrap();
     let mut ben = Vec::new();
@@ -962,6 +976,7 @@ fn xben_frame_decoder_new_and_truncated_iteration_paths() {
         BenVariant::Standard,
         Some(1),
         Some(0),
+        None,
     )
     .unwrap();
 
@@ -1183,6 +1198,7 @@ fn ben_decoder_and_xben_decoder_count_samples() {
         BenVariant::MkvChain,
         Some(1),
         Some(0),
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -1204,6 +1220,7 @@ fn ben_decoder_and_xben_decoder_count_samples() {
         BenVariant::TwoDelta,
         Some(1),
         Some(0),
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -1239,6 +1256,7 @@ fn build_frame_iter_and_count_samples_from_file_cover_public_file_api() {
         BenVariant::MkvChain,
         Some(1),
         Some(0),
+        None,
     )
     .unwrap();
     let xben_path = unique_temp_path("sample.xben");

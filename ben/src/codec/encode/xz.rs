@@ -78,6 +78,7 @@ pub fn encode_ben_to_xben<R: BufRead, W: Write>(
     writer: W,
     n_threads: Option<u32>,
     compression_level: Option<u32>,
+    chunk_size: Option<usize>,
 ) -> Result<()> {
     let mut check_buffer = [0u8; BANNER_LEN];
     reader.read_exact(&mut check_buffer)?;
@@ -104,6 +105,9 @@ pub fn encode_ben_to_xben<R: BufRead, W: Write>(
     let variant = variant_from_banner(&check_buffer)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Invalid file format"))?;
     let mut ben_encoder = XBenEncoder::new(encoder, variant);
+    if let Some(cs) = chunk_size {
+        ben_encoder = ben_encoder.with_chunk_size(cs);
+    }
 
     ben_encoder.write_ben_file(Cursor::new(check_buffer).chain(reader))?;
 

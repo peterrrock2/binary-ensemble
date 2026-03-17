@@ -104,6 +104,11 @@ struct Args {
     /// Valid values are 0-9, where 0 is no compression and 9 is the highest level of compression.
     #[arg(short = 'l', long)]
     compression_level: Option<u32>,
+    /// Number of TwoDelta delta frames per columnar chunk in XBEN encoding.
+    /// Only affects TwoDelta variant. Larger chunks improve XZ compression.
+    /// Default is 10,000.
+    #[arg(long)]
+    chunk_size: Option<usize>,
 }
 
 /// Derive the output path for encode-style CLI modes.
@@ -330,7 +335,7 @@ pub fn run() {
 
             if ben_and_xben {
                 if let Err(err) =
-                    encode_ben_to_xben(reader, writer, args.n_cpus, args.compression_level)
+                    encode_ben_to_xben(reader, writer, args.n_cpus, args.compression_level, args.chunk_size)
                 {
                     eprintln!("Error: {:?}", err);
                 }
@@ -342,6 +347,7 @@ pub fn run() {
                         BenVariant::Standard,
                         args.n_cpus,
                         args.compression_level,
+                        args.chunk_size,
                     )
                 } else {
                     encode_jsonl_to_xben(
@@ -350,6 +356,7 @@ pub fn run() {
                         BenVariant::MkvChain,
                         args.n_cpus,
                         args.compression_level,
+                        args.chunk_size,
                     )
                 };
                 if let Err(e) = possible_error {

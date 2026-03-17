@@ -82,7 +82,7 @@ pub fn compress_ben_to_xben(
     let reader = open_input(&in_file)?;
     let writer = open_output(&out_file, overwrite)?;
 
-    encode_ben_to_xben(reader, writer, n_threads, compression_level).map_err(|e| {
+    encode_ben_to_xben(reader, writer, n_threads, compression_level, None).map_err(|e| {
         PyIOError::new_err(format!(
             "Failed to convert BEN to XBEN from {} to {}: {e}",
             in_file.display(),
@@ -135,7 +135,7 @@ pub fn compress_jsonl_to_xben(
     let reader = open_input(&in_file)?;
     let writer = open_output(&out_file, overwrite)?;
 
-    encode_jsonl_to_xben(reader, writer, ben_var, n_threads, compression_level).map_err(|e| {
+    encode_jsonl_to_xben(reader, writer, ben_var, n_threads, compression_level, None).map_err(|e| {
         PyIOError::new_err(format!(
             "Failed to convert JSONL to XBEN from {} to {}: {e}",
             in_file.display(),

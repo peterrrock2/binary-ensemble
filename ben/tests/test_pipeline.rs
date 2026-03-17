@@ -265,6 +265,7 @@ fn test_xben_pipeline() {
         BenVariant::Standard,
         Some(1),
         Some(1),
+        None,
     )
     .unwrap();
     decode_xben_to_ben(&input_writer[..], &mut output_writer).unwrap();
@@ -334,6 +335,7 @@ fn test_xmkvben_pipeline() {
         BenVariant::MkvChain,
         Some(1),
         Some(1),
+        None,
     )
     .unwrap();
     decode_xben_to_ben(&input_writer[..], &mut output_writer).unwrap();
@@ -428,6 +430,7 @@ fn test_xtwodeltaben_pipeline() {
         BenVariant::TwoDelta,
         Some(1),
         Some(1),
+        None,
     )
     .unwrap();
     decode_xben_to_ben(&input_writer[..], &mut output_writer).unwrap();

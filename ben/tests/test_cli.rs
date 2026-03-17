@@ -1358,32 +1358,12 @@ fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations
 }
 
 #[test]
-fn reben_cli_supports_mla_and_rcm_orderings() {
+fn reben_cli_supports_rcm_ordering() {
     let temp = TempDir::new("reben-orderings");
     let graph_path = temp.path().join("shape.json");
-    let mla_path = temp.path().join("mla.json");
     let rcm_path = temp.path().join("rcm.json");
 
     fs::write(&graph_path, sample_graph()).unwrap();
-
-    let mla = run(
-        "reben",
-        &[
-            graph_path.to_str().unwrap(),
-            "--mode",
-            "json",
-            "--ordering",
-            "minimum-linear-arrangement",
-            "--output-file",
-            mla_path.to_str().unwrap(),
-        ],
-        temp.path(),
-    );
-    assert_success(&mla);
-    assert!(temp
-        .path()
-        .join("shape_sorted_by_minimum-linear-arrangement_map.json")
-        .exists());
 
     let rcm = run(
         "reben",
@@ -1404,13 +1384,8 @@ fn reben_cli_supports_mla_and_rcm_orderings() {
         .join("shape_sorted_by_reverse-cuthill-mckee_map.json")
         .exists());
 
-    let mla_json: Value = serde_json::from_str(&fs::read_to_string(&mla_path).unwrap()).unwrap();
     let rcm_json: Value = serde_json::from_str(&fs::read_to_string(&rcm_path).unwrap()).unwrap();
-    assert_eq!(
-        mla_json["nodes"].as_array().unwrap().len(),
-        rcm_json["nodes"].as_array().unwrap().len()
-    );
-    assert!(!mla_json["nodes"].as_array().unwrap().is_empty());
+    assert!(!rcm_json["nodes"].as_array().unwrap().is_empty());
 }
 
 #[test]

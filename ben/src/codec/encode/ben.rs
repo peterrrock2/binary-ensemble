@@ -48,6 +48,15 @@ pub(crate) fn encode_ben32_line(data: Value) -> io::Result<IdVec> {
     )
 }
 
+/// Encode an assignment vector into a Ben32 vector
+///
+/// # Arguments
+///
+/// * `assign_vec` - The full assignment vector to encode
+///
+/// # Returns
+///
+/// Returns the encoded BEN32 frame byte vector.
 pub(crate) fn encode_ben32_assignments(assign_vec: impl AsRef<[u16]>) -> io::Result<IdVec> {
     let assign_vec = assign_vec.as_ref();
     let mut prev_assign: u16 = 0;

@@ -10,8 +10,6 @@ use std::result::Result as StdResult;
 /// Topology-based graph ordering methods supported by `reben`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GraphOrderingMethod {
-    /// Order nodes using a minimum-linear-arrangement heuristic.
-    MinimumLinearArrangement,
     /// Order nodes using recursive multilevel clustering.
     MultiLevelCluster,
     /// Order nodes using Reverse Cuthill-McKee.
@@ -134,7 +132,6 @@ pub fn sort_json_file_by_ordering<R: Read, W: Write>(
     tracing::trace!("Sorting JSON file by ordering method: {:?}", method);
 
     let order = match method {
-        GraphOrderingMethod::MinimumLinearArrangement => minimum_linear_arrangement_order(&graph),
         GraphOrderingMethod::MultiLevelCluster => multi_level_cluster_order(&graph),
         GraphOrderingMethod::ReverseCuthillMckee => reverse_cuthill_mckee_order(&graph),
     };
@@ -370,26 +367,6 @@ fn reverse_cuthill_mckee_component(graph: &GraphJson, component: &[usize]) -> Ve
     component_order
 }
 
-/// Compute a minimum-linear-arrangement heuristic ordering for the entire graph.
-///
-/// # Arguments
-///
-/// * `graph` - The parsed graph to order.
-///
-/// # Returns
-///
-/// Returns a permutation of node indices that heuristically minimizes total
-/// edge span.
-fn minimum_linear_arrangement_order(graph: &GraphJson) -> Vec<usize> {
-    let mut order = Vec::with_capacity(graph.nodes.len());
-
-    for component in connected_components(graph) {
-        order.extend(minimum_linear_arrangement_component(graph, &component));
-    }
-
-    order
-}
-
 /// Compute a multilevel cluster ordering for the entire graph.
 ///
 /// # Arguments
@@ -404,51 +381,6 @@ fn multi_level_cluster_order(graph: &GraphJson) -> Vec<usize> {
     multilevel_cluster_order_generic(&graph.adjacency_indices, &graph.node_ids)
 }
 
-/// Compute a minimum-linear-arrangement heuristic ordering for a single component.
-///
-/// # Arguments
-///
-/// * `graph` - The parsed graph.
-/// * `component` - The node indices belonging to the component.
-///
-/// # Returns
-///
-/// Returns an ordering that heuristically minimizes total edge span within the
-/// component, refined by iterated barycenter sorting and adjacent swaps.
-fn minimum_linear_arrangement_component(graph: &GraphJson, component: &[usize]) -> Vec<usize> {
-    if component.len() <= 2 {
-        return component.to_vec();
-    }
-
-    let component_mask = subset_mask(graph.nodes.len(), component);
-    let mut order = reverse_cuthill_mckee_component(graph, component);
-
-    for _ in 0..8 {
-        let positions = positions_for_order(graph.nodes.len(), &order);
-        order.sort_by(|&a, &b| {
-            let a_score = barycenter_score(graph, a, &positions, &component_mask);
-            let b_score = barycenter_score(graph, b, &positions, &component_mask);
-            a_score
-                .partial_cmp(&b_score)
-                .unwrap_or(Ordering::Equal)
-                .then_with(|| graph.node_ids[a].cmp(&graph.node_ids[b]))
-        });
-        local_adjacent_improvement(graph, &mut order, &component_mask);
-    }
-
-    order
-}
-
-/// Build a boolean mask indicating membership in a subset of nodes.
-///
-/// # Arguments
-///
-/// * `size` - The total number of nodes (length of the returned vector).
-/// * `nodes` - The node indices that belong to the subset.
-///
-/// # Returns
-///
-/// Returns a boolean vector where `true` marks nodes present in the subset.
 fn subset_mask(size: usize, nodes: &[usize]) -> Vec<bool> {
     let mut mask = vec![false; size];
     for &node in nodes {
@@ -773,125 +705,6 @@ fn build_coarse_graph(
         .collect::<Vec<_>>();
 
     (coarse_adjacency, coarse_labels)
-}
-
-/// Invert a permutation to get the position of each node in the ordering.
-///
-/// # Arguments
-///
-/// * `size` - The total number of nodes (length of the returned vector).
-/// * `order` - A permutation where `order[position]` gives the node index.
-///
-/// # Returns
-///
-/// Returns a vector indexed by node where each entry is the node's position in
-/// the ordering.
-fn positions_for_order(size: usize, order: &[usize]) -> Vec<usize> {
-    let mut positions = vec![usize::MAX; size];
-    for (idx, &node) in order.iter().enumerate() {
-        positions[node] = idx;
-    }
-    positions
-}
-
-/// Compute the barycenter score of a node as the mean position of its neighbors.
-///
-/// # Arguments
-///
-/// * `graph` - The parsed graph.
-/// * `node` - The node index to score.
-/// * `positions` - The current position of each node in the ordering.
-/// * `component_mask` - A boolean mask restricting which neighbors to consider.
-///
-/// # Returns
-///
-/// Returns the average position of the node's neighbors within the component,
-/// or the node's own position if it has no neighbors in the component.
-fn barycenter_score(
-    graph: &GraphJson,
-    node: usize,
-    positions: &[usize],
-    component_mask: &[bool],
-) -> f64 {
-    let mut sum = 0.0;
-    let mut count = 0.0;
-    for &neighbor in &graph.adjacency_indices[node] {
-        if component_mask[neighbor] {
-            sum += positions[neighbor] as f64;
-            count += 1.0;
-        }
-    }
-
-    if count == 0.0 {
-        positions[node] as f64
-    } else {
-        sum / count
-    }
-}
-
-/// Improve an ordering by repeatedly swapping adjacent pairs that reduce total edge span.
-///
-/// # Arguments
-///
-/// * `graph` - The parsed graph.
-/// * `order` - The current ordering, modified in place.
-/// * `component_mask` - A boolean mask restricting which neighbors to consider.
-fn local_adjacent_improvement(graph: &GraphJson, order: &mut [usize], component_mask: &[bool]) {
-    if order.len() < 2 {
-        return;
-    }
-
-    let mut improved = true;
-    while improved {
-        improved = false;
-        let mut positions = positions_for_order(graph.nodes.len(), order);
-        for idx in 0..order.len() - 1 {
-            let current_cost = node_span_cost(graph, order[idx], &positions, component_mask)
-                + node_span_cost(graph, order[idx + 1], &positions, component_mask);
-
-            order.swap(idx, idx + 1);
-            positions[order[idx]] = idx;
-            positions[order[idx + 1]] = idx + 1;
-
-            let swapped_cost = node_span_cost(graph, order[idx], &positions, component_mask)
-                + node_span_cost(graph, order[idx + 1], &positions, component_mask);
-
-            if swapped_cost <= current_cost {
-                improved = swapped_cost < current_cost;
-            } else {
-                order.swap(idx, idx + 1);
-                positions[order[idx]] = idx;
-                positions[order[idx + 1]] = idx + 1;
-            }
-        }
-    }
-}
-
-/// Compute the total edge span cost for a single node in the current ordering.
-///
-/// # Arguments
-///
-/// * `graph` - The parsed graph.
-/// * `node` - The node index to evaluate.
-/// * `positions` - The current position of each node in the ordering.
-/// * `component_mask` - A boolean mask restricting which neighbors to consider.
-///
-/// # Returns
-///
-/// Returns the sum of absolute position differences between the node and each of
-/// its neighbors within the component.
-fn node_span_cost(
-    graph: &GraphJson,
-    node: usize,
-    positions: &[usize],
-    component_mask: &[bool],
-) -> usize {
-    graph.adjacency_indices[node]
-        .iter()
-        .copied()
-        .filter(|&neighbor| component_mask[neighbor])
-        .map(|neighbor| positions[node].abs_diff(positions[neighbor]))
-        .sum()
 }
 
 #[cfg(test)]

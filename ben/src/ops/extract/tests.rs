@@ -145,6 +145,7 @@ fn test_extract_assignment_xben_roundtrip_and_errors() {
         BenVariant::MkvChain,
         Some(1),
         Some(0),
+        None,
     )
     .unwrap();
 

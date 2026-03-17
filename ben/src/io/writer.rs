@@ -15,7 +15,6 @@ use std::io::{self, BufRead, Read, Result, Write};
 use xz2::write::XzEncoder;
 
 const XBEN_TWODELTA_FULL_TAG: u8 = 0;
-const XBEN_TWODELTA_DELTA_TAG: u8 = 1;
 const XBEN_TWODELTA_CHUNK_TAG: u8 = 2;
 
 /// Default number of delta frames per columnar chunk in XBEN TwoDelta.
@@ -250,40 +249,6 @@ fn encode_xben_twodelta_full_frame(assignments: &[u16]) -> Vec<u8> {
         bytes.extend_from_slice(&len.to_be_bytes());
     }
     bytes
-}
-
-/// Encode the difference between two assignments as an XBEN two-delta delta frame.
-///
-/// The frame begins with a delta tag byte, the swapped value pair, and then
-/// run-length encoded flip positions in big-endian format.
-///
-/// # Arguments
-///
-/// * `previous_assignment` - The previous assignment vector.
-/// * `new_assignment` - The current assignment vector.
-/// * `delta_pair` - An optional pre-computed pair of swapped values.
-/// * `masks` - An optional index map from value to positions in the previous assignment.
-///
-/// # Returns
-///
-/// Returns the encoded delta frame as a byte vector, or an error if encoding fails.
-fn encode_xben_twodelta_delta_frame(
-    previous_assignment: &[u16],
-    new_assignment: &[u16],
-    delta_pair: Option<(u16, u16)>,
-    masks: Option<&HashMap<u16, Vec<usize>>>,
-) -> io::Result<Vec<u8>> {
-    let (ordered_pair, run_lengths) =
-        build_twodelta_runs_with_hint(previous_assignment, new_assignment, delta_pair, masks)?;
-    let mut bytes = Vec::with_capacity(1 + 2 + 2 + 4 + run_lengths.len() * 2);
-    bytes.push(XBEN_TWODELTA_DELTA_TAG);
-    bytes.extend_from_slice(&ordered_pair.0.to_be_bytes());
-    bytes.extend_from_slice(&ordered_pair.1.to_be_bytes());
-    bytes.extend_from_slice(&(run_lengths.len() as u32).to_be_bytes());
-    for run_length in run_lengths {
-        bytes.extend_from_slice(&run_length.to_be_bytes());
-    }
-    Ok(bytes)
 }
 
 /// A struct to make the writing of BEN files easier and more ergonomic.
@@ -707,6 +672,7 @@ impl<W: Write> XBenEncoder<W> {
         if matches!(self.variant, BenVariant::MkvChain | BenVariant::TwoDelta) {
             self.encoder.write_all(&self.count.to_be_bytes())?;
         }
+        self.count = 0;
         Ok(())
     }
 
