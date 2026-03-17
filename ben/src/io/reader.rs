@@ -13,6 +13,7 @@ use xz2::read::XzDecoder;
 
 const XBEN_TWODELTA_FULL_TAG: u8 = 0;
 const XBEN_TWODELTA_DELTA_TAG: u8 = 1;
+const XBEN_TWODELTA_CHUNK_TAG: u8 = 2;
 
 /// A decoded assignment together with the number of times it repeats.
 pub type MkvRecord = (Vec<u16>, u16);
@@ -728,6 +729,7 @@ pub struct XBenDecoder<R: Read> {
     overflow: Vec<u8>,
     buf: Box<[u8]>,
     previous_assignment: Option<Vec<u16>>,
+    chunk_queue: std::collections::VecDeque<(XBenTwoDeltaFrame, u16)>,
 }
 
 impl<R: Read> XBenDecoder<R> {
@@ -751,6 +753,7 @@ impl<R: Read> XBenDecoder<R> {
             overflow: Vec::with_capacity(1 << 20),
             buf: vec![0u8; 1 << 20].into_boxed_slice(),
             previous_assignment: None,
+            chunk_queue: std::collections::VecDeque::new(),
         }
     }
 
@@ -911,11 +914,102 @@ impl<R: Read> XBenDecoder<R> {
                     count,
                 )))
             }
+            XBEN_TWODELTA_CHUNK_TAG => None, // Handled by try_parse_twodelta_chunk.
             _ => Some(Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "invalid TwoDelta XBEN frame tag",
             ))),
         }
+    }
+
+    /// Try to parse a columnar TwoDelta chunk from the overflow buffer.
+    ///
+    /// If the overflow starts with the chunk tag and contains enough bytes for
+    /// the full chunk, all frames are decoded and pushed onto `chunk_queue`.
+    /// Returns `Some(Ok(()))` on success, `Some(Err(...))` on a parse error,
+    /// or `None` when the overflow is incomplete.
+    fn try_parse_twodelta_chunk(&mut self) -> Option<io::Result<()>> {
+        if self.overflow.first() != Some(&XBEN_TWODELTA_CHUNK_TAG) {
+            return None;
+        }
+        if self.overflow.len() < 5 {
+            return None;
+        }
+
+        let n_frames = u32::from_be_bytes([
+            self.overflow[1],
+            self.overflow[2],
+            self.overflow[3],
+            self.overflow[4],
+        ]) as usize;
+
+        // Calculate total chunk size: tag(1) + n_frames(4)
+        //   + pairs(n*4) + counts(n*2) + run_counts(n*4) + run_data(variable)
+        let header_len = 5;
+        let pairs_len = n_frames * 4;
+        let counts_len = n_frames * 2;
+        let run_counts_len = n_frames * 4;
+        let fixed_len = header_len + pairs_len + counts_len + run_counts_len;
+
+        if self.overflow.len() < fixed_len {
+            return None;
+        }
+
+        // Read run-length counts to determine total run data size.
+        let run_counts_start = header_len + pairs_len + counts_len;
+        let mut total_runs = 0usize;
+        let mut run_counts = Vec::with_capacity(n_frames);
+        for i in 0..n_frames {
+            let offset = run_counts_start + i * 4;
+            let rc = u32::from_be_bytes([
+                self.overflow[offset],
+                self.overflow[offset + 1],
+                self.overflow[offset + 2],
+                self.overflow[offset + 3],
+            ]) as usize;
+            run_counts.push(rc);
+            total_runs += rc;
+        }
+
+        let run_data_len = total_runs * 2;
+        let total_len = fixed_len + run_data_len;
+        if self.overflow.len() < total_len {
+            return None;
+        }
+
+        // Parse pairs channel.
+        let pairs_start = header_len;
+        // Parse counts channel.
+        let counts_start = pairs_start + pairs_len;
+        // Run data starts after run counts.
+        let run_data_start = run_counts_start + run_counts_len;
+
+        let mut run_cursor = run_data_start;
+        for i in 0..n_frames {
+            let po = pairs_start + i * 4;
+            let pair = (
+                u16::from_be_bytes([self.overflow[po], self.overflow[po + 1]]),
+                u16::from_be_bytes([self.overflow[po + 2], self.overflow[po + 3]]),
+            );
+            let co = counts_start + i * 2;
+            let count = u16::from_be_bytes([self.overflow[co], self.overflow[co + 1]]);
+
+            let rc = run_counts[i];
+            let mut run_lengths = Vec::with_capacity(rc);
+            for _ in 0..rc {
+                run_lengths.push(u16::from_be_bytes([
+                    self.overflow[run_cursor],
+                    self.overflow[run_cursor + 1],
+                ]));
+                run_cursor += 2;
+            }
+
+            self.chunk_queue
+                .push_back((XBenTwoDeltaFrame::Delta { pair, run_lengths }, count));
+        }
+
+        self.overflow.drain(..total_len);
+        Some(Ok(()))
     }
 
     /// Consume this decoder and iterate over raw ben32 frames instead of
@@ -986,6 +1080,40 @@ impl<R: Read> Iterator for XBenDecoder<R> {
                     }
                 }
                 BenVariant::TwoDelta => {
+                    // Drain frames from a previously parsed chunk first.
+                    if let Some((frame, count)) = self.chunk_queue.pop_front() {
+                        let assignment = match frame {
+                            XBenTwoDeltaFrame::Full { runs } => Ok(rle_to_vec(runs)),
+                            XBenTwoDeltaFrame::Delta { pair, run_lengths } => {
+                                match self.previous_assignment.take() {
+                                    Some(prev) => {
+                                        apply_twodelta_runs_to_assignment(prev, pair, &run_lengths)
+                                    }
+                                    None => Err(io::Error::new(
+                                        io::ErrorKind::InvalidData,
+                                        "TwoDelta XBEN frame encountered before an initial BEN frame",
+                                    )),
+                                }
+                            }
+                        };
+                        return Some(match assignment {
+                            Ok(a) => {
+                                self.previous_assignment = Some(a.clone());
+                                Ok((a, count))
+                            }
+                            Err(e) => Err(e),
+                        });
+                    }
+
+                    // Try to parse a columnar chunk.
+                    if let Some(result) = self.try_parse_twodelta_chunk() {
+                        match result {
+                            Ok(()) => continue, // Loop to drain chunk_queue.
+                            Err(e) => return Some(Err(e)),
+                        }
+                    }
+
+                    // Try a single legacy frame (tag 0 or 1).
                     if let Some(parsed) = self.pop_twodelta_frame_from_overflow(&self.overflow) {
                         let res = match parsed {
                             Ok((frame, consumed, count)) => {

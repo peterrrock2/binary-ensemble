@@ -16,6 +16,17 @@ use xz2::write::XzEncoder;
 
 const XBEN_TWODELTA_FULL_TAG: u8 = 0;
 const XBEN_TWODELTA_DELTA_TAG: u8 = 1;
+const XBEN_TWODELTA_CHUNK_TAG: u8 = 2;
+
+/// Default number of delta frames per columnar chunk in XBEN TwoDelta.
+pub const DEFAULT_TWODELTA_CHUNK_SIZE: usize = 10_000;
+
+/// A buffered delta frame awaiting chunk serialization.
+struct BufferedDeltaFrame {
+    pair: (u16, u16),
+    run_lengths: Vec<u16>,
+    count: u16,
+}
 
 enum BufferedBenFrame {
     Ben(BenFrame),
@@ -605,6 +616,8 @@ pub struct XBenEncoder<W: Write> {
     previous_frame: Vec<u8>,
     count: u16,
     variant: BenVariant,
+    chunk_size: usize,
+    chunk_buffer: Vec<BufferedDeltaFrame>,
 }
 
 impl<W: Write> XBenEncoder<W> {
@@ -697,6 +710,55 @@ impl<W: Write> XBenEncoder<W> {
         Ok(())
     }
 
+    /// Write all buffered delta frames as a single columnar chunk.
+    ///
+    /// The chunk layout groups same-type fields together so XZ's dictionary
+    /// compression can exploit the resulting byte-level regularity:
+    ///
+    /// ```text
+    /// [chunk_tag=2]  [n_frames: u32]
+    /// [pairs channel:       (pair_a u16, pair_b u16) × n_frames]
+    /// [counts channel:      count u16 × n_frames]
+    /// [run-length counts:   n_runs u32 × n_frames]
+    /// [run-length data:     u16 × total_runs]
+    /// ```
+    fn flush_chunk(&mut self) -> Result<()> {
+        if self.chunk_buffer.is_empty() {
+            return Ok(());
+        }
+
+        let n = self.chunk_buffer.len() as u32;
+        self.encoder.write_all(&[XBEN_TWODELTA_CHUNK_TAG])?;
+        self.encoder.write_all(&n.to_be_bytes())?;
+
+        // Pairs channel.
+        for frame in &self.chunk_buffer {
+            self.encoder.write_all(&frame.pair.0.to_be_bytes())?;
+            self.encoder.write_all(&frame.pair.1.to_be_bytes())?;
+        }
+
+        // Counts channel.
+        for frame in &self.chunk_buffer {
+            self.encoder.write_all(&frame.count.to_be_bytes())?;
+        }
+
+        // Run-length counts channel.
+        for frame in &self.chunk_buffer {
+            self.encoder
+                .write_all(&(frame.run_lengths.len() as u32).to_be_bytes())?;
+        }
+
+        // Run-length data channel.
+        for frame in &self.chunk_buffer {
+            for &rl in &frame.run_lengths {
+                self.encoder.write_all(&rl.to_be_bytes())?;
+            }
+        }
+
+        self.chunk_buffer.clear();
+        Ok(())
+    }
+
     /// Create a new XBEN writer around an already-configured XZ encoder.
     ///
     /// # Arguments
@@ -710,32 +772,33 @@ impl<W: Write> XBenEncoder<W> {
     /// Returns a new XBEN encoder ready to accept assignments or BEN frames.
     pub fn new(mut encoder: XzEncoder<W>, variant: BenVariant) -> Self {
         encoder.write_all(banner_for_variant(variant)).unwrap();
-        match variant {
-            BenVariant::Standard => XBenEncoder {
-                encoder,
-                previous_assignment: Vec::new(),
-                previous_masks: HashMap::new(),
-                previous_frame: Vec::new(),
-                count: 0,
-                variant: BenVariant::Standard,
-            },
-            BenVariant::MkvChain => XBenEncoder {
-                encoder,
-                previous_assignment: Vec::new(),
-                previous_masks: HashMap::new(),
-                previous_frame: Vec::new(),
-                count: 0,
-                variant: BenVariant::MkvChain,
-            },
-            BenVariant::TwoDelta => XBenEncoder {
-                encoder,
-                previous_assignment: Vec::new(),
-                previous_masks: HashMap::new(),
-                previous_frame: Vec::new(),
-                count: 0,
-                variant: BenVariant::TwoDelta,
-            },
+        XBenEncoder {
+            encoder,
+            previous_assignment: Vec::new(),
+            previous_masks: HashMap::new(),
+            previous_frame: Vec::new(),
+            count: 0,
+            variant,
+            chunk_size: DEFAULT_TWODELTA_CHUNK_SIZE,
+            chunk_buffer: Vec::new(),
         }
+    }
+
+    /// Set the number of delta frames per columnar chunk.
+    ///
+    /// Only affects TwoDelta variant encoding. Larger chunks give XZ more
+    /// same-type data to compress together; smaller chunks reduce peak memory.
+    ///
+    /// # Arguments
+    ///
+    /// * `size` - Number of delta frames per chunk.
+    ///
+    /// # Returns
+    ///
+    /// Returns `self` for method chaining.
+    pub fn with_chunk_size(mut self, size: usize) -> Self {
+        self.chunk_size = size.max(1);
+        self
     }
 
     /// Encode and write a full assignment vector into the compressed XBEN stream.
@@ -782,17 +845,31 @@ impl<W: Write> XBenEncoder<W> {
                 let hints =
                     analyze_twodelta_transition(&self.previous_assignment, &assign_vec, masks);
                 if hints.is_repeated {
-                    self.count += 1;
+                    if self.chunk_buffer.is_empty() {
+                        self.count += 1;
+                    } else {
+                        self.chunk_buffer.last_mut().unwrap().count += 1;
+                    }
                     return Ok(());
                 }
 
-                let encoded = encode_xben_twodelta_delta_frame(
+                // Flush the initial full frame before the first delta.
+                if self.chunk_buffer.is_empty() {
+                    self.flush_pending_frame()?;
+                }
+
+                let (ordered_pair, run_lengths) = build_twodelta_runs_with_hint(
                     &self.previous_assignment,
                     &assign_vec,
                     hints.delta_pair,
                     Some(&self.previous_masks),
                 )?;
-                self.flush_pending_frame()?;
+
+                self.chunk_buffer.push(BufferedDeltaFrame {
+                    pair: ordered_pair,
+                    run_lengths,
+                    count: 1,
+                });
 
                 if let Some(pair) = hints.delta_pair {
                     self.update_masks_for_delta(&assign_vec, pair);
@@ -801,8 +878,10 @@ impl<W: Write> XBenEncoder<W> {
                     self.previous_assignment = assign_vec;
                     self.rebuild_previous_masks();
                 }
-                self.previous_frame = encoded;
-                self.count = 1;
+
+                if self.chunk_buffer.len() >= self.chunk_size {
+                    self.flush_chunk()?;
+                }
                 Ok(())
             }
         }
@@ -869,7 +948,7 @@ impl<W: Write> XBenEncoder<W> {
         let mut sample_count = first_count as usize;
         progress!("Encoding line: {}\r", sample_count);
 
-        // Delta frames: unpack bitpacked run lengths → XBEN delta frame.
+        // Delta frames: unpack bitpacked run lengths and buffer into chunks.
         loop {
             let pair_a = match reader.read_u16::<BigEndian>() {
                 Ok(v) => v,
@@ -888,23 +967,27 @@ impl<W: Write> XBenEncoder<W> {
             let frame = TwoDeltaFrame::from_parts((pair_a, pair_b), delta_max_len_bits, payload);
             let run_lengths = decode_twodelta_run_lengths(&frame)?;
 
-            // Write as XBEN delta frame.
-            let mut delta_encoded = Vec::with_capacity(1 + 2 + 2 + 4 + run_lengths.len() * 2);
-            delta_encoded.push(XBEN_TWODELTA_DELTA_TAG);
-            delta_encoded.extend_from_slice(&frame.pair().0.to_be_bytes());
-            delta_encoded.extend_from_slice(&frame.pair().1.to_be_bytes());
-            delta_encoded.extend_from_slice(&(run_lengths.len() as u32).to_be_bytes());
-            for run_len in &run_lengths {
-                delta_encoded.extend_from_slice(&run_len.to_be_bytes());
+            // Flush the initial full frame before the first delta chunk.
+            if self.chunk_buffer.is_empty() && self.count > 0 {
+                self.flush_pending_frame()?;
             }
 
-            self.flush_pending_frame()?;
-            self.previous_frame = delta_encoded;
-            self.count = count;
+            self.chunk_buffer.push(BufferedDeltaFrame {
+                pair: frame.pair(),
+                run_lengths,
+                count,
+            });
+
+            if self.chunk_buffer.len() >= self.chunk_size {
+                self.flush_chunk()?;
+            }
 
             sample_count += count as usize;
             progress!("Encoding line: {}\r", sample_count);
         }
+
+        // Flush remaining partial chunk (Drop will also catch this, but be explicit).
+        self.flush_chunk()?;
 
         tracing::trace!("");
         tracing::trace!("Done!");
@@ -940,6 +1023,10 @@ impl<W: Write> Drop for XBenEncoder<W> {
         if matches!(self.variant, BenVariant::MkvChain | BenVariant::TwoDelta) && self.count > 0 {
             self.flush_pending_frame()
                 .expect("Error writing last XBEN frame to file");
+        }
+        if !self.chunk_buffer.is_empty() {
+            self.flush_chunk()
+                .expect("Error writing last XBEN TwoDelta chunk");
         }
     }
 }
