@@ -1,5 +1,5 @@
+use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::io::writer::XBenEncoder;
-use crate::BenVariant;
 use std::io::{self, BufRead, Result, Write};
 use xz2::stream::MtStreamBuilder;
 use xz2::write::XzEncoder;
@@ -79,7 +79,7 @@ pub fn encode_ben_to_xben<R: BufRead, W: Write>(
     n_threads: Option<u32>,
     compression_level: Option<u32>,
 ) -> Result<()> {
-    let mut check_buffer = [0u8; 17];
+    let mut check_buffer = [0u8; BANNER_LEN];
     reader.read_exact(&mut check_buffer)?;
 
     let mut n_cpus: u32 = n_threads.unwrap_or(1);
@@ -101,17 +101,9 @@ pub fn encode_ben_to_xben<R: BufRead, W: Write>(
         .expect("init MT encoder");
     let encoder = XzEncoder::new_stream(writer, mt);
 
-    let mut ben_encoder = match &check_buffer {
-        b"STANDARD BEN FILE" => XBenEncoder::new(encoder, BenVariant::Standard),
-        b"MKVCHAIN BEN FILE" => XBenEncoder::new(encoder, BenVariant::MkvChain),
-        b"TWODELTA BEN FILE" => XBenEncoder::new(encoder, BenVariant::TwoDelta),
-        _ => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Invalid file format",
-            ));
-        }
-    };
+    let variant = variant_from_banner(&check_buffer)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Invalid file format"))?;
+    let mut ben_encoder = XBenEncoder::new(encoder, variant);
 
     ben_encoder.write_ben_file(reader)?;
 

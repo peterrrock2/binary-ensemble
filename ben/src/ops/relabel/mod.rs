@@ -2,6 +2,7 @@
 
 use crate::codec::decode::decode_ben_line;
 use crate::codec::encode::encode_ben_vec_from_rle;
+use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::io::reader::BenDecoder;
 use crate::io::writer::BenEncoder;
 use crate::util::rle::{assign_slice_to_rle, rle_to_vec_in_place};
@@ -276,20 +277,11 @@ fn relabel_ben_file_impl<R: Read, W: Write>(
     mut writer: W,
     max_samples: Option<usize>,
 ) -> io::Result<()> {
-    let mut check_buffer = [0u8; 17];
+    let mut check_buffer = [0u8; BANNER_LEN];
     reader.read_exact(&mut check_buffer)?;
 
-    let variant = match &check_buffer {
-        b"STANDARD BEN FILE" => BenVariant::Standard,
-        b"MKVCHAIN BEN FILE" => BenVariant::MkvChain,
-        b"TWODELTA BEN FILE" => BenVariant::TwoDelta,
-        _ => {
-            return Err(Error::new(
-                io::ErrorKind::InvalidData,
-                "Invalid file format",
-            ));
-        }
-    };
+    let variant = variant_from_banner(&check_buffer)
+        .ok_or_else(|| Error::new(io::ErrorKind::InvalidData, "Invalid file format"))?;
 
     match variant {
         BenVariant::Standard | BenVariant::MkvChain => {
@@ -504,20 +496,11 @@ fn relabel_ben_file_with_map_impl<R: Read, W: Write>(
     new_to_old_node_map: HashMap<usize, usize>,
     max_samples: Option<usize>,
 ) -> io::Result<()> {
-    let mut check_buffer = [0u8; 17];
+    let mut check_buffer = [0u8; BANNER_LEN];
     reader.read_exact(&mut check_buffer)?;
 
-    let variant = match &check_buffer {
-        b"STANDARD BEN FILE" => BenVariant::Standard,
-        b"MKVCHAIN BEN FILE" => BenVariant::MkvChain,
-        b"TWODELTA BEN FILE" => BenVariant::TwoDelta,
-        _ => {
-            return Err(Error::new(
-                io::ErrorKind::InvalidData,
-                "Invalid file format",
-            ));
-        }
-    };
+    let variant = variant_from_banner(&check_buffer)
+        .ok_or_else(|| Error::new(io::ErrorKind::InvalidData, "Invalid file format"))?;
 
     match variant {
         BenVariant::Standard | BenVariant::MkvChain => {

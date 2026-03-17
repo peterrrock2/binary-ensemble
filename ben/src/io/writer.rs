@@ -3,6 +3,7 @@ use crate::codec::encode::{
     encode_twodelta_vec_with_hint, BenFrame, TwoDeltaFrame,
 };
 use crate::codec::translate::ben_to_ben32_lines;
+use crate::format::banners::{banner_for_variant, has_known_banner_prefix, BANNER_LEN};
 use crate::io::reader::BenDecoder;
 use crate::util::rle::assign_to_rle;
 use crate::BenVariant;
@@ -181,11 +182,7 @@ impl<W: Write> BenEncoder<W> {
     ///
     /// Returns a new encoder ready to accept assignments or RLE frames.
     pub fn new(mut writer: W, variant: BenVariant) -> Self {
-        match variant {
-            BenVariant::Standard => writer.write_all(b"STANDARD BEN FILE").unwrap(),
-            BenVariant::MkvChain => writer.write_all(b"MKVCHAIN BEN FILE").unwrap(),
-            BenVariant::TwoDelta => writer.write_all(b"TWODELTA BEN FILE").unwrap(),
-        };
+        writer.write_all(banner_for_variant(variant)).unwrap();
 
         BenEncoder {
             writer,
@@ -412,9 +409,9 @@ impl<W: Write> XBenEncoder<W> {
     ///
     /// Returns a new XBEN encoder ready to accept assignments or BEN frames.
     pub fn new(mut encoder: XzEncoder<W>, variant: BenVariant) -> Self {
+        encoder.write_all(banner_for_variant(variant)).unwrap();
         match variant {
             BenVariant::Standard => {
-                encoder.write_all(b"STANDARD BEN FILE").unwrap();
                 XBenEncoder {
                     encoder,
                     previous_assignment: Vec::new(),
@@ -425,7 +422,6 @@ impl<W: Write> XBenEncoder<W> {
                 }
             }
             BenVariant::MkvChain => {
-                encoder.write_all(b"MKVCHAIN BEN FILE").unwrap();
                 XBenEncoder {
                     encoder,
                     previous_assignment: Vec::new(),
@@ -436,7 +432,6 @@ impl<W: Write> XBenEncoder<W> {
                 }
             }
             BenVariant::TwoDelta => {
-                encoder.write_all(b"TWODELTA BEN FILE").unwrap();
                 XBenEncoder {
                     encoder,
                     previous_assignment: Vec::new(),
@@ -531,16 +526,13 @@ impl<W: Write> XBenEncoder<W> {
     /// Returns `Ok(())` after the BEN stream has been translated into XBEN.
     pub fn write_ben_file(&mut self, mut reader: impl BufRead) -> Result<()> {
         let peek = reader.fill_buf()?;
-        let has_banner = peek.len() >= 17
-            && (peek.starts_with(b"STANDARD BEN FILE")
-                || peek.starts_with(b"MKVCHAIN BEN FILE")
-                || peek.starts_with(b"TWODELTA BEN FILE"));
+        let has_banner = peek.len() >= BANNER_LEN && has_known_banner_prefix(peek);
 
         if has_banner {
             if self.variant == BenVariant::TwoDelta {
                 let mut banner_prefixed = Vec::new();
-                banner_prefixed.extend_from_slice(&peek[..17]);
-                reader.consume(17);
+                banner_prefixed.extend_from_slice(&peek[..BANNER_LEN]);
+                reader.consume(BANNER_LEN);
                 reader.read_to_end(&mut banner_prefixed)?;
 
                 let decoder = BenDecoder::new(io::Cursor::new(banner_prefixed))?;
@@ -558,7 +550,7 @@ impl<W: Write> XBenEncoder<W> {
                 }
                 return Ok(());
             }
-            reader.consume(17);
+            reader.consume(BANNER_LEN);
         }
 
         if self.variant == BenVariant::TwoDelta {

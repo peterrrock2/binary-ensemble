@@ -1,5 +1,6 @@
 use crate::codec::decode::{decode_ben32_line, decode_ben_line};
 use crate::codec::encode::{encode_ben32_assignments, encode_ben_vec_from_assign, TwoDeltaFrame};
+use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::util::rle::rle_to_vec;
 use crate::{progress, BenVariant};
 use byteorder::{BigEndian, ReadBytesExt};
@@ -181,35 +182,35 @@ impl<R: Read> BenDecoder<R> {
     ///
     /// Returns a new decoder positioned at the first BEN frame.
     pub fn new(mut reader: R) -> Result<Self, DecoderInitError> {
-        let mut check_buffer = [0u8; 17];
+        let mut check_buffer = [0u8; BANNER_LEN];
 
         if let Err(e) = reader.read_exact(&mut check_buffer) {
             return Err(DecoderInitError::Io(e));
         }
 
-        match &check_buffer {
-            b"STANDARD BEN FILE" => Ok(BenDecoder {
+        match variant_from_banner(&check_buffer) {
+            Some(BenVariant::Standard) => Ok(BenDecoder {
                 reader,
                 sample_count: 0,
                 variant: BenVariant::Standard,
                 previous_assignment: None,
                 twodelta_consumed_first_frame: false,
             }),
-            b"MKVCHAIN BEN FILE" => Ok(BenDecoder {
+            Some(BenVariant::MkvChain) => Ok(BenDecoder {
                 reader,
                 sample_count: 0,
                 variant: BenVariant::MkvChain,
                 previous_assignment: None,
                 twodelta_consumed_first_frame: false,
             }),
-            b"TWODELTA BEN FILE" => Ok(BenDecoder {
+            Some(BenVariant::TwoDelta) => Ok(BenDecoder {
                 reader,
                 sample_count: 0,
                 variant: BenVariant::TwoDelta,
                 previous_assignment: None,
                 twodelta_consumed_first_frame: false,
             }),
-            _ => Err(DecoderInitError::InvalidFileFormat(check_buffer.to_vec())),
+            None => Err(DecoderInitError::InvalidFileFormat(check_buffer.to_vec())),
         }
     }
 
@@ -633,19 +634,14 @@ impl<R: Read> XBenDecoder<R> {
         let xz = XzDecoder::new(reader);
         let mut xz = BufReader::with_capacity(1 << 20, xz);
 
-        let mut first = [0u8; 17];
+        let mut first = [0u8; BANNER_LEN];
         xz.read_exact(&mut first)?;
-        let variant = match &first {
-            b"STANDARD BEN FILE" => BenVariant::Standard,
-            b"MKVCHAIN BEN FILE" => BenVariant::MkvChain,
-            b"TWODELTA BEN FILE" => BenVariant::TwoDelta,
-            _ => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Invalid .xben header (expecting STANDARD/MKVCHAIN/TWODELTA BEN FILE)",
-                ));
-            }
-        };
+        let variant = variant_from_banner(&first).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid .xben header (expecting STANDARD/MKVCHAIN/TWODELTA BEN FILE)",
+            )
+        })?;
 
         Ok(Self::from_decompressed_stream(xz, variant))
     }

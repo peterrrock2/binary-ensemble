@@ -24,6 +24,8 @@
 pub mod cli;
 /// Encoding, decoding, and format-to-format translation helpers.
 pub mod codec;
+/// Shared on-disk format metadata such as stream banners.
+pub mod format;
 /// Streaming readers and writers for BEN and XBEN files.
 pub mod io;
 /// JSON graph utilities used by relabeling workflows.

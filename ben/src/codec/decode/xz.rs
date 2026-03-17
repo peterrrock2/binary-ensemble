@@ -1,5 +1,6 @@
 use crate::codec::decode::jsonl_decode_ben32;
 use crate::codec::translate::ben32_to_ben_lines;
+use crate::format::banners::{banner_for_variant, variant_from_banner, BANNER_LEN};
 use crate::io::reader::XBenDecoder;
 use crate::io::writer::BenEncoder;
 use crate::{progress, BenVariant};
@@ -23,22 +24,22 @@ use xz2::read::XzDecoder;
 pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::Result<()> {
     let mut decoder = XzDecoder::new(reader);
 
-    let mut first_buffer = [0u8; 17];
+    let mut first_buffer = [0u8; BANNER_LEN];
 
     if let Err(e) = decoder.read_exact(&mut first_buffer) {
         return Err(e);
     }
 
-    let variant = match &first_buffer {
-        b"STANDARD BEN FILE" => {
-            writer.write_all(b"STANDARD BEN FILE")?;
+    let variant = match variant_from_banner(&first_buffer) {
+        Some(BenVariant::Standard) => {
+            writer.write_all(banner_for_variant(BenVariant::Standard))?;
             BenVariant::Standard
         }
-        b"MKVCHAIN BEN FILE" => {
-            writer.write_all(b"MKVCHAIN BEN FILE")?;
+        Some(BenVariant::MkvChain) => {
+            writer.write_all(banner_for_variant(BenVariant::MkvChain))?;
             BenVariant::MkvChain
         }
-        b"TWODELTA BEN FILE" => {
+        Some(BenVariant::TwoDelta) => {
             let mut xben = XBenDecoder::from_decompressed_stream(BufReader::new(decoder), BenVariant::TwoDelta);
             let mut ben = BenEncoder::new(writer, BenVariant::TwoDelta);
             for record in &mut xben {
@@ -50,7 +51,7 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
             }
             return Ok(());
         }
-        _ => {
+        None => {
             return Err(Error::new(
                 io::ErrorKind::InvalidData,
                 "Invalid file format",
@@ -145,16 +146,16 @@ pub fn xz_decompress<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::Resu
 pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::Result<()> {
     let mut decoder = XzDecoder::new(reader);
 
-    let mut first_buffer = [0u8; 17];
+    let mut first_buffer = [0u8; BANNER_LEN];
 
     if let Err(e) = decoder.read_exact(&mut first_buffer) {
         return Err(e);
     }
 
-    let variant = match &first_buffer {
-        b"STANDARD BEN FILE" => BenVariant::Standard,
-        b"MKVCHAIN BEN FILE" => BenVariant::MkvChain,
-        b"TWODELTA BEN FILE" => {
+    let variant = match variant_from_banner(&first_buffer) {
+        Some(BenVariant::Standard) => BenVariant::Standard,
+        Some(BenVariant::MkvChain) => BenVariant::MkvChain,
+        Some(BenVariant::TwoDelta) => {
             let mut xben = XBenDecoder::from_decompressed_stream(BufReader::new(decoder), BenVariant::TwoDelta);
             let mut sample_number = 1usize;
             for record in &mut xben {
@@ -175,7 +176,7 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
             tracing::trace!("Done!");
             return Ok(());
         }
-        _ => {
+        None => {
             return Err(Error::new(
                 io::ErrorKind::InvalidData,
                 "Invalid file format",
