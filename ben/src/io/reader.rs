@@ -487,7 +487,7 @@ fn decode_twodelta_run_lengths(frame: &TwoDeltaFrame) -> io::Result<Vec<u16>> {
 ///
 /// # Arguments
 ///
-/// * `previous_assignment` - The assignment from the preceding frame.
+/// * `assignment` - The assignment from the preceding frame (mutated in place).
 /// * `pair` - The two label values that participate in the delta.
 /// * `run_lengths` - Alternating run lengths starting with the first value of `pair`.
 ///
@@ -499,36 +499,32 @@ fn apply_twodelta_runs_to_assignment(
     pair: (u16, u16),
     run_lengths: &[u16],
 ) -> io::Result<Vec<u16>> {
-    let mut pair_positions = Vec::new();
     let (first, second) = pair;
 
-    for (idx, &val) in assignment.iter().enumerate() {
-        if val == first || val == second {
-            pair_positions.push(idx);
-        }
-    }
-
-    let expected_total: usize = run_lengths.iter().map(|&len| len as usize).sum();
-    if expected_total != pair_positions.len() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "TwoDelta payload does not match the previous assignment's pair positions",
-        ));
-    }
-
-    let mut write_idx = 0usize;
+    let mut run_idx = 0usize;
+    let mut remaining_in_run: u16 = *run_lengths.first().unwrap_or(&0);
     let mut current_value = first;
 
-    for &run_len in run_lengths {
-        for _ in 0..run_len {
-            assignment[pair_positions[write_idx]] = current_value;
-            write_idx += 1;
+    for val in assignment.iter_mut() {
+        if *val == first || *val == second {
+            if remaining_in_run == 0 {
+                run_idx += 1;
+                if run_idx >= run_lengths.len() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "TwoDelta payload exhausted before all pair positions were covered",
+                    ));
+                }
+                remaining_in_run = run_lengths[run_idx];
+                current_value = if current_value == first {
+                    second
+                } else {
+                    first
+                };
+            }
+            *val = current_value;
+            remaining_in_run -= 1;
         }
-        current_value = if current_value == first {
-            second
-        } else {
-            first
-        };
     }
 
     Ok(assignment)
@@ -536,20 +532,23 @@ fn apply_twodelta_runs_to_assignment(
 
 /// Decode a raw TwoDelta frame into a full assignment vector.
 ///
+/// Unpacks the bitpacked run lengths from the frame payload, then applies
+/// them in a single pass over the assignment.
+///
 /// # Arguments
 ///
-/// * `previous_assignment` - The assignment from the preceding frame.
-/// * `frame` - The TwoDelta frame to decode.
+/// * `assignment` - The assignment from the preceding frame (mutated in place).
+/// * `frame` - The TwoDelta frame whose packed payload is decoded and applied.
 ///
 /// # Returns
 ///
-/// Returns the reconstructed assignment vector.
+/// Returns the updated assignment vector.
 fn decode_twodelta_frame_to_assignment(
-    previous_assignment: Vec<u16>,
+    assignment: Vec<u16>,
     frame: &TwoDeltaFrame,
 ) -> io::Result<Vec<u16>> {
     let run_lengths = decode_twodelta_run_lengths(frame)?;
-    apply_twodelta_runs_to_assignment(previous_assignment, frame.pair(), &run_lengths)
+    apply_twodelta_runs_to_assignment(assignment, frame.pair(), &run_lengths)
 }
 
 /// Decode a stored BEN frame into a full assignment vector.
