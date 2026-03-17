@@ -841,18 +841,13 @@ impl<W: Write> XBenEncoder<W> {
                 banner.copy_from_slice(&peek[..BANNER_LEN]);
                 reader.consume(BANNER_LEN);
 
-                let decoder = BenDecoder::new(io::Cursor::new(banner).chain(reader))?;
+                let decoder =
+                    BenDecoder::new(io::Cursor::new(banner).chain(reader))?.silent(true);
                 for record in decoder {
                     let (assignment, count) = record?;
-                    self.write_assignment(assignment.clone())?;
-                    if matches!(self.variant, BenVariant::MkvChain | BenVariant::TwoDelta)
-                        && count > 1
-                    {
+                    self.write_assignment(assignment)?;
+                    if count > 1 {
                         self.count += count - 1;
-                    } else if self.variant == BenVariant::Standard {
-                        for _ in 1..count {
-                            self.write_assignment(assignment.clone())?;
-                        }
                     }
                 }
                 return Ok(());
