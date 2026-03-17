@@ -989,6 +989,97 @@ fn reben_cli_can_limit_ben_relabeling_to_first_n_items() {
 }
 
 #[test]
+fn reben_cli_supports_twodelta_ben_mode() {
+    let temp = TempDir::new("reben-twodelta");
+    let graph_path = temp.path().join("dual_graph.json");
+    let ben_path = temp.path().join("samples.twodelta.ben");
+    let canonical_path = temp.path().join("canonicalized_twodelta.ben");
+    let map_relabel_path = temp.path().join("map_relabel_twodelta.ben");
+
+    fs::write(&graph_path, sample_graph()).unwrap();
+
+    let mut ben_bytes = Vec::new();
+    encode_jsonl_to_ben(
+        BufReader::new(
+            r#"{"assignment":[1,1,2],"sample":1}
+{"assignment":[1,1,2],"sample":2}
+{"assignment":[1,2,1],"sample":3}
+{"assignment":[2,2,1],"sample":4}
+"#
+            .as_bytes(),
+        ),
+        &mut ben_bytes,
+        BenVariant::TwoDelta,
+    )
+    .unwrap();
+    fs::write(&ben_path, ben_bytes).unwrap();
+
+    let sort_graph = run(
+        "reben",
+        &[
+            graph_path.to_str().unwrap(),
+            "--mode",
+            "json",
+            "--key",
+            "GEOID20",
+        ],
+        temp.path(),
+    );
+    assert_success(&sort_graph);
+
+    let map_path = temp.path().join("dual_graph_sorted_by_GEOID20_map.json");
+    assert!(map_path.exists());
+
+    let canonicalize = run(
+        "reben",
+        &[
+            ben_path.to_str().unwrap(),
+            "--mode",
+            "ben",
+            "--output-file",
+            canonical_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_success(&canonicalize);
+
+    let relabel = run(
+        "reben",
+        &[
+            ben_path.to_str().unwrap(),
+            "--mode",
+            "ben",
+            "--map-file",
+            map_path.to_str().unwrap(),
+            "--output-file",
+            map_relabel_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_success(&relabel);
+
+    let mut canonical_jsonl = Vec::new();
+    decode_ben_to_jsonl(
+        BufReader::new(fs::File::open(&canonical_path).unwrap()),
+        &mut canonical_jsonl,
+    )
+    .unwrap();
+    assert!(String::from_utf8(canonical_jsonl)
+        .unwrap()
+        .contains(r#""assignment":[1,1,2]"#));
+
+    let mut relabeled_jsonl = Vec::new();
+    decode_ben_to_jsonl(
+        BufReader::new(fs::File::open(&map_relabel_path).unwrap()),
+        &mut relabeled_jsonl,
+    )
+    .unwrap();
+    assert!(String::from_utf8(relabeled_jsonl)
+        .unwrap()
+        .contains(r#""assignment":[1,2,1]"#));
+}
+
+#[test]
 fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations() {
     let temp = TempDir::new("reben-more");
     let graph_path = temp.path().join("shape.json");

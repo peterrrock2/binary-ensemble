@@ -2,6 +2,8 @@
 
 use crate::codec::decode::decode_ben_line;
 use crate::codec::encode::encode_ben_vec_from_rle;
+use crate::io::reader::BenDecoder;
+use crate::io::writer::BenEncoder;
 use crate::util::rle::{assign_slice_to_rle, rle_to_vec_in_place};
 use crate::{progress, BenVariant};
 use byteorder::{BigEndian, ReadBytesExt};
@@ -35,6 +37,84 @@ fn dense_permutation(new_to_old_node_map: &HashMap<usize, usize>) -> io::Result<
     }
 
     Ok(permutation)
+}
+
+fn canonicalize_assignment(assignment: &[u16]) -> Vec<u16> {
+    let mut label_map = HashMap::new();
+    let mut next_label = 0u16;
+    let mut out = Vec::with_capacity(assignment.len());
+
+    for &value in assignment {
+        let mapped = match label_map.get(&value) {
+            Some(mapped) => *mapped,
+            None => {
+                next_label += 1;
+                label_map.insert(value, next_label);
+                next_label
+            }
+        };
+        out.push(mapped);
+    }
+
+    out
+}
+
+fn permute_assignment(assignment: &[u16], permutation: &[usize]) -> io::Result<Vec<u16>> {
+    if assignment.len() != permutation.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "Relabel map length {} does not match assignment length {}",
+                permutation.len(),
+                assignment.len()
+            ),
+        ));
+    }
+
+    let mut out = vec![0u16; permutation.len()];
+    for (new_idx, &old_idx) in permutation.iter().enumerate() {
+        out[new_idx] = assignment[old_idx];
+    }
+    Ok(out)
+}
+
+fn relabel_ben_file_via_decoder<R: Read, W: Write, F>(
+    reader: R,
+    writer: W,
+    variant: BenVariant,
+    max_samples: Option<usize>,
+    mut transform: F,
+) -> io::Result<()>
+where
+    F: FnMut(&[u16]) -> io::Result<Vec<u16>>,
+{
+    let decoder = BenDecoder::new(reader)?;
+    let mut encoder = BenEncoder::new(writer, variant);
+    let mut sample_number = 0usize;
+
+    for record in decoder {
+        let (assignment, count) = record?;
+        if max_samples.is_some_and(|limit| sample_number >= limit) {
+            break;
+        }
+
+        let relabeled = transform(&assignment)?;
+        let out_count = max_samples
+            .map(|limit| (limit - sample_number).min(count as usize))
+            .unwrap_or(count as usize);
+
+        for _ in 0..out_count {
+            encoder.write_assignment(relabeled.clone())?;
+        }
+
+        sample_number += out_count;
+        progress!("Relabeling line: {}\r", sample_number);
+    }
+
+    tracing::trace!("");
+    tracing::trace!("Done!");
+    encoder.finish()?;
+    Ok(())
 }
 
 /// Canonicalize the labels used inside each BEN frame.
@@ -202,6 +282,7 @@ fn relabel_ben_file_impl<R: Read, W: Write>(
     let variant = match &check_buffer {
         b"STANDARD BEN FILE" => BenVariant::Standard,
         b"MKVCHAIN BEN FILE" => BenVariant::MkvChain,
+        b"TWODELTA BEN FILE" => BenVariant::TwoDelta,
         _ => {
             return Err(Error::new(
                 io::ErrorKind::InvalidData,
@@ -210,9 +291,19 @@ fn relabel_ben_file_impl<R: Read, W: Write>(
         }
     };
 
-    writer.write_all(&check_buffer)?;
-
-    relabel_ben_lines_impl(&mut reader, &mut writer, variant, max_samples)?;
+    match variant {
+        BenVariant::Standard | BenVariant::MkvChain => {
+            writer.write_all(&check_buffer)?;
+            relabel_ben_lines_impl(&mut reader, &mut writer, variant, max_samples)?
+        }
+        BenVariant::TwoDelta => {
+            let mut full_stream = check_buffer.to_vec();
+            reader.read_to_end(&mut full_stream)?;
+            relabel_ben_file_via_decoder(full_stream.as_slice(), &mut writer, variant, max_samples, |assignment| {
+                Ok(canonicalize_assignment(assignment))
+            })?
+        }
+    }
 
     Ok(())
 }
@@ -419,6 +510,7 @@ fn relabel_ben_file_with_map_impl<R: Read, W: Write>(
     let variant = match &check_buffer {
         b"STANDARD BEN FILE" => BenVariant::Standard,
         b"MKVCHAIN BEN FILE" => BenVariant::MkvChain,
+        b"TWODELTA BEN FILE" => BenVariant::TwoDelta,
         _ => {
             return Err(Error::new(
                 io::ErrorKind::InvalidData,
@@ -427,15 +519,30 @@ fn relabel_ben_file_with_map_impl<R: Read, W: Write>(
         }
     };
 
-    writer.write_all(&check_buffer)?;
-
-    relabel_ben_lines_with_map_impl(
-        &mut reader,
-        &mut writer,
-        new_to_old_node_map,
-        variant,
-        max_samples,
-    )?;
+    match variant {
+        BenVariant::Standard | BenVariant::MkvChain => {
+            writer.write_all(&check_buffer)?;
+            relabel_ben_lines_with_map_impl(
+                &mut reader,
+                &mut writer,
+                new_to_old_node_map,
+                variant,
+                max_samples,
+            )?
+        }
+        BenVariant::TwoDelta => {
+            let permutation = dense_permutation(&new_to_old_node_map)?;
+            let mut full_stream = check_buffer.to_vec();
+            reader.read_to_end(&mut full_stream)?;
+            relabel_ben_file_via_decoder(
+                full_stream.as_slice(),
+                &mut writer,
+                variant,
+                max_samples,
+                |assignment| permute_assignment(assignment, &permutation),
+            )?
+        }
+    }
 
     Ok(())
 }
