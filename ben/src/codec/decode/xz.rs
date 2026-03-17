@@ -1,7 +1,10 @@
 use crate::codec::decode::jsonl_decode_ben32;
 use crate::codec::translate::ben32_to_ben_lines;
+use crate::io::reader::XBenDecoder;
+use crate::io::writer::BenEncoder;
 use crate::{progress, BenVariant};
-use std::io::{self, BufRead, Error, Read, Write};
+use serde_json::json;
+use std::io::{self, BufRead, BufReader, Error, Read, Write};
 use xz2::read::XzDecoder;
 
 /// Decode an XBEN stream into an equivalent BEN stream.
@@ -34,6 +37,18 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
         b"MKVCHAIN BEN FILE" => {
             writer.write_all(b"MKVCHAIN BEN FILE")?;
             BenVariant::MkvChain
+        }
+        b"TWODELTA BEN FILE" => {
+            let mut xben = XBenDecoder::from_decompressed_stream(BufReader::new(decoder), BenVariant::TwoDelta);
+            let mut ben = BenEncoder::new(writer, BenVariant::TwoDelta);
+            for record in &mut xben {
+                let (assignment, count) = record?;
+                ben.write_assignment(assignment.clone())?;
+                for _ in 1..count {
+                    ben.write_assignment(assignment.clone())?;
+                }
+            }
+            return Ok(());
         }
         _ => {
             return Err(Error::new(
@@ -77,9 +92,7 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
                     }
                 }
             }
-            BenVariant::TwoDelta => {
-                panic!("not implemented");
-            }
+            BenVariant::TwoDelta => unreachable!("handled before ben32 decoding"),
         }
 
         if last_valid_assignment == 0 {
@@ -141,6 +154,27 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
     let variant = match &first_buffer {
         b"STANDARD BEN FILE" => BenVariant::Standard,
         b"MKVCHAIN BEN FILE" => BenVariant::MkvChain,
+        b"TWODELTA BEN FILE" => {
+            let mut xben = XBenDecoder::from_decompressed_stream(BufReader::new(decoder), BenVariant::TwoDelta);
+            let mut sample_number = 1usize;
+            for record in &mut xben {
+                let (assignment, count) = record?;
+                for _ in 0..count {
+                    progress!("Decoding sample: {}\r", sample_number);
+                    let line = json!({
+                        "assignment": assignment,
+                        "sample": sample_number,
+                    })
+                    .to_string()
+                        + "\n";
+                    writer.write_all(line.as_bytes())?;
+                    sample_number += 1;
+                }
+            }
+            tracing::trace!("");
+            tracing::trace!("Done!");
+            return Ok(());
+        }
         _ => {
             return Err(Error::new(
                 io::ErrorKind::InvalidData,
@@ -184,9 +218,7 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
                     }
                 }
             }
-            BenVariant::TwoDelta => {
-                panic!("not implemented");
-            }
+            BenVariant::TwoDelta => unreachable!("handled before ben32 decoding"),
         }
 
         if last_valid_assignment == 0 {

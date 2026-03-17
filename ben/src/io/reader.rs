@@ -1,5 +1,5 @@
 use crate::codec::decode::{decode_ben32_line, decode_ben_line};
-use crate::codec::encode::{encode_ben_vec_from_assign, TwoDeltaFrame};
+use crate::codec::encode::{encode_ben32_assignments, encode_ben_vec_from_assign, TwoDeltaFrame};
 use crate::util::rle::rle_to_vec;
 use crate::{progress, BenVariant};
 use byteorder::{BigEndian, ReadBytesExt};
@@ -9,6 +9,9 @@ use std::io::{self, BufReader, Cursor, Read, Write};
 use std::iter::Peekable;
 use std::path::{Path, PathBuf};
 use xz2::read::XzDecoder;
+
+const XBEN_TWODELTA_FULL_TAG: u8 = 0;
+const XBEN_TWODELTA_DELTA_TAG: u8 = 1;
 
 /// A decoded assignment together with the number of times it repeats.
 pub type MkvRecord = (Vec<u16>, u16);
@@ -143,6 +146,16 @@ pub struct BenFrame {
 enum StoredBenFrame {
     Ben(BenFrame),
     TwoDelta { frame: TwoDeltaFrame, count: u16 },
+}
+
+enum XBenTwoDeltaFrame {
+    Full {
+        runs: Vec<(u16, u16)>,
+    },
+    Delta {
+        pair: (u16, u16),
+        run_lengths: Vec<u16>,
+    },
 }
 
 impl StoredBenFrame {
@@ -438,13 +451,14 @@ fn decode_twodelta_run_lengths(frame: &TwoDeltaFrame) -> io::Result<Vec<u16>> {
 }
 
 /// Decode a raw TwoDelta frame into a full assignment vector.
-fn decode_twodelta_frame_to_assignment(
+fn apply_twodelta_runs_to_assignment(
     previous_assignment: &[u16],
-    frame: &TwoDeltaFrame,
+    pair: (u16, u16),
+    run_lengths: &[u16],
 ) -> io::Result<Vec<u16>> {
     let mut pair_positions = Vec::new();
     pair_positions.reserve(previous_assignment.len());
-    let (first, second) = frame.pair();
+    let (first, second) = pair;
 
     for (idx, &assignment) in previous_assignment.iter().enumerate() {
         if assignment == first || assignment == second {
@@ -452,7 +466,6 @@ fn decode_twodelta_frame_to_assignment(
         }
     }
 
-    let run_lengths = decode_twodelta_run_lengths(frame)?;
     let expected_total: usize = run_lengths.iter().map(|&len| len as usize).sum();
     if expected_total != pair_positions.len() {
         return Err(io::Error::new(
@@ -465,7 +478,7 @@ fn decode_twodelta_frame_to_assignment(
     let mut write_idx = 0usize;
     let mut current_value = first;
 
-    for run_len in run_lengths {
+    for &run_len in run_lengths {
         for _ in 0..run_len {
             assignment[pair_positions[write_idx]] = current_value;
             write_idx += 1;
@@ -474,6 +487,15 @@ fn decode_twodelta_frame_to_assignment(
     }
 
     Ok(assignment)
+}
+
+/// Decode a raw TwoDelta frame into a full assignment vector.
+fn decode_twodelta_frame_to_assignment(
+    previous_assignment: &[u16],
+    frame: &TwoDeltaFrame,
+) -> io::Result<Vec<u16>> {
+    let run_lengths = decode_twodelta_run_lengths(frame)?;
+    apply_twodelta_runs_to_assignment(previous_assignment, frame.pair(), &run_lengths)
 }
 
 fn decode_stored_frame_to_assignment(
@@ -580,9 +602,23 @@ pub struct XBenDecoder<R: Read> {
     pub variant: BenVariant,
     overflow: Vec<u8>,
     buf: Box<[u8]>,
+    previous_assignment: Option<Vec<u16>>,
 }
 
 impl<R: Read> XBenDecoder<R> {
+    pub(crate) fn from_decompressed_stream(
+        xz: BufReader<XzDecoder<R>>,
+        variant: BenVariant,
+    ) -> Self {
+        Self {
+            xz,
+            variant,
+            overflow: Vec::with_capacity(1 << 20),
+            buf: vec![0u8; 1 << 20].into_boxed_slice(),
+            previous_assignment: None,
+        }
+    }
+
     /// Create a decoder for an XBEN stream.
     ///
     /// # Arguments
@@ -602,20 +638,16 @@ impl<R: Read> XBenDecoder<R> {
         let variant = match &first {
             b"STANDARD BEN FILE" => BenVariant::Standard,
             b"MKVCHAIN BEN FILE" => BenVariant::MkvChain,
+            b"TWODELTA BEN FILE" => BenVariant::TwoDelta,
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "Invalid .xben header (expecting STANDARD/MKVCHAIN BEN FILE)",
+                    "Invalid .xben header (expecting STANDARD/MKVCHAIN/TWODELTA BEN FILE)",
                 ));
             }
         };
 
-        Ok(Self {
-            xz,
-            variant,
-            overflow: Vec::with_capacity(1 << 20),
-            buf: vec![0u8; 1 << 20].into_boxed_slice(),
-        })
+        Ok(Self::from_decompressed_stream(xz, variant))
     }
 
     /// Try to extract one complete ben32 frame from the buffered overflow.
@@ -661,8 +693,81 @@ impl<R: Read> XBenDecoder<R> {
                 None
             }
             BenVariant::TwoDelta => {
-                panic!("not implemented");
+                None
             }
+        }
+    }
+
+    fn pop_twodelta_frame_from_overflow(
+        &self,
+        overflow: &[u8],
+    ) -> Option<io::Result<(XBenTwoDeltaFrame, usize, u16)>> {
+        let tag = *overflow.first()?;
+        match tag {
+            XBEN_TWODELTA_FULL_TAG => {
+                if overflow.len() < 7 {
+                    return None;
+                }
+                let run_count = u32::from_be_bytes([overflow[1], overflow[2], overflow[3], overflow[4]])
+                    as usize;
+                let payload_len = run_count.checked_mul(4)?;
+                let total_len = 1usize
+                    .checked_add(4)?
+                    .checked_add(payload_len)?
+                    .checked_add(2)?;
+                if overflow.len() < total_len {
+                    return None;
+                }
+
+                let mut runs = Vec::with_capacity(run_count);
+                let mut cursor = 5usize;
+                for _ in 0..run_count {
+                    let value = u16::from_be_bytes([overflow[cursor], overflow[cursor + 1]]);
+                    let len = u16::from_be_bytes([overflow[cursor + 2], overflow[cursor + 3]]);
+                    runs.push((value, len));
+                    cursor += 4;
+                }
+                let count = u16::from_be_bytes([overflow[cursor], overflow[cursor + 1]]);
+                Some(Ok((XBenTwoDeltaFrame::Full { runs }, total_len, count)))
+            }
+            XBEN_TWODELTA_DELTA_TAG => {
+                if overflow.len() < 11 {
+                    return None;
+                }
+                let pair = (
+                    u16::from_be_bytes([overflow[1], overflow[2]]),
+                    u16::from_be_bytes([overflow[3], overflow[4]]),
+                );
+                let run_count =
+                    u32::from_be_bytes([overflow[5], overflow[6], overflow[7], overflow[8]]) as usize;
+                let payload_len = run_count.checked_mul(2)?;
+                let total_len = 1usize
+                    .checked_add(2)?
+                    .checked_add(2)?
+                    .checked_add(4)?
+                    .checked_add(payload_len)?
+                    .checked_add(2)?;
+                if overflow.len() < total_len {
+                    return None;
+                }
+
+                let mut run_lengths = Vec::with_capacity(run_count);
+                let mut cursor = 9usize;
+                for _ in 0..run_count {
+                    run_lengths.push(u16::from_be_bytes([overflow[cursor], overflow[cursor + 1]]));
+                    cursor += 2;
+                }
+                let count = u16::from_be_bytes([overflow[cursor], overflow[cursor + 1]]);
+                Some(Ok((
+                    XBenTwoDeltaFrame::Delta { pair, run_lengths },
+                    total_len,
+                    count,
+                )))
+            }
+            _ => Some(Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid TwoDelta XBEN frame tag",
+            ))),
         }
     }
 
@@ -717,15 +822,64 @@ impl<R: Read> Iterator for XBenDecoder<R> {
     /// Decode and return the next assignment from the XBEN stream.
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some((frame_bytes, consumed, count)) =
-                self.pop_frame_from_overflow(&self.overflow)
-            {
-                let res = match decode_xben_frame_to_assignment(frame_bytes, self.variant) {
-                    Ok(assignment) => Ok((assignment, count)),
-                    Err(e) => Err(e),
-                };
-                self.overflow.drain(..consumed);
-                return Some(res);
+            match self.variant {
+                BenVariant::Standard | BenVariant::MkvChain => {
+                    if let Some((frame_bytes, consumed, count)) =
+                        self.pop_frame_from_overflow(&self.overflow)
+                    {
+                        let res = match decode_xben_frame_to_assignment(frame_bytes, self.variant) {
+                            Ok(assignment) => {
+                                self.previous_assignment = Some(assignment.clone());
+                                Ok((assignment, count))
+                            }
+                            Err(e) => Err(e),
+                        };
+                        self.overflow.drain(..consumed);
+                        return Some(res);
+                    }
+                }
+                BenVariant::TwoDelta => {
+                    if let Some(parsed) = self.pop_twodelta_frame_from_overflow(&self.overflow) {
+                        let res = match parsed {
+                            Ok((frame, consumed, count)) => {
+                                let assignment = match frame {
+                                    XBenTwoDeltaFrame::Full { runs } => Ok(rle_to_vec(runs)),
+                                    XBenTwoDeltaFrame::Delta { pair, run_lengths } => {
+                                        match self.previous_assignment.as_deref() {
+                                            Some(previous_assignment) => {
+                                                apply_twodelta_runs_to_assignment(
+                                                    previous_assignment,
+                                                    pair,
+                                                    &run_lengths,
+                                                )
+                                            }
+                                            None => Err(io::Error::new(
+                                                io::ErrorKind::InvalidData,
+                                                "TwoDelta XBEN frame encountered before an initial BEN frame",
+                                            )),
+                                        }
+                                    }
+                                };
+                                match assignment {
+                                    Ok(assignment) => {
+                                        self.previous_assignment = Some(assignment.clone());
+                                        self.overflow.drain(..consumed);
+                                        Ok((assignment, count))
+                                    }
+                                    Err(err) => {
+                                        self.overflow.drain(..consumed);
+                                        Err(err)
+                                    }
+                                }
+                            }
+                            Err(err) => {
+                                self.overflow.clear();
+                                Err(err)
+                            }
+                        };
+                        return Some(res);
+                    }
+                }
             }
 
             let read = match self.xz.read(&mut self.buf) {
@@ -774,6 +928,14 @@ impl<R: Read> Iterator for XBenFrameDecoder<R> {
 
     /// Return the next raw ben32 frame from the input stream.
     fn next(&mut self) -> Option<Self::Item> {
+        if self.inner.variant == BenVariant::TwoDelta {
+            return self.inner.next().map(|result| {
+                result.and_then(|(assignment, count)| {
+                    Ok((encode_ben32_assignments(&assignment)?.into_u8_vec()?, count))
+                })
+            });
+        }
+
         loop {
             if let Some((frame, consumed, count)) =
                 self.inner.pop_frame_from_overflow(&self.inner.overflow)

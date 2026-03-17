@@ -278,6 +278,30 @@ proptest! {
         prop_assert_eq!(out, jsonl);
     }
 
+    // JSONL -> XBEN(TwoDelta) -> BEN -> JSONL
+    #[test]
+    fn fuzz_roundtrip_xben_twodelta(seq in strat_twodelta_seq(), params in strat_threads_levels()) {
+        let (threads, level) = params;
+        let jsonl = jsonl_from_assignments(&seq);
+
+        let mut xben = Vec::new();
+        encode_jsonl_to_xben(
+            BufReader::new(jsonl.as_slice()),
+            &mut xben,
+            BenVariant::TwoDelta,
+            Some(threads),
+            Some(level),
+        ).unwrap();
+
+        let mut ben = Vec::new();
+        decode_xben_to_ben(BufReader::new(xben.as_slice()), &mut ben).unwrap();
+
+        let mut out = Vec::new();
+        decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap();
+
+        prop_assert_eq!(out, jsonl);
+    }
+
     // Direct XBEN -> JSONL via jsonl_decode_xben matches the long path.
     #[test]
     fn fuzz_decode_xben_direct_equals_via_ben(seq in strat_assignment_seq(), params in strat_threads_levels()) {
@@ -327,6 +351,31 @@ proptest! {
         let iter_jsonl = jsonl_from_records(&recs, 0);
 
         // Also decode via the library jsonl_decode_xben and compare.
+        let mut direct = Vec::new();
+        decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut direct).unwrap();
+
+        prop_assert_eq!(iter_jsonl, direct);
+    }
+
+    // Iterator surface: XBenDecoder over TwoDelta XBEN matches direct JSONL.
+    #[test]
+    fn fuzz_xbendecoder_iterator_matches_jsonl_twodelta(seq in strat_twodelta_seq(), params in strat_threads_levels()) {
+        let (threads, level) = params;
+        let jsonl = jsonl_from_assignments(&seq);
+
+        let mut xben = Vec::new();
+        encode_jsonl_to_xben(
+            BufReader::new(jsonl.as_slice()),
+            &mut xben,
+            BenVariant::TwoDelta,
+            Some(threads),
+            Some(level),
+        ).unwrap();
+
+        let mut dec = XBenDecoder::new(xben.as_slice()).unwrap();
+        let recs = collect_records(&mut dec).unwrap();
+        let iter_jsonl = jsonl_from_records(&recs, 0);
+
         let mut direct = Vec::new();
         decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut direct).unwrap();
 
@@ -1101,6 +1150,27 @@ fn ben_decoder_and_xben_decoder_count_samples() {
     )
     .unwrap();
     assert_eq!(XBenDecoder::new(xben.as_slice()).unwrap().count_samples().unwrap(), 3);
+
+    let twodelta_jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
+{"assignment":[1,2,2,1],"sample":2}
+{"assignment":[1,2,2,1],"sample":3}
+"#;
+    let mut twodelta_xben = Vec::new();
+    encode_jsonl_to_xben(
+        BufReader::new(twodelta_jsonl.as_bytes()),
+        &mut twodelta_xben,
+        BenVariant::TwoDelta,
+        Some(1),
+        Some(0),
+    )
+    .unwrap();
+    assert_eq!(
+        XBenDecoder::new(twodelta_xben.as_slice())
+            .unwrap()
+            .count_samples()
+            .unwrap(),
+        3
+    );
 }
 
 #[test]

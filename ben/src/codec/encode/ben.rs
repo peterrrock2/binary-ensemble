@@ -3,6 +3,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::io;
 
+pub(crate) type TwoDeltaRuns = ((u16, u16), Vec<u16>);
+
 /// Encode a JSON assignment record into the ben32 frame representation used by
 /// XBEN streams.
 ///
@@ -14,6 +16,7 @@ use std::io;
 ///
 /// Returns the encoded ben32 frame bytes terminated by the four-byte `0`
 /// sentinel.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn encode_ben32_line(data: Value) -> io::Result<IdVec> {
     let assign_vec = data["assignment"].as_array().ok_or_else(|| {
         io::Error::new(
@@ -21,28 +24,39 @@ pub(crate) fn encode_ben32_line(data: Value) -> io::Result<IdVec> {
             "'assignment' field either missing or is not an array of integers",
         )
     })?;
+    encode_ben32_assignments(
+        assign_vec
+            .iter()
+            .map(|assignment| {
+                let assign_u64 = assignment.as_u64().ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!(
+                            "The value '{}' could not be unwrapped as an unsigned 64 bit integer.",
+                            assignment
+                        ),
+                    )
+                })?;
+                u16::try_from(assign_u64).map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("The value '{}' is too large to fit in a u16.", assign_u64),
+                    )
+                })
+            })
+            .collect::<io::Result<Vec<u16>>>()?,
+    )
+}
+
+pub(crate) fn encode_ben32_assignments(assign_vec: impl AsRef<[u16]>) -> io::Result<IdVec> {
+    let assign_vec = assign_vec.as_ref();
     let mut prev_assign: u16 = 0;
     let mut count: u16 = 0;
     let mut first = true;
 
     let mut ret = Vec::new();
 
-    for assignment in assign_vec {
-        let assign_u64 = assignment.as_u64().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "The value '{}' could not be unwrapped as an unsigned 64 bit integer.",
-                    assignment
-                ),
-            )
-        })?;
-        let assign = u16::try_from(assign_u64).map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("The value '{}' is too large to fit in a u16.", assign_u64),
-            )
-        })?;
+    for &assign in assign_vec {
         if first {
             prev_assign = assign;
             count = 1;
@@ -115,15 +129,17 @@ pub fn encode_twodelta_vec(
     previous_assignment: impl AsRef<[u16]>,
     new_assignment: impl AsRef<[u16]>,
 ) -> io::Result<TwoDeltaFrame> {
-    encode_twodelta_vec_with_hint(previous_assignment, new_assignment, None, None)
+    let (ordered_pair, run_lengths) =
+        build_twodelta_runs_with_hint(previous_assignment, new_assignment, None, None)?;
+    Ok(TwoDeltaFrame::from_run_lengths(ordered_pair, run_lengths))
 }
 
-pub(crate) fn encode_twodelta_vec_with_hint(
+pub(crate) fn build_twodelta_runs_with_hint(
     previous_assignment: impl AsRef<[u16]>,
     new_assignment: impl AsRef<[u16]>,
     delta_pair: Option<(u16, u16)>,
     masks: Option<&HashMap<u16, Vec<usize>>>,
-) -> io::Result<TwoDeltaFrame> {
+) -> io::Result<TwoDeltaRuns> {
     let previous_assignment = previous_assignment.as_ref();
     let new_assignment = new_assignment.as_ref();
 
@@ -277,5 +293,16 @@ pub(crate) fn encode_twodelta_vec_with_hint(
         run_lengths.push(current_run);
     }
 
+    Ok((ordered_pair, run_lengths))
+}
+
+pub(crate) fn encode_twodelta_vec_with_hint(
+    previous_assignment: impl AsRef<[u16]>,
+    new_assignment: impl AsRef<[u16]>,
+    delta_pair: Option<(u16, u16)>,
+    masks: Option<&HashMap<u16, Vec<usize>>>,
+) -> io::Result<TwoDeltaFrame> {
+    let (ordered_pair, run_lengths) =
+        build_twodelta_runs_with_hint(previous_assignment, new_assignment, delta_pair, masks)?;
     Ok(TwoDeltaFrame::from_run_lengths(ordered_pair, run_lengths))
 }

@@ -30,13 +30,6 @@ pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
     n_threads: Option<u32>,
     compression_level: Option<u32>,
 ) -> Result<()> {
-    if variant == BenVariant::TwoDelta {
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "TwoDelta is currently implemented only for uncompressed .ben streams",
-        ));
-    }
-
     let mut n_cpus: u32 = n_threads.unwrap_or(1);
     n_cpus = n_cpus
         .min(
