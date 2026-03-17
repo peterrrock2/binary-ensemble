@@ -19,7 +19,7 @@ tasks:
     desc: List available tasks
     silent: true
     cmds:
-      - task --list-all
+      - 'command -v go-task >/dev/null 2>&1 && go-task --list-all || task --list-all'
 
   ensure-rust-linux: &ensure-rust-unix
     desc: Install Rust if it is not already available

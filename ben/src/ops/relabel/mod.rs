@@ -9,7 +9,7 @@ use crate::util::rle::{assign_slice_to_rle, rle_to_vec_in_place};
 use crate::{progress, BenVariant};
 use byteorder::{BigEndian, ReadBytesExt};
 use std::collections::HashMap;
-use std::io::{self, Error, Read, Write};
+use std::io::{self, Cursor, Error, Read, Write};
 
 /// Convert a sparse permutation map into a dense index vector.
 ///
@@ -136,14 +136,13 @@ fn convert_ben_file_impl<R: Read, W: Write>(
     target_variant: BenVariant,
     max_samples: Option<usize>,
 ) -> io::Result<()> {
-    let mut check_buffer = [0u8; 17];
+    let mut check_buffer = [0u8; BANNER_LEN];
     reader.read_exact(&mut check_buffer)?;
     let _input_variant = detect_ben_variant(&check_buffer)?;
 
-    let mut full_stream = check_buffer.to_vec();
-    reader.read_to_end(&mut full_stream)?;
+    let chained = Cursor::new(check_buffer).chain(reader);
     relabel_ben_file_via_decoder(
-        full_stream.as_slice(),
+        chained,
         writer,
         target_variant,
         max_samples,
@@ -341,10 +340,9 @@ fn relabel_ben_file_impl<R: Read, W: Write>(
             relabel_ben_lines_impl(&mut reader, &mut writer, variant, max_samples)?
         }
         BenVariant::TwoDelta => {
-            let mut full_stream = check_buffer.to_vec();
-            reader.read_to_end(&mut full_stream)?;
+            let chained = Cursor::new(check_buffer).chain(reader);
             relabel_ben_file_via_decoder(
-                full_stream.as_slice(),
+                chained,
                 &mut writer,
                 variant,
                 max_samples,
@@ -565,10 +563,9 @@ fn relabel_ben_file_with_map_impl<R: Read, W: Write>(
         }
         BenVariant::TwoDelta => {
             let permutation = dense_permutation(&new_to_old_node_map)?;
-            let mut full_stream = check_buffer.to_vec();
-            reader.read_to_end(&mut full_stream)?;
+            let chained = Cursor::new(check_buffer).chain(reader);
             relabel_ben_file_via_decoder(
-                full_stream.as_slice(),
+                chained,
                 &mut writer,
                 variant,
                 max_samples,
@@ -586,14 +583,13 @@ pub fn relabel_ben_file_as_variant<R: Read, W: Write>(
     writer: W,
     target_variant: BenVariant,
 ) -> io::Result<()> {
-    let mut check_buffer = [0u8; 17];
+    let mut check_buffer = [0u8; BANNER_LEN];
     reader.read_exact(&mut check_buffer)?;
     let _input_variant = detect_ben_variant(&check_buffer)?;
 
-    let mut full_stream = check_buffer.to_vec();
-    reader.read_to_end(&mut full_stream)?;
+    let chained = Cursor::new(check_buffer).chain(reader);
     relabel_ben_file_via_decoder(
-        full_stream.as_slice(),
+        chained,
         writer,
         target_variant,
         None,
@@ -608,14 +604,13 @@ pub fn relabel_ben_file_as_variant_limit<R: Read, W: Write>(
     target_variant: BenVariant,
     max_samples: usize,
 ) -> io::Result<()> {
-    let mut check_buffer = [0u8; 17];
+    let mut check_buffer = [0u8; BANNER_LEN];
     reader.read_exact(&mut check_buffer)?;
     let _input_variant = detect_ben_variant(&check_buffer)?;
 
-    let mut full_stream = check_buffer.to_vec();
-    reader.read_to_end(&mut full_stream)?;
+    let chained = Cursor::new(check_buffer).chain(reader);
     relabel_ben_file_via_decoder(
-        full_stream.as_slice(),
+        chained,
         writer,
         target_variant,
         Some(max_samples),
@@ -630,15 +625,14 @@ pub fn relabel_ben_file_with_map_as_variant<R: Read, W: Write>(
     new_to_old_node_map: HashMap<usize, usize>,
     target_variant: BenVariant,
 ) -> io::Result<()> {
-    let mut check_buffer = [0u8; 17];
+    let mut check_buffer = [0u8; BANNER_LEN];
     reader.read_exact(&mut check_buffer)?;
     let _input_variant = detect_ben_variant(&check_buffer)?;
 
     let permutation = dense_permutation(&new_to_old_node_map)?;
-    let mut full_stream = check_buffer.to_vec();
-    reader.read_to_end(&mut full_stream)?;
+    let chained = Cursor::new(check_buffer).chain(reader);
     relabel_ben_file_via_decoder(
-        full_stream.as_slice(),
+        chained,
         writer,
         target_variant,
         None,
@@ -654,15 +648,14 @@ pub fn relabel_ben_file_with_map_as_variant_limit<R: Read, W: Write>(
     target_variant: BenVariant,
     max_samples: usize,
 ) -> io::Result<()> {
-    let mut check_buffer = [0u8; 17];
+    let mut check_buffer = [0u8; BANNER_LEN];
     reader.read_exact(&mut check_buffer)?;
     let _input_variant = detect_ben_variant(&check_buffer)?;
 
     let permutation = dense_permutation(&new_to_old_node_map)?;
-    let mut full_stream = check_buffer.to_vec();
-    reader.read_to_end(&mut full_stream)?;
+    let chained = Cursor::new(check_buffer).chain(reader);
     relabel_ben_file_via_decoder(
-        full_stream.as_slice(),
+        chained,
         writer,
         target_variant,
         Some(max_samples),

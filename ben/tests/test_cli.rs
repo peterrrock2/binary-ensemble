@@ -1174,6 +1174,63 @@ fn reben_cli_can_convert_between_ben_variants() {
 }
 
 #[test]
+fn reben_cli_can_limit_variant_conversion_to_first_n_items() {
+    let temp = TempDir::new("reben-convert-limit");
+    let ben_path = temp.path().join("samples.standard.ben");
+    let twodelta_path = temp.path().join("samples.twodelta.ben");
+
+    let source_jsonl = r#"{"assignment":[4,4,9],"sample":1}
+{"assignment":[4,4,9],"sample":2}
+{"assignment":[4,9,4],"sample":3}
+{"assignment":[9,9,4],"sample":4}
+"#;
+
+    let mut ben_bytes = Vec::new();
+    encode_jsonl_to_ben(
+        BufReader::new(source_jsonl.as_bytes()),
+        &mut ben_bytes,
+        BenVariant::Standard,
+    )
+    .unwrap();
+    fs::write(&ben_path, ben_bytes).unwrap();
+
+    let limited_convert = run(
+        "reben",
+        &[
+            ben_path.to_str().unwrap(),
+            "--mode",
+            "ben",
+            "--output-variant",
+            "twodelta",
+            "--convert-only",
+            "--n-items",
+            "2",
+            "--output-file",
+            twodelta_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_success(&limited_convert);
+
+    let twodelta_bytes = fs::read(&twodelta_path).unwrap();
+    assert_eq!(&twodelta_bytes[..17], b"TWODELTA BEN FILE");
+
+    let mut converted_jsonl = Vec::new();
+    decode_ben_to_jsonl(
+        BufReader::new(fs::File::open(&twodelta_path).unwrap()),
+        &mut converted_jsonl,
+    )
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(converted_jsonl).unwrap(),
+        r#"{"assignment":[4,4,9],"sample":1}
+{"assignment":[4,4,9],"sample":2}
+"#
+    );
+}
+
+#[test]
 fn reben_cli_can_canonicalize_into_a_different_ben_variant() {
     let temp = TempDir::new("reben-canonicalize-convert");
     let ben_path = temp.path().join("samples.standard.ben");

@@ -9,7 +9,7 @@ use crate::util::rle::assign_to_rle;
 use crate::BenVariant;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::{self, BufRead, Result, Write};
+use std::io::{self, BufRead, Read, Result, Write};
 use xz2::write::XzEncoder;
 
 const XBEN_TWODELTA_FULL_TAG: u8 = 0;
@@ -524,12 +524,11 @@ impl<W: Write> XBenEncoder<W> {
 
         if has_banner {
             if self.variant == BenVariant::TwoDelta {
-                let mut banner_prefixed = Vec::new();
-                banner_prefixed.extend_from_slice(&peek[..BANNER_LEN]);
+                let mut banner = [0u8; BANNER_LEN];
+                banner.copy_from_slice(&peek[..BANNER_LEN]);
                 reader.consume(BANNER_LEN);
-                reader.read_to_end(&mut banner_prefixed)?;
 
-                let decoder = BenDecoder::new(io::Cursor::new(banner_prefixed))?;
+                let decoder = BenDecoder::new(io::Cursor::new(banner).chain(reader))?;
                 for record in decoder {
                     let (assignment, count) = record?;
                     self.write_assignment(assignment.clone())?;
