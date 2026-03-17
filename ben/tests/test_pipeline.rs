@@ -370,7 +370,8 @@ fn test_xtwodeltaben_pipeline() {
                 let a = distinct[(i * 7) % distinct.len()];
                 let mut b = distinct[(i * 11) % distinct.len()];
                 if a == b {
-                    b = distinct[(distinct.iter().position(|&x| x == a).unwrap() + 1) % distinct.len()];
+                    b = distinct
+                        [(distinct.iter().position(|&x| x == a).unwrap() + 1) % distinct.len()];
                 }
 
                 let positions: Vec<usize> = current

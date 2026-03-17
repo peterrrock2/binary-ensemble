@@ -40,7 +40,10 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
             BenVariant::MkvChain
         }
         Some(BenVariant::TwoDelta) => {
-            let mut xben = XBenDecoder::from_decompressed_stream(BufReader::new(decoder), BenVariant::TwoDelta);
+            let mut xben = XBenDecoder::from_decompressed_stream(
+                BufReader::new(decoder),
+                BenVariant::TwoDelta,
+            );
             let mut ben = BenEncoder::new(writer, BenVariant::TwoDelta);
             for record in &mut xben {
                 let (assignment, count) = record?;
@@ -156,7 +159,10 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
         Some(BenVariant::Standard) => BenVariant::Standard,
         Some(BenVariant::MkvChain) => BenVariant::MkvChain,
         Some(BenVariant::TwoDelta) => {
-            let mut xben = XBenDecoder::from_decompressed_stream(BufReader::new(decoder), BenVariant::TwoDelta);
+            let mut xben = XBenDecoder::from_decompressed_stream(
+                BufReader::new(decoder),
+                BenVariant::TwoDelta,
+            );
             let mut sample_number = 1usize;
             for record in &mut xben {
                 let (assignment, count) = record?;

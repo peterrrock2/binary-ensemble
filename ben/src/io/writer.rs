@@ -411,36 +411,30 @@ impl<W: Write> XBenEncoder<W> {
     pub fn new(mut encoder: XzEncoder<W>, variant: BenVariant) -> Self {
         encoder.write_all(banner_for_variant(variant)).unwrap();
         match variant {
-            BenVariant::Standard => {
-                XBenEncoder {
-                    encoder,
-                    previous_assignment: Vec::new(),
-                    previous_masks: HashMap::new(),
-                    previous_frame: Vec::new(),
-                    count: 0,
-                    variant: BenVariant::Standard,
-                }
-            }
-            BenVariant::MkvChain => {
-                XBenEncoder {
-                    encoder,
-                    previous_assignment: Vec::new(),
-                    previous_masks: HashMap::new(),
-                    previous_frame: Vec::new(),
-                    count: 0,
-                    variant: BenVariant::MkvChain,
-                }
-            }
-            BenVariant::TwoDelta => {
-                XBenEncoder {
-                    encoder,
-                    previous_assignment: Vec::new(),
-                    previous_masks: HashMap::new(),
-                    previous_frame: Vec::new(),
-                    count: 0,
-                    variant: BenVariant::TwoDelta,
-                }
-            }
+            BenVariant::Standard => XBenEncoder {
+                encoder,
+                previous_assignment: Vec::new(),
+                previous_masks: HashMap::new(),
+                previous_frame: Vec::new(),
+                count: 0,
+                variant: BenVariant::Standard,
+            },
+            BenVariant::MkvChain => XBenEncoder {
+                encoder,
+                previous_assignment: Vec::new(),
+                previous_masks: HashMap::new(),
+                previous_frame: Vec::new(),
+                count: 0,
+                variant: BenVariant::MkvChain,
+            },
+            BenVariant::TwoDelta => XBenEncoder {
+                encoder,
+                previous_assignment: Vec::new(),
+                previous_masks: HashMap::new(),
+                previous_frame: Vec::new(),
+                count: 0,
+                variant: BenVariant::TwoDelta,
+            },
         }
     }
 
@@ -539,7 +533,8 @@ impl<W: Write> XBenEncoder<W> {
                 for record in decoder {
                     let (assignment, count) = record?;
                     self.write_assignment(assignment.clone())?;
-                    if matches!(self.variant, BenVariant::MkvChain | BenVariant::TwoDelta) && count > 1
+                    if matches!(self.variant, BenVariant::MkvChain | BenVariant::TwoDelta)
+                        && count > 1
                     {
                         self.count += count - 1;
                     } else if self.variant == BenVariant::Standard {

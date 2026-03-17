@@ -693,9 +693,7 @@ impl<R: Read> XBenDecoder<R> {
                 }
                 None
             }
-            BenVariant::TwoDelta => {
-                None
-            }
+            BenVariant::TwoDelta => None,
         }
     }
 
@@ -709,8 +707,9 @@ impl<R: Read> XBenDecoder<R> {
                 if overflow.len() < 7 {
                     return None;
                 }
-                let run_count = u32::from_be_bytes([overflow[1], overflow[2], overflow[3], overflow[4]])
-                    as usize;
+                let run_count =
+                    u32::from_be_bytes([overflow[1], overflow[2], overflow[3], overflow[4]])
+                        as usize;
                 let payload_len = run_count.checked_mul(4)?;
                 let total_len = 1usize
                     .checked_add(4)?
@@ -740,7 +739,8 @@ impl<R: Read> XBenDecoder<R> {
                     u16::from_be_bytes([overflow[3], overflow[4]]),
                 );
                 let run_count =
-                    u32::from_be_bytes([overflow[5], overflow[6], overflow[7], overflow[8]]) as usize;
+                    u32::from_be_bytes([overflow[5], overflow[6], overflow[7], overflow[8]])
+                        as usize;
                 let payload_len = run_count.checked_mul(2)?;
                 let total_len = 1usize
                     .checked_add(2)?
