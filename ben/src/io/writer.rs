@@ -359,7 +359,16 @@ impl<W: Write> BenEncoder<W> {
                     Some(&self.previous_masks),
                 )?;
                 self.flush_pending_frame()?;
-                self.set_previous_sample(assign_vec, BufferedBenFrame::TwoDelta(encoded), 1);
+
+                if let Some(pair) = hints.delta_pair {
+                    self.update_masks_for_delta(&assign_vec, pair);
+                    self.previous_sample = assign_vec;
+                } else {
+                    self.previous_sample = assign_vec;
+                    self.rebuild_previous_masks();
+                }
+                self.previous_encoded_sample = Some(BufferedBenFrame::TwoDelta(encoded));
+                self.sample_count = 1;
                 Ok(())
             }
         }
@@ -389,6 +398,83 @@ impl<W: Write> BenEncoder<W> {
         }
 
         Ok(())
+    }
+
+    /// Record additional repetitions of the most recently written assignment.
+    ///
+    /// For MkvChain and TwoDelta variants the repetition count is incremented
+    /// directly. For Standard, the cached encoded frame is re-emitted once per
+    /// additional repeat.
+    ///
+    /// # Arguments
+    ///
+    /// * `additional` - The number of extra copies beyond the one already written.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after all additional repeats have been recorded.
+    pub fn repeat_previous(&mut self, additional: u16) -> Result<()> {
+        match self.variant {
+            BenVariant::Standard => {
+                if let Some(encoded) = self.previous_encoded_sample.as_ref() {
+                    for _ in 0..additional {
+                        self.writer.write_all(encoded.as_slice())?;
+                    }
+                }
+            }
+            BenVariant::MkvChain | BenVariant::TwoDelta => {
+                self.sample_count += additional;
+            }
+        }
+        Ok(())
+    }
+
+    /// Update the value-to-position masks incrementally for a two-delta transition.
+    ///
+    /// Instead of rebuilding the entire mask HashMap, only the positions belonging
+    /// to the two swapped values are repartitioned. This is O(pair_positions)
+    /// rather than O(assignment_length).
+    ///
+    /// # Arguments
+    ///
+    /// * `new_sample` - The new assignment vector after the transition.
+    /// * `pair` - The two values involved in the delta swap.
+    fn update_masks_for_delta(&mut self, new_sample: &[u16], pair: (u16, u16)) {
+        if pair.0 == pair.1 {
+            return;
+        }
+
+        let pos_a = self.previous_masks.remove(&pair.0).unwrap_or_default();
+        let pos_b = self.previous_masks.remove(&pair.1).unwrap_or_default();
+
+        let mut new_a = Vec::with_capacity(pos_a.len() + pos_b.len());
+        let mut new_b = Vec::with_capacity(pos_a.len() + pos_b.len());
+
+        let (mut i, mut j) = (0, 0);
+        while i < pos_a.len() || j < pos_b.len() {
+            let pos = if j >= pos_b.len() || (i < pos_a.len() && pos_a[i] < pos_b[j]) {
+                let p = pos_a[i];
+                i += 1;
+                p
+            } else {
+                let p = pos_b[j];
+                j += 1;
+                p
+            };
+
+            if new_sample[pos] == pair.0 {
+                new_a.push(pos);
+            } else {
+                new_b.push(pos);
+            }
+        }
+
+        if !new_a.is_empty() {
+            self.previous_masks.insert(pair.0, new_a);
+        }
+        if !new_b.is_empty() {
+            self.previous_masks.insert(pair.1, new_b);
+        }
     }
 
     /// Encode and write a full assignment vector.

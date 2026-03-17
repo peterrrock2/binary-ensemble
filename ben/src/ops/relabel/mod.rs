@@ -108,7 +108,8 @@ fn permute_assignment(assignment: &[u16], permutation: &[usize]) -> io::Result<V
 /// * `writer` - The destination for the re-encoded BEN output.
 /// * `variant` - The target BEN variant to encode into.
 /// * `max_samples` - Optional upper bound on the number of expanded samples to write.
-/// * `transform` - A closure that transforms each decoded assignment vector.
+/// * `transform` - A closure that takes ownership of each decoded assignment
+///   vector and returns the transformed version.
 ///
 /// # Returns
 ///
@@ -121,7 +122,7 @@ fn relabel_ben_file_via_decoder<R: Read, W: Write, F>(
     mut transform: F,
 ) -> io::Result<()>
 where
-    F: FnMut(&[u16]) -> io::Result<Vec<u16>>,
+    F: FnMut(Vec<u16>) -> io::Result<Vec<u16>>,
 {
     let decoder = BenDecoder::new(reader)?.silent(true);
     let mut encoder = BenEncoder::new(writer, variant);
@@ -133,13 +134,14 @@ where
             break;
         }
 
-        let relabeled = transform(&assignment)?;
+        let relabeled = transform(assignment)?;
         let out_count = max_samples
             .map(|limit| (limit - sample_number).min(count as usize))
             .unwrap_or(count as usize);
 
-        for _ in 0..out_count {
-            encoder.write_assignment(relabeled.clone())?;
+        encoder.write_assignment(relabeled)?;
+        if out_count > 1 {
+            encoder.repeat_previous((out_count - 1) as u16)?;
         }
 
         sample_number += out_count;
@@ -196,9 +198,7 @@ fn convert_ben_file_impl<R: Read, W: Write>(
     let _input_variant = detect_ben_variant(&check_buffer)?;
 
     let chained = Cursor::new(check_buffer).chain(reader);
-    relabel_ben_file_via_decoder(chained, writer, target_variant, max_samples, |assignment| {
-        Ok(assignment.to_vec())
-    })
+    relabel_ben_file_via_decoder(chained, writer, target_variant, max_samples, Ok)
 }
 
 /// Rewrite a BEN file into the requested BEN variant.
@@ -440,7 +440,7 @@ fn relabel_ben_file_impl<R: Read, W: Write>(
                 &mut writer,
                 variant,
                 max_samples,
-                |assignment| Ok(canonicalize_assignment(assignment)),
+                |assignment| Ok(canonicalize_assignment(&assignment)),
             )?
         }
     }
@@ -689,7 +689,7 @@ fn relabel_ben_file_with_map_impl<R: Read, W: Write>(
                 &mut writer,
                 variant,
                 max_samples,
-                |assignment| permute_assignment(assignment, &permutation),
+                |assignment| permute_assignment(&assignment, &permutation),
             )?
         }
     }
@@ -719,7 +719,7 @@ pub fn relabel_ben_file_as_variant<R: Read, W: Write>(
 
     let chained = Cursor::new(check_buffer).chain(reader);
     relabel_ben_file_via_decoder(chained, writer, target_variant, None, |assignment| {
-        Ok(canonicalize_assignment(assignment))
+        Ok(canonicalize_assignment(&assignment))
     })
 }
 
@@ -751,7 +751,7 @@ pub fn relabel_ben_file_as_variant_limit<R: Read, W: Write>(
         writer,
         target_variant,
         Some(max_samples),
-        |assignment| Ok(canonicalize_assignment(assignment)),
+        |assignment| Ok(canonicalize_assignment(&assignment)),
     )
 }
 
@@ -781,7 +781,7 @@ pub fn relabel_ben_file_with_map_as_variant<R: Read, W: Write>(
     let permutation = dense_permutation(&new_to_old_node_map)?;
     let chained = Cursor::new(check_buffer).chain(reader);
     relabel_ben_file_via_decoder(chained, writer, target_variant, None, |assignment| {
-        permute_assignment(assignment, &permutation)
+        permute_assignment(&assignment, &permutation)
     })
 }
 
@@ -817,7 +817,7 @@ pub fn relabel_ben_file_with_map_as_variant_limit<R: Read, W: Write>(
         writer,
         target_variant,
         Some(max_samples),
-        |assignment| permute_assignment(assignment, &permutation),
+        |assignment| permute_assignment(&assignment, &permutation),
     )
 }
 
