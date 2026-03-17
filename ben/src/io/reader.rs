@@ -124,6 +124,7 @@ pub struct BenDecoder<R: Read> {
     variant: BenVariant,
     previous_assignment: Option<Vec<u16>>,
     twodelta_consumed_first_frame: bool,
+    silent: bool,
 }
 
 #[derive(Clone)]
@@ -189,29 +190,30 @@ impl<R: Read> BenDecoder<R> {
         }
 
         match variant_from_banner(&check_buffer) {
-            Some(BenVariant::Standard) => Ok(BenDecoder {
+            Some(variant) => Ok(BenDecoder {
                 reader,
                 sample_count: 0,
-                variant: BenVariant::Standard,
+                variant,
                 previous_assignment: None,
                 twodelta_consumed_first_frame: false,
-            }),
-            Some(BenVariant::MkvChain) => Ok(BenDecoder {
-                reader,
-                sample_count: 0,
-                variant: BenVariant::MkvChain,
-                previous_assignment: None,
-                twodelta_consumed_first_frame: false,
-            }),
-            Some(BenVariant::TwoDelta) => Ok(BenDecoder {
-                reader,
-                sample_count: 0,
-                variant: BenVariant::TwoDelta,
-                previous_assignment: None,
-                twodelta_consumed_first_frame: false,
+                silent: false,
             }),
             None => Err(DecoderInitError::InvalidFileFormat(check_buffer.to_vec())),
         }
+    }
+
+    /// Suppress progress output from this decoder's iterator.
+    ///
+    /// # Arguments
+    ///
+    /// * `silent` - When `true`, the decoder will not emit progress messages.
+    ///
+    /// # Returns
+    ///
+    /// Returns `self` for method chaining.
+    pub fn silent(mut self, silent: bool) -> Self {
+        self.silent = silent;
+        self
     }
 
     /// Decode the remaining BEN stream and write it as JSONL.
@@ -599,7 +601,9 @@ impl<R: Read> Iterator for BenDecoder<R> {
         let count = frame.count();
         self.previous_assignment = Some(assignment.clone());
         self.sample_count += count as usize;
-        progress!("Decoding sample: {}\r", self.sample_count);
+        if !self.silent {
+            progress!("Decoding sample: {}\r", self.sample_count);
+        }
         Some(Ok((assignment, count)))
     }
 }

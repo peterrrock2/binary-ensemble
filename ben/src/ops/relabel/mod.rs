@@ -123,7 +123,7 @@ fn relabel_ben_file_via_decoder<R: Read, W: Write, F>(
 where
     F: FnMut(&[u16]) -> io::Result<Vec<u16>>,
 {
-    let decoder = BenDecoder::new(reader)?;
+    let decoder = BenDecoder::new(reader)?.silent(true);
     let mut encoder = BenEncoder::new(writer, variant);
     let mut sample_number = 0usize;
 
@@ -143,7 +143,7 @@ where
         }
 
         sample_number += out_count;
-        progress!("Relabeling line: {}\r", sample_number);
+        progress!("Relabelling line: {}\r", sample_number);
     }
 
     tracing::trace!("");
