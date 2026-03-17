@@ -12,6 +12,7 @@ use binary_ensemble::io::reader::{
     SubsampleFrameDecoder, XBenDecoder,
 };
 use binary_ensemble::io::writer::BenEncoder;
+use binary_ensemble::ops::extract::extract_assignment_ben;
 use binary_ensemble::BenVariant;
 
 use proptest::prelude::*;
@@ -115,6 +116,71 @@ fn strat_assignment_seq() -> impl Strategy<Value = Vec<Vec<u16>>> {
         })
 }
 
+/// Strategy for sequences where every transition is valid for TwoDelta.
+fn strat_twodelta_seq() -> impl Strategy<Value = Vec<Vec<u16>>> {
+    (
+        strat_assignment(32, 24, 300),
+        prop::collection::vec(any::<u64>(), 0..=40),
+    )
+        .prop_map(|(base, ops)| {
+            let mut current = base;
+            let mut seq = vec![current.clone()];
+
+            for op in ops {
+                let mut next = current.clone();
+                let mut distinct: Vec<u16> = current.clone();
+                distinct.sort_unstable();
+                distinct.dedup();
+
+                if distinct.len() < 2 || op % 5 == 0 {
+                    seq.push(next.clone());
+                    current = next;
+                    continue;
+                }
+
+                let a = distinct[(op as usize) % distinct.len()];
+                let mut b = distinct[((op >> 8) as usize) % distinct.len()];
+                if a == b {
+                    b = distinct[(distinct.iter().position(|&x| x == a).unwrap() + 1) % distinct.len()];
+                }
+
+                let positions: Vec<usize> = current
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(idx, &value)| ((value == a) || (value == b)).then_some(idx))
+                    .collect();
+
+                if positions.is_empty() {
+                    seq.push(next.clone());
+                    current = next;
+                    continue;
+                }
+
+                let mut remaining = positions.len();
+                let mut write_idx = 0usize;
+                let mut seed = op.rotate_left(13) ^ 0x9E37_79B9_7F4A_7C15;
+                let mut value = if op & 1 == 0 { a } else { b };
+
+                while remaining > 0 {
+                    let run_len = 1 + (seed as usize % remaining);
+                    for _ in 0..run_len {
+                        next[positions[write_idx]] = value;
+                        write_idx += 1;
+                    }
+                    remaining -= run_len;
+                    value = if value == a { b } else { a };
+                    seed = seed.rotate_left(7) ^ 0xA076_1D64_78BD_642F;
+                }
+
+                seq.push(next.clone());
+                current = next;
+            }
+
+            seq
+        })
+        .prop_filter("TwoDelta sequences must be non-empty", |seq| !seq.is_empty())
+}
+
 // Random (small) thread count and compression level for MT encoder.
 fn strat_threads_levels() -> impl Strategy<Value = (u32, u32)> {
     (1u32..=4, 0u32..=9)
@@ -142,6 +208,19 @@ proptest! {
         let jsonl = jsonl_from_assignments(&seq);
         let mut ben = Vec::new();
         encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::MkvChain).unwrap();
+
+        let mut out = Vec::new();
+        decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap();
+
+        prop_assert_eq!(out, jsonl);
+    }
+
+    // JSONL -> BEN(TwoDelta) -> JSONL round-trip.
+    #[test]
+    fn fuzz_roundtrip_ben_twodelta(seq in strat_twodelta_seq()) {
+        let jsonl = jsonl_from_assignments(&seq);
+        let mut ben = Vec::new();
+        encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::TwoDelta).unwrap();
 
         let mut out = Vec::new();
         decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap();
@@ -271,6 +350,20 @@ proptest! {
 
     }
 
+    // Iterator surface: BenDecoder over TwoDelta BEN matches JSONL.
+    #[test]
+    fn fuzz_bendecoder_iterator_matches_jsonl_twodelta(seq in strat_twodelta_seq()) {
+        let jsonl = jsonl_from_assignments(&seq);
+
+        let mut ben = Vec::new();
+        encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::TwoDelta).unwrap();
+
+        let mut dec = BenDecoder::new(ben.as_slice()).unwrap();
+        let recs = collect_records(&mut dec).unwrap();
+        let out = jsonl_from_records(&recs, 0);
+        prop_assert_eq!(out, jsonl);
+    }
+
     // SubsampleDecoder: select indices (by_indices)
     #[test]
     fn fuzz_subsample_by_indices(seq in strat_assignment_seq(), params in strat_threads_levels()) {
@@ -375,6 +468,39 @@ proptest! {
         let mut picked: Vec<Vec<u16>> = Vec::new();
         for (a, c) in recs {
             for _ in 0..c { picked.push(a.clone()); }
+        }
+
+        prop_assert_eq!(picked, truth);
+    }
+
+    #[test]
+    fn fuzz_subsample_by_indices_twodelta(seq in strat_twodelta_seq()) {
+        let jsonl = jsonl_from_assignments(&seq);
+        let mut ben = Vec::new();
+        encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::TwoDelta).unwrap();
+
+        let n = seq.len().max(1);
+        let mut want: Vec<usize> = (1..=n).step_by(3).collect();
+        if want.is_empty() {
+            want.push(1);
+        }
+
+        let mut sub = BenDecoder::new(ben.as_slice())
+            .unwrap()
+            .into_subsample_by_indices(want.clone());
+        let recs = collect_records(&mut sub).unwrap();
+
+        let truth: Vec<Vec<u16>> = (1..=n)
+            .zip(seq.iter())
+            .filter(|(i, _)| want.contains(i))
+            .map(|(_, v)| v.clone())
+            .collect();
+
+        let mut picked: Vec<Vec<u16>> = Vec::new();
+        for (assignment, count) in recs {
+            for _ in 0..count {
+                picked.push(assignment.clone());
+            }
         }
 
         prop_assert_eq!(picked, truth);
@@ -1130,4 +1256,43 @@ fn twodelta_rejects_non_pair_transition() {
         .err()
         .unwrap();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn twodelta_supports_frame_iteration_counting_and_sample_extraction() {
+    let assignments = vec![
+        vec![1u16, 1, 2, 2, 3, 3],
+        vec![1u16, 1, 2, 2, 3, 3],
+        vec![1u16, 2, 2, 1, 3, 3],
+        vec![2u16, 2, 1, 1, 3, 3],
+    ];
+
+    let mut ben = Vec::new();
+    let jsonl = jsonl_from_assignments(&assignments);
+    encode_jsonl_to_ben(
+        BufReader::new(jsonl.as_slice()),
+        &mut ben,
+        BenVariant::TwoDelta,
+    )
+    .unwrap();
+
+    assert_eq!(BenDecoder::new(ben.as_slice()).unwrap().count_samples().unwrap(), 4);
+
+    let frames: Vec<_> = BenDecoder::new(ben.as_slice())
+        .unwrap()
+        .into_frames()
+        .collect::<std::io::Result<Vec<_>>>()
+        .unwrap();
+    assert_eq!(frames.len(), 3);
+    assert_eq!(frames[0].count, 2);
+    assert_eq!(frames[1].count, 1);
+    assert_eq!(frames[2].count, 1);
+
+    let picked = extract_assignment_ben(ben.as_slice(), 3).unwrap();
+    assert_eq!(picked, assignments[2]);
+
+    let ben_path = unique_temp_path("twodelta_sample.ben");
+    fs::write(&ben_path, &ben).unwrap();
+    assert_eq!(count_samples_from_file(&ben_path, "ben").unwrap(), 4);
+    fs::remove_file(ben_path).unwrap();
 }
