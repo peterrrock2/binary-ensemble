@@ -1,5 +1,6 @@
 use super::types::{BenFrame, IdVec, TwoDeltaFrame};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::io;
 
 /// Encode a JSON assignment record into the ben32 frame representation used by
@@ -114,6 +115,15 @@ pub fn encode_twodelta_vec(
     previous_assignment: impl AsRef<[u16]>,
     new_assignment: impl AsRef<[u16]>,
 ) -> io::Result<TwoDeltaFrame> {
+    encode_twodelta_vec_with_hint(previous_assignment, new_assignment, None, None)
+}
+
+pub(crate) fn encode_twodelta_vec_with_hint(
+    previous_assignment: impl AsRef<[u16]>,
+    new_assignment: impl AsRef<[u16]>,
+    delta_pair: Option<(u16, u16)>,
+    masks: Option<&HashMap<u16, Vec<usize>>>,
+) -> io::Result<TwoDeltaFrame> {
     let previous_assignment = previous_assignment.as_ref();
     let new_assignment = new_assignment.as_ref();
 
@@ -124,67 +134,98 @@ pub fn encode_twodelta_vec(
         ));
     }
 
-    let mut pair_ids = [0u16; 2];
-    let mut pair_len = 0usize;
-    for (&previous, &current) in previous_assignment.iter().zip(new_assignment.iter()) {
-        if previous == current {
-            continue;
-        }
-        for value in [previous, current] {
-            if !pair_ids[..pair_len].contains(&value) {
-                if pair_len == 2 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "TwoDelta transitions may involve at most two assignment ids",
-                    ));
+    let pair = if let Some(pair) = delta_pair {
+        pair
+    } else {
+        let mut pair_ids = [0u16; 2];
+        let mut pair_len = 0usize;
+        for (&previous, &current) in previous_assignment.iter().zip(new_assignment.iter()) {
+            if previous == current {
+                continue;
+            }
+            for value in [previous, current] {
+                if !pair_ids[..pair_len].contains(&value) {
+                    if pair_len == 2 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "TwoDelta transitions may involve at most two assignment ids",
+                        ));
+                    }
+                    pair_ids[pair_len] = value;
+                    pair_len += 1;
                 }
-                pair_ids[pair_len] = value;
-                pair_len += 1;
             }
         }
-    }
 
-    if pair_len == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "TwoDelta cannot encode identical assignments as a delta frame",
-        ));
-    }
+        if pair_len == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "TwoDelta cannot encode identical assignments as a delta frame",
+            ));
+        }
 
-    let pair = if pair_len == 1 {
-        (pair_ids[0], pair_ids[0])
-    } else {
-        (pair_ids[0], pair_ids[1])
+        if pair_len == 1 {
+            (pair_ids[0], pair_ids[0])
+        } else {
+            (pair_ids[0], pair_ids[1])
+        }
     };
 
-    let mut pair_positions = Vec::new();
-    pair_positions.reserve(previous_assignment.len());
-    for (idx, (&previous, &current)) in previous_assignment
-        .iter()
-        .zip(new_assignment.iter())
-        .enumerate()
-    {
-        let previous_in_pair = previous == pair.0 || previous == pair.1;
-        let current_in_pair = current == pair.0 || current == pair.1;
-
-        if previous_in_pair != current_in_pair {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "TwoDelta requires the changed id pair to occupy the same positions",
-            ));
+    let pair_positions = if let Some(masks) = masks {
+        match (masks.get(&pair.0), masks.get(&pair.1)) {
+            (Some(mask_a), Some(mask_b)) if pair.0 != pair.1 => {
+                let mut merged = Vec::with_capacity(mask_a.len() + mask_b.len());
+                let (mut i, mut j) = (0usize, 0usize);
+                while i < mask_a.len() || j < mask_b.len() {
+                    if j == mask_b.len() || (i < mask_a.len() && mask_a[i] < mask_b[j]) {
+                        merged.push(mask_a[i]);
+                        i += 1;
+                    } else {
+                        merged.push(mask_b[j]);
+                        j += 1;
+                    }
+                }
+                merged
+            }
+            (Some(mask), _) => mask.clone(),
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "TwoDelta pair mask is missing for the previous assignment",
+                ));
+            }
         }
+    } else {
+        let mut pair_positions = Vec::new();
+        pair_positions.reserve(previous_assignment.len());
+        for (idx, (&previous, &current)) in previous_assignment
+            .iter()
+            .zip(new_assignment.iter())
+            .enumerate()
+        {
+            let previous_in_pair = previous == pair.0 || previous == pair.1;
+            let current_in_pair = current == pair.0 || current == pair.1;
 
-        if !previous_in_pair && previous != current {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "TwoDelta found a change outside the selected id pair",
-            ));
-        }
+            if previous_in_pair != current_in_pair {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "TwoDelta requires the changed id pair to occupy the same positions",
+                ));
+            }
 
-        if previous_in_pair {
-            pair_positions.push(idx);
+            if !previous_in_pair && previous != current {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "TwoDelta found a change outside the selected id pair",
+                ));
+            }
+
+            if previous_in_pair {
+                pair_positions.push(idx);
+            }
         }
-    }
+        pair_positions
+    };
 
     if pair_positions.is_empty() {
         return Err(io::Error::new(
@@ -208,7 +249,14 @@ pub fn encode_twodelta_vec(
     let mut current_run = 0u16;
 
     for &idx in &pair_positions {
+        let previous = previous_assignment[idx];
         let value = new_assignment[idx];
+        if previous != pair.0 && previous != pair.1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "TwoDelta pair mask referenced an index outside the selected id pair",
+            ));
+        }
         if value != ordered_pair.0 && value != ordered_pair.1 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,

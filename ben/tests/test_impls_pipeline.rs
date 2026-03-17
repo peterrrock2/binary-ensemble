@@ -1259,6 +1259,20 @@ fn twodelta_rejects_non_pair_transition() {
 }
 
 #[test]
+fn twodelta_write_json_value_rejects_non_pair_transition() {
+    let mut ben = Vec::new();
+    let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta);
+    encoder
+        .write_json_value(json!({"assignment": [1u16, 1, 2, 2]}))
+        .unwrap();
+    let err = encoder
+        .write_json_value(json!({"assignment": [1u16, 3, 2, 4]}))
+        .err()
+        .unwrap();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+}
+
+#[test]
 fn twodelta_supports_frame_iteration_counting_and_sample_extraction() {
     let assignments = vec![
         vec![1u16, 1, 2, 2, 3, 3],

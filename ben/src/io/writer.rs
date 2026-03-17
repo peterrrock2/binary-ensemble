@@ -1,10 +1,11 @@
 use crate::codec::encode::{
-    encode_ben32_line, encode_ben_vec_from_assign, encode_twodelta_vec, BenFrame, IdVec,
+    encode_ben32_line, encode_ben_vec_from_assign, encode_twodelta_vec_with_hint, BenFrame, IdVec,
     TwoDeltaFrame,
 };
 use crate::codec::translate::ben_to_ben32_lines;
 use crate::BenVariant;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::io::{self, BufRead, Result, Write};
 use xz2::write::XzEncoder;
 
@@ -22,10 +23,17 @@ impl BufferedBenFrame {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct AssignmentHints {
+    is_repeated: bool,
+    delta_pair: Option<(u16, u16)>,
+}
+
 /// A struct to make the writing of BEN files easier and more ergonomic.
 pub struct BenEncoder<W: Write> {
     writer: W,
     previous_sample: Vec<u16>,
+    previous_masks: HashMap<u16, Vec<usize>>,
     previous_encoded_sample: Option<BufferedBenFrame>,
     sample_count: u16,
     variant: BenVariant,
@@ -53,10 +61,167 @@ impl<W: Write> BenEncoder<W> {
         BenEncoder {
             writer,
             previous_sample: Vec::new(),
+            previous_masks: HashMap::new(),
             previous_encoded_sample: None,
             sample_count: 0,
             complete: false,
             variant,
+        }
+    }
+
+    fn rebuild_previous_masks(&mut self) {
+        self.previous_masks.clear();
+        for (idx, &assignment) in self.previous_sample.iter().enumerate() {
+            self.previous_masks.entry(assignment).or_default().push(idx);
+        }
+    }
+
+    fn set_previous_sample(
+        &mut self,
+        sample: Vec<u16>,
+        encoded: BufferedBenFrame,
+        sample_count: u16,
+    ) {
+        self.previous_sample = sample;
+        self.rebuild_previous_masks();
+        self.previous_encoded_sample = Some(encoded);
+        self.sample_count = sample_count;
+    }
+
+    fn analyze_assignment_transition(
+        previous_sample: &[u16],
+        assign_vec: &[u16],
+    ) -> AssignmentHints {
+        Self::analyze_twodelta_transition(previous_sample, assign_vec)
+    }
+
+    fn is_repeated_assignment(previous_sample: &[u16], assign_vec: &[u16]) -> bool {
+        if previous_sample.is_empty() || previous_sample.len() != assign_vec.len() {
+            return false;
+        }
+
+        for (&previous, &current) in previous_sample.iter().zip(assign_vec.iter()) {
+            if previous != current {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn analyze_twodelta_transition(previous_sample: &[u16], assign_vec: &[u16]) -> AssignmentHints {
+        if previous_sample.is_empty() || previous_sample.len() != assign_vec.len() {
+            return AssignmentHints::default();
+        }
+
+        let Some(first_mismatch) = previous_sample
+            .iter()
+            .zip(assign_vec.iter())
+            .position(|(&previous, &current)| previous != current)
+        else {
+            return AssignmentHints {
+                is_repeated: true,
+                delta_pair: None,
+            };
+        };
+
+        let pair = (previous_sample[first_mismatch], assign_vec[first_mismatch]);
+
+        for (&previous, &current) in previous_sample
+            .iter()
+            .zip(assign_vec.iter())
+            .skip(first_mismatch + 1)
+        {
+            if previous == current {
+                continue;
+            }
+
+            if previous != pair.0 && previous != pair.1 {
+                return AssignmentHints {
+                    is_repeated: false,
+                    delta_pair: None,
+                };
+            }
+
+            if current != pair.0 && current != pair.1 {
+                return AssignmentHints {
+                    is_repeated: false,
+                    delta_pair: None,
+                };
+            }
+        }
+
+        AssignmentHints {
+            is_repeated: false,
+            delta_pair: Some(pair),
+        }
+    }
+
+    fn write_assignment_with_hints(
+        &mut self,
+        assign_vec: Vec<u16>,
+        hints: AssignmentHints,
+    ) -> Result<()> {
+        match self.variant {
+            BenVariant::Standard => {
+                let repeated = Self::is_repeated_assignment(&self.previous_sample, &assign_vec);
+                if hints.is_repeated {
+                    if let Some(encoded) = self.previous_encoded_sample.as_ref() {
+                        self.writer.write_all(encoded.as_slice())?;
+                        self.previous_sample = assign_vec;
+                        return Ok(());
+                    }
+                }
+
+                if repeated {
+                    if let Some(encoded) = self.previous_encoded_sample.as_ref() {
+                        self.writer.write_all(encoded.as_slice())?;
+                        self.previous_sample = assign_vec;
+                        return Ok(());
+                    }
+                }
+
+                let encoded = encode_ben_vec_from_assign(&assign_vec);
+                self.writer.write_all(encoded.as_slice())?;
+                self.set_previous_sample(assign_vec, BufferedBenFrame::Ben(encoded), 0);
+                Ok(())
+            }
+            BenVariant::MkvChain => {
+                if Self::is_repeated_assignment(&self.previous_sample, &assign_vec) {
+                    self.sample_count += 1;
+                    return Ok(());
+                }
+
+                if self.sample_count > 0 {
+                    self.flush_pending_frame()?;
+                }
+
+                let encoded = encode_ben_vec_from_assign(&assign_vec);
+                self.set_previous_sample(assign_vec, BufferedBenFrame::Ben(encoded), 1);
+                Ok(())
+            }
+            BenVariant::TwoDelta => {
+                if self.previous_sample.is_empty() {
+                    let encoded = encode_ben_vec_from_assign(&assign_vec);
+                    self.set_previous_sample(assign_vec, BufferedBenFrame::Ben(encoded), 1);
+                    return Ok(());
+                }
+
+                if hints.is_repeated {
+                    self.sample_count += 1;
+                    return Ok(());
+                }
+
+                let encoded = encode_twodelta_vec_with_hint(
+                    &self.previous_sample,
+                    &assign_vec,
+                    hints.delta_pair,
+                    Some(&self.previous_masks),
+                )?;
+                self.flush_pending_frame()?;
+                self.set_previous_sample(assign_vec, BufferedBenFrame::TwoDelta(encoded), 1);
+                Ok(())
+            }
         }
     }
 
@@ -88,52 +253,12 @@ impl<W: Write> BenEncoder<W> {
     ///
     /// Returns `Ok(())` after the assignment has been queued or written.
     pub fn write_assignment(&mut self, assign_vec: Vec<u16>) -> Result<()> {
-        match self.variant {
-            BenVariant::Standard => {
-                let encoded = encode_ben_vec_from_assign(&assign_vec);
-                self.writer.write_all(encoded.as_slice())?;
-                Ok(())
-            }
-            BenVariant::MkvChain => {
-                let repeated = assign_vec == self.previous_sample;
-                if repeated {
-                    self.sample_count += 1;
-                    return Ok(());
-                }
-
-                if self.sample_count > 0 {
-                    self.flush_pending_frame()?;
-                }
-
-                let encoded = encode_ben_vec_from_assign(&assign_vec);
-                self.previous_encoded_sample = Some(BufferedBenFrame::Ben(encoded));
-                self.previous_sample = assign_vec;
-                self.sample_count = 1;
-
-                Ok(())
-            }
-            BenVariant::TwoDelta => {
-                if self.previous_sample.is_empty() {
-                    let encoded = encode_ben_vec_from_assign(&assign_vec);
-                    self.previous_encoded_sample = Some(BufferedBenFrame::Ben(encoded));
-                    self.previous_sample = assign_vec;
-                    self.sample_count = 1;
-                    return Ok(());
-                }
-
-                if assign_vec == self.previous_sample {
-                    self.sample_count += 1;
-                    return Ok(());
-                }
-
-                let encoded = encode_twodelta_vec(&self.previous_sample, &assign_vec)?;
-                self.flush_pending_frame()?;
-                self.previous_encoded_sample = Some(BufferedBenFrame::TwoDelta(encoded));
-                self.previous_sample = assign_vec;
-                self.sample_count = 1;
-                Ok(())
-            }
-        }
+        let hints = if self.variant == BenVariant::TwoDelta {
+            Self::analyze_assignment_transition(&self.previous_sample, &assign_vec)
+        } else {
+            AssignmentHints::default()
+        };
+        self.write_assignment_with_hints(assign_vec, hints)
     }
 
     /// Encode and write a JSON assignment record.
@@ -155,9 +280,22 @@ impl<W: Write> BenEncoder<W> {
                 "'assignment' field either missing or is not an array of integers",
             )
         })?;
+        let previous_len = self.previous_sample.len();
+        let can_compare = previous_len == assign_vec.len();
+        let mut hints = AssignmentHints::default();
+        let mut mismatch_pair: Option<(u16, u16)> = None;
+        let mut twodelta_valid = true;
+        let track_repeated = matches!(self.variant, BenVariant::Standard | BenVariant::MkvChain)
+            && can_compare
+            && !self.previous_sample.is_empty();
+        let track_twodelta = self.variant == BenVariant::TwoDelta && can_compare;
+        let mut twodelta_is_repeated = track_twodelta && !self.previous_sample.is_empty();
+        let mut is_repeated = track_repeated;
+
         let converted_vec = assign_vec
             .iter()
-            .map(|x| {
+            .enumerate()
+            .map(|(idx, x)| {
                 let u = x.as_u64().ok_or_else(|| {
                     io::Error::new(
                         io::ErrorKind::InvalidData,
@@ -168,16 +306,50 @@ impl<W: Write> BenEncoder<W> {
                     )
                 })?;
 
-                u16::try_from(u).map_err(|_| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("The value '{}' is too large to fit in a u16.", u),
-                    )
-                })
+                u16::try_from(u)
+                    .map_err(|_| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("The value '{}' is too large to fit in a u16.", u),
+                        )
+                    })
+                    .inspect(|value| {
+                        if track_repeated && is_repeated && self.previous_sample[idx] != *value {
+                            is_repeated = false;
+                        }
+
+                        if track_twodelta {
+                            let previous = self.previous_sample[idx];
+                            if previous != *value {
+                                twodelta_is_repeated = false;
+                                if let Some(pair) = mismatch_pair {
+                                    if previous != pair.0 && previous != pair.1
+                                        || *value != pair.0 && *value != pair.1
+                                    {
+                                        twodelta_valid = false;
+                                    }
+                                } else {
+                                    mismatch_pair = Some((previous, *value));
+                                }
+                            }
+                        }
+                    })
             })
             .collect::<Result<Vec<u16>>>()?;
 
-        self.write_assignment(converted_vec)
+        if track_repeated {
+            hints.is_repeated = is_repeated;
+        } else if track_twodelta {
+            hints.is_repeated = twodelta_is_repeated;
+        } else if self.variant == BenVariant::Standard || self.variant == BenVariant::MkvChain {
+            hints.is_repeated = false;
+        }
+
+        if track_twodelta && !hints.is_repeated && twodelta_valid {
+            hints.delta_pair = mismatch_pair;
+        }
+
+        self.write_assignment_with_hints(converted_vec, hints)
     }
 
     /// Flush any buffered repetition state to the underlying writer.
