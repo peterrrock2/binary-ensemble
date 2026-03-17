@@ -248,6 +248,16 @@ impl<R: Read> BenDecoder<R> {
     }
 
     /// Read and return the next raw BEN frame stored in standard BEN layout.
+    ///
+    /// # Arguments
+    ///
+    /// * `with_count` - When `true`, read a trailing `u16` repetition count;
+    ///   otherwise the count defaults to `1`.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(Ok(...))` for the next frame, `Some(Err(...))` for a read
+    /// failure, or `None` at a clean end of stream.
     fn pop_standard_frame_from_reader(&mut self, with_count: bool) -> Option<io::Result<BenFrame>> {
         let mut b1 = [0u8; 1];
         let max_val_bits = match self.reader.read_exact(&mut b1) {
@@ -297,6 +307,11 @@ impl<R: Read> BenDecoder<R> {
     }
 
     /// Read and return the next raw TwoDelta frame from the underlying stream.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(Ok(...))` for the next TwoDelta frame, `Some(Err(...))`
+    /// for a read failure, or `None` at a clean end of stream.
     fn pop_twodelta_frame_from_reader(&mut self) -> Option<io::Result<StoredBenFrame>> {
         let pair_a = match self.reader.read_u16::<BigEndian>() {
             Ok(value) => value,
@@ -343,6 +358,10 @@ impl<R: Read> BenDecoder<R> {
     }
 
     /// Read and return the next stored frame from the underlying BEN stream.
+    ///
+    /// # Arguments
+    ///
+    /// * `&mut self` - The decoder whose internal reader is advanced.
     ///
     /// # Returns
     ///
@@ -416,6 +435,14 @@ fn decode_ben_frame_to_assignment(frame: &BenFrame) -> io::Result<Vec<u16>> {
 }
 
 /// Decode the run-length payload of a TwoDelta frame.
+///
+/// # Arguments
+///
+/// * `frame` - The TwoDelta frame whose packed payload is decoded.
+///
+/// # Returns
+///
+/// Returns the sequence of non-zero run lengths extracted from the payload.
 fn decode_twodelta_run_lengths(frame: &TwoDeltaFrame) -> io::Result<Vec<u16>> {
     let mut items = Vec::new();
     let mut buffer: u32 = 0;
@@ -451,7 +478,20 @@ fn decode_twodelta_run_lengths(frame: &TwoDeltaFrame) -> io::Result<Vec<u16>> {
     Ok(items)
 }
 
-/// Decode a raw TwoDelta frame into a full assignment vector.
+/// Apply decoded TwoDelta run lengths to produce a new assignment vector.
+///
+/// Positions in `previous_assignment` that hold either value of `pair` are
+/// overwritten according to the alternating run-length encoding.
+///
+/// # Arguments
+///
+/// * `previous_assignment` - The assignment from the preceding frame.
+/// * `pair` - The two label values that participate in the delta.
+/// * `run_lengths` - Alternating run lengths starting with the first value of `pair`.
+///
+/// # Returns
+///
+/// Returns the updated assignment vector.
 fn apply_twodelta_runs_to_assignment(
     previous_assignment: &[u16],
     pair: (u16, u16),
@@ -495,6 +535,15 @@ fn apply_twodelta_runs_to_assignment(
 }
 
 /// Decode a raw TwoDelta frame into a full assignment vector.
+///
+/// # Arguments
+///
+/// * `previous_assignment` - The assignment from the preceding frame.
+/// * `frame` - The TwoDelta frame to decode.
+///
+/// # Returns
+///
+/// Returns the reconstructed assignment vector.
 fn decode_twodelta_frame_to_assignment(
     previous_assignment: &[u16],
     frame: &TwoDeltaFrame,
@@ -503,6 +552,17 @@ fn decode_twodelta_frame_to_assignment(
     apply_twodelta_runs_to_assignment(previous_assignment, frame.pair(), &run_lengths)
 }
 
+/// Decode a stored BEN frame into a full assignment vector.
+///
+/// # Arguments
+///
+/// * `previous_assignment` - The assignment from the preceding frame, required
+///   for TwoDelta frames.
+/// * `frame` - The stored frame to decode.
+///
+/// # Returns
+///
+/// Returns the expanded assignment vector.
 fn decode_stored_frame_to_assignment(
     previous_assignment: Option<&[u16]>,
     frame: &StoredBenFrame,
@@ -612,6 +672,16 @@ pub struct XBenDecoder<R: Read> {
 }
 
 impl<R: Read> XBenDecoder<R> {
+    /// Create an XBEN decoder from an already-opened decompressed stream.
+    ///
+    /// # Arguments
+    ///
+    /// * `xz` - A buffered XZ decompression reader positioned past the banner.
+    /// * `variant` - The BEN variant indicated by the banner.
+    ///
+    /// # Returns
+    ///
+    /// Returns a new decoder ready to yield frames from the stream.
     pub(crate) fn from_decompressed_stream(
         xz: BufReader<XzDecoder<R>>,
         variant: BenVariant,
@@ -652,6 +722,9 @@ impl<R: Read> XBenDecoder<R> {
     }
 
     /// Try to extract one complete ben32 frame from the buffered overflow.
+    ///
+    /// Scans `overflow` for a four-byte zero sentinel that terminates a ben32
+    /// frame and, for MkvChain streams, reads the trailing repetition count.
     ///
     /// # Arguments
     ///
@@ -697,6 +770,20 @@ impl<R: Read> XBenDecoder<R> {
         }
     }
 
+    /// Try to extract one complete TwoDelta frame from the buffered overflow.
+    ///
+    /// Inspects the leading tag byte to determine whether the frame is a full
+    /// RLE frame or a delta frame, then reads the corresponding payload.
+    ///
+    /// # Arguments
+    ///
+    /// * `overflow` - Buffered decompressed bytes that may contain a complete
+    ///   TwoDelta frame.
+    ///
+    /// # Returns
+    ///
+    /// Returns the parsed frame, the number of consumed bytes, and the
+    /// repetition count when a complete frame is available.
     fn pop_twodelta_frame_from_overflow(
         &self,
         overflow: &[u8],

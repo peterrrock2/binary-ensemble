@@ -28,6 +28,15 @@ struct GraphJson {
 }
 
 impl GraphJson {
+    /// Deserialize a NetworkX node-link JSON graph from a reader.
+    ///
+    /// # Arguments
+    ///
+    /// * `reader` - A source implementing `Read` that provides the JSON data.
+    ///
+    /// # Returns
+    ///
+    /// Returns a parsed `GraphJson` with precomputed node ids and adjacency indices.
     fn from_reader<R: Read>(reader: R) -> io::Result<Self> {
         let data: Value = serde_json::from_reader(reader)?;
         let nodes = data["nodes"].as_array().cloned().unwrap_or_default();
@@ -133,6 +142,15 @@ pub fn sort_json_file_by_ordering<R: Read, W: Write>(
     reorder_graph(graph, order, writer)
 }
 
+/// Extract the `id` field from a node JSON value as a `usize`.
+///
+/// # Arguments
+///
+/// * `node` - A JSON value representing a graph node.
+///
+/// # Returns
+///
+/// Returns the node id, or an error if the field is missing or not an unsigned integer.
 fn parse_node_id(node: &Value) -> io::Result<usize> {
     node["id"].as_u64().map(|v| v as usize).ok_or_else(|| {
         io::Error::new(
@@ -142,6 +160,15 @@ fn parse_node_id(node: &Value) -> io::Result<usize> {
     })
 }
 
+/// Extract the `id` field from an adjacency link JSON value as a `usize`.
+///
+/// # Arguments
+///
+/// * `link` - A JSON value representing an adjacency link (edge target).
+///
+/// # Returns
+///
+/// Returns the target node id, or an error if the field is missing or not an unsigned integer.
 fn parse_link_id(link: &Value) -> io::Result<usize> {
     link["id"].as_u64().map(|v| v as usize).ok_or_else(|| {
         io::Error::new(
@@ -151,6 +178,17 @@ fn parse_link_id(link: &Value) -> io::Result<usize> {
     })
 }
 
+/// Compare two nodes by a named attribute, using numeric ordering when possible.
+///
+/// # Arguments
+///
+/// * `a` - The first node JSON value.
+/// * `b` - The second node JSON value.
+/// * `key` - The attribute name to compare.
+///
+/// # Returns
+///
+/// Returns the ordering between the two nodes based on the attribute value.
 fn compare_node_key(a: &Value, b: &Value, key: &str) -> Ordering {
     let extract_value = |val: &Value| -> StdResult<u64, String> {
         match &val[key] {
@@ -168,6 +206,17 @@ fn compare_node_key(a: &Value, b: &Value, key: &str) -> Ordering {
     }
 }
 
+/// Apply a permutation to a graph and write the relabeled JSON to a writer.
+///
+/// # Arguments
+///
+/// * `graph` - The parsed graph to reorder.
+/// * `order` - A permutation where `order[new_index]` gives the old index.
+/// * `writer` - The destination for the reordered JSON output.
+///
+/// # Returns
+///
+/// Returns a map from original node id to new node id.
 fn reorder_graph<W: Write>(
     mut graph: GraphJson,
     order: Vec<usize>,
@@ -212,6 +261,16 @@ fn reorder_graph<W: Write>(
     Ok(old_id_to_new)
 }
 
+/// Find connected components of a graph using breadth-first search.
+///
+/// # Arguments
+///
+/// * `graph` - The parsed graph to decompose.
+///
+/// # Returns
+///
+/// Returns a list of components, each a vector of node indices, sorted by
+/// smallest original node id.
 fn connected_components(graph: &GraphJson) -> Vec<Vec<usize>> {
     let n = graph.nodes.len();
     let mut seen = vec![false; n];
@@ -242,6 +301,15 @@ fn connected_components(graph: &GraphJson) -> Vec<Vec<usize>> {
     components
 }
 
+/// Compute a Reverse Cuthill-McKee ordering for the entire graph.
+///
+/// # Arguments
+///
+/// * `graph` - The parsed graph to order.
+///
+/// # Returns
+///
+/// Returns a permutation of node indices that reduces bandwidth.
 fn reverse_cuthill_mckee_order(graph: &GraphJson) -> Vec<usize> {
     let mut order = Vec::with_capacity(graph.nodes.len());
 
@@ -252,6 +320,17 @@ fn reverse_cuthill_mckee_order(graph: &GraphJson) -> Vec<usize> {
     order
 }
 
+/// Compute a Reverse Cuthill-McKee ordering for a single connected component.
+///
+/// # Arguments
+///
+/// * `graph` - The parsed graph.
+/// * `component` - The node indices belonging to the component.
+///
+/// # Returns
+///
+/// Returns a reversed BFS ordering of the component starting from the
+/// minimum-degree node.
 fn reverse_cuthill_mckee_component(graph: &GraphJson, component: &[usize]) -> Vec<usize> {
     let degrees = graph
         .adjacency_indices
@@ -291,6 +370,16 @@ fn reverse_cuthill_mckee_component(graph: &GraphJson, component: &[usize]) -> Ve
     component_order
 }
 
+/// Compute a minimum-linear-arrangement heuristic ordering for the entire graph.
+///
+/// # Arguments
+///
+/// * `graph` - The parsed graph to order.
+///
+/// # Returns
+///
+/// Returns a permutation of node indices that heuristically minimizes total
+/// edge span.
 fn minimum_linear_arrangement_order(graph: &GraphJson) -> Vec<usize> {
     let mut order = Vec::with_capacity(graph.nodes.len());
 
@@ -301,10 +390,31 @@ fn minimum_linear_arrangement_order(graph: &GraphJson) -> Vec<usize> {
     order
 }
 
+/// Compute a multilevel cluster ordering for the entire graph.
+///
+/// # Arguments
+///
+/// * `graph` - The parsed graph to order.
+///
+/// # Returns
+///
+/// Returns a permutation of node indices produced by recursive multilevel
+/// clustering.
 fn multi_level_cluster_order(graph: &GraphJson) -> Vec<usize> {
     multilevel_cluster_order_generic(&graph.adjacency_indices, &graph.node_ids)
 }
 
+/// Compute a minimum-linear-arrangement heuristic ordering for a single component.
+///
+/// # Arguments
+///
+/// * `graph` - The parsed graph.
+/// * `component` - The node indices belonging to the component.
+///
+/// # Returns
+///
+/// Returns an ordering that heuristically minimizes total edge span within the
+/// component, refined by iterated barycenter sorting and adjacent swaps.
 fn minimum_linear_arrangement_component(graph: &GraphJson, component: &[usize]) -> Vec<usize> {
     if component.len() <= 2 {
         return component.to_vec();
@@ -329,6 +439,16 @@ fn minimum_linear_arrangement_component(graph: &GraphJson, component: &[usize]) 
     order
 }
 
+/// Build a boolean mask indicating membership in a subset of nodes.
+///
+/// # Arguments
+///
+/// * `size` - The total number of nodes (length of the returned vector).
+/// * `nodes` - The node indices that belong to the subset.
+///
+/// # Returns
+///
+/// Returns a boolean vector where `true` marks nodes present in the subset.
 fn subset_mask(size: usize, nodes: &[usize]) -> Vec<bool> {
     let mut mask = vec![false; size];
     for &node in nodes {
@@ -337,6 +457,17 @@ fn subset_mask(size: usize, nodes: &[usize]) -> Vec<bool> {
     mask
 }
 
+/// Find connected components of a generic adjacency list using breadth-first search.
+///
+/// # Arguments
+///
+/// * `adjacency` - The adjacency list for each node.
+/// * `labels` - Node labels used to sort components by smallest label.
+///
+/// # Returns
+///
+/// Returns a list of components, each a vector of node indices, sorted by
+/// minimum label.
 fn connected_components_generic(adjacency: &[Vec<usize>], labels: &[usize]) -> Vec<Vec<usize>> {
     let mut seen = vec![false; adjacency.len()];
     let mut components = Vec::new();
@@ -372,6 +503,18 @@ fn connected_components_generic(adjacency: &[Vec<usize>], labels: &[usize]) -> V
     components
 }
 
+/// Compute a Reverse Cuthill-McKee ordering for a component of a generic graph.
+///
+/// # Arguments
+///
+/// * `adjacency` - The adjacency list for each node.
+/// * `labels` - Node labels used for tie-breaking.
+/// * `component` - The node indices belonging to the component.
+///
+/// # Returns
+///
+/// Returns a reversed BFS ordering of the component starting from the
+/// minimum-degree node.
 fn rcm_component_generic(
     adjacency: &[Vec<usize>],
     labels: &[usize],
@@ -408,6 +551,17 @@ fn rcm_component_generic(
     order
 }
 
+/// Compute a multilevel cluster ordering for a generic graph.
+///
+/// # Arguments
+///
+/// * `adjacency` - The adjacency list for each node.
+/// * `labels` - Node labels used for tie-breaking and component sorting.
+///
+/// # Returns
+///
+/// Returns a permutation of node indices produced by recursive multilevel
+/// clustering across all connected components.
 fn multilevel_cluster_order_generic(adjacency: &[Vec<usize>], labels: &[usize]) -> Vec<usize> {
     let mut order = Vec::with_capacity(adjacency.len());
     for component in connected_components_generic(adjacency, labels) {
@@ -418,6 +572,18 @@ fn multilevel_cluster_order_generic(adjacency: &[Vec<usize>], labels: &[usize]) 
     order
 }
 
+/// Compute a multilevel cluster ordering for a single component of a generic graph.
+///
+/// # Arguments
+///
+/// * `adjacency` - The adjacency list for each node.
+/// * `labels` - Node labels used for tie-breaking.
+/// * `component` - The node indices belonging to the component.
+///
+/// # Returns
+///
+/// Returns an ordering that recursively partitions the component into clusters,
+/// orders each cluster with RCM, builds a coarse graph of clusters, and recurses.
 fn multilevel_cluster_component_generic(
     adjacency: &[Vec<usize>],
     labels: &[usize],
@@ -446,6 +612,18 @@ fn multilevel_cluster_component_generic(
     order
 }
 
+/// Partition a component into small clusters using a greedy seed-expansion strategy.
+///
+/// # Arguments
+///
+/// * `adjacency` - The adjacency list for each node.
+/// * `labels` - Node labels used for tie-breaking.
+/// * `component` - The node indices to partition.
+/// * `max_cluster_size` - The maximum number of nodes per cluster.
+///
+/// # Returns
+///
+/// Returns a list of clusters, each a vector of node indices.
 fn greedy_cluster_partition(
     adjacency: &[Vec<usize>],
     labels: &[usize],
@@ -512,6 +690,18 @@ fn greedy_cluster_partition(
     clusters
 }
 
+/// Compute the degree of each node restricted to a subset of the graph.
+///
+/// # Arguments
+///
+/// * `adjacency` - The adjacency list for each node.
+/// * `subset_mask` - A boolean mask indicating which nodes belong to the subset.
+/// * `subset` - The node indices in the subset.
+///
+/// # Returns
+///
+/// Returns a vector indexed by node where each entry is the number of neighbors
+/// within the subset.
 fn local_degree_in_subset(
     adjacency: &[Vec<usize>],
     subset_mask: &[bool],
@@ -527,6 +717,18 @@ fn local_degree_in_subset(
     local_degree
 }
 
+/// Build a coarse graph where each cluster is contracted into a single node.
+///
+/// # Arguments
+///
+/// * `adjacency` - The adjacency list of the original graph.
+/// * `labels` - Node labels of the original graph.
+/// * `clusters` - The cluster partition of the original graph.
+///
+/// # Returns
+///
+/// Returns a tuple of the coarse adjacency list and coarse labels, where each
+/// coarse label is the minimum original label in the cluster.
 fn build_coarse_graph(
     adjacency: &[Vec<usize>],
     labels: &[usize],
@@ -573,6 +775,17 @@ fn build_coarse_graph(
     (coarse_adjacency, coarse_labels)
 }
 
+/// Invert a permutation to get the position of each node in the ordering.
+///
+/// # Arguments
+///
+/// * `size` - The total number of nodes (length of the returned vector).
+/// * `order` - A permutation where `order[position]` gives the node index.
+///
+/// # Returns
+///
+/// Returns a vector indexed by node where each entry is the node's position in
+/// the ordering.
 fn positions_for_order(size: usize, order: &[usize]) -> Vec<usize> {
     let mut positions = vec![usize::MAX; size];
     for (idx, &node) in order.iter().enumerate() {
@@ -581,6 +794,19 @@ fn positions_for_order(size: usize, order: &[usize]) -> Vec<usize> {
     positions
 }
 
+/// Compute the barycenter score of a node as the mean position of its neighbors.
+///
+/// # Arguments
+///
+/// * `graph` - The parsed graph.
+/// * `node` - The node index to score.
+/// * `positions` - The current position of each node in the ordering.
+/// * `component_mask` - A boolean mask restricting which neighbors to consider.
+///
+/// # Returns
+///
+/// Returns the average position of the node's neighbors within the component,
+/// or the node's own position if it has no neighbors in the component.
 fn barycenter_score(
     graph: &GraphJson,
     node: usize,
@@ -603,6 +829,13 @@ fn barycenter_score(
     }
 }
 
+/// Improve an ordering by repeatedly swapping adjacent pairs that reduce total edge span.
+///
+/// # Arguments
+///
+/// * `graph` - The parsed graph.
+/// * `order` - The current ordering, modified in place.
+/// * `component_mask` - A boolean mask restricting which neighbors to consider.
 fn local_adjacent_improvement(graph: &GraphJson, order: &mut [usize], component_mask: &[bool]) {
     if order.len() < 2 {
         return;
@@ -634,6 +867,19 @@ fn local_adjacent_improvement(graph: &GraphJson, order: &mut [usize], component_
     }
 }
 
+/// Compute the total edge span cost for a single node in the current ordering.
+///
+/// # Arguments
+///
+/// * `graph` - The parsed graph.
+/// * `node` - The node index to evaluate.
+/// * `positions` - The current position of each node in the ordering.
+/// * `component_mask` - A boolean mask restricting which neighbors to consider.
+///
+/// # Returns
+///
+/// Returns the sum of absolute position differences between the node and each of
+/// its neighbors within the component.
 fn node_span_cost(
     graph: &GraphJson,
     node: usize,

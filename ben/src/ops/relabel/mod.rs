@@ -40,6 +40,16 @@ fn dense_permutation(new_to_old_node_map: &HashMap<usize, usize>) -> io::Result<
     Ok(permutation)
 }
 
+/// Canonicalize an assignment vector by remapping labels in first-seen order.
+///
+/// # Arguments
+///
+/// * `assignment` - The original assignment slice whose labels should be remapped.
+///
+/// # Returns
+///
+/// Returns a new vector with labels replaced by sequential integers starting at 1,
+/// assigned in the order they first appear.
 fn canonicalize_assignment(assignment: &[u16]) -> Vec<u16> {
     let mut label_map = HashMap::new();
     let mut next_label = 0u16;
@@ -60,6 +70,17 @@ fn canonicalize_assignment(assignment: &[u16]) -> Vec<u16> {
     out
 }
 
+/// Reorder an assignment vector according to a dense permutation.
+///
+/// # Arguments
+///
+/// * `assignment` - The original assignment slice to permute.
+/// * `permutation` - A dense permutation vector where `permutation[new_idx] == old_idx`.
+///
+/// # Returns
+///
+/// Returns a new vector with elements rearranged so that `out[new_idx] == assignment[old_idx]`,
+/// or an error if the lengths do not match.
 fn permute_assignment(assignment: &[u16], permutation: &[usize]) -> io::Result<Vec<u16>> {
     if assignment.len() != permutation.len() {
         return Err(io::Error::new(
@@ -79,6 +100,19 @@ fn permute_assignment(assignment: &[u16], permutation: &[usize]) -> io::Result<V
     Ok(out)
 }
 
+/// Decode a BEN stream, apply a per-assignment transform, and re-encode into the target variant.
+///
+/// # Arguments
+///
+/// * `reader` - The full BEN input stream, including its banner.
+/// * `writer` - The destination for the re-encoded BEN output.
+/// * `variant` - The target BEN variant to encode into.
+/// * `max_samples` - Optional upper bound on the number of expanded samples to write.
+/// * `transform` - A closure that transforms each decoded assignment vector.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after all (or up to `max_samples`) samples have been processed.
 fn relabel_ben_file_via_decoder<R: Read, W: Write, F>(
     reader: R,
     writer: W,
@@ -118,6 +152,15 @@ where
     Ok(())
 }
 
+/// Determine the BEN variant from a 17-byte file banner.
+///
+/// # Arguments
+///
+/// * `header` - The 17-byte banner read from the start of a BEN file.
+///
+/// # Returns
+///
+/// Returns the detected `BenVariant`, or an error if the banner is not recognized.
 fn detect_ben_variant(header: &[u8; 17]) -> io::Result<BenVariant> {
     match header {
         b"STANDARD BEN FILE" => Ok(BenVariant::Standard),
@@ -130,6 +173,18 @@ fn detect_ben_variant(header: &[u8; 17]) -> io::Result<BenVariant> {
     }
 }
 
+/// Shared implementation for converting a BEN file into a different variant without relabeling.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including its banner.
+/// * `writer` - The destination for the converted BEN output.
+/// * `target_variant` - The BEN variant to encode into.
+/// * `max_samples` - Optional upper bound on the number of expanded samples to write.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after all (or up to `max_samples`) samples have been converted.
 fn convert_ben_file_impl<R: Read, W: Write>(
     mut reader: R,
     writer: W,
@@ -141,16 +196,22 @@ fn convert_ben_file_impl<R: Read, W: Write>(
     let _input_variant = detect_ben_variant(&check_buffer)?;
 
     let chained = Cursor::new(check_buffer).chain(reader);
-    relabel_ben_file_via_decoder(
-        chained,
-        writer,
-        target_variant,
-        max_samples,
-        |assignment| Ok(assignment.to_vec()),
-    )
+    relabel_ben_file_via_decoder(chained, writer, target_variant, max_samples, |assignment| {
+        Ok(assignment.to_vec())
+    })
 }
 
 /// Rewrite a BEN file into the requested BEN variant.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including its banner.
+/// * `writer` - The destination for the converted BEN output.
+/// * `target_variant` - The BEN variant to encode into.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after the full BEN file has been converted.
 pub fn convert_ben_file<R: Read, W: Write>(
     reader: R,
     writer: W,
@@ -160,6 +221,17 @@ pub fn convert_ben_file<R: Read, W: Write>(
 }
 
 /// Rewrite at most `max_samples` expanded samples into the requested BEN variant.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including its banner.
+/// * `writer` - The destination for the converted BEN output.
+/// * `target_variant` - The BEN variant to encode into.
+/// * `max_samples` - The maximum number of expanded samples to write.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after up to `max_samples` samples have been converted.
 pub fn convert_ben_file_limit<R: Read, W: Write>(
     reader: R,
     writer: W,
@@ -219,6 +291,18 @@ pub fn relabel_ben_lines_limit<R: Read, W: Write>(
 }
 
 /// Shared implementation for canonical BEN relabeling.
+///
+/// # Arguments
+///
+/// * `reader` - The BEN input stream without its 17-byte file banner.
+/// * `writer` - The destination for the relabeled BEN frames.
+/// * `variant` - The BEN variant, used to determine whether repetition counts
+///   follow each frame.
+/// * `max_samples` - Optional upper bound on the number of expanded samples to write.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after all (or up to `max_samples`) samples have been relabeled.
 fn relabel_ben_lines_impl<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,
@@ -323,6 +407,16 @@ pub fn relabel_ben_file_limit<R: Read, W: Write>(
 }
 
 /// Shared implementation for BEN-file canonical relabeling.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including its banner.
+/// * `writer` - The destination for the relabeled BEN file.
+/// * `max_samples` - Optional upper bound on the number of expanded samples to write.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after all (or up to `max_samples`) samples have been relabeled.
 fn relabel_ben_file_impl<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,
@@ -414,6 +508,20 @@ pub fn relabel_ben_lines_with_map_limit<R: Read, W: Write>(
 }
 
 /// Shared implementation for mapped BEN relabeling.
+///
+/// # Arguments
+///
+/// * `reader` - The BEN input stream without its 17-byte file banner.
+/// * `writer` - The destination for the relabeled BEN frames.
+/// * `new_to_old_node_map` - The permutation describing how node positions
+///   should be reordered.
+/// * `variant` - The BEN variant, used to determine whether repetition counts
+///   follow each frame.
+/// * `max_samples` - Optional upper bound on the number of expanded samples to write.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after all (or up to `max_samples`) samples have been relabeled.
 fn relabel_ben_lines_with_map_impl<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,
@@ -538,6 +646,18 @@ pub fn relabel_ben_file_with_map_limit<R: Read, W: Write>(
 }
 
 /// Shared implementation for BEN-file mapped relabeling.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including its banner.
+/// * `writer` - The destination for the relabeled BEN file.
+/// * `new_to_old_node_map` - The permutation describing how node positions
+///   should be reordered.
+/// * `max_samples` - Optional upper bound on the number of expanded samples to write.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after all (or up to `max_samples`) samples have been relabeled.
 fn relabel_ben_file_with_map_impl<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,
@@ -578,6 +698,16 @@ fn relabel_ben_file_with_map_impl<R: Read, W: Write>(
 }
 
 /// Canonicalize BEN assignments and write them using the requested BEN variant.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including its banner.
+/// * `writer` - The destination for the relabeled BEN output.
+/// * `target_variant` - The BEN variant to encode into.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after the full BEN file has been relabeled and converted.
 pub fn relabel_ben_file_as_variant<R: Read, W: Write>(
     mut reader: R,
     writer: W,
@@ -588,16 +718,23 @@ pub fn relabel_ben_file_as_variant<R: Read, W: Write>(
     let _input_variant = detect_ben_variant(&check_buffer)?;
 
     let chained = Cursor::new(check_buffer).chain(reader);
-    relabel_ben_file_via_decoder(
-        chained,
-        writer,
-        target_variant,
-        None,
-        |assignment| Ok(canonicalize_assignment(assignment)),
-    )
+    relabel_ben_file_via_decoder(chained, writer, target_variant, None, |assignment| {
+        Ok(canonicalize_assignment(assignment))
+    })
 }
 
 /// Canonicalize up to `max_samples` expanded samples and write the requested BEN variant.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including its banner.
+/// * `writer` - The destination for the relabeled BEN output.
+/// * `target_variant` - The BEN variant to encode into.
+/// * `max_samples` - The maximum number of expanded samples to write.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after up to `max_samples` samples have been relabeled and converted.
 pub fn relabel_ben_file_as_variant_limit<R: Read, W: Write>(
     mut reader: R,
     writer: W,
@@ -619,6 +756,18 @@ pub fn relabel_ben_file_as_variant_limit<R: Read, W: Write>(
 }
 
 /// Relabel a BEN file with a supplied node map and write the requested BEN variant.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including its banner.
+/// * `writer` - The destination for the relabeled BEN output.
+/// * `new_to_old_node_map` - The permutation describing how node positions
+///   should be reordered.
+/// * `target_variant` - The BEN variant to encode into.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after the full BEN file has been relabeled and converted.
 pub fn relabel_ben_file_with_map_as_variant<R: Read, W: Write>(
     mut reader: R,
     writer: W,
@@ -631,16 +780,25 @@ pub fn relabel_ben_file_with_map_as_variant<R: Read, W: Write>(
 
     let permutation = dense_permutation(&new_to_old_node_map)?;
     let chained = Cursor::new(check_buffer).chain(reader);
-    relabel_ben_file_via_decoder(
-        chained,
-        writer,
-        target_variant,
-        None,
-        |assignment| permute_assignment(assignment, &permutation),
-    )
+    relabel_ben_file_via_decoder(chained, writer, target_variant, None, |assignment| {
+        permute_assignment(assignment, &permutation)
+    })
 }
 
 /// Relabel up to `max_samples` expanded samples with a supplied node map and write the requested BEN variant.
+///
+/// # Arguments
+///
+/// * `reader` - The input BEN stream, including its banner.
+/// * `writer` - The destination for the relabeled BEN output.
+/// * `new_to_old_node_map` - The permutation describing how node positions
+///   should be reordered.
+/// * `target_variant` - The BEN variant to encode into.
+/// * `max_samples` - The maximum number of expanded samples to write.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after up to `max_samples` samples have been relabeled and converted.
 pub fn relabel_ben_file_with_map_as_variant_limit<R: Read, W: Write>(
     mut reader: R,
     writer: W,

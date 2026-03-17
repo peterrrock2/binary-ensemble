@@ -337,6 +337,15 @@ pub fn run() {
     }
 }
 
+/// Convert a CLI ordering method variant to the library's graph ordering type.
+///
+/// # Arguments
+///
+/// * `ordering` - The CLI ordering method selected by the user.
+///
+/// # Returns
+///
+/// Returns the corresponding `GraphOrderingMethod`.
 fn to_graph_ordering(ordering: &OrderingMethod) -> GraphOrderingMethod {
     match ordering {
         OrderingMethod::MinimumLinearArrangement => GraphOrderingMethod::MinimumLinearArrangement,
@@ -345,6 +354,15 @@ fn to_graph_ordering(ordering: &OrderingMethod) -> GraphOrderingMethod {
     }
 }
 
+/// Return the kebab-case display name for an ordering method.
+///
+/// # Arguments
+///
+/// * `ordering` - The CLI ordering method variant.
+///
+/// # Returns
+///
+/// Returns a static string identifying the ordering method.
 fn ordering_method_name(ordering: &OrderingMethod) -> &'static str {
     match ordering {
         OrderingMethod::MinimumLinearArrangement => "minimum-linear-arrangement",
@@ -353,6 +371,15 @@ fn ordering_method_name(ordering: &OrderingMethod) -> &'static str {
     }
 }
 
+/// Return the lowercase display name for a BEN variant.
+///
+/// # Arguments
+///
+/// * `variant` - The BEN variant to name.
+///
+/// # Returns
+///
+/// Returns a static string identifying the variant.
 fn ben_variant_name(variant: BenVariant) -> &'static str {
     match variant {
         BenVariant::Standard => "standard",
@@ -361,6 +388,15 @@ fn ben_variant_name(variant: BenVariant) -> &'static str {
     }
 }
 
+/// Convert a CLI BEN variant to the library's `BenVariant` type.
+///
+/// # Arguments
+///
+/// * `variant` - The CLI BEN variant selected by the user.
+///
+/// # Returns
+///
+/// Returns the corresponding `BenVariant`.
 fn to_ben_variant(variant: &BenCliVariant) -> BenVariant {
     match variant {
         BenCliVariant::Standard => BenVariant::Standard,
@@ -369,6 +405,16 @@ fn to_ben_variant(variant: &BenCliVariant) -> BenVariant {
     }
 }
 
+/// Derive a human-readable label from the key or ordering method for file naming.
+///
+/// # Arguments
+///
+/// * `key` - An optional JSON key used for sorting.
+/// * `ordering` - An optional topology-based ordering method.
+///
+/// # Returns
+///
+/// Returns the label string, or `None` if neither option is provided.
 fn relabeling_label(key: Option<&str>, ordering: Option<&OrderingMethod>) -> Option<String> {
     match (key, ordering) {
         (Some(_), Some(_)) => panic!("Provide either --key or --ordering, not both."),

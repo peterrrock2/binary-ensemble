@@ -109,6 +109,16 @@ impl PartialEq<IdVec> for Vec<u8> {
     }
 }
 
+/// Pack a slice of items into a byte vector using a fixed bit width per item.
+///
+/// # Arguments
+///
+/// * `items` - The values to pack.
+/// * `item_bits` - The number of bits used to encode each item.
+///
+/// # Returns
+///
+/// Returns the payload length in bytes and the packed byte vector.
 fn pack_fixed_width_items(items: &[u16], item_bits: u8) -> (u32, Vec<u8>) {
     let payload_bits = item_bits as u32 * items.len() as u32;
     let n_bytes = payload_bits.div_ceil(8);

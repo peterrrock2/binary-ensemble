@@ -35,6 +35,16 @@ struct AssignmentHints {
     delta_pair: Option<(u16, u16)>,
 }
 
+/// Check whether two assignment vectors are identical element-by-element.
+///
+/// # Arguments
+///
+/// * `previous_sample` - The previous assignment vector.
+/// * `assign_vec` - The current assignment vector.
+///
+/// # Returns
+///
+/// Returns `true` if both vectors have the same length and every element matches.
 fn is_repeated_assignment(previous_sample: &[u16], assign_vec: &[u16]) -> bool {
     if previous_sample.is_empty() || previous_sample.len() != assign_vec.len() {
         return false;
@@ -49,6 +59,20 @@ fn is_repeated_assignment(previous_sample: &[u16], assign_vec: &[u16]) -> bool {
     true
 }
 
+/// Analyze the transition between two assignment vectors for two-delta encoding.
+///
+/// Determines whether the assignments are identical (repeated) or differ by
+/// exactly one swapped pair of values, which qualifies for delta encoding.
+///
+/// # Arguments
+///
+/// * `previous_sample` - The previous assignment vector.
+/// * `assign_vec` - The current assignment vector.
+///
+/// # Returns
+///
+/// Returns an `AssignmentHints` with `is_repeated` set if the vectors match,
+/// or `delta_pair` set if all differences involve exactly two values.
 fn analyze_twodelta_transition(previous_sample: &[u16], assign_vec: &[u16]) -> AssignmentHints {
     if previous_sample.is_empty() || previous_sample.len() != assign_vec.len() {
         return AssignmentHints::default();
@@ -97,6 +121,16 @@ fn analyze_twodelta_transition(previous_sample: &[u16], assign_vec: &[u16]) -> A
     }
 }
 
+/// Extract and validate the `assignment` array from a JSON object.
+///
+/// # Arguments
+///
+/// * `data` - A JSON value expected to contain an `assignment` array of integers.
+///
+/// # Returns
+///
+/// Returns a `Vec<u16>` of assignment values, or an error if the field is
+/// missing, not an array, or contains values that do not fit in a `u16`.
 fn parse_json_assignment(data: Value) -> Result<Vec<u16>> {
     let assign_vec = data["assignment"].as_array().ok_or_else(|| {
         io::Error::new(
@@ -128,6 +162,18 @@ fn parse_json_assignment(data: Value) -> Result<Vec<u16>> {
         .collect()
 }
 
+/// Encode an assignment vector as a full XBEN two-delta frame.
+///
+/// The frame begins with a full-frame tag byte followed by RLE-encoded
+/// assignment runs in big-endian format.
+///
+/// # Arguments
+///
+/// * `assignments` - The full assignment vector to encode.
+///
+/// # Returns
+///
+/// Returns the encoded frame as a byte vector.
 fn encode_xben_twodelta_full_frame(assignments: &[u16]) -> Vec<u8> {
     let runs = assign_to_rle(assignments);
     let mut bytes = Vec::with_capacity(1 + 4 + runs.len() * 4);
@@ -140,6 +186,21 @@ fn encode_xben_twodelta_full_frame(assignments: &[u16]) -> Vec<u8> {
     bytes
 }
 
+/// Encode the difference between two assignments as an XBEN two-delta delta frame.
+///
+/// The frame begins with a delta tag byte, the swapped value pair, and then
+/// run-length encoded flip positions in big-endian format.
+///
+/// # Arguments
+///
+/// * `previous_assignment` - The previous assignment vector.
+/// * `new_assignment` - The current assignment vector.
+/// * `delta_pair` - An optional pre-computed pair of swapped values.
+/// * `masks` - An optional index map from value to positions in the previous assignment.
+///
+/// # Returns
+///
+/// Returns the encoded delta frame as a byte vector, or an error if encoding fails.
 fn encode_xben_twodelta_delta_frame(
     previous_assignment: &[u16],
     new_assignment: &[u16],
@@ -195,6 +256,7 @@ impl<W: Write> BenEncoder<W> {
         }
     }
 
+    /// Rebuild the value-to-position index map from the current previous sample.
     fn rebuild_previous_masks(&mut self) {
         self.previous_masks.clear();
         for (idx, &assignment) in self.previous_sample.iter().enumerate() {
@@ -202,6 +264,13 @@ impl<W: Write> BenEncoder<W> {
         }
     }
 
+    /// Store a new previous sample along with its encoded frame and repetition count.
+    ///
+    /// # Arguments
+    ///
+    /// * `sample` - The assignment vector to cache.
+    /// * `encoded` - The already-encoded frame for this assignment.
+    /// * `sample_count` - The initial repetition count for this sample.
     fn set_previous_sample(
         &mut self,
         sample: Vec<u16>,
@@ -214,6 +283,20 @@ impl<W: Write> BenEncoder<W> {
         self.sample_count = sample_count;
     }
 
+    /// Encode and write an assignment vector using pre-computed transition hints.
+    ///
+    /// The encoding strategy depends on the configured `BenVariant`. Repeated
+    /// assignments may be deduplicated or counted, and two-delta hints enable
+    /// compact delta frames when applicable.
+    ///
+    /// # Arguments
+    ///
+    /// * `assign_vec` - The assignment vector to encode.
+    /// * `hints` - Pre-computed hints about repetition and delta-pair eligibility.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after the assignment has been queued or written.
     fn write_assignment_with_hints(
         &mut self,
         assign_vec: Vec<u16>,
@@ -282,6 +365,14 @@ impl<W: Write> BenEncoder<W> {
         }
     }
 
+    /// Flush the buffered frame and its repetition count to the underlying writer.
+    ///
+    /// For MkvChain and TwoDelta variants, the repetition count is appended
+    /// after the encoded frame. This is a no-op when no samples are pending.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` once the pending frame has been written.
     fn flush_pending_frame(&mut self) -> Result<()> {
         if self.sample_count == 0 {
             return Ok(());
@@ -371,6 +462,7 @@ pub struct XBenEncoder<W: Write> {
 }
 
 impl<W: Write> XBenEncoder<W> {
+    /// Rebuild the value-to-position index map from the current previous assignment.
     fn rebuild_previous_masks(&mut self) {
         self.previous_masks.clear();
         for (idx, &assignment) in self.previous_assignment.iter().enumerate() {
@@ -378,6 +470,13 @@ impl<W: Write> XBenEncoder<W> {
         }
     }
 
+    /// Store a new previous assignment along with its encoded frame and repetition count.
+    ///
+    /// # Arguments
+    ///
+    /// * `assignment` - The assignment vector to cache.
+    /// * `frame` - The already-encoded frame bytes for this assignment.
+    /// * `count` - The initial repetition count for this assignment.
     fn set_previous_assignment(&mut self, assignment: Vec<u16>, frame: Vec<u8>, count: u16) {
         self.previous_assignment = assignment;
         self.rebuild_previous_masks();
@@ -385,6 +484,14 @@ impl<W: Write> XBenEncoder<W> {
         self.count = count;
     }
 
+    /// Flush the buffered frame and its repetition count to the XZ encoder.
+    ///
+    /// For MkvChain and TwoDelta variants, the repetition count is appended
+    /// after the encoded frame. This is a no-op when no samples are pending.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` once the pending frame has been written.
     fn flush_pending_frame(&mut self) -> Result<()> {
         if self.count == 0 {
             return Ok(());
