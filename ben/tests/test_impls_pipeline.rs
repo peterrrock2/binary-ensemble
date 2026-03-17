@@ -848,31 +848,37 @@ fn subsample_by_indices_sorts_and_dedups() {
 
 #[test]
 fn ben_encode_xben_respects_existing_ben_header() {
-    // Build a BEN(Standard)
-    let jsonl = r#"{"assignment":[1,1],"sample":1}
+    let cases = [
+        (
+            BenVariant::Standard,
+            r#"{"assignment":[1,1],"sample":1}
 {"assignment":[2,2],"sample":2}
-"#;
-    let mut ben = Vec::new();
-    encode_jsonl_to_ben(
-        BufReader::new(jsonl.as_bytes()),
-        &mut ben,
-        BenVariant::Standard,
-    )
-    .unwrap();
+"#,
+        ),
+        (
+            BenVariant::TwoDelta,
+            r#"{"assignment":[1,1,2,2],"sample":1}
+{"assignment":[1,2,1,2],"sample":2}
+{"assignment":[2,2,1,1],"sample":3}
+"#,
+        ),
+    ];
 
-    // Now convert BEN -> XBEN
-    let mut xz = Vec::new();
-    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xz, Some(1), Some(0))
-        .expect("ben->xben failed");
+    for (variant, jsonl) in cases {
+        let mut ben = Vec::new();
+        encode_jsonl_to_ben(BufReader::new(jsonl.as_bytes()), &mut ben, variant).unwrap();
 
-    // Decode back
-    let mut ben_back = Vec::new();
-    decode_xben_to_ben(BufReader::new(xz.as_slice()), &mut ben_back).unwrap();
+        let mut xz = Vec::new();
+        encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xz, Some(1), Some(0))
+            .expect("ben->xben failed");
 
-    // Then to JSONL
-    let mut jsonl_back = Vec::new();
-    decode_ben_to_jsonl(ben_back.as_slice(), &mut jsonl_back).unwrap();
-    assert_eq!(jsonl_back, jsonl.as_bytes());
+        let mut ben_back = Vec::new();
+        decode_xben_to_ben(BufReader::new(xz.as_slice()), &mut ben_back).unwrap();
+
+        let mut jsonl_back = Vec::new();
+        decode_ben_to_jsonl(ben_back.as_slice(), &mut jsonl_back).unwrap();
+        assert_eq!(jsonl_back, jsonl.as_bytes());
+    }
 }
 
 #[test]

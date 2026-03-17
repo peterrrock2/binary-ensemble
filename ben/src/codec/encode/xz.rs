@@ -1,6 +1,6 @@
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::io::writer::XBenEncoder;
-use std::io::{self, BufRead, Result, Write};
+use std::io::{self, BufRead, Cursor, Read, Result, Write};
 use xz2::stream::MtStreamBuilder;
 use xz2::write::XzEncoder;
 
@@ -105,7 +105,7 @@ pub fn encode_ben_to_xben<R: BufRead, W: Write>(
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Invalid file format"))?;
     let mut ben_encoder = XBenEncoder::new(encoder, variant);
 
-    ben_encoder.write_ben_file(reader)?;
+    ben_encoder.write_ben_file(Cursor::new(check_buffer).chain(reader))?;
 
     Ok(())
 }
