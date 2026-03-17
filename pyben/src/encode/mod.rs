@@ -1,5 +1,7 @@
 use crate::common::{open_input, open_output, parse_variant, validate_input_output_paths};
-use binary_ensemble::codec::encode::{encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben};
+use binary_ensemble::codec::encode::{
+    encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben,
+};
 use binary_ensemble::io::writer::BenEncoder;
 use pyo3::exceptions::PyIOError;
 use pyo3::prelude::PyResult;

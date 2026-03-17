@@ -144,8 +144,12 @@ fn test_relabel_simple_file_mkv_with_limit() {
     );
 
     let mut encoded = Vec::new();
-    encode_jsonl_to_ben(file.as_bytes(), io::BufWriter::new(&mut encoded), BenVariant::MkvChain)
-        .unwrap();
+    encode_jsonl_to_ben(
+        file.as_bytes(),
+        io::BufWriter::new(&mut encoded),
+        BenVariant::MkvChain,
+    )
+    .unwrap();
 
     let mut relabeled = Vec::new();
     relabel_ben_file_limit(encoded.as_slice(), io::BufWriter::new(&mut relabeled), 2).unwrap();
@@ -171,8 +175,12 @@ fn test_relabel_simple_file_twodelta() {
     );
 
     let mut encoded = Vec::new();
-    encode_jsonl_to_ben(file.as_bytes(), io::BufWriter::new(&mut encoded), BenVariant::TwoDelta)
-        .unwrap();
+    encode_jsonl_to_ben(
+        file.as_bytes(),
+        io::BufWriter::new(&mut encoded),
+        BenVariant::TwoDelta,
+    )
+    .unwrap();
 
     let mut relabeled = Vec::new();
     relabel_ben_file(encoded.as_slice(), io::BufWriter::new(&mut relabeled)).unwrap();
@@ -292,11 +300,20 @@ fn test_relabel_simple_file_with_map() {
         "{\"assignment\":[2,4,1,5,2,4,3,1,3],\"sample\":7}"
     );
 
-    let new_to_old_map: HashMap<usize, usize> =
-        [(0, 2), (1, 3), (2, 4), (3, 5), (4, 6), (5, 7), (6, 8), (7, 0), (8, 1)]
-            .iter()
-            .cloned()
-            .collect();
+    let new_to_old_map: HashMap<usize, usize> = [
+        (0, 2),
+        (1, 3),
+        (2, 4),
+        (3, 5),
+        (4, 6),
+        (5, 7),
+        (6, 8),
+        (7, 0),
+        (8, 1),
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     let input = file.as_bytes();
 
@@ -345,11 +362,20 @@ fn test_relabel_simple_file_with_map_mkv() {
         "{\"assignment\":[2,4,1,5,2,4,3,1,3],\"sample\":10}",
     );
 
-    let new_to_old_map: HashMap<usize, usize> =
-        [(0, 2), (1, 3), (2, 4), (3, 5), (4, 6), (5, 7), (6, 8), (7, 0), (8, 1)]
-            .iter()
-            .cloned()
-            .collect();
+    let new_to_old_map: HashMap<usize, usize> = [
+        (0, 2),
+        (1, 3),
+        (2, 4),
+        (3, 5),
+        (4, 6),
+        (5, 7),
+        (6, 8),
+        (7, 0),
+        (8, 1),
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     let input = file.as_bytes();
 
@@ -394,15 +420,18 @@ fn test_relabel_simple_file_with_map_twodelta() {
         "{\"assignment\":[2,2,1,1,3,3],\"sample\":4}\n"
     );
 
-    let new_to_old_map: HashMap<usize, usize> =
-        [(0, 2), (1, 3), (2, 0), (3, 1), (4, 4), (5, 5)]
-            .iter()
-            .cloned()
-            .collect();
+    let new_to_old_map: HashMap<usize, usize> = [(0, 2), (1, 3), (2, 0), (3, 1), (4, 4), (5, 5)]
+        .iter()
+        .cloned()
+        .collect();
 
     let mut encoded = Vec::new();
-    encode_jsonl_to_ben(file.as_bytes(), io::BufWriter::new(&mut encoded), BenVariant::TwoDelta)
-        .unwrap();
+    encode_jsonl_to_ben(
+        file.as_bytes(),
+        io::BufWriter::new(&mut encoded),
+        BenVariant::TwoDelta,
+    )
+    .unwrap();
 
     let mut relabeled = Vec::new();
     relabel_ben_file_with_map(
@@ -437,8 +466,12 @@ fn test_relabel_simple_file_with_map_mkv_limit_truncates_counts() {
     let new_to_old_map: HashMap<usize, usize> = [(0, 1), (1, 2), (2, 0)].iter().cloned().collect();
 
     let mut encoded = Vec::new();
-    encode_jsonl_to_ben(file.as_bytes(), io::BufWriter::new(&mut encoded), BenVariant::MkvChain)
-        .unwrap();
+    encode_jsonl_to_ben(
+        file.as_bytes(),
+        io::BufWriter::new(&mut encoded),
+        BenVariant::MkvChain,
+    )
+    .unwrap();
 
     let mut relabeled = Vec::new();
     relabel_ben_file_with_map_limit(
@@ -469,12 +502,9 @@ fn test_relabel_file_rejects_invalid_header() {
 
 #[test]
 fn test_relabel_file_with_map_rejects_invalid_header() {
-    let err = relabel_ben_file_with_map(
-        b"not a valid banner".as_slice(),
-        Vec::new(),
-        HashMap::new(),
-    )
-    .unwrap_err();
+    let err =
+        relabel_ben_file_with_map(b"not a valid banner".as_slice(), Vec::new(), HashMap::new())
+            .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     assert_eq!(err.to_string(), "Invalid file format");
 }

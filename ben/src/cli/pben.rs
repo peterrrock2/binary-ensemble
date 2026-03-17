@@ -3,8 +3,8 @@ use crate::io::reader::BenDecoder;
 use crate::io::writer::{BenEncoder, XBenEncoder};
 use crate::BenVariant;
 use clap::{Parser, ValueEnum};
-use serde_json::json;
 use pipe::pipe;
+use serde_json::json;
 use std::{
     fs::File,
     io::{self, BufRead, BufReader, BufWriter, Read, Result, Write},
@@ -88,7 +88,10 @@ pub fn run() -> Result<()> {
         Mode::PcToBen => {
             tracing::trace!("Converting PCOMPRESS to BEN");
 
-            let mut pcompress_reader: BufReader<Box<dyn Read + Send>> = match args.input_file.as_ref() {
+            let mut pcompress_reader: BufReader<Box<dyn Read + Send>> = match args
+                .input_file
+                .as_ref()
+            {
                 Some(file) => BufReader::new(Box::new(BufReader::new(File::open(file).unwrap()))),
                 None => BufReader::new(Box::new(io::stdin())),
             };
@@ -116,7 +119,10 @@ pub fn run() -> Result<()> {
         Mode::PcToXben => {
             tracing::trace!("Converting PCOMPRESS to XBEN");
 
-            let mut pcompress_reader: BufReader<Box<dyn Read + Send>> = match args.input_file.as_ref() {
+            let mut pcompress_reader: BufReader<Box<dyn Read + Send>> = match args
+                .input_file
+                .as_ref()
+            {
                 Some(file) => BufReader::new(Box::new(BufReader::new(File::open(file).unwrap()))),
                 None => BufReader::new(Box::new(io::stdin())),
             };
@@ -287,8 +293,14 @@ mod tests {
 
     #[test]
     fn derive_output_path_replaces_expected_suffixes() {
-        assert_eq!(derive_output_path(Mode::BenToPc, "plans.ben"), "plans.pcompress");
-        assert_eq!(derive_output_path(Mode::PcToBen, "plans.pcompress"), "plans.ben");
+        assert_eq!(
+            derive_output_path(Mode::BenToPc, "plans.ben"),
+            "plans.pcompress"
+        );
+        assert_eq!(
+            derive_output_path(Mode::PcToBen, "plans.pcompress"),
+            "plans.ben"
+        );
         assert_eq!(derive_output_path(Mode::PcToXben, "plans.pc"), "plans.xben");
     }
 

@@ -484,7 +484,11 @@ fn apply_twodelta_runs_to_assignment(
             assignment[pair_positions[write_idx]] = current_value;
             write_idx += 1;
         }
-        current_value = if current_value == first { second } else { first };
+        current_value = if current_value == first {
+            second
+        } else {
+            first
+        };
     }
 
     Ok(assignment)
@@ -527,11 +531,11 @@ impl<R: Read> Iterator for BenDecoder<R> {
             Some(Err(e)) => return Some(Err(e)),
             None => return None,
         };
-        let assignment = match decode_stored_frame_to_assignment(self.previous_assignment.as_deref(), &frame)
-        {
-            Ok(assgn) => assgn,
-            Err(e) => return Some(Err(e)),
-        };
+        let assignment =
+            match decode_stored_frame_to_assignment(self.previous_assignment.as_deref(), &frame) {
+                Ok(assgn) => assgn,
+                Err(e) => return Some(Err(e)),
+            };
         let count = frame.count();
         self.previous_assignment = Some(assignment.clone());
         self.sample_count += count as usize;
@@ -568,7 +572,8 @@ impl<R: Read> Iterator for BenFrameDecoeder<R> {
     /// Return the next raw BEN frame from the input stream.
     fn next(&mut self) -> Option<Self::Item> {
         match self.inner.variant {
-            BenVariant::Standard | BenVariant::MkvChain => match self.inner.pop_frame_from_reader() {
+            BenVariant::Standard | BenVariant::MkvChain => match self.inner.pop_frame_from_reader()
+            {
                 Some(Ok(StoredBenFrame::Ben(frame))) => Some(Ok(frame)),
                 Some(Ok(StoredBenFrame::TwoDelta { .. })) => Some(Err(io::Error::new(
                     io::ErrorKind::InvalidData,

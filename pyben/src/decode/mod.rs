@@ -1,5 +1,7 @@
 use crate::common::{open_input, open_output, validate_input_output_paths};
-use binary_ensemble::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl};
+use binary_ensemble::codec::decode::{
+    decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl,
+};
 use binary_ensemble::io::reader::{
     build_frame_iter, count_samples_from_file, BenDecoder, MkvRecord, Selection,
     SubsampleFrameDecoder, XBenDecoder,
@@ -286,7 +288,10 @@ fn ensure_base_len(decoder: &mut PyBenDecoder, py: Python<'_>) -> PyResult<usize
     let base_len = py
         .detach(|| count_samples_from_file(&path, &mode))
         .map_err(|e| {
-            PyException::new_err(format!("Failed to count samples in {}: {e}", path.display()))
+            PyException::new_err(format!(
+                "Failed to count samples in {}: {e}",
+                path.display()
+            ))
         })?;
     decoder.base_len = Some(base_len);
     Ok(base_len)

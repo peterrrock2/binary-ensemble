@@ -51,8 +51,7 @@ pub fn open_output(out_file: &PathBuf, overwrite: bool) -> PyResult<BufWriter<Fi
     } else {
         File::options().write(true).create_new(true).open(out_file)
     };
-    let outfile = out_open.map_err(|e| {
-        PyIOError::new_err(format!("Failed to create {}: {e}", out_file.display()))
-    })?;
+    let outfile = out_open
+        .map_err(|e| PyIOError::new_err(format!("Failed to create {}: {e}", out_file.display())))?;
     Ok(BufWriter::new(outfile))
 }

@@ -1,6 +1,6 @@
+use std::sync::Once;
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
-use std::sync::Once;
 
 static INIT_LOGGER: Once = Once::new();
 

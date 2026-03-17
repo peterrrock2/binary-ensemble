@@ -376,8 +376,12 @@ pub fn run() {
             let reader = open_reader(args.input_file.as_deref());
             let writer = match args.input_file.as_ref() {
                 Some(file) if !args.print => {
-                    match decode_setup(file.clone(), args.output_file.clone(), false, args.overwrite)
-                    {
+                    match decode_setup(
+                        file.clone(),
+                        args.output_file.clone(),
+                        false,
+                        args.overwrite,
+                    ) {
                         Ok(path) => open_derived_writer(path),
                         Err(err) => {
                             eprintln!("Error: {:?}", err);

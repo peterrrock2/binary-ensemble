@@ -141,7 +141,8 @@ fn strat_twodelta_seq() -> impl Strategy<Value = Vec<Vec<u16>>> {
                 let a = distinct[(op as usize) % distinct.len()];
                 let mut b = distinct[((op >> 8) as usize) % distinct.len()];
                 if a == b {
-                    b = distinct[(distinct.iter().position(|&x| x == a).unwrap() + 1) % distinct.len()];
+                    b = distinct
+                        [(distinct.iter().position(|&x| x == a).unwrap() + 1) % distinct.len()];
                 }
 
                 let positions: Vec<usize> = current
@@ -178,7 +179,9 @@ fn strat_twodelta_seq() -> impl Strategy<Value = Vec<Vec<u16>>> {
 
             seq
         })
-        .prop_filter("TwoDelta sequences must be non-empty", |seq| !seq.is_empty())
+        .prop_filter("TwoDelta sequences must be non-empty", |seq| {
+            !seq.is_empty()
+        })
 }
 
 // Random (small) thread count and compression level for MT encoder.
@@ -903,8 +906,11 @@ fn ben_encoder_write_assignment_path_roundtrips() {
 
     let mut out = Vec::new();
     decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap();
-    assert_eq!(out, br#"{"assignment":[9,9,2,2,2],"sample":1}
-"#);
+    assert_eq!(
+        out,
+        br#"{"assignment":[9,9,2,2,2],"sample":1}
+"#
+    );
 }
 
 #[test]
@@ -990,7 +996,8 @@ fn xben_encoder_write_ben_file_without_banner_path_roundtrips() {
             .unwrap();
         let encoder = xz2::write::XzEncoder::new_stream(&mut xz, mt);
         let mut xben = binary_ensemble::io::writer::XBenEncoder::new(encoder, BenVariant::Standard);
-        xben.write_ben_file(BufReader::new(payload_only.as_slice())).unwrap();
+        xben.write_ben_file(BufReader::new(payload_only.as_slice()))
+            .unwrap();
     }
 
     let mut ben = Vec::new();
@@ -998,8 +1005,11 @@ fn xben_encoder_write_ben_file_without_banner_path_roundtrips() {
 
     let mut out = Vec::new();
     decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap();
-    assert_eq!(out, br#"{"assignment":[5,5,7],"sample":1}
-"#);
+    assert_eq!(
+        out,
+        br#"{"assignment":[5,5,7],"sample":1}
+"#
+    );
 }
 
 struct FailAfterN {
@@ -1016,7 +1026,10 @@ impl std::io::Read for FailAfterN {
         if self.pos >= self.data.len() {
             return Ok(0);
         }
-        let n = buf.len().min(self.data.len() - self.pos).min(self.fail_at - self.pos);
+        let n = buf
+            .len()
+            .min(self.data.len() - self.pos)
+            .min(self.fail_at - self.pos);
         buf[..n].copy_from_slice(&self.data[self.pos..self.pos + n]);
         self.pos += n;
         Ok(n)
@@ -1112,7 +1125,13 @@ fn decoder_init_error_display_source_and_conversion_paths() {
 
     let xz_bytes = {
         let mut buf = Vec::new();
-        xz_compress(BufReader::new(b"hello".as_slice()), &mut buf, Some(1), Some(0)).unwrap();
+        xz_compress(
+            BufReader::new(b"hello".as_slice()),
+            &mut buf,
+            Some(1),
+            Some(0),
+        )
+        .unwrap();
         buf
     };
     let xz_header = xz_bytes[..17].to_vec();
@@ -1137,8 +1156,19 @@ fn ben_decoder_and_xben_decoder_count_samples() {
 "#;
 
     let mut ben = Vec::new();
-    encode_jsonl_to_ben(BufReader::new(jsonl.as_bytes()), &mut ben, BenVariant::MkvChain).unwrap();
-    assert_eq!(BenDecoder::new(ben.as_slice()).unwrap().count_samples().unwrap(), 3);
+    encode_jsonl_to_ben(
+        BufReader::new(jsonl.as_bytes()),
+        &mut ben,
+        BenVariant::MkvChain,
+    )
+    .unwrap();
+    assert_eq!(
+        BenDecoder::new(ben.as_slice())
+            .unwrap()
+            .count_samples()
+            .unwrap(),
+        3
+    );
 
     let mut xben = Vec::new();
     encode_jsonl_to_xben(
@@ -1149,7 +1179,13 @@ fn ben_decoder_and_xben_decoder_count_samples() {
         Some(0),
     )
     .unwrap();
-    assert_eq!(XBenDecoder::new(xben.as_slice()).unwrap().count_samples().unwrap(), 3);
+    assert_eq!(
+        XBenDecoder::new(xben.as_slice())
+            .unwrap()
+            .count_samples()
+            .unwrap(),
+        3
+    );
 
     let twodelta_jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
 {"assignment":[1,2,2,1],"sample":2}
@@ -1181,7 +1217,12 @@ fn build_frame_iter_and_count_samples_from_file_cover_public_file_api() {
 "#;
 
     let mut ben = Vec::new();
-    encode_jsonl_to_ben(BufReader::new(jsonl.as_bytes()), &mut ben, BenVariant::MkvChain).unwrap();
+    encode_jsonl_to_ben(
+        BufReader::new(jsonl.as_bytes()),
+        &mut ben,
+        BenVariant::MkvChain,
+    )
+    .unwrap();
     let ben_path = unique_temp_path("sample.ben");
     fs::write(&ben_path, &ben).unwrap();
 
@@ -1222,7 +1263,12 @@ fn ben_decoder_subsample_helpers_work_on_public_api() {
 "#;
 
     let mut ben = Vec::new();
-    encode_jsonl_to_ben(BufReader::new(jsonl.as_bytes()), &mut ben, BenVariant::MkvChain).unwrap();
+    encode_jsonl_to_ben(
+        BufReader::new(jsonl.as_bytes()),
+        &mut ben,
+        BenVariant::MkvChain,
+    )
+    .unwrap();
 
     let mut by_indices = BenDecoder::new(ben.as_slice())
         .unwrap()
@@ -1286,7 +1332,12 @@ fn twodelta_roundtrips_and_counts_repeated_frames() {
     assert_eq!(jsonl, jsonl_from_assignments(&assignments));
 
     let frames = BenDecoder::new(ben.as_slice()).unwrap().into_frames();
-    assert_eq!(collect_frames(frames.map(|res| res.map(|f| (Frame::Ben(f.clone()), f.count)))).unwrap().len(), 3);
+    assert_eq!(
+        collect_frames(frames.map(|res| res.map(|f| (Frame::Ben(f.clone()), f.count))))
+            .unwrap()
+            .len(),
+        3
+    );
 }
 
 #[test]
@@ -1321,10 +1372,7 @@ fn twodelta_rejects_non_pair_transition() {
     let mut ben = Vec::new();
     let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta);
     encoder.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
-    let err = encoder
-        .write_assignment(vec![1u16, 3, 2, 4])
-        .err()
-        .unwrap();
+    let err = encoder.write_assignment(vec![1u16, 3, 2, 4]).err().unwrap();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
 }
 
@@ -1360,7 +1408,13 @@ fn twodelta_supports_frame_iteration_counting_and_sample_extraction() {
     )
     .unwrap();
 
-    assert_eq!(BenDecoder::new(ben.as_slice()).unwrap().count_samples().unwrap(), 4);
+    assert_eq!(
+        BenDecoder::new(ben.as_slice())
+            .unwrap()
+            .count_samples()
+            .unwrap(),
+        4
+    );
 
     let frames: Vec<_> = BenDecoder::new(ben.as_slice())
         .unwrap()

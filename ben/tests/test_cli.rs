@@ -264,7 +264,10 @@ fn ben_cli_supports_stdin_stdout_workflows() {
         &xencode_jsonl.stdout,
     );
     assert_success(&xdecode_jsonl);
-    assert_eq!(String::from_utf8(xdecode_jsonl.stdout).unwrap(), sample_jsonl());
+    assert_eq!(
+        String::from_utf8(xdecode_jsonl.stdout).unwrap(),
+        sample_jsonl()
+    );
 
     let mut ben_bytes = Vec::new();
     encode_jsonl_to_ben(
@@ -422,14 +425,23 @@ fn ben_cli_uses_default_output_names() {
 
     let encode = run(
         "ben",
-        &["--mode", "encode", jsonl_path.to_str().unwrap(), "--save-all"],
+        &[
+            "--mode",
+            "encode",
+            jsonl_path.to_str().unwrap(),
+            "--save-all",
+        ],
         temp.path(),
     );
     assert_success(&encode);
     assert!(ben_path.exists());
 
     fs::remove_file(&jsonl_path).unwrap();
-    let decode = run("ben", &["--mode", "decode", ben_path.to_str().unwrap()], temp.path());
+    let decode = run(
+        "ben",
+        &["--mode", "decode", ben_path.to_str().unwrap()],
+        temp.path(),
+    );
     assert_success(&decode);
     assert_eq!(fs::read_to_string(&jsonl_path).unwrap(), sample_jsonl());
 
@@ -442,7 +454,11 @@ fn ben_cli_uses_default_output_names() {
     assert!(xz_path.exists());
 
     fs::remove_file(&jsonl_path).unwrap();
-    let decompress = run("ben", &["--mode", "xz-decompress", xz_path.to_str().unwrap()], temp.path());
+    let decompress = run(
+        "ben",
+        &["--mode", "xz-decompress", xz_path.to_str().unwrap()],
+        temp.path(),
+    );
     assert_success(&decompress);
     assert_eq!(fs::read_to_string(&jsonl_path).unwrap(), sample_jsonl());
 }
@@ -463,9 +479,8 @@ fn ben_cli_reports_expected_error_paths() {
         temp.path(),
     );
     assert_success(&xencode);
-    assert!(
-        String::from_utf8_lossy(&xencode.stderr).contains("Unsupported file type(s) for xencode mode")
-    );
+    assert!(String::from_utf8_lossy(&xencode.stderr)
+        .contains("Unsupported file type(s) for xencode mode"));
 
     let decode = run(
         "ben",
@@ -477,7 +492,11 @@ fn ben_cli_reports_expected_error_paths() {
         String::from_utf8_lossy(&decode.stderr).contains("Unsupported file type for decode mode")
     );
 
-    let read = run("ben", &["--mode", "read", bogus_jsonl.to_str().unwrap()], temp.path());
+    let read = run(
+        "ben",
+        &["--mode", "read", bogus_jsonl.to_str().unwrap()],
+        temp.path(),
+    );
     assert_success(&read);
     assert!(
         String::from_utf8_lossy(&read.stderr).contains("Sample number is required in read mode")
@@ -489,9 +508,8 @@ fn ben_cli_reports_expected_error_paths() {
         temp.path(),
     );
     assert_success(&xz);
-    assert!(
-        String::from_utf8_lossy(&xz.stderr).contains("Unsupported file type for xz decompress mode")
-    );
+    assert!(String::from_utf8_lossy(&xz.stderr)
+        .contains("Unsupported file type for xz decompress mode"));
 
     let bad_xben = run_stdin_stdout("ben", &["--mode", "x-decode"], temp.path(), b"not-an-xben");
     assert_success(&bad_xben);
@@ -714,9 +732,8 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
 
     let unsupported_decode = run_stdin_stdout("ben", &["--mode", "decode"], temp.path(), b"");
     assert_success(&unsupported_decode);
-    assert!(
-        String::from_utf8_lossy(&unsupported_decode.stderr).contains("Unsupported file type(s) for decode mode")
-    );
+    assert!(String::from_utf8_lossy(&unsupported_decode.stderr)
+        .contains("Unsupported file type(s) for decode mode"));
 
     let read_too_large = run(
         "ben",
@@ -1080,6 +1097,132 @@ fn reben_cli_supports_twodelta_ben_mode() {
 }
 
 #[test]
+fn reben_cli_can_convert_between_ben_variants() {
+    let temp = TempDir::new("reben-convert");
+    let ben_path = temp.path().join("samples.standard.ben");
+    let twodelta_path = temp.path().join("samples.twodelta.ben");
+    let mkv_path = temp.path().join("samples.mkv.ben");
+
+    let source_jsonl = r#"{"assignment":[4,4,9],"sample":1}
+{"assignment":[4,4,9],"sample":2}
+{"assignment":[4,9,4],"sample":3}
+{"assignment":[9,9,4],"sample":4}
+"#;
+
+    let mut ben_bytes = Vec::new();
+    encode_jsonl_to_ben(
+        BufReader::new(source_jsonl.as_bytes()),
+        &mut ben_bytes,
+        BenVariant::Standard,
+    )
+    .unwrap();
+    fs::write(&ben_path, ben_bytes).unwrap();
+
+    let to_twodelta = run(
+        "reben",
+        &[
+            ben_path.to_str().unwrap(),
+            "--mode",
+            "ben",
+            "--output-variant",
+            "twodelta",
+            "--convert-only",
+            "--output-file",
+            twodelta_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_success(&to_twodelta);
+
+    let twodelta_bytes = fs::read(&twodelta_path).unwrap();
+    assert_eq!(&twodelta_bytes[..17], b"TWODELTA BEN FILE");
+
+    let to_mkv = run(
+        "reben",
+        &[
+            twodelta_path.to_str().unwrap(),
+            "--mode",
+            "ben",
+            "--output-variant",
+            "mkv-chain",
+            "--convert-only",
+            "--output-file",
+            mkv_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_success(&to_mkv);
+
+    let mkv_bytes = fs::read(&mkv_path).unwrap();
+    assert_eq!(&mkv_bytes[..17], b"MKVCHAIN BEN FILE");
+
+    let mut original_jsonl = Vec::new();
+    decode_ben_to_jsonl(
+        BufReader::new(fs::File::open(&ben_path).unwrap()),
+        &mut original_jsonl,
+    )
+    .unwrap();
+
+    let mut converted_jsonl = Vec::new();
+    decode_ben_to_jsonl(
+        BufReader::new(fs::File::open(&mkv_path).unwrap()),
+        &mut converted_jsonl,
+    )
+    .unwrap();
+
+    assert_eq!(original_jsonl, converted_jsonl);
+}
+
+#[test]
+fn reben_cli_can_canonicalize_into_a_different_ben_variant() {
+    let temp = TempDir::new("reben-canonicalize-convert");
+    let ben_path = temp.path().join("samples.standard.ben");
+    let output_path = temp.path().join("canonicalized.twodelta.ben");
+
+    let mut ben_bytes = Vec::new();
+    encode_jsonl_to_ben(
+        BufReader::new(
+            r#"{"assignment":[9,9,4],"sample":1}
+{"assignment":[4,7,7],"sample":2}
+"#
+            .as_bytes(),
+        ),
+        &mut ben_bytes,
+        BenVariant::Standard,
+    )
+    .unwrap();
+    fs::write(&ben_path, ben_bytes).unwrap();
+
+    let canonicalize = run(
+        "reben",
+        &[
+            ben_path.to_str().unwrap(),
+            "--mode",
+            "ben",
+            "--output-variant",
+            "twodelta",
+            "--output-file",
+            output_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_success(&canonicalize);
+
+    let bytes = fs::read(&output_path).unwrap();
+    assert_eq!(&bytes[..17], b"TWODELTA BEN FILE");
+
+    let mut canonical_jsonl = Vec::new();
+    decode_ben_to_jsonl(
+        BufReader::new(fs::File::open(&output_path).unwrap()),
+        &mut canonical_jsonl,
+    )
+    .unwrap();
+    let canonical_text = String::from_utf8(canonical_jsonl).unwrap();
+    assert!(canonical_text.contains(r#""assignment":[1,1,2]"#));
+    assert!(canonical_text.contains(r#""assignment":[1,2,2]"#));
+}
+
+#[test]
 fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations() {
     let temp = TempDir::new("reben-more");
     let graph_path = temp.path().join("shape.json");
@@ -1112,7 +1255,10 @@ fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations
         temp.path(),
     );
     assert_success(&relabel);
-    assert!(temp.path().join("shape_sorted_by_GEOID20_map.json").exists());
+    assert!(temp
+        .path()
+        .join("shape_sorted_by_GEOID20_map.json")
+        .exists());
 
     let generated_graph = temp.path().join("shape_sorted_by_GEOID20.json");
     let generated_map = temp.path().join("shape_sorted_by_GEOID20_map.json");
@@ -1149,7 +1295,8 @@ fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations
     assert_failure(&missing_shape);
     assert!(String::from_utf8_lossy(&missing_shape.stderr).contains("No shape file provided"));
 
-    let sorted_json: Value = serde_json::from_str(&fs::read_to_string(generated_graph).unwrap()).unwrap();
+    let sorted_json: Value =
+        serde_json::from_str(&fs::read_to_string(generated_graph).unwrap()).unwrap();
     assert_eq!(sorted_json["nodes"][0]["GEOID20"], "A");
 }
 
@@ -1200,8 +1347,7 @@ fn reben_cli_supports_mla_and_rcm_orderings() {
         .join("shape_sorted_by_reverse-cuthill-mckee_map.json")
         .exists());
 
-    let mla_json: Value =
-        serde_json::from_str(&fs::read_to_string(&mla_path).unwrap()).unwrap();
+    let mla_json: Value = serde_json::from_str(&fs::read_to_string(&mla_path).unwrap()).unwrap();
     let rcm_json: Value = serde_json::from_str(&fs::read_to_string(&rcm_path).unwrap()).unwrap();
     assert_eq!(
         mla_json["nodes"].as_array().unwrap().len(),
@@ -1309,16 +1455,13 @@ fn pben_cli_converts_between_formats() {
         &mut roundtrip_jsonl,
     )
     .unwrap();
-    assert!(String::from_utf8(roundtrip_jsonl).unwrap().contains(r#""assignment":[2,2,3]"#));
+    assert!(String::from_utf8(roundtrip_jsonl)
+        .unwrap()
+        .contains(r#""assignment":[2,2,3]"#));
 
     let xdecode = run(
         "ben",
-        &[
-            "--mode",
-            "x-decode",
-            xben_path.to_str().unwrap(),
-            "--print",
-        ],
+        &["--mode", "x-decode", xben_path.to_str().unwrap(), "--print"],
         temp.path(),
     );
     assert_success(&xdecode);

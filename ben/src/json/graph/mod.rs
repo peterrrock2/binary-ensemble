@@ -258,7 +258,10 @@ fn reverse_cuthill_mckee_component(graph: &GraphJson, component: &[usize]) -> Ve
         .iter()
         .map(Vec::len)
         .collect::<Vec<_>>();
-    let component_set = component.iter().copied().collect::<std::collections::HashSet<_>>();
+    let component_set = component
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
     let start = component
         .iter()
         .copied()
@@ -369,15 +372,17 @@ fn connected_components_generic(adjacency: &[Vec<usize>], labels: &[usize]) -> V
     components
 }
 
-fn rcm_component_generic(adjacency: &[Vec<usize>], labels: &[usize], component: &[usize]) -> Vec<usize> {
+fn rcm_component_generic(
+    adjacency: &[Vec<usize>],
+    labels: &[usize],
+    component: &[usize],
+) -> Vec<usize> {
     let component_mask = subset_mask(adjacency.len(), component);
     let local_degree = local_degree_in_subset(adjacency, &component_mask, component);
     let start = component
         .iter()
         .copied()
-        .min_by_key(|&node| {
-            (local_degree[node], labels[node])
-        })
+        .min_by_key(|&node| (local_degree[node], labels[node]))
         .unwrap();
 
     let mut visited = vec![false; adjacency.len()];
@@ -406,7 +411,9 @@ fn rcm_component_generic(adjacency: &[Vec<usize>], labels: &[usize], component: 
 fn multilevel_cluster_order_generic(adjacency: &[Vec<usize>], labels: &[usize]) -> Vec<usize> {
     let mut order = Vec::with_capacity(adjacency.len());
     for component in connected_components_generic(adjacency, labels) {
-        order.extend(multilevel_cluster_component_generic(adjacency, labels, &component));
+        order.extend(multilevel_cluster_component_generic(
+            adjacency, labels, &component,
+        ));
     }
     order
 }
@@ -481,14 +488,13 @@ fn greedy_cluster_partition(
                 .iter()
                 .filter(|&&next| component_mask[next] && seed_marks[next] == mark_epoch)
                 .count();
-            (
-                Reverse(shared),
-                local_degree[neighbor],
-                labels[neighbor],
-            )
+            (Reverse(shared), local_degree[neighbor], labels[neighbor])
         });
 
-        for neighbor in candidates.into_iter().take(max_cluster_size.saturating_sub(1)) {
+        for neighbor in candidates
+            .into_iter()
+            .take(max_cluster_size.saturating_sub(1))
+        {
             assigned[neighbor] = true;
             remaining -= 1;
             cluster.push(neighbor);
@@ -506,7 +512,11 @@ fn greedy_cluster_partition(
     clusters
 }
 
-fn local_degree_in_subset(adjacency: &[Vec<usize>], subset_mask: &[bool], subset: &[usize]) -> Vec<usize> {
+fn local_degree_in_subset(
+    adjacency: &[Vec<usize>],
+    subset_mask: &[bool],
+    subset: &[usize],
+) -> Vec<usize> {
     let mut local_degree = vec![0usize; adjacency.len()];
     for &node in subset {
         local_degree[node] = adjacency[node]

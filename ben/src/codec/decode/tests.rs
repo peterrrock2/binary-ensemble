@@ -293,8 +293,13 @@ fn test_jsonl_decode_ben32_propagates_non_eof_error() {
 #[test]
 fn test_decode_xben_to_ben_rejects_invalid_inner_header() {
     let mut xz = Vec::new();
-    xz_compress(BufReader::new(b"BAD BAD BAD BAD!!".as_slice()), &mut xz, Some(1), Some(0))
-        .unwrap();
+    xz_compress(
+        BufReader::new(b"BAD BAD BAD BAD!!".as_slice()),
+        &mut xz,
+        Some(1),
+        Some(0),
+    )
+    .unwrap();
 
     let err = decode_xben_to_ben(BufReader::new(xz.as_slice()), Vec::new()).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
@@ -303,8 +308,13 @@ fn test_decode_xben_to_ben_rejects_invalid_inner_header() {
 #[test]
 fn test_decode_xben_to_jsonl_rejects_invalid_inner_header() {
     let mut xz = Vec::new();
-    xz_compress(BufReader::new(b"BAD BAD BAD BAD!!".as_slice()), &mut xz, Some(1), Some(0))
-        .unwrap();
+    xz_compress(
+        BufReader::new(b"BAD BAD BAD BAD!!".as_slice()),
+        &mut xz,
+        Some(1),
+        Some(0),
+    )
+    .unwrap();
 
     let err = decode_xben_to_jsonl(BufReader::new(xz.as_slice()), Vec::new()).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);

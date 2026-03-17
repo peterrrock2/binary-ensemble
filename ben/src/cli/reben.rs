@@ -2,9 +2,12 @@ use crate::cli::common::set_verbose;
 use crate::{
     json::graph::{sort_json_file_by_key, sort_json_file_by_ordering, GraphOrderingMethod},
     ops::relabel::{
-        relabel_ben_file, relabel_ben_file_limit, relabel_ben_file_with_map,
+        convert_ben_file, convert_ben_file_limit, relabel_ben_file, relabel_ben_file_as_variant,
+        relabel_ben_file_as_variant_limit, relabel_ben_file_limit, relabel_ben_file_with_map,
+        relabel_ben_file_with_map_as_variant, relabel_ben_file_with_map_as_variant_limit,
         relabel_ben_file_with_map_limit,
     },
+    BenVariant,
 };
 use clap::{Parser, ValueEnum};
 use serde_json::{json, Value};
@@ -33,6 +36,15 @@ enum OrderingMethod {
     MultiLevelCluster,
     /// Reverse Cuthill-McKee ordering.
     ReverseCuthillMckee,
+}
+
+#[derive(Parser, Debug, Clone, ValueEnum, PartialEq)]
+/// BEN variants supported for BEN-mode output.
+enum BenCliVariant {
+    Standard,
+    MkvChain,
+    #[clap(alias = "twodelta")]
+    TwoDelta,
 }
 
 #[derive(Parser, Debug)]
@@ -77,6 +89,12 @@ struct Args {
     /// Only relabel the first `n` expanded samples in BEN mode.
     #[arg(long)]
     n_items: Option<usize>,
+    /// BEN variant to use for the BEN-mode output file.
+    #[arg(long, value_enum)]
+    output_variant: Option<BenCliVariant>,
+    /// Rewrite the BEN stream without canonicalizing or map relabeling.
+    #[arg(long)]
+    convert_only: bool,
     /// Verbosity level for the program.
     #[arg(short, long)]
     verbose: bool,
@@ -138,17 +156,36 @@ pub fn run() {
                 .expect("Could not write map file.");
         }
         Mode::Ben => {
+            if args.convert_only && args.output_variant.is_none() {
+                panic!("--convert-only requires --output-variant.");
+            }
+            if args.convert_only
+                && (args.map_file.is_some() || args.key.is_some() || args.ordering.is_some())
+            {
+                panic!("--convert-only cannot be combined with relabeling options.");
+            }
+
             let input_file = File::open(&args.input_file).expect("Could not open input file.");
             let reader = BufReader::new(input_file);
+            let output_variant = args.output_variant.as_ref().map(to_ben_variant);
 
             if args.map_file.is_none() && args.key.is_none() && args.ordering.is_none() {
-                tracing::trace!("Canonicalizing assignment vectors in ben file.");
+                if args.convert_only {
+                    tracing::trace!("Converting BEN file to requested variant.");
+                } else {
+                    tracing::trace!("Canonicalizing assignment vectors in ben file.");
+                }
 
                 let output_file_name = match args.output_file {
                     Some(name) => name,
                     None => {
-                        args.input_file.trim_end_matches(".jsonl.ben").to_owned()
-                            + "_canonicalized_assignments.jsonl.ben"
+                        if let Some(variant) = output_variant {
+                            args.input_file.trim_end_matches(".ben").to_owned()
+                                + format!("_{}.ben", ben_variant_name(variant)).as_str()
+                        } else {
+                            args.input_file.trim_end_matches(".jsonl.ben").to_owned()
+                                + "_canonicalized_assignments.jsonl.ben"
+                        }
                     }
                 };
 
@@ -156,7 +193,20 @@ pub fn run() {
                     File::create(&output_file_name).expect("Could not create output file.");
                 let writer = BufWriter::new(output_file);
 
-                if let Some(limit) = args.n_items {
+                if args.convert_only {
+                    let variant = output_variant.unwrap();
+                    if let Some(limit) = args.n_items {
+                        convert_ben_file_limit(reader, writer, variant, limit).unwrap();
+                    } else {
+                        convert_ben_file(reader, writer, variant).unwrap();
+                    }
+                } else if let Some(variant) = output_variant {
+                    if let Some(limit) = args.n_items {
+                        relabel_ben_file_as_variant_limit(reader, writer, variant, limit).unwrap();
+                    } else {
+                        relabel_ben_file_as_variant(reader, writer, variant).unwrap();
+                    }
+                } else if let Some(limit) = args.n_items {
                     relabel_ben_file_limit(reader, writer, limit).unwrap();
                 } else {
                     relabel_ben_file(reader, writer).unwrap();
@@ -253,9 +303,31 @@ pub fn run() {
                 File::create(&output_file_name).expect("Could not create output file.");
             let writer = BufWriter::new(output_file);
 
-            tracing::trace!("Relabeling ben file according to map file {}", map_file_name,);
+            tracing::trace!(
+                "Relabeling ben file according to map file {}",
+                map_file_name,
+            );
 
-            if let Some(limit) = args.n_items {
+            if let Some(variant) = output_variant {
+                if let Some(limit) = args.n_items {
+                    relabel_ben_file_with_map_as_variant_limit(
+                        reader,
+                        writer,
+                        new_to_old_node_map,
+                        variant,
+                        limit,
+                    )
+                    .unwrap();
+                } else {
+                    relabel_ben_file_with_map_as_variant(
+                        reader,
+                        writer,
+                        new_to_old_node_map,
+                        variant,
+                    )
+                    .unwrap();
+                }
+            } else if let Some(limit) = args.n_items {
                 relabel_ben_file_with_map_limit(reader, writer, new_to_old_node_map, limit)
                     .unwrap();
             } else {
@@ -267,9 +339,7 @@ pub fn run() {
 
 fn to_graph_ordering(ordering: &OrderingMethod) -> GraphOrderingMethod {
     match ordering {
-        OrderingMethod::MinimumLinearArrangement => {
-            GraphOrderingMethod::MinimumLinearArrangement
-        }
+        OrderingMethod::MinimumLinearArrangement => GraphOrderingMethod::MinimumLinearArrangement,
         OrderingMethod::MultiLevelCluster => GraphOrderingMethod::MultiLevelCluster,
         OrderingMethod::ReverseCuthillMckee => GraphOrderingMethod::ReverseCuthillMckee,
     }
@@ -280,6 +350,22 @@ fn ordering_method_name(ordering: &OrderingMethod) -> &'static str {
         OrderingMethod::MinimumLinearArrangement => "minimum-linear-arrangement",
         OrderingMethod::MultiLevelCluster => "multi-level-cluster",
         OrderingMethod::ReverseCuthillMckee => "reverse-cuthill-mckee",
+    }
+}
+
+fn ben_variant_name(variant: BenVariant) -> &'static str {
+    match variant {
+        BenVariant::Standard => "standard",
+        BenVariant::MkvChain => "mkvchain",
+        BenVariant::TwoDelta => "twodelta",
+    }
+}
+
+fn to_ben_variant(variant: &BenCliVariant) -> BenVariant {
+    match variant {
+        BenCliVariant::Standard => BenVariant::Standard,
+        BenCliVariant::MkvChain => BenVariant::MkvChain,
+        BenCliVariant::TwoDelta => BenVariant::TwoDelta,
     }
 }
 
@@ -361,5 +447,23 @@ mod tests {
 
         assert_eq!(args.mode, Mode::Ben);
         assert_eq!(args.n_items, Some(25));
+    }
+
+    #[test]
+    fn parse_ben_mode_output_variant_args() {
+        let args = Args::try_parse_from([
+            "reben",
+            "samples.jsonl.ben",
+            "--mode",
+            "ben",
+            "--output-variant",
+            "twodelta",
+            "--convert-only",
+        ])
+        .unwrap();
+
+        assert_eq!(args.mode, Mode::Ben);
+        assert_eq!(args.output_variant, Some(BenCliVariant::TwoDelta));
+        assert!(args.convert_only);
     }
 }

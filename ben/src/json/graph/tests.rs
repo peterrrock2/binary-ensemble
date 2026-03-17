@@ -248,7 +248,10 @@ fn test_sort_json_file_by_key_with_non_numeric_values() {
 
     assert_eq!(output_json["nodes"][0]["key"], 7);
     assert_eq!(output_json["nodes"][1]["key"], "abc");
-    assert_eq!(output_json["nodes"][2]["key"], serde_json::json!({"nested": true}));
+    assert_eq!(
+        output_json["nodes"][2]["key"],
+        serde_json::json!({"nested": true})
+    );
 }
 
 #[test]

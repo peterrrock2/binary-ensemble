@@ -118,6 +118,58 @@ where
     Ok(())
 }
 
+fn detect_ben_variant(header: &[u8; 17]) -> io::Result<BenVariant> {
+    match header {
+        b"STANDARD BEN FILE" => Ok(BenVariant::Standard),
+        b"MKVCHAIN BEN FILE" => Ok(BenVariant::MkvChain),
+        b"TWODELTA BEN FILE" => Ok(BenVariant::TwoDelta),
+        _ => Err(Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid file format",
+        )),
+    }
+}
+
+fn convert_ben_file_impl<R: Read, W: Write>(
+    mut reader: R,
+    writer: W,
+    target_variant: BenVariant,
+    max_samples: Option<usize>,
+) -> io::Result<()> {
+    let mut check_buffer = [0u8; 17];
+    reader.read_exact(&mut check_buffer)?;
+    let _input_variant = detect_ben_variant(&check_buffer)?;
+
+    let mut full_stream = check_buffer.to_vec();
+    reader.read_to_end(&mut full_stream)?;
+    relabel_ben_file_via_decoder(
+        full_stream.as_slice(),
+        writer,
+        target_variant,
+        max_samples,
+        |assignment| Ok(assignment.to_vec()),
+    )
+}
+
+/// Rewrite a BEN file into the requested BEN variant.
+pub fn convert_ben_file<R: Read, W: Write>(
+    reader: R,
+    writer: W,
+    target_variant: BenVariant,
+) -> io::Result<()> {
+    convert_ben_file_impl(reader, writer, target_variant, None)
+}
+
+/// Rewrite at most `max_samples` expanded samples into the requested BEN variant.
+pub fn convert_ben_file_limit<R: Read, W: Write>(
+    reader: R,
+    writer: W,
+    target_variant: BenVariant,
+    max_samples: usize,
+) -> io::Result<()> {
+    convert_ben_file_impl(reader, writer, target_variant, Some(max_samples))
+}
+
 /// Canonicalize the labels used inside each BEN frame.
 ///
 /// Labels are reassigned in first-seen order within each assignment vector,
@@ -291,9 +343,13 @@ fn relabel_ben_file_impl<R: Read, W: Write>(
         BenVariant::TwoDelta => {
             let mut full_stream = check_buffer.to_vec();
             reader.read_to_end(&mut full_stream)?;
-            relabel_ben_file_via_decoder(full_stream.as_slice(), &mut writer, variant, max_samples, |assignment| {
-                Ok(canonicalize_assignment(assignment))
-            })?
+            relabel_ben_file_via_decoder(
+                full_stream.as_slice(),
+                &mut writer,
+                variant,
+                max_samples,
+                |assignment| Ok(canonicalize_assignment(assignment)),
+            )?
         }
     }
 
@@ -323,13 +379,7 @@ pub fn relabel_ben_lines_with_map<R: Read, W: Write>(
     new_to_old_node_map: HashMap<usize, usize>,
     variant: BenVariant,
 ) -> io::Result<()> {
-    relabel_ben_lines_with_map_impl(
-        &mut reader,
-        &mut writer,
-        new_to_old_node_map,
-        variant,
-        None,
-    )
+    relabel_ben_lines_with_map_impl(&mut reader, &mut writer, new_to_old_node_map, variant, None)
 }
 
 /// Relabel BEN frames using an externally supplied node map, up to a bounded
@@ -528,6 +578,96 @@ fn relabel_ben_file_with_map_impl<R: Read, W: Write>(
     }
 
     Ok(())
+}
+
+/// Canonicalize BEN assignments and write them using the requested BEN variant.
+pub fn relabel_ben_file_as_variant<R: Read, W: Write>(
+    mut reader: R,
+    writer: W,
+    target_variant: BenVariant,
+) -> io::Result<()> {
+    let mut check_buffer = [0u8; 17];
+    reader.read_exact(&mut check_buffer)?;
+    let _input_variant = detect_ben_variant(&check_buffer)?;
+
+    let mut full_stream = check_buffer.to_vec();
+    reader.read_to_end(&mut full_stream)?;
+    relabel_ben_file_via_decoder(
+        full_stream.as_slice(),
+        writer,
+        target_variant,
+        None,
+        |assignment| Ok(canonicalize_assignment(assignment)),
+    )
+}
+
+/// Canonicalize up to `max_samples` expanded samples and write the requested BEN variant.
+pub fn relabel_ben_file_as_variant_limit<R: Read, W: Write>(
+    mut reader: R,
+    writer: W,
+    target_variant: BenVariant,
+    max_samples: usize,
+) -> io::Result<()> {
+    let mut check_buffer = [0u8; 17];
+    reader.read_exact(&mut check_buffer)?;
+    let _input_variant = detect_ben_variant(&check_buffer)?;
+
+    let mut full_stream = check_buffer.to_vec();
+    reader.read_to_end(&mut full_stream)?;
+    relabel_ben_file_via_decoder(
+        full_stream.as_slice(),
+        writer,
+        target_variant,
+        Some(max_samples),
+        |assignment| Ok(canonicalize_assignment(assignment)),
+    )
+}
+
+/// Relabel a BEN file with a supplied node map and write the requested BEN variant.
+pub fn relabel_ben_file_with_map_as_variant<R: Read, W: Write>(
+    mut reader: R,
+    writer: W,
+    new_to_old_node_map: HashMap<usize, usize>,
+    target_variant: BenVariant,
+) -> io::Result<()> {
+    let mut check_buffer = [0u8; 17];
+    reader.read_exact(&mut check_buffer)?;
+    let _input_variant = detect_ben_variant(&check_buffer)?;
+
+    let permutation = dense_permutation(&new_to_old_node_map)?;
+    let mut full_stream = check_buffer.to_vec();
+    reader.read_to_end(&mut full_stream)?;
+    relabel_ben_file_via_decoder(
+        full_stream.as_slice(),
+        writer,
+        target_variant,
+        None,
+        |assignment| permute_assignment(assignment, &permutation),
+    )
+}
+
+/// Relabel up to `max_samples` expanded samples with a supplied node map and write the requested BEN variant.
+pub fn relabel_ben_file_with_map_as_variant_limit<R: Read, W: Write>(
+    mut reader: R,
+    writer: W,
+    new_to_old_node_map: HashMap<usize, usize>,
+    target_variant: BenVariant,
+    max_samples: usize,
+) -> io::Result<()> {
+    let mut check_buffer = [0u8; 17];
+    reader.read_exact(&mut check_buffer)?;
+    let _input_variant = detect_ben_variant(&check_buffer)?;
+
+    let permutation = dense_permutation(&new_to_old_node_map)?;
+    let mut full_stream = check_buffer.to_vec();
+    reader.read_to_end(&mut full_stream)?;
+    relabel_ben_file_via_decoder(
+        full_stream.as_slice(),
+        writer,
+        target_variant,
+        Some(max_samples),
+        |assignment| permute_assignment(assignment, &permutation),
+    )
 }
 
 #[cfg(test)]
