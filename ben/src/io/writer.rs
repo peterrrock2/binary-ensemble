@@ -1,12 +1,14 @@
+use crate::codec::decode::decode_ben_line;
 use crate::codec::encode::{
     build_twodelta_runs_with_hint, encode_ben32_assignments, encode_ben_vec_from_assign,
     encode_twodelta_vec_with_hint, BenFrame, TwoDeltaFrame,
 };
 use crate::codec::translate::ben_to_ben32_lines;
 use crate::format::banners::{banner_for_variant, has_known_banner_prefix, BANNER_LEN};
-use crate::io::reader::BenDecoder;
+use crate::io::reader::decode_twodelta_run_lengths;
 use crate::util::rle::assign_to_rle;
-use crate::BenVariant;
+use crate::{progress, BenVariant};
+use byteorder::{BigEndian, ReadBytesExt};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{self, BufRead, Read, Result, Write};
@@ -831,26 +833,92 @@ impl<W: Write> XBenEncoder<W> {
     /// # Returns
     ///
     /// Returns `Ok(())` after the BEN stream has been translated into XBEN.
+    /// Translate a BEN TwoDelta stream directly to XBEN TwoDelta without
+    /// materializing full assignment vectors.
+    ///
+    /// The first frame (standard BEN RLE) is decoded to RLE runs and written as
+    /// an XBEN full frame. Subsequent delta frames have their bitpacked run
+    /// lengths unpacked and written as XBEN delta frames with raw u16 runs.
+    /// This avoids O(N) assignment reconstruction per frame entirely.
+    ///
+    /// # Arguments
+    ///
+    /// * `reader` - The BEN TwoDelta stream positioned after the banner.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after the stream has been fully translated.
+    fn translate_ben_twodelta_to_xben(&mut self, mut reader: impl Read) -> Result<()> {
+        // First frame: standard BEN RLE → XBEN full frame.
+        let max_val_bits = reader.read_u8()?;
+        let max_len_bits = reader.read_u8()?;
+        let n_bytes = reader.read_u32::<BigEndian>()?;
+        let runs = decode_ben_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
+        let first_count = reader.read_u16::<BigEndian>()?;
+
+        let mut encoded = Vec::with_capacity(1 + 4 + runs.len() * 4);
+        encoded.push(XBEN_TWODELTA_FULL_TAG);
+        encoded.extend_from_slice(&(runs.len() as u32).to_be_bytes());
+        for &(value, len) in &runs {
+            encoded.extend_from_slice(&value.to_be_bytes());
+            encoded.extend_from_slice(&len.to_be_bytes());
+        }
+        self.previous_frame = encoded;
+        self.count = first_count;
+
+        let mut sample_count = first_count as usize;
+        progress!("Encoding line: {}\r", sample_count);
+
+        // Delta frames: unpack bitpacked run lengths → XBEN delta frame.
+        loop {
+            let pair_a = match reader.read_u16::<BigEndian>() {
+                Ok(v) => v,
+                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(e),
+            };
+            let pair_b = reader.read_u16::<BigEndian>()?;
+            let delta_max_len_bits = reader.read_u8()?;
+            let delta_n_bytes = reader.read_u32::<BigEndian>()?;
+
+            let mut payload = vec![0u8; delta_n_bytes as usize];
+            reader.read_exact(&mut payload)?;
+            let count = reader.read_u16::<BigEndian>()?;
+
+            // Unpack bitpacked run lengths.
+            let frame = TwoDeltaFrame::from_parts((pair_a, pair_b), delta_max_len_bits, payload);
+            let run_lengths = decode_twodelta_run_lengths(&frame)?;
+
+            // Write as XBEN delta frame.
+            let mut delta_encoded = Vec::with_capacity(1 + 2 + 2 + 4 + run_lengths.len() * 2);
+            delta_encoded.push(XBEN_TWODELTA_DELTA_TAG);
+            delta_encoded.extend_from_slice(&frame.pair().0.to_be_bytes());
+            delta_encoded.extend_from_slice(&frame.pair().1.to_be_bytes());
+            delta_encoded.extend_from_slice(&(run_lengths.len() as u32).to_be_bytes());
+            for run_len in &run_lengths {
+                delta_encoded.extend_from_slice(&run_len.to_be_bytes());
+            }
+
+            self.flush_pending_frame()?;
+            self.previous_frame = delta_encoded;
+            self.count = count;
+
+            sample_count += count as usize;
+            progress!("Encoding line: {}\r", sample_count);
+        }
+
+        tracing::trace!("");
+        tracing::trace!("Done!");
+        Ok(())
+    }
+
     pub fn write_ben_file(&mut self, mut reader: impl BufRead) -> Result<()> {
         let peek = reader.fill_buf()?;
         let has_banner = peek.len() >= BANNER_LEN && has_known_banner_prefix(peek);
 
         if has_banner {
             if self.variant == BenVariant::TwoDelta {
-                let mut banner = [0u8; BANNER_LEN];
-                banner.copy_from_slice(&peek[..BANNER_LEN]);
                 reader.consume(BANNER_LEN);
-
-                let decoder =
-                    BenDecoder::new(io::Cursor::new(banner).chain(reader))?.silent(true);
-                for record in decoder {
-                    let (assignment, count) = record?;
-                    self.write_assignment(assignment)?;
-                    if count > 1 {
-                        self.count += count - 1;
-                    }
-                }
-                return Ok(());
+                return self.translate_ben_twodelta_to_xben(reader);
             }
             reader.consume(BANNER_LEN);
         }

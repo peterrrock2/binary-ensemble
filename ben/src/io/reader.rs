@@ -227,26 +227,20 @@ impl<R: Read> BenDecoder<R> {
     ///
     /// Returns `Ok(())` after the remaining stream has been fully decoded.
     pub fn write_all_jsonl(&mut self, mut writer: impl Write) -> io::Result<()> {
-        while let Some(result_tuple) = self.next() {
-            match result_tuple {
-                Ok((assignment, count)) => {
-                    let starting_sample = self.sample_count + 1 - count as usize;
-                    for offset in 0..count as usize {
-                        let line = json!({
-                            "assignment": assignment,
-                            "sample": starting_sample + offset,
-                        })
-                        .to_string()
-                            + "\n";
-                        writer.write_all(line.as_bytes()).unwrap();
-                    }
-                }
-                Err(e) => {
-                    return Err(e);
-                }
+        let mut sample_number = 0usize;
+        self.for_each_assignment(|assignment, count| {
+            for _ in 0..count {
+                sample_number += 1;
+                let line = json!({
+                    "assignment": assignment,
+                    "sample": sample_number,
+                })
+                .to_string()
+                    + "\n";
+                writer.write_all(line.as_bytes())?;
             }
-        }
-        Ok(())
+            Ok(true)
+        })
     }
 
     /// Read and return the next raw BEN frame stored in standard BEN layout.
@@ -415,6 +409,70 @@ impl<R: Read> BenDecoder<R> {
         }
         Ok(total)
     }
+
+    /// Decode assignments and pass each one to a callback by reference.
+    ///
+    /// Unlike the `Iterator` implementation, this avoids cloning the assignment
+    /// buffer on every frame. The decoder owns a single buffer, mutates it in
+    /// place for TwoDelta frames, and lends `&[u16]` to the callback. This
+    /// eliminates one full-length memcpy per frame.
+    ///
+    /// The callback receives a borrowed assignment slice and its repetition
+    /// count. Return `true` to continue decoding or `false` to stop early.
+    ///
+    /// # Arguments
+    ///
+    /// * `f` - A callback invoked once per unique frame with `(&[u16], u16)`.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after the stream is exhausted or the callback signals stop.
+    pub fn for_each_assignment<F>(&mut self, mut f: F) -> io::Result<()>
+    where
+        F: FnMut(&[u16], u16) -> io::Result<bool>,
+    {
+        loop {
+            let frame = match self.pop_frame_from_reader() {
+                Some(Ok(frame)) => frame,
+                Some(Err(e)) => return Err(e),
+                None => return Ok(()),
+            };
+
+            let count = frame.count();
+
+            match frame {
+                StoredBenFrame::Ben(ben_frame) => {
+                    let assignment = decode_ben_frame_to_assignment(&ben_frame)?;
+                    let keep_going = f(&assignment, count)?;
+                    self.previous_assignment = Some(assignment);
+                    if !keep_going {
+                        return Ok(());
+                    }
+                }
+                StoredBenFrame::TwoDelta { frame, count } => {
+                    let assignment = self.previous_assignment.take().ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "TwoDelta frame encountered before an initial BEN frame",
+                        )
+                    })?;
+                    let run_lengths = decode_twodelta_run_lengths(&frame)?;
+                    let assignment =
+                        apply_twodelta_runs_to_assignment(assignment, frame.pair(), &run_lengths)?;
+                    let keep_going = f(&assignment, count)?;
+                    self.previous_assignment = Some(assignment);
+                    if !keep_going {
+                        return Ok(());
+                    }
+                }
+            }
+
+            self.sample_count += count as usize;
+            if !self.silent {
+                progress!("Decoding sample: {}\r", self.sample_count);
+            }
+        }
+    }
 }
 
 /// Decode a raw BEN frame into a full assignment vector.
@@ -445,7 +503,7 @@ fn decode_ben_frame_to_assignment(frame: &BenFrame) -> io::Result<Vec<u16>> {
 /// # Returns
 ///
 /// Returns the sequence of non-zero run lengths extracted from the payload.
-fn decode_twodelta_run_lengths(frame: &TwoDeltaFrame) -> io::Result<Vec<u16>> {
+pub(crate) fn decode_twodelta_run_lengths(frame: &TwoDeltaFrame) -> io::Result<Vec<u16>> {
     let mut items = Vec::new();
     let mut buffer: u32 = 0;
     let mut n_bits_in_buff: u16 = 0;
