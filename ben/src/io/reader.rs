@@ -459,7 +459,7 @@ impl<R: Read> BenDecoder<R> {
                     })?;
                     let run_lengths = decode_twodelta_run_lengths(&frame)?;
                     let assignment =
-                        apply_twodelta_runs_to_assignment(assignment, frame.pair(), &run_lengths)?;
+                        apply_twodelta_runs_to_assignment(assignment, frame.pair, &run_lengths)?;
                     let keep_going = f(&assignment, count)?;
                     self.previous_assignment = Some(assignment);
                     if !keep_going {
@@ -514,10 +514,10 @@ pub(crate) fn decode_twodelta_run_lengths(frame: &TwoDeltaFrame) -> io::Result<V
         buffer |= (byte as u32).to_be() >> n_bits_in_buff;
         n_bits_in_buff += 8;
 
-        if n_bits_in_buff >= frame.max_len_bits() as u16 && current.is_none() {
-            current = Some((buffer >> (32 - frame.max_len_bits())) as u16);
-            buffer <<= frame.max_len_bits();
-            n_bits_in_buff -= frame.max_len_bits() as u16;
+        if n_bits_in_buff >= frame.max_len_bits as u16 && current.is_none() {
+            current = Some((buffer >> (32 - frame.max_len_bits)) as u16);
+            buffer <<= frame.max_len_bits;
+            n_bits_in_buff -= frame.max_len_bits as u16;
         }
 
         if let Some(item) = current.take() {
@@ -526,10 +526,10 @@ pub(crate) fn decode_twodelta_run_lengths(frame: &TwoDeltaFrame) -> io::Result<V
             }
         }
 
-        while n_bits_in_buff >= frame.max_len_bits() as u16 {
-            let item = (buffer >> (32 - frame.max_len_bits())) as u16;
-            buffer <<= frame.max_len_bits();
-            n_bits_in_buff -= frame.max_len_bits() as u16;
+        while n_bits_in_buff >= frame.max_len_bits as u16 {
+            let item = (buffer >> (32 - frame.max_len_bits)) as u16;
+            buffer <<= frame.max_len_bits;
+            n_bits_in_buff -= frame.max_len_bits as u16;
             if item > 0 {
                 items.push(item);
             }
@@ -607,7 +607,7 @@ fn decode_twodelta_frame_to_assignment(
     frame: &TwoDeltaFrame,
 ) -> io::Result<Vec<u16>> {
     let run_lengths = decode_twodelta_run_lengths(frame)?;
-    apply_twodelta_runs_to_assignment(assignment, frame.pair(), &run_lengths)
+    apply_twodelta_runs_to_assignment(assignment, frame.pair, &run_lengths)
 }
 
 /// Decode a stored BEN frame into a full assignment vector.
@@ -707,10 +707,10 @@ impl<R: Read> Iterator for BenFrameDecoeder<R> {
                     let encoded = encode_ben_vec_from_assign(&assignment);
                     let raw_data = encoded.as_slice()[6..].to_vec();
                     Some(Ok(BenFrame {
-                        max_val_bits: encoded.max_val_bits(),
-                        max_len_bits: encoded.max_len_bits(),
+                        max_val_bits: encoded.max_val_bits,
+                        max_len_bits: encoded.max_len_bits,
                         count,
-                        n_bytes: encoded.n_bytes(),
+                        n_bytes: encoded.n_bytes,
                         raw_data,
                     }))
                 }

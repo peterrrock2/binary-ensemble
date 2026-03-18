@@ -156,10 +156,10 @@ fn pack_fixed_width_items(items: &[u16], item_bits: u8) -> (u32, Vec<u8>) {
 /// length.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BenFrame {
-    runs: Vec<(u16, u16)>,
-    max_val_bits: u8,
-    max_len_bits: u8,
-    n_bytes: u32,
+    pub runs: Vec<(u16, u16)>,
+    pub max_val_bits: u8,
+    pub max_len_bits: u8,
+    pub n_bytes: u32,
     bytes: Vec<u8>,
 }
 
@@ -226,26 +226,6 @@ impl BenFrame {
         Self::from_rle(crate::util::rle::assign_to_rle(assignments))
     }
 
-    /// Borrow the canonical RLE runs.
-    pub fn runs(&self) -> &[(u16, u16)] {
-        &self.runs
-    }
-
-    /// Return the number of bits used to store each value.
-    pub fn max_val_bits(&self) -> u8 {
-        self.max_val_bits
-    }
-
-    /// Return the number of bits used to store each run length.
-    pub fn max_len_bits(&self) -> u8 {
-        self.max_len_bits
-    }
-
-    /// Return the payload length in bytes.
-    pub fn n_bytes(&self) -> u32 {
-        self.n_bytes
-    }
-
     /// Borrow the serialized BEN frame bytes.
     pub fn as_slice(&self) -> &[u8] {
         &self.bytes
@@ -295,9 +275,9 @@ impl PartialEq<BenFrame> for Vec<u8> {
 /// just those two ids. The first run always corresponds to `pair.0`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TwoDeltaFrame {
-    pair: (u16, u16),
-    max_len_bits: u8,
-    n_bytes: u32,
+    pub pair: (u16, u16),
+    pub max_len_bits: u8,
+    pub n_bytes: u32,
     bytes: Vec<u8>,
 }
 
@@ -339,21 +319,6 @@ impl TwoDeltaFrame {
             n_bytes,
             bytes,
         }
-    }
-
-    /// Return the ordered pair of ids used by the delta frame.
-    pub fn pair(&self) -> (u16, u16) {
-        self.pair
-    }
-
-    /// Return the bit width of each encoded run length.
-    pub fn max_len_bits(&self) -> u8 {
-        self.max_len_bits
-    }
-
-    /// Return the packed payload length in bytes.
-    pub fn n_bytes(&self) -> u32 {
-        self.n_bytes
     }
 
     /// Borrow just the packed payload bytes.

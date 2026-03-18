@@ -20,6 +20,7 @@ clap = { version = "^4.5.2", features = ["derive"] }
 pcompress = "1.0.7"
 pipe = "0.4.0"
 serde_json = "^1.0.107"
+thiserror = "2.0.18"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
 xz2 = "0.1.7"
