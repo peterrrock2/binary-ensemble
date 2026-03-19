@@ -1,4 +1,5 @@
 use super::*;
+use crate::codec::frames::BenEncodeFrame;
 use crate::util::rle::rle_to_vec;
 use crate::BenVariant;
 use serde_json::json;
@@ -261,8 +262,8 @@ fn test_encode_jsonl_to_ben_len_65535() {
 #[test]
 fn test_encode_ben_vec_from_assign_matches_rle_entrypoint() {
     let assign_vec = vec![4u16, 4, 4, 1, 1, 3, 3, 3, 2];
-    let direct = encode_ben_vec_from_assign(assign_vec.clone());
-    let via_rle = encode_ben_vec_from_rle(crate::util::rle::assign_to_rle(assign_vec));
+    let direct = BenEncodeFrame::from_assignment(assign_vec.clone(), None);
+    let via_rle = BenEncodeFrame::from_rle(crate::util::rle::assign_to_rle(assign_vec), None);
     assert_eq!(direct, via_rle);
 }
 

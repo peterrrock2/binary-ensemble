@@ -1,10 +1,11 @@
 //! Translation helpers between BEN and ben32 representations.
 
+use crate::codec::{FromAssign, FromRLE};
 use byteorder::{BigEndian, ReadBytesExt};
 use std::io::{self, Error, Read, Write};
 
 use crate::codec::decode::decode_ben_line;
-use crate::codec::encode::encode_ben_vec_from_rle;
+use crate::codec::BenEncodeFrame;
 use crate::{progress, BenVariant};
 
 /// Convert a single ben32 frame into a BEN frame payload.
@@ -47,7 +48,7 @@ fn ben32_to_ben_line(ben32_vec: Vec<u8>) -> io::Result<Vec<u8>> {
         ));
     }
 
-    Ok(encode_ben_vec_from_rle(ben32_rle).into_bytes())
+    Ok(BenEncodeFrame::from_rle(ben32_rle, None).into_bytes())
 }
 
 /// Translate a stream of ben32 frames into BEN frames.

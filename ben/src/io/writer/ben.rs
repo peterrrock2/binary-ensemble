@@ -1,11 +1,8 @@
 use crate::codec::decode::decode_ben_line;
-use crate::codec::encode::{
-    build_twodelta_runs_with_hint, encode_ben32_assignments, encode_ben_vec_from_assign,
-    encode_twodelta_vec_with_hint, BenFrame, TwoDeltaFrame,
-};
+use crate::codec::encode::{encode_ben32_assignments, encode_twodelta_frame_with_hint};
 use crate::codec::translate::ben_to_ben32_lines;
+use crate::codec::{BenEncodeFrame, FromAssign, TwoDeltaFrame};
 use crate::format::banners::{banner_for_variant, has_known_banner_prefix, BANNER_LEN};
-use crate::io::reader::decode_twodelta_run_lengths;
 use crate::util::rle::assign_to_rle;
 use crate::{progress, BenVariant};
 use byteorder::{BigEndian, ReadBytesExt};
@@ -28,7 +25,7 @@ struct BufferedDeltaFrame {
 }
 
 enum BufferedBenFrame {
-    Ben(BenFrame),
+    Ben(BenEncodeFrame),
     TwoDelta(TwoDeltaFrame),
 }
 
@@ -352,7 +349,7 @@ impl<W: Write> BenEncoder<W> {
                     }
                 }
 
-                let encoded = encode_ben_vec_from_assign(&assign_vec);
+                let encoded = BenEncodeFrame::from_assignment(&assign_vec, None);
                 self.writer.write_all(encoded.as_slice())?;
                 self.set_previous_sample(assign_vec, BufferedBenFrame::Ben(encoded), 0);
                 Ok(())
@@ -367,13 +364,13 @@ impl<W: Write> BenEncoder<W> {
                     self.flush_pending_frame()?;
                 }
 
-                let encoded = encode_ben_vec_from_assign(&assign_vec);
+                let encoded = BenEncodeFrame::from_assignment(&assign_vec, None);
                 self.set_previous_sample(assign_vec, BufferedBenFrame::Ben(encoded), 1);
                 Ok(())
             }
             BenVariant::TwoDelta => {
                 if self.previous_sample.is_empty() {
-                    let encoded = encode_ben_vec_from_assign(&assign_vec);
+                    let encoded = BenEncodeFrame::from_assignment(&assign_vec, None);
                     self.set_previous_sample(assign_vec, BufferedBenFrame::Ben(encoded), 1);
                     return Ok(());
                 }
@@ -383,11 +380,11 @@ impl<W: Write> BenEncoder<W> {
                     return Ok(());
                 }
 
-                let encoded = encode_twodelta_vec_with_hint(
+                let encoded = encode_twodelta_frame_with_hint(
                     &self.previous_sample,
                     &assign_vec,
                     hints.delta_pair,
-                    Some(&self.previous_masks),
+                    Some(&mut self.previous_masks),
                 )?;
                 self.flush_pending_frame()?;
 
@@ -779,7 +776,7 @@ impl<W: Write> XBenEncoder<W> {
     pub fn write_assignment(&mut self, assign_vec: Vec<u16>) -> Result<()> {
         match self.variant {
             BenVariant::Standard => {
-                let encoded = encode_ben32_assignments(&assign_vec)?.into_u8_vec()?;
+                let encoded = encode_ben32_assignments(&assign_vec)?;
                 self.encoder.write_all(&encoded)?;
                 self.previous_assignment = assign_vec;
                 self.previous_frame = encoded;
@@ -792,7 +789,7 @@ impl<W: Write> XBenEncoder<W> {
                 }
 
                 self.flush_pending_frame()?;
-                let encoded = encode_ben32_assignments(&assign_vec)?.into_u8_vec()?;
+                let encoded = encode_ben32_assignments(&assign_vec)?;
                 self.set_previous_assignment(assign_vec, encoded, 1);
                 Ok(())
             }
@@ -824,26 +821,23 @@ impl<W: Write> XBenEncoder<W> {
                     self.flush_pending_frame()?;
                 }
 
-                let (ordered_pair, run_lengths) = build_twodelta_runs_with_hint(
+                let encoded_frame: TwoDeltaFrame = match encode_twodelta_frame_with_hint(
                     &self.previous_assignment,
                     &assign_vec,
                     hints.delta_pair,
-                    Some(&self.previous_masks),
-                )?;
+                    Some(&mut self.previous_masks),
+                ) {
+                    Ok(frame) => frame,
+                    Err(e) => {
+                        return Err(e);
+                    }
+                };
 
                 self.chunk_buffer.push(BufferedDeltaFrame {
-                    pair: ordered_pair,
-                    run_lengths,
+                    pair: encoded_frame.pair,
+                    run_lengths: encoded_frame.run_length_vector,
                     count: 1,
                 });
-
-                if let Some(pair) = hints.delta_pair {
-                    self.update_masks_for_delta(&assign_vec, pair);
-                    self.previous_assignment = assign_vec;
-                } else {
-                    self.previous_assignment = assign_vec;
-                    self.rebuild_previous_masks();
-                }
 
                 if self.chunk_buffer.len() >= self.chunk_size {
                     self.flush_chunk()?;
@@ -931,7 +925,7 @@ impl<W: Write> XBenEncoder<W> {
 
             // Unpack bitpacked run lengths.
             let frame = TwoDeltaFrame::from_parts((pair_a, pair_b), delta_max_len_bits, payload);
-            let run_lengths = decode_twodelta_run_lengths(&frame)?;
+            let run_lengths = frame.run_length_vector;
 
             // Flush the initial full frame before the first delta chunk.
             if self.chunk_buffer.is_empty() && self.count > 0 {
@@ -939,7 +933,7 @@ impl<W: Write> XBenEncoder<W> {
             }
 
             self.chunk_buffer.push(BufferedDeltaFrame {
-                pair: frame.pair(),
+                pair: frame.pair,
                 run_lengths,
                 count,
             });

@@ -29,10 +29,10 @@ where
 fn test_relabel_ben_line_simple() {
     let in_rle = vec![(2, 2), (3, 2), (1, 2), (4, 2)];
 
-    let input = encode_ben_vec_from_rle(in_rle);
+    let input = BenFrame::from_rle(in_rle);
 
     let out_rle = vec![(1, 2), (2, 2), (3, 2), (4, 2)];
-    let expected = encode_ben_vec_from_rle(out_rle);
+    let expected = BenFrame::from_rle(out_rle);
 
     let mut buf = Vec::new();
     relabel_ben_lines(input.as_slice(), &mut buf, BenVariant::Standard).unwrap();
@@ -203,11 +203,11 @@ fn test_relabel_ben_line_with_map() {
     let in_assign = vec![2, 3, 1, 4, 5, 5, 3, 4, 2];
     let in_rle = assign_to_rle(in_assign);
 
-    let input = encode_ben_vec_from_rle(in_rle);
+    let input = BenFrame::from_rle(in_rle);
 
     let out_assign = vec![1, 2, 2, 3, 3, 4, 4, 5, 5];
     let out_rle = assign_to_rle(out_assign);
-    let expected = encode_ben_vec_from_rle(out_rle);
+    let expected = BenFrame::from_rle(out_rle);
 
     let mut new_to_old_map = HashMap::new();
     new_to_old_map.insert(0, 2);
@@ -238,11 +238,11 @@ fn test_relabel_ben_line_with_shuffle() {
     let mut out_assign = in_assign.clone();
 
     let in_rle = assign_to_rle(in_assign);
-    let input = encode_ben_vec_from_rle(in_rle);
+    let input = BenFrame::from_rle(in_rle);
 
     let new_to_old_map = shuffle_with_mapping(&mut out_assign);
     let out_rle = assign_to_rle(out_assign);
-    let expected = encode_ben_vec_from_rle(out_rle);
+    let expected = BenFrame::from_rle(out_rle);
 
     let mut buf = Vec::new();
     relabel_ben_lines_with_map(
@@ -269,11 +269,11 @@ fn test_relabel_ben_line_with_large_shuffle() {
     let mut out_assign = in_assign.clone();
 
     let in_rle = assign_to_rle(in_assign.to_vec());
-    let input = encode_ben_vec_from_rle(in_rle);
+    let input = BenFrame::from_rle(in_rle);
 
     let new_to_old_map = shuffle_with_mapping(&mut out_assign);
     let out_rle = assign_to_rle(out_assign);
-    let expected = encode_ben_vec_from_rle(out_rle);
+    let expected = BenFrame::from_rle(out_rle);
 
     let mut buf = Vec::new();
     relabel_ben_lines_with_map(

@@ -3,15 +3,17 @@
 mod ben;
 mod errors;
 mod jsonl;
-mod types;
+mod traits;
+mod twodelta;
 mod xz;
+
+pub(crate) use ben::encode_ben32_assignments;
+pub use traits::{FromAssign, FromRLE};
+pub(crate) use twodelta::encode_twodelta_frame_with_hint;
 
 #[cfg(test)]
 pub(crate) use ben::encode_ben32_line;
-pub(crate) use ben::{encode_ben32_assignments, encode_twodelta_vec_with_hint};
-pub use ben::{encode_ben_vec_from_assign, encode_ben_vec_from_rle, encode_twodelta_vec};
 pub use jsonl::{encode_jsonl_to_ben, encode_jsonl_to_xben};
-pub use types::{BenFrame, IdItem, IdVec, TwoDeltaFrame};
 pub use xz::{encode_ben_to_xben, xz_compress};
 
 #[cfg(test)]

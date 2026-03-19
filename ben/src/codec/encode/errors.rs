@@ -2,7 +2,7 @@ use std::io;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum BenEncodeError {
+pub(crate) enum BenEncodeError {
     #[error("Encountered a repeated sample when encoding.")]
     RepeatedSample,
 }
