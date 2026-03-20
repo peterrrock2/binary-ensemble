@@ -4,8 +4,7 @@ use super::twodelta::{
 };
 use crate::codec::decode::{decode_ben32_line, decode_ben_line, DecodeError};
 use crate::codec::encode::encode_ben32_assignments;
-use crate::codec::{BenDecodeFrame, BenEncodeFrame, TwoDeltaFrame};
-use crate::codec::encode::FromAssign;
+use crate::codec::{BenDecodeFrame, BenEncodeFrame, FromAssign, TwoDeltaEncodeFrame};
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
 use crate::util::rle::rle_to_vec;
@@ -37,7 +36,7 @@ pub struct BenDecoder<R: Read> {
 
 enum StoredBenFrame {
     Ben(BenDecodeFrame),
-    TwoDelta { frame: TwoDeltaFrame, count: u16 },
+    TwoDelta { frame: TwoDeltaEncodeFrame, count: u16 },
 }
 
 impl StoredBenFrame {
@@ -231,7 +230,7 @@ impl<R: Read> BenDecoder<R> {
         };
 
         Some(Ok(StoredBenFrame::TwoDelta {
-            frame: TwoDeltaFrame::from_parts((pair_a, pair_b), max_len_bits, payload),
+            frame: TwoDeltaEncodeFrame::from_parts((pair_a, pair_b), max_len_bits, payload),
             count,
         }))
     }
@@ -439,7 +438,7 @@ fn apply_twodelta_runs_to_assignment(
 /// Returns the updated assignment vector.
 fn decode_twodelta_frame_to_assignment(
     assignment: Vec<u16>,
-    frame: &TwoDeltaFrame,
+    frame: &TwoDeltaEncodeFrame,
 ) -> io::Result<Vec<u16>> {
     apply_twodelta_runs_to_assignment(assignment, frame.pair, &frame.run_length_vector)
 }

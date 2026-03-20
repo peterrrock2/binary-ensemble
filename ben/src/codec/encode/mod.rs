@@ -3,13 +3,11 @@
 mod ben;
 mod errors;
 mod jsonl;
-mod traits;
 mod twodelta;
 mod xz;
 
 pub(crate) use ben::encode_ben32_assignments;
 pub use errors::EncodeError;
-pub use traits::{FromAssign, FromRLE};
 pub(crate) use twodelta::encode_twodelta_frame_with_hint;
 pub use twodelta::encode_twodelta_frame;
 

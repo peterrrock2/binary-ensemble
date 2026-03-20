@@ -9,7 +9,7 @@ use super::utils::{
 use crate::codec::decode::decode_ben_line;
 use crate::codec::encode::{encode_ben32_assignments, encode_twodelta_frame_with_hint};
 use crate::codec::translate::ben_to_ben32_lines;
-use crate::codec::TwoDeltaFrame;
+use crate::codec::TwoDeltaEncodeFrame;
 use crate::format::banners::{banner_for_variant, has_known_banner_prefix, BANNER_LEN};
 use crate::{progress, BenVariant};
 use byteorder::{BigEndian, ReadBytesExt};
@@ -270,7 +270,7 @@ impl<W: Write> XBenEncoder<W> {
                     self.flush_pending_frame()?;
                 }
 
-                let encoded_frame: TwoDeltaFrame = match encode_twodelta_frame_with_hint(
+                let encoded_frame: TwoDeltaEncodeFrame = match encode_twodelta_frame_with_hint(
                     &self.previous_assignment,
                     &assign_vec,
                     hints.delta_pair,
@@ -375,7 +375,7 @@ impl<W: Write> XBenEncoder<W> {
             let count = reader.read_u16::<BigEndian>()?;
 
             // Unpack bitpacked run lengths.
-            let frame = TwoDeltaFrame::from_parts((pair_a, pair_b), delta_max_len_bits, payload);
+            let frame = TwoDeltaEncodeFrame::from_parts((pair_a, pair_b), delta_max_len_bits, payload);
             let run_lengths = frame.run_length_vector;
 
             // Flush the initial full frame before the first delta chunk.

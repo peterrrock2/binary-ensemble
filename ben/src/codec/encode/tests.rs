@@ -1,5 +1,5 @@
 use super::*;
-use crate::codec::frames::BenEncodeFrame;
+use crate::codec::frames::{BenEncodeFrame, FromAssign, FromRLE};
 use crate::util::rle::rle_to_vec;
 use crate::BenVariant;
 use serde_json::json;

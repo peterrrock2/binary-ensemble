@@ -1,4 +1,4 @@
-use crate::codec::{BenEncodeFrame, TwoDeltaFrame};
+use crate::codec::{BenEncodeFrame, TwoDeltaEncodeFrame};
 
 /// A buffered delta frame awaiting chunk serialization.
 pub(super) struct BufferedDeltaFrame {
@@ -9,7 +9,7 @@ pub(super) struct BufferedDeltaFrame {
 
 pub(super) enum BufferedBenFrame {
     Ben(BenEncodeFrame),
-    TwoDelta(TwoDeltaFrame),
+    TwoDelta(TwoDeltaEncodeFrame),
 }
 
 impl BufferedBenFrame {

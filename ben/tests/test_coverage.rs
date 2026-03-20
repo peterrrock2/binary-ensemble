@@ -9,7 +9,7 @@ use binary_ensemble::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben};
 use binary_ensemble::codec::encode::{
     encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben, encode_twodelta_frame,
 };
-use binary_ensemble::codec::{BenEncodeFrame, FromAssign, FromRLE, TwoDeltaFrame};
+use binary_ensemble::codec::{BenEncodeFrame, FromAssign, FromRLE, TwoDeltaEncodeFrame};
 use binary_ensemble::format::banners::{
     banner_for_variant, has_known_banner_prefix, variant_from_banner, BANNER_LEN,
     MKVCHAIN_BEN_BANNER, STANDARD_BEN_BANNER, TWODELTA_BEN_BANNER,
@@ -1540,14 +1540,14 @@ fn encode_twodelta_frame_single_value_swap() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// TwoDeltaFrame accessors
+// TwoDeltaEncodeFrame accessors
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn twodelta_frame_pair_accessor() {
     let pair = (3u16, 7u16);
     let run_lengths = vec![2u16, 3, 1];
-    let frame = TwoDeltaFrame::from_run_lengths(pair, run_lengths);
+    let frame = TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths);
     assert_eq!(frame.pair, pair);
 }
 
@@ -1556,7 +1556,7 @@ fn twodelta_frame_max_len_bits_accessor() {
     // max run length = 4 = 0b100 → 3 bits
     let pair = (1u16, 2u16);
     let run_lengths = vec![4u16, 4];
-    let frame = TwoDeltaFrame::from_run_lengths(pair, run_lengths);
+    let frame = TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths);
     assert_eq!(frame.max_len_bit_count, 3);
 }
 
@@ -1564,7 +1564,7 @@ fn twodelta_frame_max_len_bits_accessor() {
 fn twodelta_frame_n_bytes_and_payload_consistent() {
     let pair = (5u16, 10u16);
     let run_lengths = vec![1u16, 2, 3];
-    let frame = TwoDeltaFrame::from_run_lengths(pair, run_lengths);
+    let frame = TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths);
     assert_eq!(frame.n_bytes as usize, frame.payload().len());
 }
 
@@ -1572,7 +1572,7 @@ fn twodelta_frame_n_bytes_and_payload_consistent() {
 fn twodelta_frame_to_bytes_and_as_slice_same() {
     let pair = (1u16, 2u16);
     let run_lengths = vec![3u16, 2];
-    let frame = TwoDeltaFrame::from_run_lengths(pair, run_lengths);
+    let frame = TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths);
     assert_eq!(frame.to_bytes(), frame.as_slice());
 }
 
@@ -1580,7 +1580,7 @@ fn twodelta_frame_to_bytes_and_as_slice_same() {
 fn twodelta_frame_into_bytes_consumes() {
     let pair = (1u16, 2u16);
     let run_lengths = vec![3u16, 2];
-    let frame = TwoDeltaFrame::from_run_lengths(pair, run_lengths);
+    let frame = TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths);
     let expected = frame.to_bytes();
     let actual = frame.into_bytes();
     assert_eq!(actual, expected);
@@ -1590,8 +1590,8 @@ fn twodelta_frame_into_bytes_consumes() {
 fn twodelta_frame_from_parts_round_trip() {
     let pair = (10u16, 20u16);
     let run_lengths = vec![2u16, 5, 1];
-    let original = TwoDeltaFrame::from_run_lengths(pair, run_lengths);
-    let reconstructed = TwoDeltaFrame::from_parts(
+    let original = TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths);
+    let reconstructed = TwoDeltaEncodeFrame::from_parts(
         pair,
         original.max_len_bit_count,
         original.payload().to_vec(),
@@ -1606,7 +1606,7 @@ fn twodelta_frame_from_parts_round_trip() {
 fn twodelta_frame_asref_and_deref() {
     let pair = (1u16, 2u16);
     let run_lengths = vec![3u16];
-    let frame = TwoDeltaFrame::from_run_lengths(pair, run_lengths);
+    let frame = TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths);
     let as_ref: &[u8] = frame.as_ref();
     let deref: &[u8] = &*frame;
     assert_eq!(as_ref, deref);

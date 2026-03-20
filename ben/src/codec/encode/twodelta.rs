@@ -1,132 +1,7 @@
 use super::errors::EncodeError;
-use crate::codec::frames::TwoDeltaFrame;
+use crate::codec::frames::TwoDeltaEncodeFrame;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind, Result};
-
-impl TwoDeltaFrame {
-    /// Build a TwoDelta frame by packing a run-length vector into the binary format.
-    ///
-    /// Run lengths are packed at `max_len_bit_count` bits per value (the minimum
-    /// bit width needed to represent the largest run length), MSB-first with no
-    /// padding between values. If the total bit count is not a multiple of 8, the
-    /// final byte is zero-padded on the right.
-    ///
-    /// The serialized layout is:
-    /// ```text
-    /// [pair.0: u16 BE][pair.1: u16 BE][max_len_bit_count: u8][n_bytes: u32 BE][payload...]
-    /// ```
-    /// where the payload is the bit-packed run lengths.
-    ///
-    /// # Arguments
-    ///
-    /// * `pair` - The ordered pair of assignment ids. `pair.0` corresponds to the first run.
-    /// * `run_length_vector` - The lengths of alternating runs of `pair.0` and `pair.1`
-    ///   over the positions occupied by the pair, in position order.
-    ///
-    /// # Returns
-    ///
-    /// A fully serialized `TwoDeltaFrame` with both the packed `raw_bytes` and the
-    /// original `run_length_vector` stored on the struct.
-    pub fn from_run_lengths(pair: (u16, u16), run_length_vector: Vec<u16>) -> Self {
-        let max_len = run_length_vector.iter().copied().max().unwrap_or(0);
-        let max_len_bit_count = (16 - max_len.leading_zeros() as u8).max(1);
-
-        let payload_bits = max_len_bit_count as u32 * run_length_vector.len() as u32;
-        let n_bytes = payload_bits.div_ceil(8);
-
-        // pair_bytes (4) + max_len_bit_count (1) + n_bytes (4) + payload (n_bytes)
-        let mut raw_bytes = Vec::with_capacity((n_bytes + 9) as usize);
-        raw_bytes.extend_from_slice(&pair.0.to_be_bytes());
-        raw_bytes.extend_from_slice(&pair.1.to_be_bytes());
-        raw_bytes.push(max_len_bit_count);
-        raw_bytes.extend_from_slice(&n_bytes.to_be_bytes());
-
-        let mut remainder: u32 = 0;
-        let mut remainder_bits: u8 = 0;
-
-        for &item in &run_length_vector {
-            let mut packed = (remainder << max_len_bit_count) | item as u32;
-            let mut bits_left = remainder_bits + max_len_bit_count;
-
-            while bits_left >= 8 {
-                bits_left -= 8;
-                raw_bytes.push((packed >> bits_left) as u8);
-                packed &= !((u32::MAX) << bits_left);
-            }
-
-            remainder = packed;
-            remainder_bits = bits_left;
-        }
-
-        if remainder_bits > 0 {
-            raw_bytes.push((remainder << (8 - remainder_bits)) as u8);
-        }
-
-        Self {
-            pair,
-            max_len_bit_count,
-            n_bytes,
-            run_length_vector,
-            raw_bytes,
-        }
-    }
-
-    /// Reconstruct a TwoDelta frame from already-parsed header fields and a raw payload.
-    ///
-    /// This is the inverse of `from_run_lengths`: it re-assembles the serialized bytes
-    /// and decodes the bit-packed payload back into the run-length vector so that both
-    /// representations are available on the resulting frame.
-    ///
-    /// The decoding reads `max_len_bit_count` bits at a time from the payload, MSB-first,
-    /// and discards any trailing zero-valued items produced by right-padding in the final byte.
-    ///
-    /// # Arguments
-    ///
-    /// * `pair` - The ordered pair of assignment ids as read from the frame header.
-    /// * `max_len_bit_count` - The bit width of each packed run length, as read from the
-    ///   frame header.
-    /// * `payload` - The raw packed payload bytes, not including the 9-byte header.
-    ///
-    /// # Returns
-    ///
-    /// A `TwoDeltaFrame` with both `raw_bytes` (header + payload) and the decoded
-    /// `run_length_vector` populated.
-    pub fn from_parts(pair: (u16, u16), max_len_bit_count: u8, payload: Vec<u8>) -> Self {
-        let n_bytes = payload.len() as u32;
-        let mut raw_bytes = Vec::with_capacity(9 + payload.len());
-        raw_bytes.extend_from_slice(&pair.0.to_be_bytes());
-        raw_bytes.extend_from_slice(&pair.1.to_be_bytes());
-        raw_bytes.push(max_len_bit_count);
-        raw_bytes.extend_from_slice(&n_bytes.to_be_bytes());
-        raw_bytes.extend_from_slice(&payload);
-
-        let mut run_length_vector = Vec::new();
-        let mut buffer: u32 = 0;
-        let mut n_bits_in_buff: u16 = 0;
-
-        for byte in payload {
-            buffer |= (byte as u32).to_be() >> n_bits_in_buff;
-            n_bits_in_buff += 8;
-
-            while n_bits_in_buff >= max_len_bit_count as u16 {
-                let item = (buffer >> (32 - max_len_bit_count)) as u16;
-                buffer <<= max_len_bit_count;
-                n_bits_in_buff -= max_len_bit_count as u16;
-                if item > 0 {
-                    run_length_vector.push(item);
-                }
-            }
-        }
-
-        Self {
-            pair,
-            max_len_bit_count,
-            n_bytes,
-            run_length_vector,
-            raw_bytes,
-        }
-    }
-}
 
 /// Encode a transition between two assignment vectors as a TwoDelta frame, optionally
 /// using caller-supplied hints to accelerate encoding.
@@ -143,7 +18,7 @@ impl TwoDeltaFrame {
 ///
 /// # Returns
 ///
-/// A `TwoDeltaFrame` describing the transition from `previous_assignment` to
+/// A `TwoDeltaEncodeFrame` describing the transition from `previous_assignment` to
 /// `new_assignment`.
 ///
 /// # TwoDelta encoding
@@ -191,7 +66,7 @@ pub(crate) fn encode_twodelta_frame_with_hint(
     new_assignment: impl AsRef<[u16]>,
     delta_pair: Option<(u16, u16)>,
     previous_masks: Option<&mut HashMap<u16, Vec<usize>>>,
-) -> Result<TwoDeltaFrame> {
+) -> Result<TwoDeltaEncodeFrame> {
     let previous_assignment = previous_assignment.as_ref();
     let new_assignment = new_assignment.as_ref();
 
@@ -227,7 +102,7 @@ pub(crate) fn encode_twodelta_frame_with_hint(
         _ => construct_twodelta_frame_from_scratch(previous_assignment, new_assignment),
     }
 
-    // Ok(TwoDeltaFrame::from_run_lengths(ordered_pair, run_lengths))
+    // Ok(TwoDeltaEncodeFrame::from_run_lengths(ordered_pair, run_lengths))
 }
 
 /// Validate that `previous_masks` contains non-empty entries for both ids in `pair` and return
@@ -301,7 +176,7 @@ fn validate_masks_and_order_pairs_for_twodelta(
 ///
 /// # Returns
 ///
-/// A `TwoDeltaFrame` for the transition, or `BenEncodeError::RepeatedSample` if no
+/// A `TwoDeltaEncodeFrame` for the transition, or `BenEncodeError::RepeatedSample` if no
 /// position actually changed value (signalling the frame can be deduplicated), or
 /// another error if a mask entry is inconsistent with the assignment data.
 fn construct_twodelta_frame_from_pair_and_mask_hints(
@@ -309,7 +184,7 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
     current: &[u16],
     delta_pair: (u16, u16),
     previous_masks: &mut HashMap<u16, Vec<usize>>,
-) -> Result<TwoDeltaFrame> {
+) -> Result<TwoDeltaEncodeFrame> {
     let pair =
         match validate_masks_and_order_pairs_for_twodelta(delta_pair, previous_masks, current) {
             Ok(pair) => pair,
@@ -402,7 +277,7 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
 
     previous_masks.insert(pair.0, new_mask_a);
     previous_masks.insert(pair.1, new_mask_b);
-    Ok(TwoDeltaFrame::from_run_lengths(pair, run_lengths))
+    Ok(TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths))
 }
 
 /// Build a TwoDelta frame using only pre-computed position masks, inferring the pair
@@ -422,13 +297,13 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
 ///
 /// # Returns
 ///
-/// A `TwoDeltaFrame` for the transition, or `BenEncodeError::RepeatedSample` if the
+/// A `TwoDeltaEncodeFrame` for the transition, or `BenEncodeError::RepeatedSample` if the
 /// two assignments are identical.
 fn construct_twodelta_frame_from_mask_hint(
     previous: &[u16],
     current: &[u16],
     previous_masks: &mut HashMap<u16, Vec<usize>>,
-) -> Result<TwoDeltaFrame> {
+) -> Result<TwoDeltaEncodeFrame> {
     for (&assign0, &assign1) in previous.iter().zip(current.iter()) {
         if assign0 != assign1 {
             return construct_twodelta_frame_from_pair_and_mask_hints(
@@ -459,12 +334,12 @@ fn construct_twodelta_frame_from_mask_hint(
 ///
 /// # Returns
 ///
-/// A `TwoDeltaFrame` for the transition, or an error if more than two distinct ids
+/// A `TwoDeltaEncodeFrame` for the transition, or an error if more than two distinct ids
 /// appear across all changed positions.
 fn construct_twodelta_frame_from_scratch(
     previous: &[u16],
     current: &[u16],
-) -> Result<TwoDeltaFrame> {
+) -> Result<TwoDeltaEncodeFrame> {
     // Find the pair at the first changed position.
     let first_change = previous
         .iter()
@@ -506,7 +381,7 @@ fn construct_twodelta_frame_from_scratch(
     }
     run_lengths.push(run_count);
 
-    Ok(TwoDeltaFrame::from_run_lengths(enc_pair, run_lengths))
+    Ok(TwoDeltaEncodeFrame::from_run_lengths(enc_pair, run_lengths))
 }
 
 /// Encode a transition between two assignment vectors as a TwoDelta frame.
@@ -531,6 +406,6 @@ fn construct_twodelta_frame_from_scratch(
 pub fn encode_twodelta_frame(
     previous_assignment: impl AsRef<[u16]>,
     new_assignment: impl AsRef<[u16]>,
-) -> Result<TwoDeltaFrame> {
+) -> Result<TwoDeltaEncodeFrame> {
     encode_twodelta_frame_with_hint(previous_assignment, new_assignment, None, None)
 }
