@@ -1,4 +1,6 @@
+use crate::codec::encode::errors::EncodeError;
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
+use crate::format::FormatError;
 use crate::io::writer::XBenEncoder;
 use std::io::{self, BufRead, Cursor, Read, Result, Write};
 use xz2::stream::MtStreamBuilder;
@@ -44,7 +46,7 @@ pub fn xz_compress<R: BufRead, W: Write>(
         .preset(level)
         .block_size(0)
         .encoder()
-        .expect("init MT encoder");
+        .map_err(|e| io::Error::from(EncodeError::XzInit(e)))?;
     let mut encoder = XzEncoder::new_stream(writer, mt);
 
     while let Ok(count) = reader.read(&mut buff) {
@@ -99,12 +101,15 @@ pub fn encode_ben_to_xben<R: BufRead, W: Write>(
         .preset(level)
         .block_size(0)
         .encoder()
-        .expect("init MT encoder");
+        .map_err(|e| io::Error::from(EncodeError::XzInit(e)))?;
     let encoder = XzEncoder::new_stream(writer, mt);
 
-    let variant = variant_from_banner(&check_buffer)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Invalid file format"))?;
-    let mut ben_encoder = XBenEncoder::new(encoder, variant);
+    let variant = variant_from_banner(&check_buffer).ok_or_else(|| {
+        io::Error::from(FormatError::UnknownBanner {
+            actual: check_buffer.to_vec(),
+        })
+    })?;
+    let mut ben_encoder = XBenEncoder::new(encoder, variant)?;
     if let Some(cs) = chunk_size {
         ben_encoder = ben_encoder.with_chunk_size(cs);
     }

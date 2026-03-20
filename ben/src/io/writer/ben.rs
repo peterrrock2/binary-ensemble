@@ -1,247 +1,22 @@
-use super::twodelta::{DEFAULT_TWODELTA_CHUNK_SIZE, XBEN_TWODELTA_CHUNK_TAG, XBEN_TWODELTA_FULL_TAG};
+use super::frames::{AssignmentHints, BufferedBenFrame, BufferedDeltaFrame};
+use super::twodelta::{
+    DEFAULT_TWODELTA_CHUNK_SIZE, XBEN_TWODELTA_CHUNK_TAG, XBEN_TWODELTA_FULL_TAG,
+};
+use super::utils::{
+    analyze_twodelta_transition, encode_xben_twodelta_full_frame, is_repeated_assignment,
+    parse_json_assignment,
+};
 use crate::codec::decode::decode_ben_line;
 use crate::codec::encode::{encode_ben32_assignments, encode_twodelta_frame_with_hint};
 use crate::codec::translate::ben_to_ben32_lines;
 use crate::codec::{BenEncodeFrame, FromAssign, TwoDeltaFrame};
 use crate::format::banners::{banner_for_variant, has_known_banner_prefix, BANNER_LEN};
-use crate::util::rle::assign_to_rle;
 use crate::{progress, BenVariant};
 use byteorder::{BigEndian, ReadBytesExt};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{self, BufRead, Read, Result, Write};
 use xz2::write::XzEncoder;
-
-/// A buffered delta frame awaiting chunk serialization.
-struct BufferedDeltaFrame {
-    pair: (u16, u16),
-    run_lengths: Vec<u16>,
-    count: u16,
-}
-
-enum BufferedBenFrame {
-    Ben(BenEncodeFrame),
-    TwoDelta(TwoDeltaFrame),
-}
-
-impl BufferedBenFrame {
-    fn as_slice(&self) -> &[u8] {
-        match self {
-            Self::Ben(frame) => frame.as_slice(),
-            Self::TwoDelta(frame) => frame.as_slice(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-struct AssignmentHints {
-    is_repeated: bool,
-    delta_pair: Option<(u16, u16)>,
-}
-
-/// Check whether two assignment vectors are identical element-by-element.
-///
-/// # Arguments
-///
-/// * `previous_sample` - The previous assignment vector.
-/// * `assign_vec` - The current assignment vector.
-///
-/// # Returns
-///
-/// Returns `true` if both vectors have the same length and every element matches.
-fn is_repeated_assignment(previous_sample: &[u16], assign_vec: &[u16]) -> bool {
-    if previous_sample.is_empty() || previous_sample.len() != assign_vec.len() {
-        return false;
-    }
-
-    for (&previous, &current) in previous_sample.iter().zip(assign_vec.iter()) {
-        if previous != current {
-            return false;
-        }
-    }
-
-    true
-}
-
-/// Analyze the transition between two assignment vectors for two-delta encoding.
-///
-/// Determines whether the assignments are identical (repeated) or differ by
-/// exactly one swapped pair of values, which qualifies for delta encoding.
-///
-/// When `masks` are available the pair is detected in O(K) where K is the
-/// number of unique label values, by checking each label's mask positions for
-/// changes rather than scanning the full assignment array.
-///
-/// # Arguments
-///
-/// * `previous_sample` - The previous assignment vector.
-/// * `assign_vec` - The current assignment vector.
-/// * `masks` - An optional index map from each label value to its sorted
-///   positions in the previous assignment.
-///
-/// # Returns
-///
-/// Returns an `AssignmentHints` with `is_repeated` set if the vectors match,
-/// or `delta_pair` set if all differences involve exactly two values.
-fn analyze_twodelta_transition(
-    previous_sample: &[u16],
-    assign_vec: &[u16],
-    masks: Option<&HashMap<u16, Vec<usize>>>,
-) -> AssignmentHints {
-    if previous_sample.is_empty() || previous_sample.len() != assign_vec.len() {
-        return AssignmentHints::default();
-    }
-
-    // Fast path: use masks to find the pair in O(K) instead of O(N).
-    if let Some(masks) = masks {
-        if previous_sample == assign_vec {
-            return AssignmentHints {
-                is_repeated: true,
-                delta_pair: None,
-            };
-        }
-
-        // Check each label's mask positions. Only labels involved in the swap
-        // will have any changed positions; all others short-circuit immediately.
-        let mut pair: Option<(u16, u16)> = None;
-        for (&label, positions) in masks {
-            for &pos in positions {
-                if assign_vec[pos] != label {
-                    let other = assign_vec[pos];
-                    match pair {
-                        None => {
-                            pair = Some((label, other));
-                            break;
-                        }
-                        Some((a, b)) => {
-                            if (label == a || label == b) && (other == a || other == b) {
-                                break;
-                            }
-                            // More than two values involved.
-                            return AssignmentHints {
-                                is_repeated: false,
-                                delta_pair: None,
-                            };
-                        }
-                    }
-                }
-            }
-        }
-
-        return AssignmentHints {
-            is_repeated: false,
-            delta_pair: pair,
-        };
-    }
-
-    // Slow path: full O(N) scan when masks are not available.
-    let Some(first_mismatch) = previous_sample
-        .iter()
-        .zip(assign_vec.iter())
-        .position(|(&previous, &current)| previous != current)
-    else {
-        return AssignmentHints {
-            is_repeated: true,
-            delta_pair: None,
-        };
-    };
-
-    let pair = (previous_sample[first_mismatch], assign_vec[first_mismatch]);
-
-    for (&previous, &current) in previous_sample
-        .iter()
-        .zip(assign_vec.iter())
-        .skip(first_mismatch + 1)
-    {
-        if previous == current {
-            continue;
-        }
-
-        if previous != pair.0 && previous != pair.1 {
-            return AssignmentHints {
-                is_repeated: false,
-                delta_pair: None,
-            };
-        }
-
-        if current != pair.0 && current != pair.1 {
-            return AssignmentHints {
-                is_repeated: false,
-                delta_pair: None,
-            };
-        }
-    }
-
-    AssignmentHints {
-        is_repeated: false,
-        delta_pair: Some(pair),
-    }
-}
-
-/// Extract and validate the `assignment` array from a JSON object.
-///
-/// # Arguments
-///
-/// * `data` - A JSON value expected to contain an `assignment` array of integers.
-///
-/// # Returns
-///
-/// Returns a `Vec<u16>` of assignment values, or an error if the field is
-/// missing, not an array, or contains values that do not fit in a `u16`.
-fn parse_json_assignment(data: Value) -> Result<Vec<u16>> {
-    let assign_vec = data["assignment"].as_array().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            "'assignment' field either missing or is not an array of integers",
-        )
-    })?;
-
-    assign_vec
-        .iter()
-        .map(|x| {
-            let u = x.as_u64().ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!(
-                        "The value '{}' could not be unwrapped as an unsigned 64 bit integer.",
-                        x
-                    ),
-                )
-            })?;
-
-            u16::try_from(u).map_err(|_| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("The value '{}' is too large to fit in a u16.", u),
-                )
-            })
-        })
-        .collect()
-}
-
-/// Encode an assignment vector as a full XBEN two-delta frame.
-///
-/// The frame begins with a full-frame tag byte followed by RLE-encoded
-/// assignment runs in big-endian format.
-///
-/// # Arguments
-///
-/// * `assignments` - The full assignment vector to encode.
-///
-/// # Returns
-///
-/// Returns the encoded frame as a byte vector.
-fn encode_xben_twodelta_full_frame(assignments: &[u16]) -> Vec<u8> {
-    let runs = assign_to_rle(assignments);
-    let mut bytes = Vec::with_capacity(1 + 4 + runs.len() * 4);
-    bytes.push(XBEN_TWODELTA_FULL_TAG);
-    bytes.extend_from_slice(&(runs.len() as u32).to_be_bytes());
-    for (value, len) in runs {
-        bytes.extend_from_slice(&value.to_be_bytes());
-        bytes.extend_from_slice(&len.to_be_bytes());
-    }
-    bytes
-}
 
 /// A struct to make the writing of BEN files easier and more ergonomic.
 pub struct BenEncoder<W: Write> {
@@ -265,10 +40,10 @@ impl<W: Write> BenEncoder<W> {
     /// # Returns
     ///
     /// Returns a new encoder ready to accept assignments or RLE frames.
-    pub fn new(mut writer: W, variant: BenVariant) -> Self {
-        writer.write_all(banner_for_variant(variant)).unwrap();
+    pub fn new(mut writer: W, variant: BenVariant) -> io::Result<Self> {
+        writer.write_all(banner_for_variant(variant))?;
 
-        BenEncoder {
+        Ok(BenEncoder {
             writer,
             previous_sample: Vec::new(),
             previous_masks: HashMap::new(),
@@ -276,7 +51,7 @@ impl<W: Write> BenEncoder<W> {
             sample_count: 0,
             complete: false,
             variant,
-        }
+        })
     }
 
     /// Rebuild the value-to-position index map from the current previous sample.
@@ -383,13 +158,8 @@ impl<W: Write> BenEncoder<W> {
                 )?;
                 self.flush_pending_frame()?;
 
-                if let Some(pair) = hints.delta_pair {
-                    self.update_masks_for_delta(&assign_vec, pair);
-                    self.previous_sample = assign_vec;
-                } else {
-                    self.previous_sample = assign_vec;
-                    self.rebuild_previous_masks();
-                }
+                self.previous_sample = assign_vec;
+                self.rebuild_previous_masks();
                 self.previous_encoded_sample = Some(BufferedBenFrame::TwoDelta(encoded));
                 self.sample_count = 1;
                 Ok(())
@@ -413,7 +183,7 @@ impl<W: Write> BenEncoder<W> {
         let encoded = self
             .previous_encoded_sample
             .as_ref()
-            .expect("missing previous BEN frame");
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing previous BEN frame"))?;
         self.writer.write_all(encoded.as_slice())?;
 
         if matches!(self.variant, BenVariant::MkvChain | BenVariant::TwoDelta) {
@@ -452,54 +222,6 @@ impl<W: Write> BenEncoder<W> {
         Ok(())
     }
 
-    /// Update the value-to-position masks incrementally for a two-delta transition.
-    ///
-    /// Instead of rebuilding the entire mask HashMap, only the positions belonging
-    /// to the two swapped values are repartitioned. This is O(pair_positions)
-    /// rather than O(assignment_length).
-    ///
-    /// # Arguments
-    ///
-    /// * `new_sample` - The new assignment vector after the transition.
-    /// * `pair` - The two values involved in the delta swap.
-    fn update_masks_for_delta(&mut self, new_sample: &[u16], pair: (u16, u16)) {
-        if pair.0 == pair.1 {
-            return;
-        }
-
-        let pos_a = self.previous_masks.remove(&pair.0).unwrap_or_default();
-        let pos_b = self.previous_masks.remove(&pair.1).unwrap_or_default();
-
-        let mut new_a = Vec::with_capacity(pos_a.len() + pos_b.len());
-        let mut new_b = Vec::with_capacity(pos_a.len() + pos_b.len());
-
-        let (mut i, mut j) = (0, 0);
-        while i < pos_a.len() || j < pos_b.len() {
-            let pos = if j >= pos_b.len() || (i < pos_a.len() && pos_a[i] < pos_b[j]) {
-                let p = pos_a[i];
-                i += 1;
-                p
-            } else {
-                let p = pos_b[j];
-                j += 1;
-                p
-            };
-
-            if new_sample[pos] == pair.0 {
-                new_a.push(pos);
-            } else {
-                new_b.push(pos);
-            }
-        }
-
-        if !new_a.is_empty() {
-            self.previous_masks.insert(pair.0, new_a);
-        }
-        if !new_b.is_empty() {
-            self.previous_masks.insert(pair.1, new_b);
-        }
-    }
-
     /// Encode and write a full assignment vector.
     ///
     /// # Arguments
@@ -536,7 +258,8 @@ impl<W: Write> BenEncoder<W> {
     ///
     /// Returns `Ok(())` after the record has been validated and encoded.
     pub fn write_json_value(&mut self, data: Value) -> Result<()> {
-        self.write_assignment(parse_json_assignment(data)?)
+        let new_assign = parse_json_assignment(data)?;
+        self.write_assignment(new_assign)
     }
 
     /// Flush any buffered repetition state to the underlying writer.
@@ -551,8 +274,7 @@ impl<W: Write> BenEncoder<W> {
         if self.complete {
             return Ok(());
         }
-        self.flush_pending_frame()
-            .expect("Error while flushing trailing BEN frame");
+        self.flush_pending_frame()?;
         self.complete = true;
         Ok(())
     }
@@ -610,6 +332,7 @@ impl<W: Write> XBenEncoder<W> {
     ///
     /// * `new_sample` - The new assignment vector after the transition.
     /// * `pair` - The two values involved in the delta swap.
+    #[allow(dead_code)]
     fn update_masks_for_delta(&mut self, new_sample: &[u16], pair: (u16, u16)) {
         if pair.0 == pair.1 {
             return;
@@ -728,9 +451,9 @@ impl<W: Write> XBenEncoder<W> {
     /// # Returns
     ///
     /// Returns a new XBEN encoder ready to accept assignments or BEN frames.
-    pub fn new(mut encoder: XzEncoder<W>, variant: BenVariant) -> Self {
-        encoder.write_all(banner_for_variant(variant)).unwrap();
-        XBenEncoder {
+    pub fn new(mut encoder: XzEncoder<W>, variant: BenVariant) -> io::Result<Self> {
+        encoder.write_all(banner_for_variant(variant))?;
+        Ok(XBenEncoder {
             encoder,
             previous_assignment: Vec::new(),
             previous_masks: HashMap::new(),
@@ -739,7 +462,7 @@ impl<W: Write> XBenEncoder<W> {
             variant,
             chunk_size: DEFAULT_TWODELTA_CHUNK_SIZE,
             chunk_buffer: Vec::new(),
-        }
+        })
     }
 
     /// Set the number of delta frames per columnar chunk.
@@ -976,12 +699,10 @@ impl<W: Write> Drop for XBenEncoder<W> {
     /// Flush any buffered XBEN repetition state during drop.
     fn drop(&mut self) {
         if matches!(self.variant, BenVariant::MkvChain | BenVariant::TwoDelta) && self.count > 0 {
-            self.flush_pending_frame()
-                .expect("Error writing last XBEN frame to file");
+            let _ = self.flush_pending_frame();
         }
         if !self.chunk_buffer.is_empty() {
-            self.flush_chunk()
-                .expect("Error writing last XBEN TwoDelta chunk");
+            let _ = self.flush_chunk();
         }
     }
 }

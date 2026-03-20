@@ -1,8 +1,11 @@
 //! Translation helpers between BEN and ben32 representations.
 
-use crate::codec::{FromAssign, FromRLE};
+mod errors;
+use errors::TranslateError;
+
+use crate::codec::FromRLE;
 use byteorder::{BigEndian, ReadBytesExt};
-use std::io::{self, Error, Read, Write};
+use std::io::{self, Read, Write};
 
 use crate::codec::decode::decode_ben_line;
 use crate::codec::BenEncodeFrame;
@@ -24,10 +27,9 @@ fn ben32_to_ben_line(ben32_vec: Vec<u8>) -> io::Result<Vec<u8>> {
     let mut reader = ben32_vec.as_slice();
 
     if !ben32_vec.len().is_multiple_of(4) {
-        return Err(Error::new(
-            io::ErrorKind::InvalidData,
-            "Invalid ben32 data length",
-        ));
+        return Err(io::Error::from(TranslateError::Ben32BadLength {
+            len: ben32_vec.len(),
+        }));
     }
 
     for _ in 0..((ben32_vec.len() / 4) - 1) {
@@ -40,12 +42,13 @@ fn ben32_to_ben_line(ben32_vec: Vec<u8>) -> io::Result<Vec<u8>> {
         ben32_rle.push((value, count));
     }
 
+    let eol_offset = ben32_vec.len();
     reader.read_exact(&mut buffer)?;
     if buffer != [0u8; 4] {
-        return Err(Error::new(
-            io::ErrorKind::InvalidData,
-            "Invalid ben32 data format. Missing end of line separator.",
-        ));
+        return Err(io::Error::from(TranslateError::Ben32MissingTerminator {
+            actual: buffer,
+            offset: eol_offset,
+        }));
     }
 
     Ok(BenEncodeFrame::from_rle(ben32_rle, None).into_bytes())
@@ -194,10 +197,7 @@ pub fn ben_to_ben32_lines<R: Read, W: Write>(
                 writer.write_all(&n_reps.to_be_bytes())?;
             }
             BenVariant::TwoDelta => {
-                return Err(io::Error::new(
-                    io::ErrorKind::Unsupported,
-                    "TwoDelta BEN streams cannot yet be translated to ben32/XBEN",
-                ));
+                return Err(io::Error::from(TranslateError::TwoDeltaUnsupported));
             }
         }
     }

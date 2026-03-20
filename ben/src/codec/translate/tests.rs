@@ -238,7 +238,7 @@ fn test_random_translation_ben_to_ben32() {
 fn test_ben32_to_ben_line_rejects_invalid_length() {
     let err = ben32_to_ben_line(vec![1, 2, 3]).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-    assert_eq!(err.to_string(), "Invalid ben32 data length");
+    assert_eq!(err.to_string(), "ben32 frame payload length 3 is not a multiple of 4");
 }
 
 #[test]
@@ -247,7 +247,7 @@ fn test_ben32_to_ben_line_rejects_missing_terminator() {
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     assert_eq!(
         err.to_string(),
-        "Invalid ben32 data format. Missing end of line separator."
+        "ben32 frame missing 4-byte zero end-of-line sentinel at offset 8 (got [0, 0, 0, 1])"
     );
 }
 

@@ -1,15 +1,19 @@
 //! Relabeling operations for BEN files.
 
+mod errors;
+use errors::RelabelError;
+
 use crate::codec::decode::decode_ben_line;
 use crate::codec::{BenEncodeFrame, FromRLE};
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
+use crate::format::FormatError;
 use crate::io::reader::BenDecoder;
 use crate::io::writer::BenEncoder;
 use crate::util::rle::{assign_slice_to_rle, rle_to_vec_in_place};
 use crate::{progress, BenVariant};
 use byteorder::{BigEndian, ReadBytesExt};
 use std::collections::HashMap;
-use std::io::{self, Cursor, Error, Read, Write};
+use std::io::{self, Cursor, Read, Write};
 
 /// Convert a sparse permutation map into a dense index vector.
 ///
@@ -30,11 +34,12 @@ fn dense_permutation(new_to_old_node_map: &HashMap<usize, usize>) -> io::Result<
         permutation[new_idx] = old_idx;
     }
 
-    if permutation.iter().any(|&old_idx| old_idx == usize::MAX) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Relabel map must contain a contiguous set of new indices",
-        ));
+    let missing = permutation.iter().filter(|&&x| x == usize::MAX).count();
+    if missing > 0 {
+        return Err(io::Error::from(RelabelError::NonContiguousMap {
+            max_key,
+            missing,
+        }));
     }
 
     Ok(permutation)
@@ -83,14 +88,10 @@ fn canonicalize_assignment(assignment: &[u16]) -> Vec<u16> {
 /// or an error if the lengths do not match.
 fn permute_assignment(assignment: &[u16], permutation: &[usize]) -> io::Result<Vec<u16>> {
     if assignment.len() != permutation.len() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!(
-                "Relabel map length {} does not match assignment length {}",
-                permutation.len(),
-                assignment.len()
-            ),
-        ));
+        return Err(io::Error::from(RelabelError::LengthMismatch {
+            map_len: permutation.len(),
+            assignment_len: assignment.len(),
+        }));
     }
 
     let mut out = vec![0u16; permutation.len()];
@@ -125,7 +126,7 @@ where
     F: FnMut(&[u16]) -> io::Result<Vec<u16>>,
 {
     let mut decoder = BenDecoder::new(reader)?.silent(true);
-    let mut encoder = BenEncoder::new(writer, variant);
+    let mut encoder = BenEncoder::new(writer, variant)?;
     let mut sample_number = 0usize;
 
     decoder.for_each_assignment(|assignment, count| {
@@ -168,10 +169,9 @@ fn detect_ben_variant(header: &[u8; 17]) -> io::Result<BenVariant> {
         b"STANDARD BEN FILE" => Ok(BenVariant::Standard),
         b"MKVCHAIN BEN FILE" => Ok(BenVariant::MkvChain),
         b"TWODELTA BEN FILE" => Ok(BenVariant::TwoDelta),
-        _ => Err(Error::new(
-            io::ErrorKind::InvalidData,
-            "Invalid file format",
-        )),
+        _ => Err(io::Error::from(FormatError::UnknownBanner {
+            actual: header.to_vec(),
+        })),
     }
 }
 
@@ -427,8 +427,11 @@ fn relabel_ben_file_impl<R: Read, W: Write>(
     let mut check_buffer = [0u8; BANNER_LEN];
     reader.read_exact(&mut check_buffer)?;
 
-    let variant = variant_from_banner(&check_buffer)
-        .ok_or_else(|| Error::new(io::ErrorKind::InvalidData, "Invalid file format"))?;
+    let variant = variant_from_banner(&check_buffer).ok_or_else(|| {
+        io::Error::from(FormatError::UnknownBanner {
+            actual: check_buffer.to_vec(),
+        })
+    })?;
 
     match variant {
         BenVariant::Standard | BenVariant::MkvChain => {
@@ -558,14 +561,10 @@ fn relabel_ben_lines_with_map_impl<R: Read, W: Write>(
         rle_to_vec_in_place(&ben_line, &mut assignment_vec);
 
         if assignment_vec.len() != permutation.len() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!(
-                    "Relabel map length {} does not match assignment length {}",
-                    permutation.len(),
-                    assignment_vec.len()
-                ),
-            ));
+            return Err(io::Error::from(RelabelError::LengthMismatch {
+                map_len: permutation.len(),
+                assignment_len: assignment_vec.len(),
+            }));
         }
 
         for (new_idx, &old_idx) in permutation.iter().enumerate() {
@@ -669,8 +668,11 @@ fn relabel_ben_file_with_map_impl<R: Read, W: Write>(
     let mut check_buffer = [0u8; BANNER_LEN];
     reader.read_exact(&mut check_buffer)?;
 
-    let variant = variant_from_banner(&check_buffer)
-        .ok_or_else(|| Error::new(io::ErrorKind::InvalidData, "Invalid file format"))?;
+    let variant = variant_from_banner(&check_buffer).ok_or_else(|| {
+        io::Error::from(FormatError::UnknownBanner {
+            actual: check_buffer.to_vec(),
+        })
+    })?;
 
     match variant {
         BenVariant::Standard | BenVariant::MkvChain => {

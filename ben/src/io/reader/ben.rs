@@ -2,11 +2,12 @@ use super::errors::DecoderInitError;
 use super::twodelta::{
     XBenTwoDeltaFrame, XBEN_TWODELTA_CHUNK_TAG, XBEN_TWODELTA_DELTA_TAG, XBEN_TWODELTA_FULL_TAG,
 };
-use crate::codec::decode::{decode_ben32_line, decode_ben_line};
+use crate::codec::decode::{decode_ben32_line, decode_ben_line, DecodeError};
 use crate::codec::encode::encode_ben32_assignments;
 use crate::codec::{BenDecodeFrame, BenEncodeFrame, TwoDeltaFrame};
 use crate::codec::encode::FromAssign;
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
+use crate::format::FormatError;
 use crate::util::rle::rle_to_vec;
 use crate::{progress, BenVariant};
 use byteorder::{BigEndian, ReadBytesExt};
@@ -333,10 +334,7 @@ impl<R: Read> BenDecoder<R> {
                 }
                 StoredBenFrame::TwoDelta { frame, count } => {
                     let assignment = self.previous_assignment.take().ok_or_else(|| {
-                        io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "TwoDelta frame encountered before an initial BEN frame",
-                        )
+                        io::Error::from(DecodeError::TwoDeltaNoAnchorFrame)
                     })?;
                     let run_lengths = frame.run_length_vector;
                     let assignment =
@@ -401,15 +399,15 @@ fn apply_twodelta_runs_to_assignment(
     let mut remaining_in_run: u16 = *run_lengths.first().unwrap_or(&0);
     let mut current_value = first;
 
-    for val in assignment.iter_mut() {
+    for (pos, val) in assignment.iter_mut().enumerate() {
         if *val == first || *val == second {
             if remaining_in_run == 0 {
                 run_idx += 1;
                 if run_idx >= run_lengths.len() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "TwoDelta payload exhausted before all pair positions were covered",
-                    ));
+                    return Err(io::Error::from(DecodeError::TwoDeltaRunsExhausted {
+                        run_idx,
+                        pos,
+                    }));
                 }
                 remaining_in_run = run_lengths[run_idx];
                 current_value = if current_value == first {
@@ -464,12 +462,9 @@ fn decode_stored_frame_to_assignment(
     match frame {
         StoredBenFrame::Ben(frame) => decode_ben_frame_to_assignment(frame),
         StoredBenFrame::TwoDelta { frame, .. } => decode_twodelta_frame_to_assignment(
-            previous_assignment.take().ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "TwoDelta frame encountered before an initial BEN frame",
-                )
-            })?,
+            previous_assignment
+                .take()
+                .ok_or_else(|| io::Error::from(DecodeError::TwoDeltaNoAnchorFrame))?,
             frame,
         ),
     }
@@ -531,9 +526,10 @@ impl<R: Read> Iterator for BenFrameDecoeder<R> {
             BenVariant::Standard | BenVariant::MkvChain => match self.inner.pop_frame_from_reader()
             {
                 Some(Ok(StoredBenFrame::Ben(frame))) => Some(Ok(frame)),
-                Some(Ok(StoredBenFrame::TwoDelta { .. })) => Some(Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "unexpected TwoDelta frame in non-TwoDelta BEN stream",
+                Some(Ok(StoredBenFrame::TwoDelta { .. })) => Some(Err(io::Error::from(
+                    DecodeError::UnexpectedTwoDeltaFrame {
+                        variant: self.inner.variant,
+                    },
                 ))),
                 Some(Err(err)) => Some(Err(err)),
                 None => None,
@@ -609,10 +605,9 @@ impl<R: Read> XBenDecoder<R> {
         let mut first = [0u8; BANNER_LEN];
         xz.read_exact(&mut first)?;
         let variant = variant_from_banner(&first).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Invalid .xben header (expecting STANDARD/MKVCHAIN/TWODELTA BEN FILE)",
-            )
+            io::Error::from(FormatError::UnknownBanner {
+                actual: first.to_vec(),
+            })
         })?;
 
         Ok(Self::from_decompressed_stream(xz, variant))
@@ -750,10 +745,7 @@ impl<R: Read> XBenDecoder<R> {
                 )))
             }
             XBEN_TWODELTA_CHUNK_TAG => None, // Handled by try_parse_twodelta_chunk.
-            _ => Some(Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid TwoDelta XBEN frame tag",
-            ))),
+            _ => Some(Err(io::Error::from(DecodeError::XBenUnknownFrameTag { tag }))),
         }
     }
 
@@ -924,10 +916,9 @@ impl<R: Read> Iterator for XBenDecoder<R> {
                                     Some(prev) => {
                                         apply_twodelta_runs_to_assignment(prev, pair, &run_lengths)
                                     }
-                                    None => Err(io::Error::new(
-                                        io::ErrorKind::InvalidData,
-                                        "TwoDelta XBEN frame encountered before an initial BEN frame",
-                                    )),
+                                    None => {
+                                        Err(io::Error::from(DecodeError::TwoDeltaNoAnchorFrame))
+                                    }
                                 }
                             }
                         };
@@ -963,9 +954,8 @@ impl<R: Read> Iterator for XBenDecoder<R> {
                                                     &run_lengths,
                                                 )
                                             }
-                                            None => Err(io::Error::new(
-                                                io::ErrorKind::InvalidData,
-                                                "TwoDelta XBEN frame encountered before an initial BEN frame",
+                                            None => Err(io::Error::from(
+                                                DecodeError::TwoDeltaNoAnchorFrame,
                                             )),
                                         }
                                     }
@@ -997,10 +987,7 @@ impl<R: Read> Iterator for XBenDecoder<R> {
                     if self.overflow.is_empty() {
                         return None;
                     } else {
-                        return Some(Err(io::Error::new(
-                            io::ErrorKind::UnexpectedEof,
-                            "truncated .xben stream (partial frame at EOF)",
-                        )));
+                        return Some(Err(io::Error::from(DecodeError::XBenTruncated)));
                     }
                 }
                 Ok(n) => n,
@@ -1060,10 +1047,7 @@ impl<R: Read> Iterator for XBenFrameDecoder<R> {
                     if self.inner.overflow.is_empty() {
                         return None;
                     } else {
-                        return Some(Err(io::Error::new(
-                            io::ErrorKind::UnexpectedEof,
-                            "truncated .xben stream (partial frame at EOF)",
-                        )));
+                        return Some(Err(io::Error::from(DecodeError::XBenTruncated)));
                     }
                 }
                 Ok(n) => n,
@@ -1330,7 +1314,9 @@ pub fn build_frame_iter(file_path: &PathBuf, mode: &str) -> io::Result<FrameIter
                 .map(move |res| res.map(|(bytes, cnt)| (DecodeFrame::XBen(bytes, variant), cnt)));
             Ok(Box::new(mapped))
         }
-        _ => Err(io::Error::new(io::ErrorKind::InvalidInput, "Unknown mode")),
+        _ => Err(io::Error::from(DecoderInitError::UnknownMode {
+            mode: mode.to_string(),
+        })),
     }
 }
 

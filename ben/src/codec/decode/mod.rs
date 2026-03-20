@@ -2,6 +2,8 @@
 
 mod ben;
 mod ben32;
+pub(crate) mod errors;
+pub(crate) use errors::DecodeError;
 mod xz;
 
 pub use ben::{decode_ben_line, decode_ben_to_jsonl};

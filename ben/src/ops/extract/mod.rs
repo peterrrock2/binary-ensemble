@@ -3,24 +3,32 @@
 use crate::codec::decode::decode_ben32_line;
 use crate::io::reader::{BenDecoder, XBenDecoder};
 use serde_json::Error as SerdeError;
-use std::fmt;
 use std::io::Cursor;
 use std::io::{self, Read};
+use thiserror::Error;
 
-#[derive(Debug)]
-/// Error categories returned when extracting an individual sample from a file.
-pub enum SampleErrorKind {
-    InvalidSampleNumber,
-    SampleNotFound { sample_number: usize },
-    IoError(io::Error),
-    JsonError(SerdeError),
-}
-
-#[derive(Debug)]
+#[derive(Debug, Error)]
 /// Error returned by sample extraction helpers.
-pub struct SampleError {
-    /// The underlying extraction failure category.
-    pub kind: SampleErrorKind,
+pub enum SampleError {
+    /// The provided sample number was zero, which is invalid.
+    #[error("Invalid sample number. Sample number must be greater than 0")]
+    InvalidSampleNumber,
+
+    /// The requested sample index was not found in the file.
+    #[error(
+        "Sample number not found in file. Failed to find sample '{sample_number}'. \
+         Last sample seems to be '{}'",
+        sample_number - 1
+    )]
+    SampleNotFound { sample_number: usize },
+
+    /// An I/O error occurred during extraction.
+    #[error("IO Error: {0}")]
+    IoError(#[from] io::Error),
+
+    /// A JSON parsing error occurred during extraction.
+    #[error("JSON Error: {0}")]
+    JsonError(#[from] SerdeError),
 }
 
 impl SampleError {
@@ -32,63 +40,9 @@ impl SampleError {
     ///
     /// # Returns
     ///
-    /// Returns a new [`SampleError`] with [`SampleErrorKind::IoError`].
+    /// Returns a new [`SampleError`] with [`SampleError::IoError`].
     pub fn new_io_error(error: io::Error) -> Self {
-        SampleError {
-            kind: SampleErrorKind::IoError(error),
-        }
-    }
-}
-
-impl fmt::Display for SampleError {
-    /// Format the sample extraction error for display.
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &self.kind {
-            SampleErrorKind::InvalidSampleNumber => {
-                write!(
-                    f,
-                    "Invalid sample number. Sample number must be greater than 0"
-                )
-            }
-            SampleErrorKind::SampleNotFound { sample_number } => {
-                write!(
-                    f,
-                    "Sample number not found in file. Failed to find sample '{}'. Last sample seems to be '{}'",
-                    sample_number,
-                    sample_number - 1
-                )
-            }
-            SampleErrorKind::IoError(e) => write!(f, "IO Error: {}", e),
-            SampleErrorKind::JsonError(e) => write!(f, "JSON Error: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for SampleError {
-    /// Return the underlying source error when one exists.
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match &self.kind {
-            SampleErrorKind::InvalidSampleNumber => None,
-            SampleErrorKind::SampleNotFound { .. } => None,
-            SampleErrorKind::IoError(e) => Some(e),
-            SampleErrorKind::JsonError(e) => Some(e),
-        }
-    }
-}
-
-impl From<io::Error> for SampleError {
-    /// Wrap a plain I/O error as a sample extraction error.
-    fn from(error: io::Error) -> Self {
-        SampleError::new_io_error(error)
-    }
-}
-
-impl From<SerdeError> for SampleError {
-    /// Wrap a JSON parsing error as a sample extraction error.
-    fn from(error: SerdeError) -> Self {
-        SampleError {
-            kind: SampleErrorKind::JsonError(error),
-        }
+        SampleError::IoError(error)
     }
 }
 
@@ -107,13 +61,11 @@ pub fn extract_assignment_ben<R: Read>(
     sample_number: usize,
 ) -> Result<Vec<u16>, SampleError> {
     if sample_number == 0 {
-        return Err(SampleError {
-            kind: SampleErrorKind::InvalidSampleNumber,
-        });
+        return Err(SampleError::InvalidSampleNumber);
     }
 
     let mut current_sample = 1;
-    let inner_decoder = BenDecoder::new(&mut reader).expect("Failed to create XBenDecoder");
+    let inner_decoder = BenDecoder::new(&mut reader).map_err(io::Error::from)?;
     for record in inner_decoder {
         let (assignment, count) = record.map_err(SampleError::new_io_error)?;
         if current_sample == sample_number || current_sample + count as usize > sample_number {
@@ -122,10 +74,8 @@ pub fn extract_assignment_ben<R: Read>(
         current_sample += count as usize;
     }
 
-    Err(SampleError {
-        kind: SampleErrorKind::SampleNotFound {
-            sample_number: current_sample,
-        },
+    Err(SampleError::SampleNotFound {
+        sample_number: current_sample,
     })
 }
 
@@ -144,12 +94,10 @@ pub fn extract_assignment_xben<R: Read>(
     sample_number: usize,
 ) -> Result<Vec<u16>, SampleError> {
     if sample_number == 0 {
-        return Err(SampleError {
-            kind: SampleErrorKind::InvalidSampleNumber,
-        });
+        return Err(SampleError::InvalidSampleNumber);
     }
 
-    let inner_decoder = XBenDecoder::new(&mut reader).expect("Failed to create XBenDecoder");
+    let inner_decoder = XBenDecoder::new(&mut reader).map_err(SampleError::new_io_error)?;
     let variant = inner_decoder.variant;
     let frame_iterator = inner_decoder.into_frames();
 
@@ -165,10 +113,8 @@ pub fn extract_assignment_xben<R: Read>(
         current_sample += frame.1 as usize;
     }
 
-    Err(SampleError {
-        kind: SampleErrorKind::SampleNotFound {
-            sample_number: current_sample,
-        },
+    Err(SampleError::SampleNotFound {
+        sample_number: current_sample,
     })
 }
 

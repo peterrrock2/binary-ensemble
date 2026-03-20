@@ -107,9 +107,7 @@ fn test_extract_assignment_sample_too_large() {
     let result = extract_assignment_ben(&mut reader, sample_number);
 
     match result {
-        Err(SampleError {
-            kind: SampleErrorKind::SampleNotFound { sample_number: 4 },
-        }) => (),
+        Err(SampleError::SampleNotFound { sample_number: 4 }) => (),
         _ => panic!(
             "{}",
             format!("Expected SampleError::SampleNotFound, got {:?}", result)
@@ -120,7 +118,7 @@ fn test_extract_assignment_sample_too_large() {
 #[test]
 fn test_extract_assignment_ben_rejects_zero_sample_number() {
     let err = extract_assignment_ben([].as_slice(), 0).unwrap_err();
-    assert!(matches!(err.kind, SampleErrorKind::InvalidSampleNumber));
+    assert!(matches!(err, SampleError::InvalidSampleNumber));
     assert_eq!(
         err.to_string(),
         "Invalid sample number. Sample number must be greater than 0"
@@ -154,8 +152,8 @@ fn test_extract_assignment_xben_roundtrip_and_errors() {
 
     let missing = extract_assignment_xben(xben.as_slice(), 4).unwrap_err();
     assert!(matches!(
-        missing.kind,
-        SampleErrorKind::SampleNotFound { sample_number: 4 }
+        missing,
+        SampleError::SampleNotFound { sample_number: 4 }
     ));
     assert_eq!(
         missing.to_string(),
@@ -164,20 +162,20 @@ fn test_extract_assignment_xben_roundtrip_and_errors() {
     assert!(missing.source().is_none());
 
     let zero = extract_assignment_xben(xben.as_slice(), 0).unwrap_err();
-    assert!(matches!(zero.kind, SampleErrorKind::InvalidSampleNumber));
+    assert!(matches!(zero, SampleError::InvalidSampleNumber));
 }
 
 #[test]
 fn test_sample_error_conversion_and_sources() {
     let io_err = io::Error::other("boom");
     let sample_err = SampleError::from(io_err);
-    assert!(matches!(sample_err.kind, SampleErrorKind::IoError(_)));
+    assert!(matches!(sample_err, SampleError::IoError(_)));
     assert_eq!(sample_err.to_string(), "IO Error: boom");
     assert!(sample_err.source().is_some());
 
     let json_err = serde_json::from_str::<serde_json::Value>("{").unwrap_err();
     let sample_err = SampleError::from(json_err);
-    assert!(matches!(sample_err.kind, SampleErrorKind::JsonError(_)));
+    assert!(matches!(sample_err, SampleError::JsonError(_)));
     assert!(sample_err.to_string().starts_with("JSON Error: "));
     assert!(sample_err.source().is_some());
 }

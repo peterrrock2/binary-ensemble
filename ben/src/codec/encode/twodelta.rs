@@ -1,4 +1,4 @@
-use super::errors::BenEncodeError;
+use super::errors::EncodeError;
 use crate::codec::frames::TwoDeltaFrame;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind, Result};
@@ -209,30 +209,21 @@ pub(crate) fn encode_twodelta_frame_with_hint(
     let new_assignment = new_assignment.as_ref();
 
     if previous_assignment.len() != new_assignment.len() {
-        return Err(Error::new(
-            ErrorKind::InvalidData,
-            format!(
-                "TwoDelta requires previous and new assignment vectors to be of \
-                equal length, but got lengths {} and {}",
-                previous_assignment.len(),
-                new_assignment.len()
-            ),
-        ));
+        return Err(Error::from(EncodeError::TwoDeltaLengthMismatch {
+            prev_len: previous_assignment.len(),
+            new_len: new_assignment.len(),
+        }));
     }
 
     if delta_pair.is_some() {
         if masks.is_none() {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "TwoDelta pair hint provided without corresponding masks",
-            ));
+            return Err(Error::from(EncodeError::TwoDeltaHintWithoutMasks));
         }
         let pair = delta_pair.unwrap();
         if pair.0 == pair.1 {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "TwoDelta pair hint cannot have identical values for the two ids",
-            ));
+            return Err(Error::from(EncodeError::TwoDeltaIdenticalPairHint {
+                value: pair.0,
+            }));
         }
     }
 
@@ -274,36 +265,20 @@ fn validate_masks_and_order_pairs_for_twodelta(
 ) -> Result<(u16, u16)> {
     let mask_a = match masks.get(&pair.0) {
         Some(m) => m,
-        None => {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "TwoDelta pair mask is missing for the previous assignment",
-            ))
-        }
+        None => return Err(Error::from(EncodeError::TwoDeltaMissingMask { id: pair.0 })),
     };
 
     let mask_b = match masks.get(&pair.1) {
         Some(m) => m,
-        None => {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "TwoDelta pair mask is missing for the current assignment",
-            ))
-        }
+        None => return Err(Error::from(EncodeError::TwoDeltaMissingMask { id: pair.1 })),
     };
 
     if mask_a.len() == 0 {
-        return Err(Error::new(
-            ErrorKind::InvalidData,
-            format!("TwoDelta pair mask for the id {} is empty", pair.0),
-        ));
+        return Err(Error::from(EncodeError::TwoDeltaEmptyMask { id: pair.0 }));
     };
 
     if mask_b.len() == 0 {
-        return Err(Error::new(
-            ErrorKind::InvalidData,
-            format!("TwoDelta pair mask for the id {} is empty", pair.1),
-        ));
+        return Err(Error::from(EncodeError::TwoDeltaEmptyMask { id: pair.1 }));
     };
 
     if mask_a[0] < mask_b[0] {
@@ -407,16 +382,20 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
         let current_value = current[idx];
 
         if previous_value != pair.0 && previous_value != pair.1 {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "TwoDelta pair mask referenced an index outside the selected id pair",
-            ));
+            return Err(Error::from(EncodeError::TwoDeltaMaskOutOfPair {
+                pos: idx,
+                actual: previous_value,
+                a: pair.0,
+                b: pair.1,
+            }));
         }
         if current_value != pair.0 && current_value != pair.1 {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "TwoDelta payload encountered an assignment outside the selected id pair",
-            ));
+            return Err(Error::from(EncodeError::TwoDeltaMaskOutOfPair {
+                pos: idx,
+                actual: current_value,
+                a: pair.0,
+                b: pair.1,
+            }));
         }
         if current_value != previous_value {
             found_assignment_change = true;
@@ -432,7 +411,7 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
 
     // Special error that signals that we can reuse the last TwoDelta frame
     if !found_assignment_change {
-        return Err(BenEncodeError::RepeatedSample.into());
+        return Err(Error::from(EncodeError::TwoDeltaIdentical));
     }
 
     masks.insert(pair.0, new_mask_a);
@@ -475,7 +454,7 @@ fn construct_twodelta_frame_from_mask_hint(
         }
     }
 
-    return Err(BenEncodeError::RepeatedSample.into());
+    return Err(Error::from(EncodeError::TwoDeltaIdentical));
 }
 
 /// Build a TwoDelta frame by scanning both assignment vectors from scratch, with no
@@ -506,9 +485,11 @@ fn construct_twodelta_frame_from_scratch(
     let mut run_lengths = Vec::new();
     let mut current_value = 0u16;
     let mut current_run_length = 0u16;
+    let mut found_assignment_change = false;
 
     for (&assign0, &assign1) in previous.iter().zip(current.iter()) {
         if assign0 != assign1 {
+            found_assignment_change = true;
             // We are encoding the current, so the first value we encounter in the current should
             // be added to the front of the pair
             for value in [assign1, assign0] {
@@ -516,10 +497,7 @@ fn construct_twodelta_frame_from_scratch(
                     // We have found both values for the pair and yet encountered a third value
                     // so this is not a valid TwoDelta transition.
                     if pair_len == 2 {
-                        return Err(Error::new(
-                            ErrorKind::InvalidData,
-                            "TwoDelta transitions may involve at most two assignment ids",
-                        ));
+                        return Err(Error::from(EncodeError::TwoDeltaTooManyIds));
                     }
                     delta_pair[pair_len] = value;
                     pair_len += 1;
@@ -533,6 +511,10 @@ fn construct_twodelta_frame_from_scratch(
                 current_run_length += 1;
             }
         }
+    }
+
+    if !found_assignment_change {
+        return Err(Error::from(EncodeError::TwoDeltaIdentical));
     }
     run_lengths.push(current_run_length);
 

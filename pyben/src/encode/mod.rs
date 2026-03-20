@@ -24,7 +24,8 @@ impl PyBenEncoder {
         let ben_var = parse_variant(variant.as_deref())?;
         let writer = open_output(&file_path, overwrite)?;
 
-        let encoder = BenEncoder::new(writer, ben_var);
+        let encoder = BenEncoder::new(writer, ben_var)
+            .map_err(|e| PyIOError::new_err(format!("Failed to create encoder: {}", e)))?;
         Ok(PyBenEncoder {
             encoder: Some(encoder),
         })

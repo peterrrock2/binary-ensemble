@@ -45,9 +45,7 @@ pub(crate) fn decode_ben32_line<R: BufRead>(
     }
 
     let count = if variant == BenVariant::MkvChain {
-        reader
-            .read_u16::<BigEndian>()
-            .expect("Error when reading sample.")
+        reader.read_u16::<BigEndian>()?
     } else {
         1
     };

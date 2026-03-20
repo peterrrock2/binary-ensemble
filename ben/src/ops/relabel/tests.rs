@@ -498,7 +498,7 @@ fn test_relabel_simple_file_with_map_mkv_limit_truncates_counts() {
 fn test_relabel_file_rejects_invalid_header() {
     let err = relabel_ben_file(b"not a valid banner".as_slice(), Vec::new()).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-    assert_eq!(err.to_string(), "Invalid file format");
+    assert_eq!(err.to_string(), "unrecognized BEN banner (got [110, 111, 116, 32, 97, 32, 118, 97, 108, 105, 100, 32, 98, 97, 110, 110, 101]; expected one of \"STANDARD BEN FILE\", \"MKVCHAIN BEN FILE\", or \"TWODELTA BEN FILE\")");
 }
 
 #[test]
@@ -507,7 +507,7 @@ fn test_relabel_file_with_map_rejects_invalid_header() {
         relabel_ben_file_with_map(b"not a valid banner".as_slice(), Vec::new(), HashMap::new())
             .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-    assert_eq!(err.to_string(), "Invalid file format");
+    assert_eq!(err.to_string(), "unrecognized BEN banner (got [110, 111, 116, 32, 97, 32, 118, 97, 108, 105, 100, 32, 98, 97, 110, 110, 101]; expected one of \"STANDARD BEN FILE\", \"MKVCHAIN BEN FILE\", or \"TWODELTA BEN FILE\")");
 }
 
 #[test]
