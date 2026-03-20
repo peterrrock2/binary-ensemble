@@ -50,14 +50,6 @@ impl<W: Write> BenEncoder<W> {
         })
     }
 
-    /// Rebuild the value-to-position index map from the current previous sample.
-    fn rebuild_previous_masks(&mut self) {
-        self.previous_masks.clear();
-        for (idx, &assignment) in self.previous_sample.iter().enumerate() {
-            self.previous_masks.entry(assignment).or_default().push(idx);
-        }
-    }
-
     /// Store a new previous sample along with its encoded frame and repetition count.
     ///
     /// # Arguments
@@ -72,7 +64,6 @@ impl<W: Write> BenEncoder<W> {
         sample_count: u16,
     ) {
         self.previous_sample = sample;
-        self.rebuild_previous_masks();
         self.previous_encoded_sample = Some(encoded);
         self.sample_count = sample_count;
     }
@@ -128,6 +119,9 @@ impl<W: Write> BenEncoder<W> {
             BenVariant::TwoDelta => {
                 if self.previous_sample.is_empty() {
                     let encoded = BenEncodeFrame::from_assignment(&assign_vec, None);
+                    for (idx, &val) in assign_vec.iter().enumerate() {
+                        self.previous_masks.entry(val).or_default().push(idx);
+                    }
                     self.set_previous_sample(assign_vec, BufferedBenFrame::Ben(encoded), 1);
                     return Ok(());
                 }
@@ -146,7 +140,6 @@ impl<W: Write> BenEncoder<W> {
                 self.flush_pending_frame()?;
 
                 self.previous_sample = assign_vec;
-                self.rebuild_previous_masks();
                 self.previous_encoded_sample = Some(BufferedBenFrame::TwoDelta(encoded));
                 self.sample_count = 1;
                 Ok(())
@@ -176,35 +169,6 @@ impl<W: Write> BenEncoder<W> {
             self.writer.write_all(&self.sample_count.to_be_bytes())?;
         }
 
-        Ok(())
-    }
-
-    /// Record additional repetitions of the most recently written assignment.
-    ///
-    /// For MkvChain and TwoDelta variants the repetition count is incremented
-    /// directly. For Standard, the cached encoded frame is re-emitted once per
-    /// additional repeat.
-    ///
-    /// # Arguments
-    ///
-    /// * `additional` - The number of extra copies beyond the one already written.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` after all additional repeats have been recorded.
-    pub fn repeat_previous(&mut self, additional: u16) -> Result<()> {
-        match self.variant {
-            BenVariant::Standard => {
-                if let Some(encoded) = self.previous_encoded_sample.as_ref() {
-                    for _ in 0..additional {
-                        self.writer.write_all(encoded.as_slice())?;
-                    }
-                }
-            }
-            BenVariant::MkvChain | BenVariant::TwoDelta => {
-                self.sample_count += additional;
-            }
-        }
         Ok(())
     }
 

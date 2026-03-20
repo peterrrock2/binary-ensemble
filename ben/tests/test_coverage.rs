@@ -578,40 +578,6 @@ fn ben_encoder_standard_single_assignment_round_trip() {
 }
 
 #[test]
-fn ben_encoder_standard_repeat_previous_writes_frames() {
-    let assignment = vec![5u16, 5, 5];
-    let mut out = Vec::new();
-    {
-        let mut enc = BenEncoder::new(&mut out, BenVariant::Standard).unwrap();
-        enc.write_assignment(assignment.clone()).unwrap();
-        enc.repeat_previous(2).unwrap(); // 2 extra copies → 3 total
-        enc.finish().unwrap();
-    }
-
-    let mut decoded = Vec::new();
-    decode_ben_to_jsonl(out.as_slice(), &mut decoded).unwrap();
-    let decoded_str = String::from_utf8(decoded).unwrap();
-    // Three lines expected
-    assert_eq!(decoded_str.lines().count(), 3, "decoded:\n{decoded_str}");
-}
-
-#[test]
-fn ben_encoder_mkv_repeat_previous_increments_count() {
-    let assignment = vec![9u16, 8, 7];
-    let mut out = Vec::new();
-    {
-        let mut enc = BenEncoder::new(&mut out, BenVariant::MkvChain).unwrap();
-        enc.write_assignment(assignment.clone()).unwrap();
-        enc.repeat_previous(4).unwrap(); // 4 extra → count = 5
-        enc.finish().unwrap();
-    }
-
-    let mut decoded = Vec::new();
-    decode_ben_to_jsonl(out.as_slice(), &mut decoded).unwrap();
-    assert_eq!(decoded.iter().filter(|&&b| b == b'\n').count(), 5);
-}
-
-#[test]
 fn ben_encoder_finish_is_idempotent() {
     let mut out = Vec::new();
     {

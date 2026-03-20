@@ -139,10 +139,10 @@ where
             .map(|limit| (limit - sample_number).min(count as usize))
             .unwrap_or(count as usize);
 
-        encoder.write_assignment(relabeled)?;
-        if out_count > 1 {
-            encoder.repeat_previous((out_count - 1) as u16)?;
+        for _ in 1..out_count {
+            encoder.write_assignment(relabeled.clone())?;
         }
+        encoder.write_assignment(relabeled)?;
 
         sample_number += out_count;
         progress!("Relabelling line: {}\r", sample_number);
