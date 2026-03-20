@@ -9,7 +9,7 @@ use binary_ensemble::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben};
 use binary_ensemble::codec::encode::{
     encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben, encode_twodelta_frame,
 };
-use binary_ensemble::codec::{BenEncodeFrame, FromAssign, FromRLE, TwoDeltaEncodeFrame};
+use binary_ensemble::codec::{BenConstruct, BenEncodeFrame, TwoDeltaEncodeFrame};
 use binary_ensemble::format::banners::{
     banner_for_variant, has_known_banner_prefix, variant_from_banner, BANNER_LEN,
     MKVCHAIN_BEN_BANNER, STANDARD_BEN_BANNER, TWODELTA_BEN_BANNER,

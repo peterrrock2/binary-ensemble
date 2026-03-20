@@ -4,7 +4,7 @@ use super::twodelta::{
 };
 use crate::codec::decode::{decode_ben32_line, decode_ben_line, DecodeError};
 use crate::codec::encode::encode_ben32_assignments;
-use crate::codec::{BenDecodeFrame, BenEncodeFrame, FromAssign, TwoDeltaEncodeFrame};
+use crate::codec::{BenConstruct, BenDecodeFrame, BenEncodeFrame, TwoDeltaEncodeFrame};
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
 use crate::util::rle::rle_to_vec;

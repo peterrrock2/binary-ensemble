@@ -8,16 +8,21 @@ pub use ben_encode::BenEncodeFrame;
 pub use mkv_encode::MkvBenEncodeFrame;
 pub use twodelta::TwoDeltaEncodeFrame;
 
-pub trait FromRLE {
-    fn from_rle(runs: Vec<(u16, u16)>, count: Option<u16>) -> Self;
-}
+use crate::util::rle::assign_to_rle;
 
-pub trait FromAssign {
-    fn from_assignment(assignments: impl AsRef<[u16]>, count: Option<u16>) -> Self;
+pub trait BenConstruct {
+    fn from_rle(runs: Vec<(u16, u16)>, count: Option<u16>) -> Self;
+
+    fn from_assignment(assignments: impl AsRef<[u16]>, count: Option<u16>) -> Self
+    where
+        Self: Sized,
+    {
+        Self::from_rle(assign_to_rle(assignments), count)
+    }
 }
 
 /// Compresses a run-length encoded vector into BEN payload bytes.
-pub(super) fn compress_rle_to_bytes(
+pub(super) fn compress_rle_to_ben_bytes(
     max_val_bit_count: u8,
     max_len_bit_count: u8,
     n_bytes: u32,

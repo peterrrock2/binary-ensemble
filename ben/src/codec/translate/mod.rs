@@ -3,7 +3,7 @@
 mod errors;
 use errors::TranslateError;
 
-use crate::codec::FromRLE;
+use crate::codec::BenConstruct;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::io::{self, Read, Write};
 

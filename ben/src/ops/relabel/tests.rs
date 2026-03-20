@@ -1,7 +1,7 @@
 use super::*;
 use crate::codec::decode::decode_ben_to_jsonl;
 use crate::codec::encode::encode_jsonl_to_ben;
-use crate::codec::{BenEncodeFrame, FromRLE};
+use crate::codec::{BenConstruct, BenEncodeFrame};
 use crate::util::rle::assign_to_rle;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;

@@ -1,5 +1,4 @@
-use super::{compress_rle_to_bytes, FromAssign, FromRLE};
-use crate::util::rle::assign_to_rle;
+use super::{compress_rle_to_ben_bytes, BenConstruct};
 
 /// Canonical representation of a BEN frame.
 ///
@@ -64,7 +63,7 @@ impl PartialEq<BenEncodeFrame> for Vec<u8> {
     }
 }
 
-impl FromRLE for BenEncodeFrame {
+impl BenConstruct for BenEncodeFrame {
     /// Build a frame from an RLE run vector.
     fn from_rle(runs: Vec<(u16, u16)>, _count: Option<u16>) -> Self {
         let (max_val, max_len) = runs
@@ -77,7 +76,8 @@ impl FromRLE for BenEncodeFrame {
         let assign_bits = (max_val_bit_count + max_len_bit_count) as u32;
         let payload_bits = assign_bits * runs.len() as u32;
         let n_bytes = payload_bits.div_ceil(8);
-        let raw_bytes = compress_rle_to_bytes(max_val_bit_count, max_len_bit_count, n_bytes, &runs);
+        let raw_bytes =
+            compress_rle_to_ben_bytes(max_val_bit_count, max_len_bit_count, n_bytes, &runs);
 
         Self {
             runs,
@@ -86,12 +86,5 @@ impl FromRLE for BenEncodeFrame {
             n_bytes,
             raw_bytes,
         }
-    }
-}
-
-impl FromAssign for BenEncodeFrame {
-    /// Build a frame from a full assignment vector.
-    fn from_assignment(assignments: impl AsRef<[u16]>, count: Option<u16>) -> Self {
-        Self::from_rle(assign_to_rle(assignments), count)
     }
 }

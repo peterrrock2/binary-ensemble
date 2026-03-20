@@ -1,7 +1,7 @@
 use super::frames::BufferedBenFrame;
 use super::utils::{analyze_twodelta_transition, is_repeated_assignment, parse_json_assignment};
 use crate::codec::encode::encode_twodelta_frame_with_hint;
-use crate::codec::{BenEncodeFrame, FromAssign};
+use crate::codec::{BenConstruct, BenEncodeFrame};
 use crate::format::banners::banner_for_variant;
 use crate::BenVariant;
 use serde_json::Value;

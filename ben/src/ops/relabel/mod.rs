@@ -4,7 +4,7 @@ mod errors;
 use errors::RelabelError;
 
 use crate::codec::decode::decode_ben_line;
-use crate::codec::{BenEncodeFrame, FromRLE};
+use crate::codec::{BenConstruct, BenEncodeFrame};
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
 use crate::io::reader::BenDecoder;

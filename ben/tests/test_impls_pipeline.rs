@@ -6,7 +6,7 @@ use binary_ensemble::codec::decode::{
 use binary_ensemble::codec::encode::{
     encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben, xz_compress,
 };
-use binary_ensemble::codec::{BenEncodeFrame, FromAssign, FromRLE};
+use binary_ensemble::codec::{BenConstruct, BenEncodeFrame};
 use binary_ensemble::io::reader::{
     build_frame_iter, count_samples_from_file, BenDecoder, DecodeFrame, DecoderInitError,
     SubsampleFrameDecoder, XBenDecoder,
