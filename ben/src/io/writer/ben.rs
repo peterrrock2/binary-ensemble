@@ -98,16 +98,7 @@ impl<W: Write> BenEncoder<W> {
     ) -> Result<()> {
         match self.variant {
             BenVariant::Standard => {
-                let repeated = is_repeated_assignment(&self.previous_sample, &assign_vec);
                 if hints.is_repeated {
-                    if let Some(encoded) = self.previous_encoded_sample.as_ref() {
-                        self.writer.write_all(encoded.as_slice())?;
-                        self.previous_sample = assign_vec;
-                        return Ok(());
-                    }
-                }
-
-                if repeated {
                     if let Some(encoded) = self.previous_encoded_sample.as_ref() {
                         self.writer.write_all(encoded.as_slice())?;
                         self.previous_sample = assign_vec;
@@ -121,7 +112,7 @@ impl<W: Write> BenEncoder<W> {
                 Ok(())
             }
             BenVariant::MkvChain => {
-                if is_repeated_assignment(&self.previous_sample, &assign_vec) {
+                if hints.is_repeated {
                     self.sample_count += 1;
                     return Ok(());
                 }
@@ -235,7 +226,10 @@ impl<W: Write> BenEncoder<W> {
             };
             analyze_twodelta_transition(&self.previous_sample, &assign_vec, masks)
         } else {
-            AssignmentHints::default()
+            AssignmentHints {
+                is_repeated: is_repeated_assignment(&self.previous_sample, &assign_vec),
+                delta_pair: None,
+            }
         };
         self.write_assignment_with_hints(assign_vec, hints)
     }
