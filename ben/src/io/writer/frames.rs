@@ -20,9 +20,3 @@ impl BufferedBenFrame {
         }
     }
 }
-
-#[derive(Clone, Copy, Debug, Default)]
-pub(super) struct AssignmentHints {
-    pub is_repeated: bool,
-    pub delta_pair: Option<(u16, u16)>,
-}

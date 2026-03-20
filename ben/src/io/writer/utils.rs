@@ -1,4 +1,4 @@
-use super::frames::AssignmentHints;
+use super::ben::AssignmentHints;
 use super::twodelta::XBEN_TWODELTA_FULL_TAG;
 use crate::util::rle::assign_to_rle;
 use serde_json::Value;

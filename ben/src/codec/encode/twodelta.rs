@@ -136,8 +136,8 @@ impl TwoDeltaFrame {
 /// * `previous_assignment` - The full assignment vector from the preceding sample.
 /// * `new_assignment` - The full assignment vector for the sample being encoded.
 /// * `delta_pair` - An optional hint asserting which pair of ids is involved in the
-///   transition. Must be provided together with `masks`, and the two ids must be distinct.
-/// * `masks` - An optional mutable map from assignment id to the sorted list of positions
+///   transition. Must be provided together with `previous_masks`, and the two ids must be distinct.
+/// * `previous_masks` - An optional mutable map from assignment id to the sorted list of positions
 ///   it occupies in `previous_assignment`. When provided, the map is updated in-place to
 ///   reflect `new_assignment` before returning.
 ///
@@ -160,18 +160,18 @@ impl TwoDeltaFrame {
 /// Two optional hints can be provided to avoid scanning the full assignment vector:
 ///
 /// - `delta_pair`: The caller asserts that exactly this pair of ids is involved in
-///   the transition. Must be provided together with `masks`. The pair must have two
+///   the transition. Must be provided together with `previous_masks`. The pair must have two
 ///   distinct ids — passing `(x, x)` is an error.
 ///
-/// - `masks`: A mutable map from assignment id to the sorted list of positions it
+/// - `previous_masks`: A mutable map from assignment id to the sorted list of positions it
 ///   occupies in `previous_assignment`. When provided, the function reads positions
 ///   directly from the map instead of scanning the assignment vector, and updates
-///   the map in-place to reflect `new_assignment` before returning. The masks must
+///   the map in-place to reflect `new_assignment` before returning. The previous_masks must
 ///   cover every id that appears in the pair; a missing or empty entry is an error.
 ///
-/// The hints are not independent: `delta_pair` requires `masks`. Providing `masks`
+/// The hints are not independent: `delta_pair` requires `previous_masks`. Providing `previous_masks`
 /// without `delta_pair` is allowed — the function will infer the pair from the first
-/// differing position and then use the masks from there.
+/// differing position and then use the previous_masks from there.
 ///
 /// When no hints are provided the function falls back to a full scan of both
 /// assignment vectors.
@@ -180,7 +180,7 @@ impl TwoDeltaFrame {
 ///
 /// Returns an error if:
 /// - The assignment vectors have different lengths.
-/// - `delta_pair` is provided without `masks`.
+/// - `delta_pair` is provided without `previous_masks`.
 /// - `delta_pair` contains two identical ids.
 /// - A mask entry required by the pair is absent or empty.
 /// - A position referenced by a mask holds a value outside the pair.
@@ -190,7 +190,7 @@ pub(crate) fn encode_twodelta_frame_with_hint(
     previous_assignment: impl AsRef<[u16]>,
     new_assignment: impl AsRef<[u16]>,
     delta_pair: Option<(u16, u16)>,
-    masks: Option<&mut HashMap<u16, Vec<usize>>>,
+    previous_masks: Option<&mut HashMap<u16, Vec<usize>>>,
 ) -> Result<TwoDeltaFrame> {
     let previous_assignment = previous_assignment.as_ref();
     let new_assignment = new_assignment.as_ref();
@@ -203,7 +203,7 @@ pub(crate) fn encode_twodelta_frame_with_hint(
     }
 
     if delta_pair.is_some() {
-        if masks.is_none() {
+        if previous_masks.is_none() {
             return Err(Error::from(EncodeError::TwoDeltaHintWithoutMasks));
         }
         let pair = delta_pair.unwrap();
@@ -214,7 +214,7 @@ pub(crate) fn encode_twodelta_frame_with_hint(
         }
     }
 
-    match (delta_pair, masks) {
+    match (delta_pair, previous_masks) {
         (Some(pair), Some(masks)) => construct_twodelta_frame_from_pair_and_mask_hints(
             previous_assignment,
             new_assignment,
@@ -230,7 +230,7 @@ pub(crate) fn encode_twodelta_frame_with_hint(
     // Ok(TwoDeltaFrame::from_run_lengths(ordered_pair, run_lengths))
 }
 
-/// Validate that `masks` contains non-empty entries for both ids in `pair` and return
+/// Validate that `previous_masks` contains non-empty entries for both ids in `pair` and return
 /// the pair ordered so that `pair.0` occupies a lower index than `pair.1`.
 ///
 /// Ordering by first position ensures that the run-length sequence produced during
@@ -240,12 +240,12 @@ pub(crate) fn encode_twodelta_frame_with_hint(
 /// # Arguments
 ///
 /// * `pair` - The two assignment ids to validate and order.
-/// * `masks` - The position mask map to look up entries in.
+/// * `previous_masks` - The position mask map to look up entries in.
 ///
 /// # Returns
 ///
 /// The pair reordered so that `pair.0` has a smaller first position in the current vector than
-/// `pair.1`, or an error if either id is absent from `masks` or has an empty position list.
+/// `pair.1`, or an error if either id is absent from `previous_masks` or has an empty position list.
 fn validate_masks_and_order_pairs_for_twodelta(
     pair: (u16, u16),
     masks: &HashMap<u16, Vec<usize>>,
@@ -285,10 +285,10 @@ fn validate_masks_and_order_pairs_for_twodelta(
 /// This is the fast path used during recombination-aware encoding, where the caller
 /// already knows which two ids are swapping and has maintained a mask for each id.
 ///
-/// The function merges the two sorted position lists from `masks` to produce the
+/// The function merges the two sorted position lists from `previous_masks` to produce the
 /// interleaved sequence of positions, validates that every referenced position in
 /// `previous` and `current` belongs to the pair, computes the run lengths over
-/// `current`, and then updates `masks` in-place to reflect the new positions of
+/// `current`, and then updates `previous_masks` in-place to reflect the new positions of
 /// each id in `current`.
 ///
 /// # Arguments
@@ -296,7 +296,7 @@ fn validate_masks_and_order_pairs_for_twodelta(
 /// * `previous` - The full assignment vector from the preceding sample.
 /// * `current` - The full assignment vector for the sample being encoded.
 /// * `delta_pair` - The pair of ids asserted to be involved in the transition.
-/// * `masks` - Mutable position mask map for both ids in the pair. Updated in-place
+/// * `previous_masks` - Mutable position mask map for both ids in the pair. Updated in-place
 ///   to reflect `current` before returning.
 ///
 /// # Returns
@@ -308,26 +308,27 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
     previous: &[u16],
     current: &[u16],
     delta_pair: (u16, u16),
-    masks: &mut HashMap<u16, Vec<usize>>,
+    previous_masks: &mut HashMap<u16, Vec<usize>>,
 ) -> Result<TwoDeltaFrame> {
-    let pair = match validate_masks_and_order_pairs_for_twodelta(delta_pair, masks, current) {
-        Ok(pair) => pair,
-        Err(e) => {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "Encountered when validating masks and ordering pairs in \
+    let pair =
+        match validate_masks_and_order_pairs_for_twodelta(delta_pair, previous_masks, current) {
+            Ok(pair) => pair,
+            Err(e) => {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!(
+                        "Encountered when validating previous_masks and ordering pairs in \
                     `determine_twodelta_run_from_pair_and_mask_hints`:\n{}",
-                    e
-                ),
-            ));
-        }
-    };
+                        e
+                    ),
+                ));
+            }
+        };
 
-    let mask_a = masks
+    let mask_a = previous_masks
         .get(&pair.0)
         .expect("Failed to get mask for pair.0 after validation");
-    let mask_b = masks
+    let mask_b = previous_masks
         .get(&pair.1)
         .expect("Failed to get mask for pair.1 after validation");
 
@@ -399,8 +400,8 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
         return Err(Error::from(EncodeError::TwoDeltaIdentical));
     }
 
-    masks.insert(pair.0, new_mask_a);
-    masks.insert(pair.1, new_mask_b);
+    previous_masks.insert(pair.0, new_mask_a);
+    previous_masks.insert(pair.1, new_mask_b);
     Ok(TwoDeltaFrame::from_run_lengths(pair, run_lengths))
 }
 
@@ -416,7 +417,7 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
 ///
 /// * `previous` - The full assignment vector from the preceding sample.
 /// * `current` - The full assignment vector for the sample being encoded.
-/// * `masks` - Mutable position mask map covering all ids that may appear in the pair.
+/// * `previous_masks` - Mutable position mask map covering all ids that may appear in the pair.
 ///   Updated in-place to reflect `current` before returning.
 ///
 /// # Returns
@@ -426,7 +427,7 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
 fn construct_twodelta_frame_from_mask_hint(
     previous: &[u16],
     current: &[u16],
-    masks: &mut HashMap<u16, Vec<usize>>,
+    previous_masks: &mut HashMap<u16, Vec<usize>>,
 ) -> Result<TwoDeltaFrame> {
     for (&assign0, &assign1) in previous.iter().zip(current.iter()) {
         if assign0 != assign1 {
@@ -434,7 +435,7 @@ fn construct_twodelta_frame_from_mask_hint(
                 previous,
                 current,
                 (assign0, assign1),
-                masks,
+                previous_masks,
             );
         }
     }
@@ -512,7 +513,7 @@ fn construct_twodelta_frame_from_scratch(
 ///
 /// This is the unhinted entry point. It falls back to a full scan of both
 /// assignment vectors to discover the pair and compute run lengths. Prefer
-/// `encode_twodelta_frame_with_hint` when masks are available, as it avoids
+/// `encode_twodelta_frame_with_hint` when previous_masks are available, as it avoids
 /// the scan entirely.
 ///
 /// The transition is valid only when all changed positions involve exactly two
