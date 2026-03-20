@@ -137,7 +137,7 @@ pub struct BenDecodeFrame {
     // The full serialized BEN frame bytes, including the header and payload.
     pub raw_bytes: Vec<u8>,
     // The number of times this frame was repeated
-    pub count: usize,
+    pub count: u16,
 }
 
 impl BenDecodeFrame {

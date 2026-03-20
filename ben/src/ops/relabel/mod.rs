@@ -1,7 +1,7 @@
 //! Relabeling operations for BEN files.
 
 use crate::codec::decode::decode_ben_line;
-use crate::codec::BenEncodeFrame;
+use crate::codec::{BenEncodeFrame, FromRLE};
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::io::reader::BenDecoder;
 use crate::io::writer::BenEncoder;
@@ -358,7 +358,7 @@ fn relabel_ben_lines_impl<R: Read, W: Write>(
             1
         };
 
-        let relabeled = BenEncodeFrame::from_rle(ben_line);
+        let relabeled = BenEncodeFrame::from_rle(ben_line, None);
         writer.write_all(relabeled.as_slice())?;
         if variant == BenVariant::MkvChain {
             writer.write_all(&count_occurrences.to_be_bytes())?;
@@ -584,7 +584,7 @@ fn relabel_ben_lines_with_map_impl<R: Read, W: Write>(
             1
         };
 
-        let relabeled = BenEncodeFrame::from_rle(new_rle.clone());
+        let relabeled = BenEncodeFrame::from_rle(new_rle.clone(), None);
         writer.write_all(relabeled.as_slice())?;
         if variant == BenVariant::MkvChain {
             writer.write_all(&count_occurrences.to_be_bytes())?;

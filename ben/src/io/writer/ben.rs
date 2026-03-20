@@ -1,3 +1,4 @@
+use super::twodelta::{DEFAULT_TWODELTA_CHUNK_SIZE, XBEN_TWODELTA_CHUNK_TAG, XBEN_TWODELTA_FULL_TAG};
 use crate::codec::decode::decode_ben_line;
 use crate::codec::encode::{encode_ben32_assignments, encode_twodelta_frame_with_hint};
 use crate::codec::translate::ben_to_ben32_lines;
@@ -10,12 +11,6 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{self, BufRead, Read, Result, Write};
 use xz2::write::XzEncoder;
-
-const XBEN_TWODELTA_FULL_TAG: u8 = 0;
-const XBEN_TWODELTA_CHUNK_TAG: u8 = 2;
-
-/// Default number of delta frames per columnar chunk in XBEN TwoDelta.
-pub const DEFAULT_TWODELTA_CHUNK_SIZE: usize = 10_000;
 
 /// A buffered delta frame awaiting chunk serialization.
 struct BufferedDeltaFrame {
