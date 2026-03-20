@@ -557,6 +557,8 @@ impl<W: Write> XBenEncoder<W> {
                     count: 1,
                 });
 
+                self.previous_assignment = assign_vec;
+
                 if self.chunk_buffer.len() >= self.chunk_size {
                     self.flush_chunk()?;
                 }

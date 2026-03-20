@@ -5,3 +5,5 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc adbda176b74e4d9dd494b3996cef6dfd43dce6735177b3b056ed7085d827a7e6 # shrinks to seq = [[1], [1]], params = (1, 0), step = 1, offset = 2
+cc 4093c67f6d4a6b6872ca5c1a89743be6078e4f5deb392d259a69378a49e484af # shrinks to seq = [[1, 2], [1, 1], [1, 1], [1, 1]]
+cc f078f2580e251a6f2209658989ac64238bcdd0e8cd44f9b3ec8a14914bd05db3 # shrinks to seq = [[13, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]], params = (1, 0)

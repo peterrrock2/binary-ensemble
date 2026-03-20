@@ -103,23 +103,10 @@ impl TwoDeltaFrame {
         let mut run_length_vector = Vec::new();
         let mut buffer: u32 = 0;
         let mut n_bits_in_buff: u16 = 0;
-        let mut current: Option<u16> = None;
 
         for byte in payload {
             buffer |= (byte as u32).to_be() >> n_bits_in_buff;
             n_bits_in_buff += 8;
-
-            if n_bits_in_buff >= max_len_bit_count as u16 && current.is_none() {
-                current = Some((buffer >> (32 - max_len_bit_count)) as u16);
-                buffer <<= max_len_bit_count;
-                n_bits_in_buff -= max_len_bit_count as u16;
-            }
-
-            if let Some(item) = current.take() {
-                if item > 0 {
-                    run_length_vector.push(item);
-                }
-            }
 
             while n_bits_in_buff >= max_len_bit_count as u16 {
                 let item = (buffer >> (32 - max_len_bit_count)) as u16;
@@ -257,11 +244,12 @@ pub(crate) fn encode_twodelta_frame_with_hint(
 ///
 /// # Returns
 ///
-/// The pair reordered so that `pair.0` has a smaller first position than `pair.1`,
-/// or an error if either id is absent from `masks` or has an empty position list.
+/// The pair reordered so that `pair.0` has a smaller first position in the current vector than
+/// `pair.1`, or an error if either id is absent from `masks` or has an empty position list.
 fn validate_masks_and_order_pairs_for_twodelta(
     pair: (u16, u16),
     masks: &HashMap<u16, Vec<usize>>,
+    current: &[u16],
 ) -> Result<(u16, u16)> {
     let mask_a = match masks.get(&pair.0) {
         Some(m) => m,
@@ -281,7 +269,11 @@ fn validate_masks_and_order_pairs_for_twodelta(
         return Err(Error::from(EncodeError::TwoDeltaEmptyMask { id: pair.1 }));
     };
 
-    if mask_a[0] < mask_b[0] {
+    // Order so that pair.0 is the value the new assignment places at the first
+    // pair position (the lowest index held by either mask).  This guarantees
+    // run_lengths[0] >= 1 with no leading-zero sentinel.
+    let first_pos = mask_a[0].min(mask_b[0]);
+    if current[first_pos] == pair.0 {
         Ok((pair.0, pair.1))
     } else {
         Ok((pair.1, pair.0))
@@ -318,7 +310,7 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
     delta_pair: (u16, u16),
     masks: &mut HashMap<u16, Vec<usize>>,
 ) -> Result<TwoDeltaFrame> {
-    let pair = match validate_masks_and_order_pairs_for_twodelta(delta_pair, masks) {
+    let pair = match validate_masks_and_order_pairs_for_twodelta(delta_pair, masks, current) {
         Ok(pair) => pair,
         Err(e) => {
             return Err(Error::new(
@@ -345,41 +337,26 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
     let mut new_mask_a = Vec::with_capacity(new_capacity);
     let mut new_mask_b = Vec::with_capacity(new_capacity);
 
-    // Two-pointer merge over the sorted position lists. `current_value` tracks
-    // which id owns the active run; `current_mask_count` is the length of that run.
     let (mut i, mut j) = (0usize, 0usize);
+    // pair.0 is guaranteed to equal current[first_pos] by validate_masks_and_order_pairs_for_twodelta,
+    // so the first iteration always hits the `new_val == run_value` branch and increments
+    // the count — no special-case initialization needed.
+    let mut run_value = pair.0;
     let mut current_mask_count = 0u16;
-    let mut current_value = pair.0;
-
     let mut found_assignment_change = false;
 
     while i < mask_a.len() || j < mask_b.len() {
-        // Pick the next position from whichever mask is lower, mirroring the
-        // merge step used when building pair_positions from two masks.
+        // Pick the next position from whichever mask is lower.
         let idx = if j == mask_b.len() || (i < mask_a.len() && mask_a[i] < mask_b[j]) {
-            if current_value != pair.0 {
-                run_lengths.push(current_mask_count);
-                current_mask_count = 1;
-                current_value = pair.0;
-            } else {
-                current_mask_count += 1;
-            }
             i += 1;
             mask_a[i - 1]
         } else {
-            if current_value != pair.1 {
-                run_lengths.push(current_mask_count);
-                current_mask_count = 1;
-                current_value = pair.1;
-            } else {
-                current_mask_count += 1;
-            }
             j += 1;
             mask_b[j - 1]
         };
 
         let previous_value = previous[idx];
-        let current_value = current[idx];
+        let new_val = current[idx];
 
         if previous_value != pair.0 && previous_value != pair.1 {
             return Err(Error::from(EncodeError::TwoDeltaMaskOutOfPair {
@@ -389,19 +366,27 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
                 b: pair.1,
             }));
         }
-        if current_value != pair.0 && current_value != pair.1 {
+        if new_val != pair.0 && new_val != pair.1 {
             return Err(Error::from(EncodeError::TwoDeltaMaskOutOfPair {
                 pos: idx,
-                actual: current_value,
+                actual: new_val,
                 a: pair.0,
                 b: pair.1,
             }));
         }
-        if current_value != previous_value {
+        if new_val != previous_value {
             found_assignment_change = true;
         }
 
-        if current_value == pair.0 {
+        if new_val == run_value {
+            current_mask_count += 1;
+        } else {
+            run_lengths.push(current_mask_count);
+            run_value = new_val;
+            current_mask_count = 1;
+        }
+
+        if new_val == pair.0 {
             new_mask_a.push(idx);
         } else {
             new_mask_b.push(idx);
@@ -460,11 +445,11 @@ fn construct_twodelta_frame_from_mask_hint(
 /// Build a TwoDelta frame by scanning both assignment vectors from scratch, with no
 /// hints from the caller.
 ///
-/// Simultaneously discovers the pair and computes run lengths in a single pass over
-/// the zipped assignments. Only positions where the two assignments differ are
-/// considered; unchanged positions are skipped entirely. The pair is ordered so that
-/// the first id encountered in `current` at a changed position becomes `pair.0`,
-/// which ensures the run-length sequence begins with the id that appears first.
+/// Scans to the first changed position to discover the raw pair values, then makes
+/// a second pass from position 0 to build run lengths over all pair positions.
+/// `enc_pair.0` is determined lazily at the first pair position encountered in the
+/// second pass (which may precede the first changed position), guaranteeing
+/// `run_lengths[0] >= 1` with no leading zero.
 ///
 /// # Arguments
 ///
@@ -479,49 +464,48 @@ fn construct_twodelta_frame_from_scratch(
     previous: &[u16],
     current: &[u16],
 ) -> Result<TwoDeltaFrame> {
-    let mut delta_pair = [0u16; 2];
-    let mut pair_len = 0usize;
+    // Find the pair at the first changed position.
+    let first_change = previous
+        .iter()
+        .zip(current.iter())
+        .position(|(&p, &c)| p != c)
+        .ok_or_else(|| Error::from(EncodeError::TwoDeltaIdentical))?;
 
-    let mut run_lengths = Vec::new();
-    let mut current_value = 0u16;
-    let mut current_run_length = 0u16;
-    let mut found_assignment_change = false;
+    let (a, b) = (previous[first_change], current[first_change]);
 
-    for (&assign0, &assign1) in previous.iter().zip(current.iter()) {
-        if assign0 != assign1 {
-            found_assignment_change = true;
-            // We are encoding the current, so the first value we encounter in the current should
-            // be added to the front of the pair
-            for value in [assign1, assign0] {
-                if !delta_pair[..pair_len].contains(&value) {
-                    // We have found both values for the pair and yet encountered a third value
-                    // so this is not a valid TwoDelta transition.
-                    if pair_len == 2 {
-                        return Err(Error::from(EncodeError::TwoDeltaTooManyIds));
-                    }
-                    delta_pair[pair_len] = value;
-                    pair_len += 1;
-                }
+    // Scan all positions: build run lengths for pair positions in previous.
+    // enc_pair ordering is determined lazily at the first pair position encountered:
+    // curr_val there is enc_pair.0, which may precede first_change for unchanged pair positions.
+    let mut enc_pair = (0u16, 0u16);
+    let mut enc_pair_known = false;
+    let mut run_lengths: Vec<u16> = Vec::new();
+    let mut run_value = 0u16;
+    let mut run_count = 0u16;
+
+    for (&prev_val, &curr_val) in previous.iter().zip(current.iter()) {
+        if prev_val == a || prev_val == b {
+            if curr_val != a && curr_val != b {
+                return Err(Error::from(EncodeError::TwoDeltaTooManyIds));
             }
-            if current_run_length > 0 && current_value != assign1 {
-                run_lengths.push(current_run_length);
-                current_run_length = 1;
-                current_value = assign1;
+            if !enc_pair_known {
+                enc_pair = (curr_val, if curr_val == a { b } else { a });
+                run_value = enc_pair.0;
+                enc_pair_known = true;
+            }
+            if curr_val == run_value {
+                run_count += 1;
             } else {
-                current_run_length += 1;
+                run_lengths.push(run_count);
+                run_value = curr_val;
+                run_count = 1;
             }
+        } else if prev_val != curr_val {
+            return Err(Error::from(EncodeError::TwoDeltaTooManyIds));
         }
     }
+    run_lengths.push(run_count);
 
-    if !found_assignment_change {
-        return Err(Error::from(EncodeError::TwoDeltaIdentical));
-    }
-    run_lengths.push(current_run_length);
-
-    Ok(TwoDeltaFrame::from_run_lengths(
-        (delta_pair[0], delta_pair[1]),
-        run_lengths,
-    ))
+    Ok(TwoDeltaFrame::from_run_lengths(enc_pair, run_lengths))
 }
 
 /// Encode a transition between two assignment vectors as a TwoDelta frame.

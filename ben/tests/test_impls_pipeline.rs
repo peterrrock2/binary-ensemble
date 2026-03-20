@@ -4,11 +4,11 @@ use binary_ensemble::codec::decode::{
     decode_ben_line, decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl, xz_decompress,
 };
 use binary_ensemble::codec::encode::{
-    encode_ben_to_xben, encode_ben_vec_from_assign, encode_ben_vec_from_rle, encode_jsonl_to_ben,
-    encode_jsonl_to_xben, xz_compress,
+    encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben, xz_compress,
 };
+use binary_ensemble::codec::{BenEncodeFrame, FromAssign, FromRLE};
 use binary_ensemble::io::reader::{
-    build_frame_iter, count_samples_from_file, BenDecoder, DecoderInitError, Frame,
+    build_frame_iter, count_samples_from_file, BenDecoder, DecodeFrame, DecoderInitError,
     SubsampleFrameDecoder, XBenDecoder,
 };
 use binary_ensemble::io::writer::BenEncoder;
@@ -74,9 +74,9 @@ where
     Ok(out)
 }
 
-fn collect_frames<I>(it: I) -> std::io::Result<Vec<(binary_ensemble::io::reader::Frame, u16)>>
+fn collect_frames<I>(it: I) -> std::io::Result<Vec<(binary_ensemble::io::reader::DecodeFrame, u16)>>
 where
-    I: IntoIterator<Item = std::io::Result<(binary_ensemble::io::reader::Frame, u16)>>,
+    I: IntoIterator<Item = std::io::Result<(binary_ensemble::io::reader::DecodeFrame, u16)>>,
 {
     let mut out = Vec::new();
     for rec in it {
@@ -654,7 +654,7 @@ fn benencoder_finish_flushes_once() {
 
     let mut ben_vec = Vec::new();
     {
-        let mut enc = BenEncoder::new(&mut ben_vec, BenVariant::MkvChain);
+        let mut enc = BenEncoder::new(&mut ben_vec, BenVariant::MkvChain).unwrap();
         for line in lines.lines() {
             let v: serde_json::Value = serde_json::from_str(line).unwrap();
             enc.write_json_value(v).unwrap();
@@ -778,7 +778,8 @@ fn xben_truncated_frame_reports_unexpected_eof() {
 fn encode_decode_ben32_odd_bit_packing_roundtrip() {
     // values up to 3 (2 bits), lengths big to make non-byte boundary
     let rle = vec![(1u16, 3u16), (2, 5), (3, 7)];
-    let ben = encode_ben_vec_from_rle(rle.clone());
+    let ben_frame = BenEncodeFrame::from_rle(rle.clone(), None);
+    let ben = ben_frame.as_slice();
     // ben layout: [max_val_bits, max_len_bits, n_bytes, payload...]
     let max_val_bits = ben[0];
     let max_len_bits = ben[1];
@@ -882,8 +883,14 @@ fn ben_encode_xben_respects_existing_ben_header() {
         encode_jsonl_to_ben(BufReader::new(jsonl.as_bytes()), &mut ben, variant).unwrap();
 
         let mut xz = Vec::new();
-        encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xz, Some(1), Some(0), None)
-            .expect("ben->xben failed");
+        encode_ben_to_xben(
+            BufReader::new(ben.as_slice()),
+            &mut xz,
+            Some(1),
+            Some(0),
+            None,
+        )
+        .expect("ben->xben failed");
 
         let mut ben_back = Vec::new();
         decode_xben_to_ben(BufReader::new(xz.as_slice()), &mut ben_back).unwrap();
@@ -919,7 +926,7 @@ fn xz_mt_params_are_capped_and_safe() {
 fn ben_encoder_write_assignment_path_roundtrips() {
     let mut ben = Vec::new();
     {
-        let mut enc = BenEncoder::new(&mut ben, BenVariant::Standard);
+        let mut enc = BenEncoder::new(&mut ben, BenVariant::Standard).unwrap();
         enc.write_assignment(vec![9u16, 9, 2, 2, 2]).unwrap();
         enc.finish().unwrap();
     }
@@ -1001,7 +1008,7 @@ fn xben_frame_decoder_new_and_truncated_iteration_paths() {
 fn xben_encoder_write_ben_file_without_banner_path_roundtrips() {
     let mut payload_only = Vec::new();
     {
-        let mut enc = BenEncoder::new(&mut payload_only, BenVariant::Standard);
+        let mut enc = BenEncoder::new(&mut payload_only, BenVariant::Standard).unwrap();
         enc.write_assignment(vec![5u16, 5, 7]).unwrap();
         enc.finish().unwrap();
     }
@@ -1016,7 +1023,7 @@ fn xben_encoder_write_ben_file_without_banner_path_roundtrips() {
             .encoder()
             .unwrap();
         let encoder = xz2::write::XzEncoder::new_stream(&mut xz, mt);
-        let mut xben = binary_ensemble::io::writer::XBenEncoder::new(encoder, BenVariant::Standard);
+        let mut xben = binary_ensemble::io::writer::XBenEncoder::new(encoder, BenVariant::Standard).unwrap();
         xben.write_ben_file(BufReader::new(payload_only.as_slice()))
             .unwrap();
     }
@@ -1123,7 +1130,11 @@ fn subsample_frame_decoder_propagates_inner_and_decode_errors() {
     assert_eq!(err.kind(), std::io::ErrorKind::Other);
 
     let mut malformed = SubsampleFrameDecoder::by_indices(
-        vec![Ok((Frame::XBen(vec![1, 2, 3], BenVariant::Standard), 1))].into_iter(),
+        vec![Ok((
+            DecodeFrame::XBen(vec![1, 2, 3], BenVariant::Standard),
+            1,
+        ))]
+        .into_iter(),
         vec![1],
     );
     let err = malformed.next().unwrap().unwrap_err();
@@ -1334,7 +1345,7 @@ fn twodelta_roundtrips_and_counts_repeated_frames() {
 
     let mut ben = Vec::new();
     {
-        let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta);
+        let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta).unwrap();
         for assignment in &assignments {
             encoder.write_assignment(assignment.clone()).unwrap();
         }
@@ -1357,7 +1368,7 @@ fn twodelta_roundtrips_and_counts_repeated_frames() {
 
     let frames = BenDecoder::new(ben.as_slice()).unwrap().into_frames();
     assert_eq!(
-        collect_frames(frames.map(|res| res.map(|f| (Frame::Ben(f.clone()), f.count))))
+        collect_frames(frames.map(|res| res.map(|f| (DecodeFrame::Ben(f.clone()), f.count as u16))))
             .unwrap()
             .len(),
         3
@@ -1371,14 +1382,14 @@ fn twodelta_first_frame_carries_repeat_trailer() {
 
     let mut ben = Vec::new();
     {
-        let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta);
+        let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta).unwrap();
         encoder.write_assignment(first.clone()).unwrap();
         encoder.write_assignment(first.clone()).unwrap();
         encoder.write_assignment(second).unwrap();
         encoder.finish().unwrap();
     }
 
-    let expected_first = encode_ben_vec_from_assign(&first);
+    let expected_first = BenEncodeFrame::from_assignment(&first, None);
     assert_eq!(&ben[..17], b"TWODELTA BEN FILE");
     assert_eq!(
         &ben[17..17 + expected_first.as_slice().len()],
@@ -1394,7 +1405,7 @@ fn twodelta_first_frame_carries_repeat_trailer() {
 #[test]
 fn twodelta_rejects_non_pair_transition() {
     let mut ben = Vec::new();
-    let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta);
+    let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta).unwrap();
     encoder.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
     let err = encoder.write_assignment(vec![1u16, 3, 2, 4]).err().unwrap();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
@@ -1403,7 +1414,7 @@ fn twodelta_rejects_non_pair_transition() {
 #[test]
 fn twodelta_write_json_value_rejects_non_pair_transition() {
     let mut ben = Vec::new();
-    let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta);
+    let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta).unwrap();
     encoder
         .write_json_value(json!({"assignment": [1u16, 1, 2, 2]}))
         .unwrap();
