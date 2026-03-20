@@ -7,4 +7,4 @@ pub mod xben;
 
 pub use ben::AssignmentWriter;
 pub use twodelta::DEFAULT_TWODELTA_CHUNK_SIZE;
-pub use xben::XBenEncoder;
+pub use xben::XZAssignmentWriter;

@@ -1024,7 +1024,8 @@ fn xben_encoder_write_ben_file_without_banner_path_roundtrips() {
             .unwrap();
         let encoder = xz2::write::XzEncoder::new_stream(&mut xz, mt);
         let mut xben =
-            binary_ensemble::io::writer::XBenEncoder::new(encoder, BenVariant::Standard).unwrap();
+            binary_ensemble::io::writer::XZAssignmentWriter::new(encoder, BenVariant::Standard)
+                .unwrap();
         xben.write_ben_file(BufReader::new(payload_only.as_slice()))
             .unwrap();
     }

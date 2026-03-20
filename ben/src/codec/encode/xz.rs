@@ -1,7 +1,7 @@
 use crate::codec::encode::errors::EncodeError;
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
-use crate::io::writer::XBenEncoder;
+use crate::io::writer::XZAssignmentWriter;
 use std::io::{self, BufRead, Cursor, Read, Result, Write};
 use xz2::stream::MtStreamBuilder;
 use xz2::write::XzEncoder;
@@ -109,7 +109,7 @@ pub fn encode_ben_to_xben<R: BufRead, W: Write>(
             actual: check_buffer.to_vec(),
         })
     })?;
-    let mut ben_encoder = XBenEncoder::new(encoder, variant)?;
+    let mut ben_encoder = XZAssignmentWriter::new(encoder, variant)?;
     if let Some(cs) = chunk_size {
         ben_encoder = ben_encoder.with_chunk_size(cs);
     }

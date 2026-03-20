@@ -1,5 +1,5 @@
 use crate::codec::encode::errors::EncodeError;
-use crate::io::writer::{AssignmentWriter, XBenEncoder};
+use crate::io::writer::{AssignmentWriter, XZAssignmentWriter};
 use crate::{progress, BenVariant};
 use serde_json::Value;
 use std::io::{self, BufRead, Result, Write};
@@ -50,7 +50,7 @@ pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
         .encoder()
         .map_err(|e| io::Error::from(EncodeError::XzInit(e)))?;
     let encoder = XzEncoder::new_stream(writer, mt);
-    let mut ben_encoder = XBenEncoder::new(encoder, variant)?;
+    let mut ben_encoder = XZAssignmentWriter::new(encoder, variant)?;
     if let Some(cs) = chunk_size {
         ben_encoder = ben_encoder.with_chunk_size(cs);
     }

@@ -19,7 +19,7 @@ use std::io::{self, BufRead, Read, Result, Write};
 use xz2::write::XzEncoder;
 
 /// A struct to make the writing of XBEN files easier and more ergonomic.
-pub struct XBenEncoder<W: Write> {
+pub struct XZAssignmentWriter<W: Write> {
     encoder: XzEncoder<W>,
     previous_assignment: Vec<u16>,
     previous_masks: HashMap<u16, Vec<usize>>,
@@ -30,7 +30,7 @@ pub struct XBenEncoder<W: Write> {
     chunk_buffer: Vec<BufferedDeltaFrame>,
 }
 
-impl<W: Write> XBenEncoder<W> {
+impl<W: Write> XZAssignmentWriter<W> {
     /// Rebuild the value-to-position index map from the current previous assignment.
     fn rebuild_previous_masks(&mut self) {
         self.previous_masks.clear();
@@ -184,7 +184,7 @@ impl<W: Write> XBenEncoder<W> {
     /// Returns a new XBEN encoder ready to accept assignments or BEN frames.
     pub fn new(mut encoder: XzEncoder<W>, variant: BenVariant) -> io::Result<Self> {
         encoder.write_all(banner_for_variant(variant))?;
-        Ok(XBenEncoder {
+        Ok(XZAssignmentWriter {
             encoder,
             previous_assignment: Vec::new(),
             previous_masks: HashMap::new(),
@@ -375,7 +375,8 @@ impl<W: Write> XBenEncoder<W> {
             let count = reader.read_u16::<BigEndian>()?;
 
             // Unpack bitpacked run lengths.
-            let frame = TwoDeltaEncodeFrame::from_parts((pair_a, pair_b), delta_max_len_bits, payload);
+            let frame =
+                TwoDeltaEncodeFrame::from_parts((pair_a, pair_b), delta_max_len_bits, payload);
             let run_lengths = frame.run_length_vector;
 
             // Flush the initial full frame before the first delta chunk.
@@ -428,7 +429,7 @@ impl<W: Write> XBenEncoder<W> {
     }
 }
 
-impl<W: Write> Drop for XBenEncoder<W> {
+impl<W: Write> Drop for XZAssignmentWriter<W> {
     /// Flush any buffered XBEN repetition state during drop.
     fn drop(&mut self) {
         if matches!(self.variant, BenVariant::MkvChain | BenVariant::TwoDelta) && self.count > 0 {
