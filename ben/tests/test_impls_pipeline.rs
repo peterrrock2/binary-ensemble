@@ -11,7 +11,7 @@ use binary_ensemble::io::reader::{
     build_frame_iter, count_samples_from_file, BenDecoder, DecodeFrame, DecoderInitError,
     SubsampleFrameDecoder, XBenDecoder,
 };
-use binary_ensemble::io::writer::BenEncoder;
+use binary_ensemble::io::writer::AssignmentWriter;
 use binary_ensemble::ops::extract::extract_assignment_ben;
 use binary_ensemble::BenVariant;
 
@@ -654,7 +654,7 @@ fn benencoder_finish_flushes_once() {
 
     let mut ben_vec = Vec::new();
     {
-        let mut enc = BenEncoder::new(&mut ben_vec, BenVariant::MkvChain).unwrap();
+        let mut enc = AssignmentWriter::new(&mut ben_vec, BenVariant::MkvChain).unwrap();
         for line in lines.lines() {
             let v: serde_json::Value = serde_json::from_str(line).unwrap();
             enc.write_json_value(v).unwrap();
@@ -926,7 +926,7 @@ fn xz_mt_params_are_capped_and_safe() {
 fn ben_encoder_write_assignment_path_roundtrips() {
     let mut ben = Vec::new();
     {
-        let mut enc = BenEncoder::new(&mut ben, BenVariant::Standard).unwrap();
+        let mut enc = AssignmentWriter::new(&mut ben, BenVariant::Standard).unwrap();
         enc.write_assignment(vec![9u16, 9, 2, 2, 2]).unwrap();
         enc.finish().unwrap();
     }
@@ -1008,7 +1008,7 @@ fn xben_frame_decoder_new_and_truncated_iteration_paths() {
 fn xben_encoder_write_ben_file_without_banner_path_roundtrips() {
     let mut payload_only = Vec::new();
     {
-        let mut enc = BenEncoder::new(&mut payload_only, BenVariant::Standard).unwrap();
+        let mut enc = AssignmentWriter::new(&mut payload_only, BenVariant::Standard).unwrap();
         enc.write_assignment(vec![5u16, 5, 7]).unwrap();
         enc.finish().unwrap();
     }
@@ -1023,7 +1023,8 @@ fn xben_encoder_write_ben_file_without_banner_path_roundtrips() {
             .encoder()
             .unwrap();
         let encoder = xz2::write::XzEncoder::new_stream(&mut xz, mt);
-        let mut xben = binary_ensemble::io::writer::XBenEncoder::new(encoder, BenVariant::Standard).unwrap();
+        let mut xben =
+            binary_ensemble::io::writer::XBenEncoder::new(encoder, BenVariant::Standard).unwrap();
         xben.write_ben_file(BufReader::new(payload_only.as_slice()))
             .unwrap();
     }
@@ -1345,7 +1346,7 @@ fn twodelta_roundtrips_and_counts_repeated_frames() {
 
     let mut ben = Vec::new();
     {
-        let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta).unwrap();
+        let mut encoder = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
         for assignment in &assignments {
             encoder.write_assignment(assignment.clone()).unwrap();
         }
@@ -1368,9 +1369,11 @@ fn twodelta_roundtrips_and_counts_repeated_frames() {
 
     let frames = BenDecoder::new(ben.as_slice()).unwrap().into_frames();
     assert_eq!(
-        collect_frames(frames.map(|res| res.map(|f| (DecodeFrame::Ben(f.clone()), f.count as u16))))
-            .unwrap()
-            .len(),
+        collect_frames(
+            frames.map(|res| res.map(|f| (DecodeFrame::Ben(f.clone()), f.count as u16)))
+        )
+        .unwrap()
+        .len(),
         3
     );
 }
@@ -1382,7 +1385,7 @@ fn twodelta_first_frame_carries_repeat_trailer() {
 
     let mut ben = Vec::new();
     {
-        let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta).unwrap();
+        let mut encoder = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
         encoder.write_assignment(first.clone()).unwrap();
         encoder.write_assignment(first.clone()).unwrap();
         encoder.write_assignment(second).unwrap();
@@ -1405,7 +1408,7 @@ fn twodelta_first_frame_carries_repeat_trailer() {
 #[test]
 fn twodelta_rejects_non_pair_transition() {
     let mut ben = Vec::new();
-    let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta).unwrap();
+    let mut encoder = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
     encoder.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
     let err = encoder.write_assignment(vec![1u16, 3, 2, 4]).err().unwrap();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
@@ -1414,7 +1417,7 @@ fn twodelta_rejects_non_pair_transition() {
 #[test]
 fn twodelta_write_json_value_rejects_non_pair_transition() {
     let mut ben = Vec::new();
-    let mut encoder = BenEncoder::new(&mut ben, BenVariant::TwoDelta).unwrap();
+    let mut encoder = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
     encoder
         .write_json_value(json!({"assignment": [1u16, 1, 2, 2]}))
         .unwrap();

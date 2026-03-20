@@ -8,7 +8,7 @@ use crate::codec::{BenConstruct, BenEncodeFrame};
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
 use crate::io::reader::BenDecoder;
-use crate::io::writer::BenEncoder;
+use crate::io::writer::AssignmentWriter;
 use crate::util::rle::{assign_slice_to_rle, rle_to_vec_in_place};
 use crate::{progress, BenVariant};
 use byteorder::{BigEndian, ReadBytesExt};
@@ -126,7 +126,7 @@ where
     F: FnMut(&[u16]) -> io::Result<Vec<u16>>,
 {
     let mut decoder = BenDecoder::new(reader)?.silent(true);
-    let mut encoder = BenEncoder::new(writer, variant)?;
+    let mut encoder = AssignmentWriter::new(writer, variant)?;
     let mut sample_number = 0usize;
 
     decoder.for_each_assignment(|assignment, count| {

@@ -1,6 +1,6 @@
 use crate::cli::common::{check_overwrite, set_verbose};
 use crate::io::reader::BenDecoder;
-use crate::io::writer::{BenEncoder, XBenEncoder};
+use crate::io::writer::{AssignmentWriter, XBenEncoder};
 use crate::BenVariant;
 use clap::{Parser, ValueEnum};
 use pipe::pipe;
@@ -223,7 +223,7 @@ fn render_zero_based_assignment_line(assignment: &[u16], output: &mut String) {
 
 /// Read zero-based assignment vectors and encode them as BEN.
 fn assignment_encode_ben<R: Read + BufRead, W: Write>(reader: R, writer: W) -> io::Result<()> {
-    let mut ben_writer = BenEncoder::new(writer, BenVariant::MkvChain)?;
+    let mut ben_writer = AssignmentWriter::new(writer, BenVariant::MkvChain)?;
 
     for line in reader.lines() {
         let assignment: Vec<u16> = serde_json::from_str::<Vec<u16>>(&line.unwrap())

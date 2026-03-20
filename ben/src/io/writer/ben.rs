@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::io::{self, Result, Write};
 
 /// A struct to make the writing of BEN files easier and more ergonomic.
-pub struct BenEncoder<W: Write> {
+pub struct AssignmentWriter<W: Write> {
     writer: W,
     previous_sample: Vec<u16>,
     previous_masks: HashMap<u16, Vec<usize>>,
@@ -25,7 +25,7 @@ pub(super) struct AssignmentHints {
     pub delta_pair: Option<(u16, u16)>,
 }
 
-impl<W: Write> BenEncoder<W> {
+impl<W: Write> AssignmentWriter<W> {
     /// Create a new BEN writer and immediately emit the BEN banner.
     ///
     /// # Arguments
@@ -39,7 +39,7 @@ impl<W: Write> BenEncoder<W> {
     pub fn new(mut writer: W, variant: BenVariant) -> io::Result<Self> {
         writer.write_all(banner_for_variant(variant))?;
 
-        Ok(BenEncoder {
+        Ok(AssignmentWriter {
             writer,
             previous_sample: Vec::new(),
             previous_masks: HashMap::new(),
@@ -233,7 +233,7 @@ impl<W: Write> BenEncoder<W> {
     }
 }
 
-impl<W: Write> Drop for BenEncoder<W> {
+impl<W: Write> Drop for AssignmentWriter<W> {
     /// Flush any buffered BEN state during drop.
     fn drop(&mut self) {
         let _ = self.finish();

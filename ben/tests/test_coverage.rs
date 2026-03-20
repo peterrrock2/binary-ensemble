@@ -17,7 +17,7 @@ use binary_ensemble::format::banners::{
 use binary_ensemble::io::reader::{
     BenDecoder, BenFrameDecoeder, DecoderInitError, XBenDecoder, XBenFrameDecoder,
 };
-use binary_ensemble::io::writer::BenEncoder;
+use binary_ensemble::io::writer::AssignmentWriter;
 use binary_ensemble::json::graph::{
     sort_json_file_by_key, sort_json_file_by_ordering, GraphOrderingMethod,
 };
@@ -540,7 +540,7 @@ fn xben_decoder_reads_variant_from_banner_twodelta() {
 #[test]
 fn ben_encoder_writes_correct_banner_standard() {
     let mut out = Vec::new();
-    let encoder = BenEncoder::new(&mut out, BenVariant::Standard).unwrap();
+    let encoder = AssignmentWriter::new(&mut out, BenVariant::Standard).unwrap();
     drop(encoder);
     assert!(out.starts_with(STANDARD_BEN_BANNER));
 }
@@ -548,7 +548,7 @@ fn ben_encoder_writes_correct_banner_standard() {
 #[test]
 fn ben_encoder_writes_correct_banner_mkvchain() {
     let mut out = Vec::new();
-    let encoder = BenEncoder::new(&mut out, BenVariant::MkvChain).unwrap();
+    let encoder = AssignmentWriter::new(&mut out, BenVariant::MkvChain).unwrap();
     drop(encoder);
     assert!(out.starts_with(MKVCHAIN_BEN_BANNER));
 }
@@ -556,7 +556,7 @@ fn ben_encoder_writes_correct_banner_mkvchain() {
 #[test]
 fn ben_encoder_writes_correct_banner_twodelta() {
     let mut out = Vec::new();
-    let encoder = BenEncoder::new(&mut out, BenVariant::TwoDelta).unwrap();
+    let encoder = AssignmentWriter::new(&mut out, BenVariant::TwoDelta).unwrap();
     drop(encoder);
     assert!(out.starts_with(TWODELTA_BEN_BANNER));
 }
@@ -566,7 +566,7 @@ fn ben_encoder_standard_single_assignment_round_trip() {
     let assignment = vec![1u16, 2, 3, 3, 2, 1];
     let mut out = Vec::new();
     {
-        let mut enc = BenEncoder::new(&mut out, BenVariant::Standard).unwrap();
+        let mut enc = AssignmentWriter::new(&mut out, BenVariant::Standard).unwrap();
         enc.write_assignment(assignment.clone()).unwrap();
         enc.finish().unwrap();
     }
@@ -581,7 +581,7 @@ fn ben_encoder_standard_single_assignment_round_trip() {
 fn ben_encoder_finish_is_idempotent() {
     let mut out = Vec::new();
     {
-        let mut enc = BenEncoder::new(&mut out, BenVariant::MkvChain).unwrap();
+        let mut enc = AssignmentWriter::new(&mut out, BenVariant::MkvChain).unwrap();
         enc.write_assignment(vec![1u16, 2]).unwrap();
         enc.finish().unwrap();
         let len_after_first_finish = enc.finish().unwrap(); // second call
@@ -598,7 +598,7 @@ fn ben_encoder_write_json_value_valid_input() {
     let data = json!({"assignment": [1, 2, 3], "sample": 1});
     let mut out = Vec::new();
     {
-        let mut enc = BenEncoder::new(&mut out, BenVariant::Standard).unwrap();
+        let mut enc = AssignmentWriter::new(&mut out, BenVariant::Standard).unwrap();
         enc.write_json_value(data).unwrap();
         enc.finish().unwrap();
     }
@@ -610,7 +610,7 @@ fn ben_encoder_write_json_value_valid_input() {
 fn ben_encoder_write_json_value_missing_assignment_field_errors() {
     let data = json!({"sample": 1}); // no "assignment"
     let mut out = Vec::new();
-    let mut enc = BenEncoder::new(&mut out, BenVariant::Standard).unwrap();
+    let mut enc = AssignmentWriter::new(&mut out, BenVariant::Standard).unwrap();
     let result = enc.write_json_value(data);
     assert!(
         result.is_err(),
@@ -623,7 +623,7 @@ fn ben_encoder_write_json_value_value_too_large_errors() {
     // 65536 doesn't fit in u16.
     let data = json!({"assignment": [65536], "sample": 1});
     let mut out = Vec::new();
-    let mut enc = BenEncoder::new(&mut out, BenVariant::Standard).unwrap();
+    let mut enc = AssignmentWriter::new(&mut out, BenVariant::Standard).unwrap();
     let result = enc.write_json_value(data);
     assert!(result.is_err(), "expected error for value out of u16 range");
 }
@@ -632,7 +632,7 @@ fn ben_encoder_write_json_value_value_too_large_errors() {
 fn ben_encoder_write_json_value_negative_value_errors() {
     let data = json!({"assignment": [-1], "sample": 1});
     let mut out = Vec::new();
-    let mut enc = BenEncoder::new(&mut out, BenVariant::Standard).unwrap();
+    let mut enc = AssignmentWriter::new(&mut out, BenVariant::Standard).unwrap();
     let result = enc.write_json_value(data);
     assert!(
         result.is_err(),
@@ -646,7 +646,7 @@ fn ben_encoder_standard_identical_assignments_still_written() {
     let assignment = vec![2u16, 2, 2];
     let mut out = Vec::new();
     {
-        let mut enc = BenEncoder::new(&mut out, BenVariant::Standard).unwrap();
+        let mut enc = AssignmentWriter::new(&mut out, BenVariant::Standard).unwrap();
         enc.write_assignment(assignment.clone()).unwrap();
         enc.write_assignment(assignment.clone()).unwrap();
         enc.write_assignment(assignment.clone()).unwrap();
@@ -664,7 +664,7 @@ fn ben_encoder_mkv_identical_assignments_deduplicated() {
     let assignment = vec![2u16, 2, 2];
     let mut out = Vec::new();
     {
-        let mut enc = BenEncoder::new(&mut out, BenVariant::MkvChain).unwrap();
+        let mut enc = AssignmentWriter::new(&mut out, BenVariant::MkvChain).unwrap();
         enc.write_assignment(assignment.clone()).unwrap();
         enc.write_assignment(assignment.clone()).unwrap();
         enc.write_assignment(assignment.clone()).unwrap();
@@ -685,7 +685,7 @@ fn ben_encoder_twodelta_base_frame_then_delta_round_trip() {
     let next = vec![2u16, 2, 1, 1, 2, 1]; // all 1s→2s and 2s→1s
     let mut out = Vec::new();
     {
-        let mut enc = BenEncoder::new(&mut out, BenVariant::TwoDelta).unwrap();
+        let mut enc = AssignmentWriter::new(&mut out, BenVariant::TwoDelta).unwrap();
         enc.write_assignment(base.clone()).unwrap();
         enc.write_assignment(next.clone()).unwrap();
         enc.finish().unwrap();

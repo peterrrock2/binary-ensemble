@@ -2,7 +2,7 @@ use crate::common::{open_input, open_output, parse_variant, validate_input_outpu
 use binary_ensemble::codec::encode::{
     encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben,
 };
-use binary_ensemble::io::writer::BenEncoder;
+use binary_ensemble::io::writer::AssignmentWriter;
 use pyo3::exceptions::PyIOError;
 use pyo3::prelude::PyResult;
 use pyo3::{pyclass, pyfunction, pymethods};
@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 #[pyclass]
 pub struct PyBenEncoder {
-    encoder: Option<BenEncoder<BufWriter<File>>>,
+    encoder: Option<AssignmentWriter<BufWriter<File>>>,
 }
 
 #[pymethods]
@@ -24,7 +24,7 @@ impl PyBenEncoder {
         let ben_var = parse_variant(variant.as_deref())?;
         let writer = open_output(&file_path, overwrite)?;
 
-        let encoder = BenEncoder::new(writer, ben_var)
+        let encoder = AssignmentWriter::new(writer, ben_var)
             .map_err(|e| PyIOError::new_err(format!("Failed to create encoder: {}", e)))?;
         Ok(PyBenEncoder {
             encoder: Some(encoder),
@@ -136,12 +136,14 @@ pub fn compress_jsonl_to_xben(
     let reader = open_input(&in_file)?;
     let writer = open_output(&out_file, overwrite)?;
 
-    encode_jsonl_to_xben(reader, writer, ben_var, n_threads, compression_level, None).map_err(|e| {
-        PyIOError::new_err(format!(
-            "Failed to convert JSONL to XBEN from {} to {}: {e}",
-            in_file.display(),
-            out_file.display()
-        ))
-    })?;
+    encode_jsonl_to_xben(reader, writer, ben_var, n_threads, compression_level, None).map_err(
+        |e| {
+            PyIOError::new_err(format!(
+                "Failed to convert JSONL to XBEN from {} to {}: {e}",
+                in_file.display(),
+                out_file.display()
+            ))
+        },
+    )?;
     Ok(())
 }

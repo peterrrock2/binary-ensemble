@@ -3,7 +3,7 @@ use crate::codec::translate::ben32_to_ben_lines;
 use crate::format::banners::{banner_for_variant, variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
 use crate::io::reader::XBenDecoder;
-use crate::io::writer::BenEncoder;
+use crate::io::writer::AssignmentWriter;
 use crate::{progress, BenVariant};
 use serde_json::json;
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -45,7 +45,7 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
                 BufReader::new(decoder),
                 BenVariant::TwoDelta,
             );
-            let mut ben = BenEncoder::new(writer, BenVariant::TwoDelta)?;
+            let mut ben = AssignmentWriter::new(writer, BenVariant::TwoDelta)?;
             for record in &mut xben {
                 let (assignment, count) = record?;
                 ben.write_assignment(assignment.clone())?;

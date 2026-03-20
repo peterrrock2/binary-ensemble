@@ -1,5 +1,5 @@
 use crate::codec::encode::errors::EncodeError;
-use crate::io::writer::{BenEncoder, XBenEncoder};
+use crate::io::writer::{AssignmentWriter, XBenEncoder};
 use crate::{progress, BenVariant};
 use serde_json::Value;
 use std::io::{self, BufRead, Result, Write};
@@ -98,7 +98,7 @@ pub fn encode_jsonl_to_ben<R: BufRead, W: Write>(
     variant: BenVariant,
 ) -> Result<()> {
     let mut line_num = 1;
-    let mut ben_encoder = BenEncoder::new(writer, variant)?;
+    let mut ben_encoder = AssignmentWriter::new(writer, variant)?;
     for line_result in reader.lines() {
         progress!("Encoding line: {}\r", line_num);
         line_num += 1;
