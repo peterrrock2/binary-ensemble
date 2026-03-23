@@ -2,10 +2,7 @@ use super::frames::BufferedDeltaFrame;
 use super::twodelta::{
     DEFAULT_TWODELTA_CHUNK_SIZE, XBEN_TWODELTA_CHUNK_TAG, XBEN_TWODELTA_FULL_TAG,
 };
-use super::utils::{
-    analyze_twodelta_transition, encode_xben_twodelta_full_frame, is_repeated_assignment,
-    parse_json_assignment,
-};
+use super::utils::{encode_xben_twodelta_full_frame, parse_json_assignment};
 use crate::codec::decode::decode_ben_line;
 use crate::codec::encode::{encode_ben32_assignments, encode_twodelta_frame_with_hint};
 use crate::codec::translate::ben_to_ben32_lines;
@@ -23,102 +20,47 @@ pub struct XZAssignmentWriter<W: Write> {
     encoder: XzEncoder<W>,
     previous_assignment: Vec<u16>,
     previous_masks: HashMap<u16, Vec<usize>>,
-    previous_frame: Vec<u8>,
+    pending_assignment: Option<Vec<u16>>,
     count: u16,
     variant: BenVariant,
     chunk_size: usize,
     chunk_buffer: Vec<BufferedDeltaFrame>,
+    complete: bool,
 }
 
 impl<W: Write> XZAssignmentWriter<W> {
-    /// Rebuild the value-to-position index map from the current previous assignment.
-    fn rebuild_previous_masks(&mut self) {
-        self.previous_masks.clear();
-        for (idx, &assignment) in self.previous_assignment.iter().enumerate() {
-            self.previous_masks.entry(assignment).or_default().push(idx);
-        }
-    }
-
-    /// Store a new previous assignment along with its encoded frame and repetition count.
+    /// Encode and write the pending assignment with the accumulated count.
     ///
-    /// # Arguments
-    ///
-    /// * `assignment` - The assignment vector to cache.
-    /// * `frame` - The already-encoded frame bytes for this assignment.
-    /// * `count` - The initial repetition count for this assignment.
-    fn set_previous_assignment(&mut self, assignment: Vec<u16>, frame: Vec<u8>, count: u16) {
-        self.previous_assignment = assignment;
-        self.rebuild_previous_masks();
-        self.previous_frame = frame;
-        self.count = count;
-    }
+    /// For TwoDelta, builds the initial masks and writes the full frame followed
+    /// by the count. For MkvChain, encodes the assignment and appends the count.
+    /// This is a no-op when no assignment is pending.
+    fn flush_pending_frame(&mut self) -> Result<()> {
+        let pending = match self.pending_assignment.take() {
+            Some(p) => p,
+            None => return Ok(()),
+        };
 
-    /// Update the value-to-position masks incrementally for a two-delta transition.
-    ///
-    /// Instead of rebuilding the entire mask HashMap, only the positions belonging
-    /// to the two swapped values are repartitioned. This is O(pair_positions)
-    /// rather than O(assignment_length).
-    ///
-    /// # Arguments
-    ///
-    /// * `new_sample` - The new assignment vector after the transition.
-    /// * `pair` - The two values involved in the delta swap.
-    #[allow(dead_code)]
-    fn update_masks_for_delta(&mut self, new_sample: &[u16], pair: (u16, u16)) {
-        if pair.0 == pair.1 {
-            return;
-        }
-
-        let pos_a = self.previous_masks.remove(&pair.0).unwrap_or_default();
-        let pos_b = self.previous_masks.remove(&pair.1).unwrap_or_default();
-
-        let mut new_a = Vec::with_capacity(pos_a.len() + pos_b.len());
-        let mut new_b = Vec::with_capacity(pos_a.len() + pos_b.len());
-
-        let (mut i, mut j) = (0, 0);
-        while i < pos_a.len() || j < pos_b.len() {
-            let pos = if j >= pos_b.len() || (i < pos_a.len() && pos_a[i] < pos_b[j]) {
-                let p = pos_a[i];
-                i += 1;
-                p
-            } else {
-                let p = pos_b[j];
-                j += 1;
-                p
-            };
-            if new_sample[pos] == pair.0 {
-                new_a.push(pos);
-            } else {
-                new_b.push(pos);
+        match self.variant {
+            BenVariant::Standard => {
+                let encoded = encode_ben32_assignments(&pending)?;
+                self.encoder.write_all(&encoded)?;
+            }
+            BenVariant::MkvChain => {
+                let encoded = encode_ben32_assignments(&pending)?;
+                self.encoder.write_all(&encoded)?;
+                self.encoder.write_all(&self.count.to_be_bytes())?;
+            }
+            BenVariant::TwoDelta => {
+                for (idx, &val) in pending.iter().enumerate() {
+                    self.previous_masks.entry(val).or_default().push(idx);
+                }
+                let encoded = encode_xben_twodelta_full_frame(&pending);
+                self.encoder.write_all(&encoded)?;
+                self.encoder.write_all(&self.count.to_be_bytes())?;
             }
         }
 
-        if !new_a.is_empty() {
-            self.previous_masks.insert(pair.0, new_a);
-        }
-        if !new_b.is_empty() {
-            self.previous_masks.insert(pair.1, new_b);
-        }
-    }
-
-    /// Flush the buffered frame and its repetition count to the XZ encoder.
-    ///
-    /// For MkvChain and TwoDelta variants, the repetition count is appended
-    /// after the encoded frame. This is a no-op when no samples are pending.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` once the pending frame has been written.
-    fn flush_pending_frame(&mut self) -> Result<()> {
-        if self.count == 0 {
-            return Ok(());
-        }
-
-        self.encoder.write_all(&self.previous_frame)?;
-        if matches!(self.variant, BenVariant::MkvChain | BenVariant::TwoDelta) {
-            self.encoder.write_all(&self.count.to_be_bytes())?;
-        }
-        self.count = 0;
+        self.previous_assignment = pending;
         Ok(())
     }
 
@@ -188,11 +130,12 @@ impl<W: Write> XZAssignmentWriter<W> {
             encoder,
             previous_assignment: Vec::new(),
             previous_masks: HashMap::new(),
-            previous_frame: Vec::new(),
+            pending_assignment: None,
             count: 0,
             variant,
             chunk_size: DEFAULT_TWODELTA_CHUNK_SIZE,
             chunk_buffer: Vec::new(),
+            complete: false,
         })
     }
 
@@ -228,74 +171,59 @@ impl<W: Write> XZAssignmentWriter<W> {
                 let encoded = encode_ben32_assignments(&assign_vec)?;
                 self.encoder.write_all(&encoded)?;
                 self.previous_assignment = assign_vec;
-                self.previous_frame = encoded;
-                Ok(())
             }
             BenVariant::MkvChain => {
-                if is_repeated_assignment(&self.previous_assignment, &assign_vec) {
+                if self.pending_assignment.as_deref() == Some(assign_vec.as_slice()) {
                     self.count += 1;
                     return Ok(());
                 }
-
                 self.flush_pending_frame()?;
-                let encoded = encode_ben32_assignments(&assign_vec)?;
-                self.set_previous_assignment(assign_vec, encoded, 1);
-                Ok(())
+                self.pending_assignment = Some(assign_vec);
+                self.count = 1;
             }
             BenVariant::TwoDelta => {
-                if self.previous_assignment.is_empty() {
-                    let encoded = encode_xben_twodelta_full_frame(&assign_vec);
-                    self.set_previous_assignment(assign_vec, encoded, 1);
+                // First assignment ever: buffer as the initial full frame.
+                if self.pending_assignment.is_none() && self.previous_assignment.is_empty() {
+                    self.pending_assignment = Some(assign_vec);
+                    self.count = 1;
                     return Ok(());
                 }
-
-                let masks = if self.previous_masks.is_empty() {
-                    None
-                } else {
-                    Some(&self.previous_masks)
-                };
-                let hints =
-                    analyze_twodelta_transition(&self.previous_assignment, &assign_vec, masks);
-                if hints.is_repeated {
-                    if self.chunk_buffer.is_empty() {
-                        self.count += 1;
-                    } else {
-                        self.chunk_buffer.last_mut().unwrap().count += 1;
-                    }
+                // Repeat of the pending initial full frame.
+                if self.pending_assignment.as_deref() == Some(assign_vec.as_slice()) {
+                    self.count += 1;
                     return Ok(());
                 }
-
-                // Flush the initial full frame before the first delta.
-                if self.chunk_buffer.is_empty() {
+                // Repeat of the last delta frame in the current chunk.
+                if !self.chunk_buffer.is_empty()
+                    && self.previous_assignment.as_slice() == assign_vec.as_slice()
+                {
+                    self.chunk_buffer.last_mut().unwrap().count += 1;
+                    return Ok(());
+                }
+                // New distinct assignment: flush the initial full frame if pending.
+                if self.pending_assignment.is_some() {
                     self.flush_pending_frame()?;
                 }
-
-                let encoded_frame: TwoDeltaEncodeFrame = match encode_twodelta_frame_with_hint(
+                // Encode the delta frame and add it to the chunk buffer.
+                let frame = encode_twodelta_frame_with_hint(
                     &self.previous_assignment,
                     &assign_vec,
-                    hints.delta_pair,
+                    None,
                     Some(&mut self.previous_masks),
-                ) {
-                    Ok(frame) => frame,
-                    Err(e) => {
-                        return Err(e);
-                    }
-                };
-
+                    None,
+                )?;
                 self.chunk_buffer.push(BufferedDeltaFrame {
-                    pair: encoded_frame.pair,
-                    run_lengths: encoded_frame.run_length_vector,
+                    pair: frame.pair,
+                    run_lengths: frame.run_length_vector,
                     count: 1,
                 });
-
                 self.previous_assignment = assign_vec;
-
                 if self.chunk_buffer.len() >= self.chunk_size {
                     self.flush_chunk()?;
                 }
-                Ok(())
             }
         }
+        Ok(())
     }
 
     /// Encode and write a JSON assignment record into the compressed XBEN stream.
@@ -311,18 +239,21 @@ impl<W: Write> XZAssignmentWriter<W> {
         self.write_assignment(parse_json_assignment(data)?)
     }
 
-    /// Read BEN frames from `reader` and write them into this XBEN stream.
-    ///
-    /// If the source still contains the 17-byte BEN banner, it is consumed and
-    /// replaced by the banner already written by this encoder.
-    ///
-    /// # Arguments
-    ///
-    /// * `reader` - The BEN input stream, with or without its banner.
+    /// Flush any buffered state to the underlying XZ encoder.
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` after the BEN stream has been translated into XBEN.
+    /// Returns `Ok(())` once all buffered state has been flushed.
+    pub fn finish(&mut self) -> Result<()> {
+        if self.complete {
+            return Ok(());
+        }
+        self.flush_pending_frame()?;
+        self.flush_chunk()?;
+        self.complete = true;
+        Ok(())
+    }
+
     /// Translate a BEN TwoDelta stream directly to XBEN TwoDelta without
     /// materializing full assignment vectors.
     ///
@@ -353,8 +284,8 @@ impl<W: Write> XZAssignmentWriter<W> {
             encoded.extend_from_slice(&value.to_be_bytes());
             encoded.extend_from_slice(&len.to_be_bytes());
         }
-        self.previous_frame = encoded;
-        self.count = first_count;
+        self.encoder.write_all(&encoded)?;
+        self.encoder.write_all(&first_count.to_be_bytes())?;
 
         let mut sample_count = first_count as usize;
         progress!("Encoding line: {}\r", sample_count);
@@ -379,11 +310,6 @@ impl<W: Write> XZAssignmentWriter<W> {
                 TwoDeltaEncodeFrame::from_parts((pair_a, pair_b), delta_max_len_bits, payload);
             let run_lengths = frame.run_length_vector;
 
-            // Flush the initial full frame before the first delta chunk.
-            if self.chunk_buffer.is_empty() && self.count > 0 {
-                self.flush_pending_frame()?;
-            }
-
             self.chunk_buffer.push(BufferedDeltaFrame {
                 pair: frame.pair,
                 run_lengths,
@@ -398,7 +324,6 @@ impl<W: Write> XZAssignmentWriter<W> {
             progress!("Encoding line: {}\r", sample_count);
         }
 
-        // Flush remaining partial chunk (Drop will also catch this, but be explicit).
         self.flush_chunk()?;
 
         tracing::trace!("");
@@ -430,13 +355,8 @@ impl<W: Write> XZAssignmentWriter<W> {
 }
 
 impl<W: Write> Drop for XZAssignmentWriter<W> {
-    /// Flush any buffered XBEN repetition state during drop.
+    /// Flush any buffered XBEN state during drop.
     fn drop(&mut self) {
-        if matches!(self.variant, BenVariant::MkvChain | BenVariant::TwoDelta) && self.count > 0 {
-            let _ = self.flush_pending_frame();
-        }
-        if !self.chunk_buffer.is_empty() {
-            let _ = self.flush_chunk();
-        }
+        let _ = self.finish();
     }
 }
