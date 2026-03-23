@@ -1,12 +1,12 @@
 mod ben_decode;
 mod ben_encode;
 mod mkv_encode;
-mod twodelta;
+mod twodelta_encode;
 
 pub use ben_decode::BenDecodeFrame;
 pub use ben_encode::BenEncodeFrame;
 pub use mkv_encode::MkvBenEncodeFrame;
-pub use twodelta::TwoDeltaEncodeFrame;
+pub use twodelta_encode::TwoDeltaEncodeFrame;
 
 use crate::util::rle::assign_to_rle;
 
