@@ -1,5 +1,11 @@
-use super::ben::AssignmentHints;
 use super::twodelta::XBEN_TWODELTA_FULL_TAG;
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct AssignmentHints {
+    pub is_repeated: bool,
+    pub delta_pair: Option<(u16, u16)>,
+}
+use crate::codec::encode::errors::EncodeError;
 use crate::util::rle::assign_to_rle;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -53,20 +59,28 @@ pub(super) fn analyze_twodelta_transition(
     previous_sample: &[u16],
     assign_vec: &[u16],
     masks: Option<&HashMap<u16, Vec<usize>>>,
-) -> AssignmentHints {
-    if previous_sample.is_empty() || previous_sample.len() != assign_vec.len() {
-        return AssignmentHints::default();
+) -> Result<AssignmentHints> {
+    if previous_sample.is_empty() {
+        return Ok(AssignmentHints::default());
+    }
+
+    if previous_sample.len() != assign_vec.len() {
+        return Err(EncodeError::LengthMismatch {
+            prev_len: previous_sample.len(),
+            new_len: assign_vec.len(),
+        }
+        .into());
+    }
+
+    if previous_sample == assign_vec {
+        return Ok(AssignmentHints {
+            is_repeated: true,
+            delta_pair: None,
+        });
     }
 
     // Fast path: use masks to find the pair in O(K) instead of O(N).
     if let Some(masks) = masks {
-        if previous_sample == assign_vec {
-            return AssignmentHints {
-                is_repeated: true,
-                delta_pair: None,
-            };
-        }
-
         // Check each label's mask positions. Only labels involved in the swap
         // will have any changed positions; all others short-circuit immediately.
         let mut pair: Option<(u16, u16)> = None;
@@ -84,20 +98,20 @@ pub(super) fn analyze_twodelta_transition(
                                 break;
                             }
                             // More than two values involved.
-                            return AssignmentHints {
+                            return Ok(AssignmentHints {
                                 is_repeated: false,
                                 delta_pair: None,
-                            };
+                            });
                         }
                     }
                 }
             }
         }
 
-        return AssignmentHints {
+        return Ok(AssignmentHints {
             is_repeated: false,
             delta_pair: pair,
-        };
+        });
     }
 
     // Slow path: full O(N) scan when masks are not available.
@@ -106,10 +120,10 @@ pub(super) fn analyze_twodelta_transition(
         .zip(assign_vec.iter())
         .position(|(&previous, &current)| previous != current)
     else {
-        return AssignmentHints {
+        return Ok(AssignmentHints {
             is_repeated: true,
             delta_pair: None,
-        };
+        });
     };
 
     let pair = (previous_sample[first_mismatch], assign_vec[first_mismatch]);
@@ -124,24 +138,24 @@ pub(super) fn analyze_twodelta_transition(
         }
 
         if previous != pair.0 && previous != pair.1 {
-            return AssignmentHints {
+            return Ok(AssignmentHints {
                 is_repeated: false,
                 delta_pair: None,
-            };
+            });
         }
 
         if current != pair.0 && current != pair.1 {
-            return AssignmentHints {
+            return Ok(AssignmentHints {
                 is_repeated: false,
                 delta_pair: None,
-            };
+            });
         }
     }
 
-    AssignmentHints {
+    Ok(AssignmentHints {
         is_repeated: false,
         delta_pair: Some(pair),
-    }
+    })
 }
 
 /// Extract and validate the `assignment` array from a JSON object.

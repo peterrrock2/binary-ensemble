@@ -1,15 +1,15 @@
 //! Encoding routines for BEN and XBEN formats.
 
 mod ben;
-mod errors;
+pub mod errors;
 mod jsonl;
 mod twodelta;
 mod xz;
 
 pub(crate) use ben::encode_ben32_assignments;
 pub use errors::EncodeError;
-pub(crate) use twodelta::encode_twodelta_frame_with_hint;
 pub use twodelta::encode_twodelta_frame;
+pub(crate) use twodelta::encode_twodelta_frame_with_hint;
 
 #[cfg(test)]
 pub(crate) use ben::encode_ben32_line;

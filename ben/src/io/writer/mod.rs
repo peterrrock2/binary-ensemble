@@ -1,10 +1,10 @@
-pub mod ben;
+pub mod assignment_writer;
 pub(crate) mod frames;
 pub(crate) mod tests;
 pub(crate) mod twodelta;
 pub(crate) mod utils;
-pub mod xben;
+pub mod xz_assignment_writer;
 
-pub use ben::AssignmentWriter;
+pub use assignment_writer::AssignmentWriter;
 pub use twodelta::DEFAULT_TWODELTA_CHUNK_SIZE;
-pub use xben::XZAssignmentWriter;
+pub use xz_assignment_writer::XZAssignmentWriter;

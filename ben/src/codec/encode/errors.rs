@@ -22,8 +22,8 @@ pub enum EncodeError {
     #[error("TwoDelta received identical assignment to previous frame")]
     TwoDeltaIdentical,
 
-    #[error("TwoDelta requires equal-length assignment vectors, got {prev_len} vs {new_len}")]
-    TwoDeltaLengthMismatch { prev_len: usize, new_len: usize },
+    #[error("Encoders require equal-length assignment vectors, got {prev_len} vs {new_len}")]
+    LengthMismatch { prev_len: usize, new_len: usize },
 
     #[error("TwoDelta delta_pair hint provided without corresponding masks")]
     TwoDeltaHintWithoutMasks,
@@ -38,7 +38,12 @@ pub enum EncodeError {
     TwoDeltaEmptyMask { id: u16 },
 
     #[error("TwoDelta mask referenced position {pos} whose value {actual} is outside the pair ({a}, {b})")]
-    TwoDeltaMaskOutOfPair { pos: usize, actual: u16, a: u16, b: u16 },
+    TwoDeltaMaskOutOfPair {
+        pos: usize,
+        actual: u16,
+        a: u16,
+        b: u16,
+    },
 
     #[error("XZ encoder initialization failed: {0}")]
     XzInit(#[source] xz2::stream::Error),

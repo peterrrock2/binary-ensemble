@@ -22,7 +22,7 @@ pub struct TwoDeltaEncodeFrame {
 impl TwoDeltaEncodeFrame {
     /// Borrow just the packed payload bytes.
     pub fn payload(&self) -> &[u8] {
-        &self.raw_bytes[9..]
+        &self.raw_bytes[9..9 + self.n_bytes as usize]
     }
 
     /// Borrow the serialized TwoDelta frame bytes.
@@ -49,7 +49,7 @@ impl TwoDeltaEncodeFrame {
     ///
     /// The serialized layout is:
     /// ```text
-    /// [pair.0: u16 BE][pair.1: u16 BE][max_len_bit_count: u8][n_bytes: u32 BE][payload...]
+    /// [pair.0: u16 BE][pair.1: u16 BE][max_len_bit_count: u8][n_bytes: u32 BE][payload...][count: u16 BE]
     /// ```
     /// where the payload is the bit-packed run lengths.
     ///
@@ -63,7 +63,16 @@ impl TwoDeltaEncodeFrame {
     ///
     /// A fully serialized `TwoDeltaEncodeFrame` with both the packed `raw_bytes` and the
     /// original `run_length_vector` stored on the struct.
-    pub fn from_run_lengths(pair: (u16, u16), run_length_vector: Vec<u16>) -> Self {
+    pub fn from_run_lengths(
+        pair: (u16, u16),
+        run_length_vector: Vec<u16>,
+        count: Option<u16>,
+    ) -> Self {
+        let count = match count {
+            Some(v) => v,
+            None => 1,
+        };
+
         let max_len = run_length_vector.iter().copied().max().unwrap_or(0);
         let max_len_bit_count = (16 - max_len.leading_zeros() as u8).max(1);
 
@@ -97,6 +106,8 @@ impl TwoDeltaEncodeFrame {
         if remainder_bits > 0 {
             raw_bytes.push((remainder << (8 - remainder_bits)) as u8);
         }
+
+        raw_bytes.extend(count.to_be_bytes());
 
         Self {
             pair,
@@ -135,12 +146,13 @@ impl TwoDeltaEncodeFrame {
         raw_bytes.push(max_len_bit_count);
         raw_bytes.extend_from_slice(&n_bytes.to_be_bytes());
         raw_bytes.extend_from_slice(&payload);
+        raw_bytes.extend_from_slice(&1u16.to_be_bytes());
 
         let mut run_length_vector = Vec::new();
         let mut buffer: u32 = 0;
         let mut n_bits_in_buff: u16 = 0;
 
-        for byte in payload {
+        for &byte in payload[..n_bytes as usize].iter() {
             buffer |= (byte as u32).to_be() >> n_bits_in_buff;
             n_bits_in_buff += 8;
 

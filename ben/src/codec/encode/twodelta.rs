@@ -66,12 +66,13 @@ pub(crate) fn encode_twodelta_frame_with_hint(
     new_assignment: impl AsRef<[u16]>,
     delta_pair: Option<(u16, u16)>,
     previous_masks: Option<&mut HashMap<u16, Vec<usize>>>,
+    count: Option<u16>,
 ) -> Result<TwoDeltaEncodeFrame> {
     let previous_assignment = previous_assignment.as_ref();
     let new_assignment = new_assignment.as_ref();
 
     if previous_assignment.len() != new_assignment.len() {
-        return Err(Error::from(EncodeError::TwoDeltaLengthMismatch {
+        return Err(Error::from(EncodeError::LengthMismatch {
             prev_len: previous_assignment.len(),
             new_len: new_assignment.len(),
         }));
@@ -95,11 +96,15 @@ pub(crate) fn encode_twodelta_frame_with_hint(
             new_assignment,
             pair,
             masks,
+            count,
         ),
-        (None, Some(masks)) => {
-            construct_twodelta_frame_from_mask_hint(previous_assignment, new_assignment, masks)
-        }
-        _ => construct_twodelta_frame_from_scratch(previous_assignment, new_assignment),
+        (None, Some(masks)) => construct_twodelta_frame_from_mask_hint(
+            previous_assignment,
+            new_assignment,
+            masks,
+            count,
+        ),
+        _ => construct_twodelta_frame_from_scratch(previous_assignment, new_assignment, count),
     }
 
     // Ok(TwoDeltaEncodeFrame::from_run_lengths(ordered_pair, run_lengths))
@@ -184,6 +189,7 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
     current: &[u16],
     delta_pair: (u16, u16),
     previous_masks: &mut HashMap<u16, Vec<usize>>,
+    count: Option<u16>,
 ) -> Result<TwoDeltaEncodeFrame> {
     let pair =
         match validate_masks_and_order_pairs_for_twodelta(delta_pair, previous_masks, current) {
@@ -277,7 +283,11 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
 
     previous_masks.insert(pair.0, new_mask_a);
     previous_masks.insert(pair.1, new_mask_b);
-    Ok(TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths))
+    Ok(TwoDeltaEncodeFrame::from_run_lengths(
+        pair,
+        run_lengths,
+        count,
+    ))
 }
 
 /// Build a TwoDelta frame using only pre-computed position masks, inferring the pair
@@ -303,6 +313,7 @@ fn construct_twodelta_frame_from_mask_hint(
     previous: &[u16],
     current: &[u16],
     previous_masks: &mut HashMap<u16, Vec<usize>>,
+    count: Option<u16>,
 ) -> Result<TwoDeltaEncodeFrame> {
     for (&assign0, &assign1) in previous.iter().zip(current.iter()) {
         if assign0 != assign1 {
@@ -311,6 +322,7 @@ fn construct_twodelta_frame_from_mask_hint(
                 current,
                 (assign0, assign1),
                 previous_masks,
+                count,
             );
         }
     }
@@ -339,6 +351,7 @@ fn construct_twodelta_frame_from_mask_hint(
 fn construct_twodelta_frame_from_scratch(
     previous: &[u16],
     current: &[u16],
+    count: Option<u16>,
 ) -> Result<TwoDeltaEncodeFrame> {
     // Find the pair at the first changed position.
     let first_change = previous
@@ -381,7 +394,11 @@ fn construct_twodelta_frame_from_scratch(
     }
     run_lengths.push(run_count);
 
-    Ok(TwoDeltaEncodeFrame::from_run_lengths(enc_pair, run_lengths))
+    Ok(TwoDeltaEncodeFrame::from_run_lengths(
+        enc_pair,
+        run_lengths,
+        count,
+    ))
 }
 
 /// Encode a transition between two assignment vectors as a TwoDelta frame.
@@ -406,6 +423,7 @@ fn construct_twodelta_frame_from_scratch(
 pub fn encode_twodelta_frame(
     previous_assignment: impl AsRef<[u16]>,
     new_assignment: impl AsRef<[u16]>,
+    count: Option<u16>,
 ) -> Result<TwoDeltaEncodeFrame> {
-    encode_twodelta_frame_with_hint(previous_assignment, new_assignment, None, None)
+    encode_twodelta_frame_with_hint(previous_assignment, new_assignment, None, None, count)
 }

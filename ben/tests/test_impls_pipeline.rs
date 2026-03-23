@@ -1411,7 +1411,8 @@ fn twodelta_rejects_non_pair_transition() {
     let mut ben = Vec::new();
     let mut encoder = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
     encoder.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
-    let err = encoder.write_assignment(vec![1u16, 3, 2, 4]).err().unwrap();
+    encoder.write_assignment(vec![1u16, 3, 2, 4]).unwrap();
+    let err = encoder.finish().err().unwrap();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
 }
 
@@ -1422,10 +1423,10 @@ fn twodelta_write_json_value_rejects_non_pair_transition() {
     encoder
         .write_json_value(json!({"assignment": [1u16, 1, 2, 2]}))
         .unwrap();
-    let err = encoder
+    encoder
         .write_json_value(json!({"assignment": [1u16, 3, 2, 4]}))
-        .err()
         .unwrap();
+    let err = encoder.finish().err().unwrap();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
 }
 
