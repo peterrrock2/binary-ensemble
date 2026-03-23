@@ -1,7 +1,7 @@
 //! Sample extraction helpers for BEN and XBEN streams.
 
 use crate::codec::decode::decode_ben32_line;
-use crate::io::reader::{BenDecoder, XBenDecoder};
+use crate::io::reader::{AssignmentReader, XZAssignmentReader};
 use serde_json::Error as SerdeError;
 use std::io::Cursor;
 use std::io::{self, Read};
@@ -65,7 +65,7 @@ pub fn extract_assignment_ben<R: Read>(
     }
 
     let mut current_sample = 1;
-    let inner_decoder = BenDecoder::new(&mut reader).map_err(io::Error::from)?;
+    let inner_decoder = AssignmentReader::new(&mut reader).map_err(io::Error::from)?;
     for record in inner_decoder {
         let (assignment, count) = record.map_err(SampleError::new_io_error)?;
         if current_sample == sample_number || current_sample + count as usize > sample_number {
@@ -97,8 +97,9 @@ pub fn extract_assignment_xben<R: Read>(
         return Err(SampleError::InvalidSampleNumber);
     }
 
-    let inner_decoder = XBenDecoder::new(&mut reader).map_err(SampleError::new_io_error)?;
-    let variant = inner_decoder.variant;
+    let inner_decoder = XZAssignmentReader::new(&mut reader)
+        .map_err(|e| SampleError::new_io_error(io::Error::from(e)))?;
+    let variant = inner_decoder.variant();
     let frame_iterator = inner_decoder.into_frames();
 
     let mut current_sample = 1;

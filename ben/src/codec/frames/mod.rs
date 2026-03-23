@@ -1,14 +1,19 @@
 mod ben_decode;
 mod ben_encode;
+mod mkv_decode;
 mod mkv_encode;
+mod twodelta_decode;
 mod twodelta_encode;
 
 pub use ben_decode::BenDecodeFrame;
 pub use ben_encode::BenEncodeFrame;
+pub use mkv_decode::MkvBenDecodeFrame;
 pub use mkv_encode::MkvBenEncodeFrame;
+pub use twodelta_decode::TwoDeltaDecodeFrame;
 pub use twodelta_encode::TwoDeltaEncodeFrame;
 
 use crate::util::rle::assign_to_rle;
+use std::io;
 
 pub trait BenConstruct {
     fn from_rle(runs: Vec<(u16, u16)>, count: Option<u16>) -> Self;
@@ -19,6 +24,14 @@ pub trait BenConstruct {
     {
         Self::from_rle(assign_to_rle(assignments), count)
     }
+}
+
+pub trait BenDecode: Sized {
+    /// Read the next frame from a byte stream.
+    ///
+    /// Returns `Ok(None)` on a clean EOF at a frame boundary, `Ok(Some(frame))`
+    /// on success, and `Err` on any IO or format error.
+    fn from_reader(reader: &mut impl io::Read) -> io::Result<Option<Self>>;
 }
 
 /// Compresses a run-length encoded vector into BEN payload bytes.

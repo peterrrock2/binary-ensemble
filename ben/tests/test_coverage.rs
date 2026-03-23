@@ -15,7 +15,7 @@ use binary_ensemble::format::banners::{
     MKVCHAIN_BEN_BANNER, STANDARD_BEN_BANNER, TWODELTA_BEN_BANNER,
 };
 use binary_ensemble::io::reader::{
-    BenDecoder, BenFrameDecoeder, DecoderInitError, XBenDecoder, XBenFrameDecoder,
+    AssignmentReader, AssignmentFrameReader, DecoderInitError, XZAssignmentReader, XZAssignmentFrameReader,
 };
 use binary_ensemble::io::writer::AssignmentWriter;
 use binary_ensemble::json::graph::{
@@ -333,12 +333,12 @@ fn decoder_init_error_converts_to_io_error_from_invalid_format() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// io::reader  –  BenDecoder
+// io::reader  –  AssignmentReader
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn ben_decoder_rejects_empty_input() {
-    match BenDecoder::new(io::empty()) {
+    match AssignmentReader::new(io::empty()) {
         Err(DecoderInitError::Io(_)) => {}
         Ok(_) => panic!("expected Io error"),
         Err(e) => panic!("unexpected error variant: {e}"),
@@ -347,7 +347,7 @@ fn ben_decoder_rejects_empty_input() {
 
 #[test]
 fn ben_decoder_rejects_wrong_banner() {
-    match BenDecoder::new(b"BAD BAD BAD BAD!!".as_slice()) {
+    match AssignmentReader::new(b"BAD BAD BAD BAD!!".as_slice()) {
         Err(DecoderInitError::InvalidFileFormat(_)) => {}
         Ok(_) => panic!("expected InvalidFileFormat error"),
         Err(e) => panic!("unexpected error variant: {e}"),
@@ -358,7 +358,7 @@ fn ben_decoder_rejects_wrong_banner() {
 fn ben_decoder_rejects_xz_data_with_helpful_message() {
     // Manufacture a valid XZ header prefix.
     let xz_magic = b"\xFD\x37\x7A\x58\x5A\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00";
-    match BenDecoder::new(xz_magic.as_slice()) {
+    match AssignmentReader::new(xz_magic.as_slice()) {
         Err(DecoderInitError::InvalidFileFormat(ref header)) => {
             let e = DecoderInitError::InvalidFileFormat(header.clone());
             let msg = e.to_string();
@@ -374,7 +374,7 @@ fn ben_decoder_standard_single_assignment_round_trip() {
     let assignment = vec![1u16, 1, 2, 3, 3, 3];
     let ben = encode_standard_ben(&[assignment.clone()]);
 
-    let mut decoder = BenDecoder::new(ben.as_slice()).unwrap();
+    let mut decoder = AssignmentReader::new(ben.as_slice()).unwrap();
     let (decoded, count) = decoder.next().unwrap().unwrap();
     assert_eq!(count, 1);
     assert_eq!(decoded, assignment);
@@ -386,7 +386,7 @@ fn ben_decoder_standard_multiple_assignments_round_trip() {
     let assignments = vec![vec![1u16, 2, 3], vec![3u16, 2, 1], vec![1u16, 1, 1]];
     let ben = encode_standard_ben(&assignments);
 
-    let mut decoder = BenDecoder::new(ben.as_slice()).unwrap().silent(true);
+    let mut decoder = AssignmentReader::new(ben.as_slice()).unwrap().silent(true);
     for expected in &assignments {
         let (decoded, count) = decoder.next().unwrap().unwrap();
         assert_eq!(count, 1);
@@ -411,7 +411,7 @@ fn ben_decoder_mkv_preserves_repetition_counts() {
     let mut ben = Vec::new();
     encode_jsonl_to_ben(jsonl.as_bytes(), &mut ben, BenVariant::MkvChain).unwrap();
 
-    let mut decoder = BenDecoder::new(ben.as_slice()).unwrap().silent(true);
+    let mut decoder = AssignmentReader::new(ben.as_slice()).unwrap().silent(true);
 
     let (a1, c1) = decoder.next().unwrap().unwrap();
     assert_eq!(a1, vec![1u16, 2, 3]);
@@ -428,7 +428,7 @@ fn ben_decoder_mkv_preserves_repetition_counts() {
 fn ben_decoder_count_samples_standard() {
     let assignments = vec![vec![1u16, 2], vec![3u16, 4], vec![5u16, 6]];
     let ben = encode_standard_ben(&assignments);
-    let decoder = BenDecoder::new(ben.as_slice()).unwrap();
+    let decoder = AssignmentReader::new(ben.as_slice()).unwrap();
     assert_eq!(decoder.count_samples().unwrap(), 3);
 }
 
@@ -447,7 +447,7 @@ fn ben_decoder_count_samples_mkv_with_repetitions() {
     let mut ben = Vec::new();
     encode_jsonl_to_ben(jsonl.as_bytes(), &mut ben, BenVariant::MkvChain).unwrap();
 
-    let decoder = BenDecoder::new(ben.as_slice()).unwrap();
+    let decoder = AssignmentReader::new(ben.as_slice()).unwrap();
     assert_eq!(decoder.count_samples().unwrap(), 4);
 }
 
@@ -456,7 +456,7 @@ fn ben_decoder_write_all_jsonl_produces_correct_output() {
     let assignments = vec![vec![1u16, 2, 3], vec![4u16, 5, 6]];
     let ben = encode_standard_ben(&assignments);
 
-    let mut decoder = BenDecoder::new(ben.as_slice()).unwrap();
+    let mut decoder = AssignmentReader::new(ben.as_slice()).unwrap();
     let mut out = Vec::new();
     decoder.write_all_jsonl(&mut out).unwrap();
 
@@ -474,7 +474,7 @@ fn ben_decoder_for_each_assignment_early_stop() {
     let assignments = vec![vec![1u16, 2], vec![3u16, 4], vec![5u16, 6]];
     let ben = encode_standard_ben(&assignments);
 
-    let mut decoder = BenDecoder::new(ben.as_slice()).unwrap().silent(true);
+    let mut decoder = AssignmentReader::new(ben.as_slice()).unwrap().silent(true);
     let mut seen = Vec::new();
     decoder
         .for_each_assignment(|a, _count| {
@@ -489,7 +489,7 @@ fn ben_decoder_for_each_assignment_early_stop() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// io::reader  –  XBenDecoder
+// io::reader  –  XZAssignmentReader
 // ──────────────────────────────────────────────────────────────────────────────
 
 fn make_xben(assignments: &[Vec<u16>], variant: BenVariant) -> Vec<u8> {
@@ -511,16 +511,16 @@ fn make_xben(assignments: &[Vec<u16>], variant: BenVariant) -> Vec<u8> {
 fn xben_decoder_reads_variant_from_banner_standard() {
     let assignments = vec![vec![1u16, 2, 3]];
     let xben = make_xben(&assignments, BenVariant::Standard);
-    let decoder = XBenDecoder::new(xben.as_slice()).unwrap();
-    assert_eq!(decoder.variant, BenVariant::Standard);
+    let decoder = XZAssignmentReader::new(xben.as_slice()).unwrap();
+    assert_eq!(decoder.variant(), BenVariant::Standard);
 }
 
 #[test]
 fn xben_decoder_reads_variant_from_banner_mkvchain() {
     let assignments = vec![vec![1u16, 2, 3]];
     let xben = make_xben(&assignments, BenVariant::MkvChain);
-    let decoder = XBenDecoder::new(xben.as_slice()).unwrap();
-    assert_eq!(decoder.variant, BenVariant::MkvChain);
+    let decoder = XZAssignmentReader::new(xben.as_slice()).unwrap();
+    assert_eq!(decoder.variant(), BenVariant::MkvChain);
 }
 
 #[test]
@@ -529,8 +529,8 @@ fn xben_decoder_reads_variant_from_banner_twodelta() {
     let base = vec![1u16, 1, 2, 2];
     let second = vec![1u16, 2, 2, 1]; // swap positions 1 & 3
     let xben = make_xben(&[base, second], BenVariant::TwoDelta);
-    let decoder = XBenDecoder::new(xben.as_slice()).unwrap();
-    assert_eq!(decoder.variant, BenVariant::TwoDelta);
+    let decoder = XZAssignmentReader::new(xben.as_slice()).unwrap();
+    assert_eq!(decoder.variant(), BenVariant::TwoDelta);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1354,14 +1354,14 @@ fn relabel_ben_file_with_map_as_variant_permutes_correctly() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// BenDecoder  –  iterator interface
+// AssignmentReader  –  iterator interface
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn ben_decoder_iterator_collects_all_frames() {
     let assignments = vec![vec![1u16, 2, 3], vec![4u16, 5, 6], vec![7u16, 8, 9]];
     let ben = encode_standard_ben(&assignments);
-    let decoder = BenDecoder::new(ben.as_slice()).unwrap().silent(true);
+    let decoder = AssignmentReader::new(ben.as_slice()).unwrap().silent(true);
     let frames: Vec<_> = decoder.collect::<io::Result<Vec<_>>>().unwrap();
     assert_eq!(frames.len(), 3);
     for (i, (a, count)) in frames.iter().enumerate() {
@@ -1373,7 +1373,7 @@ fn ben_decoder_iterator_collects_all_frames() {
 #[test]
 fn ben_decoder_iterator_on_empty_payload_yields_nothing() {
     let ben = STANDARD_BEN_BANNER.to_vec(); // banner only, no frames
-    let decoder = BenDecoder::new(ben.as_slice()).unwrap().silent(true);
+    let decoder = AssignmentReader::new(ben.as_slice()).unwrap().silent(true);
     let frames: Vec<_> = decoder.collect::<io::Result<Vec<_>>>().unwrap();
     assert!(frames.is_empty());
 }
@@ -1485,7 +1485,7 @@ fn ben_decoder_accepts_cursor_reader() {
     let assignment = vec![1u16, 2, 3];
     let ben = encode_standard_ben(&[assignment.clone()]);
     let cursor = Cursor::new(ben);
-    let mut decoder = BenDecoder::new(cursor).unwrap().silent(true);
+    let mut decoder = AssignmentReader::new(cursor).unwrap().silent(true);
     let (decoded, _) = decoder.next().unwrap().unwrap();
     assert_eq!(decoded, assignment);
 }
@@ -1850,15 +1850,15 @@ fn sort_by_ordering_large_graph_multilevel_verifies_permutation() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// XBenDecoder / XBenFrameDecoder
+// XZAssignmentReader / XZAssignmentFrameReader
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn xben_decoder_iterator_standard_collects_all() {
     let assignments = vec![vec![1u16, 1, 2, 2], vec![3u16, 3, 3, 3]];
     let xben = encode_xben(&assignments, BenVariant::Standard);
-    let decoder = XBenDecoder::new(Cursor::new(xben)).unwrap();
-    assert_eq!(decoder.variant, BenVariant::Standard);
+    let decoder = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    assert_eq!(decoder.variant(), BenVariant::Standard);
     let results: Vec<Vec<u16>> = decoder.map(|r| r.unwrap().0).collect();
     assert_eq!(results, assignments);
 }
@@ -1871,7 +1871,7 @@ fn xben_decoder_count_samples_standard() {
         vec![5u16, 6, 5, 6],
     ];
     let xben = encode_xben(&assignments, BenVariant::Standard);
-    let decoder = XBenDecoder::new(Cursor::new(xben)).unwrap();
+    let decoder = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
     assert_eq!(decoder.count_samples().unwrap(), 3);
 }
 
@@ -1879,7 +1879,7 @@ fn xben_decoder_count_samples_standard() {
 fn xben_decoder_count_samples_mkvchain() {
     let assignments: Vec<Vec<u16>> = (0..5u16).map(|i| vec![i, i + 1]).collect();
     let xben = encode_xben(&assignments, BenVariant::MkvChain);
-    let decoder = XBenDecoder::new(Cursor::new(xben)).unwrap();
+    let decoder = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
     assert_eq!(decoder.count_samples().unwrap(), 5);
 }
 
@@ -1887,7 +1887,7 @@ fn xben_decoder_count_samples_mkvchain() {
 fn xben_frame_decoder_new_and_iterate() {
     let assignments = vec![vec![1u16, 1, 2], vec![2u16, 2, 1]];
     let xben = encode_xben(&assignments, BenVariant::Standard);
-    let frame_iter = XBenFrameDecoder::new(Cursor::new(xben)).unwrap();
+    let frame_iter = XZAssignmentFrameReader::new(Cursor::new(xben)).unwrap();
     let frames: Vec<(Vec<u8>, u16)> = frame_iter.map(|r| r.unwrap()).collect();
     assert_eq!(frames.len(), 2);
     for (frame_bytes, count) in &frames {
@@ -1898,18 +1898,18 @@ fn xben_frame_decoder_new_and_iterate() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// BenFrameDecoeder (note: typo in source name is intentional)
+// AssignmentFrameReader
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn ben_frame_decoder_standard_iterates() {
     let assignments = vec![vec![1u16, 2, 3], vec![4u16, 5, 6]];
     let ben = encode_standard_ben(&assignments);
-    let frame_iter = BenFrameDecoeder::new(Cursor::new(ben)).unwrap();
+    let frame_iter = AssignmentFrameReader::new(Cursor::new(ben)).unwrap();
     let frames: Vec<_> = frame_iter.map(|r| r.unwrap()).collect();
     assert_eq!(frames.len(), 2);
-    assert_eq!(frames[0].count, 1);
-    assert_eq!(frames[1].count, 1);
+    assert_eq!(frames[0].1, 1);
+    assert_eq!(frames[1].1, 1);
 }
 
 #[test]
@@ -1921,22 +1921,22 @@ fn ben_frame_decoder_twodelta_yields_standard_frames() {
     let mut ben = Vec::new();
     encode_jsonl_to_ben(jsonl.as_slice(), &mut ben, BenVariant::TwoDelta).unwrap();
 
-    // BenFrameDecoeder should re-encode TwoDelta frames back to standard BEN frames
-    let decoder = BenDecoder::new(Cursor::new(ben)).unwrap().silent(true);
+    // AssignmentFrameReader should re-encode TwoDelta frames back to standard BEN frames
+    let decoder = AssignmentReader::new(Cursor::new(ben)).unwrap().silent(true);
     let frame_iter = decoder.into_frames();
     let frames: Vec<_> = frame_iter.map(|r| r.unwrap()).collect();
     assert_eq!(frames.len(), 2);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// SubsampleFrameDecoder — BenDecoder subsample methods
+// SubsampleFrameDecoder — AssignmentReader subsample methods
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn ben_decoder_subsample_by_indices() {
     let assignments: Vec<Vec<u16>> = (0u16..10).map(|i| vec![i; 4]).collect();
     let ben = encode_standard_ben(&assignments);
-    let decoder = BenDecoder::new(Cursor::new(ben)).unwrap().silent(true);
+    let decoder = AssignmentReader::new(Cursor::new(ben)).unwrap().silent(true);
     // 1-based indices: 2, 5, 8
     let selected: Vec<Vec<u16>> = decoder
         .into_subsample_by_indices(vec![2usize, 5, 8])
@@ -1952,7 +1952,7 @@ fn ben_decoder_subsample_by_indices() {
 fn ben_decoder_subsample_by_range() {
     let assignments: Vec<Vec<u16>> = (0u16..10).map(|i| vec![i; 3]).collect();
     let ben = encode_standard_ben(&assignments);
-    let decoder = BenDecoder::new(Cursor::new(ben)).unwrap().silent(true);
+    let decoder = AssignmentReader::new(Cursor::new(ben)).unwrap().silent(true);
     // Inclusive 1-based range [3, 6]
     let selected: Vec<Vec<u16>> = decoder
         .into_subsample_by_range(3, 6)
@@ -1967,7 +1967,7 @@ fn ben_decoder_subsample_by_range() {
 fn ben_decoder_subsample_every_nth() {
     let assignments: Vec<Vec<u16>> = (0u16..10).map(|i| vec![i; 2]).collect();
     let ben = encode_standard_ben(&assignments);
-    let decoder = BenDecoder::new(Cursor::new(ben)).unwrap().silent(true);
+    let decoder = AssignmentReader::new(Cursor::new(ben)).unwrap().silent(true);
     // Every 3rd sample starting at 1-based offset 1: samples 1, 4, 7, 10
     let selected: Vec<Vec<u16>> = decoder
         .into_subsample_every(3, 1)
@@ -1984,7 +1984,7 @@ fn ben_decoder_subsample_every_nth() {
 fn ben_decoder_subsample_by_indices_dedup() {
     let assignments: Vec<Vec<u16>> = (0u16..5).map(|i| vec![i; 2]).collect();
     let ben = encode_standard_ben(&assignments);
-    let decoder = BenDecoder::new(Cursor::new(ben)).unwrap().silent(true);
+    let decoder = AssignmentReader::new(Cursor::new(ben)).unwrap().silent(true);
     // Duplicate index 2 → after dedup only samples 2 and 3 are selected
     let selected: Vec<Vec<u16>> = decoder
         .into_subsample_by_indices(vec![2usize, 2, 3])
@@ -1996,14 +1996,14 @@ fn ben_decoder_subsample_by_indices_dedup() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// SubsampleFrameDecoder — XBenDecoder subsample methods
+// SubsampleFrameDecoder — XZAssignmentReader subsample methods
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn xben_decoder_subsample_by_indices() {
     let assignments: Vec<Vec<u16>> = (1u16..=5).map(|i| vec![i; 4]).collect();
     let xben = encode_xben(&assignments, BenVariant::Standard);
-    let decoder = XBenDecoder::new(Cursor::new(xben)).unwrap();
+    let decoder = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
     let selected: Vec<Vec<u16>> = decoder
         .into_subsample_by_indices(vec![1usize, 3, 5])
         .map(|r| r.unwrap().0)
@@ -2018,7 +2018,7 @@ fn xben_decoder_subsample_by_indices() {
 fn xben_decoder_subsample_by_range() {
     let assignments: Vec<Vec<u16>> = (0u16..6).map(|i| vec![i; 3]).collect();
     let xben = encode_xben(&assignments, BenVariant::Standard);
-    let decoder = XBenDecoder::new(Cursor::new(xben)).unwrap();
+    let decoder = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
     let selected: Vec<Vec<u16>> = decoder
         .into_subsample_by_range(2, 4)
         .map(|r| r.unwrap().0)
@@ -2032,7 +2032,7 @@ fn xben_decoder_subsample_by_range() {
 fn xben_decoder_subsample_every() {
     let assignments: Vec<Vec<u16>> = (0u16..6).map(|i| vec![i; 2]).collect();
     let xben = encode_xben(&assignments, BenVariant::Standard);
-    let decoder = XBenDecoder::new(Cursor::new(xben)).unwrap();
+    let decoder = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
     // Every 2nd sample starting from offset 1: samples 1, 3, 5
     let selected: Vec<Vec<u16>> = decoder
         .into_subsample_every(2, 1)

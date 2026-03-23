@@ -3,8 +3,8 @@ use binary_ensemble::codec::decode::{
     decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl,
 };
 use binary_ensemble::io::reader::{
-    build_frame_iter, count_samples_from_file, BenDecoder, MkvRecord, Selection,
-    SubsampleFrameDecoder, XBenDecoder,
+    build_frame_iter, count_samples_from_file, AssignmentReader, MkvRecord, Selection,
+    SubsampleFrameDecoder, XZAssignmentReader,
 };
 use pyo3::exceptions::{PyException, PyIOError, PyUserWarning};
 use pyo3::prelude::*;
@@ -242,13 +242,13 @@ fn build_iter(py: Python<'_>, source: &DecoderSource) -> PyResult<DynIter> {
     let reader = open_input(&source.path)?;
     match source.mode {
         DecoderMode::Ben => {
-            let ben = BenDecoder::new(reader)
+            let ben = AssignmentReader::new(reader)
                 .map_err(|e| PyException::new_err(format!("Failed to create BenDecoder: {e}")))?;
             Ok(Box::new(ben))
         }
         DecoderMode::XBen => {
             warn_xben_startup(py)?;
-            let xben = XBenDecoder::new(reader)
+            let xben = XZAssignmentReader::new(reader)
                 .map_err(|e| PyException::new_err(format!("Failed to create XBenDecoder: {e}")))?;
             Ok(Box::new(xben))
         }

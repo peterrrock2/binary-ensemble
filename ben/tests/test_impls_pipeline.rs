@@ -8,8 +8,8 @@ use binary_ensemble::codec::encode::{
 };
 use binary_ensemble::codec::{BenConstruct, BenEncodeFrame};
 use binary_ensemble::io::reader::{
-    build_frame_iter, count_samples_from_file, BenDecoder, DecodeFrame, DecoderInitError,
-    SubsampleFrameDecoder, XBenDecoder,
+    build_frame_iter, count_samples_from_file, AssignmentReader, DecodeFrame, DecoderInitError,
+    SubsampleFrameDecoder, XZAssignmentReader,
 };
 use binary_ensemble::io::writer::AssignmentWriter;
 use binary_ensemble::ops::extract::extract_assignment_ben;
@@ -192,7 +192,7 @@ fn strat_threads_levels() -> impl Strategy<Value = (u32, u32)> {
 // ---------- Tests ----------
 
 proptest! {
-    // JSONL -> BEN(Standard) -> JSONL round-trip via BenEncoder/BenDecoder entry points.
+    // JSONL -> BEN(Standard) -> JSONL round-trip via BenEncoder/AssignmentReader entry points.
     #[test]
     fn fuzz_roundtrip_ben_standard(seq in strat_assignment_seq()) {
         let jsonl = jsonl_from_assignments(&seq);
@@ -337,7 +337,7 @@ proptest! {
         prop_assert_eq!(direct, via);
     }
 
-    // Iterator surface: XBenDecoder -> records matches direct JSONL
+    // Iterator surface: XZAssignmentReader -> records matches direct JSONL
     #[test]
     fn fuzz_xbendecoder_iterator_matches_jsonl(seq in strat_assignment_seq(), params in strat_threads_levels()) {
         let (threads, level) = params;
@@ -353,7 +353,7 @@ proptest! {
             None,
         ).unwrap();
 
-        let mut dec = XBenDecoder::new(xben.as_slice()).unwrap();
+        let mut dec = XZAssignmentReader::new(xben.as_slice()).unwrap();
         let recs = collect_records(&mut dec).unwrap();
 
         let iter_jsonl = jsonl_from_records(&recs, 0);
@@ -365,7 +365,7 @@ proptest! {
         prop_assert_eq!(iter_jsonl, direct);
     }
 
-    // Iterator surface: XBenDecoder over TwoDelta XBEN matches direct JSONL.
+    // Iterator surface: XZAssignmentReader over TwoDelta XBEN matches direct JSONL.
     #[test]
     fn fuzz_xbendecoder_iterator_matches_jsonl_twodelta(seq in strat_twodelta_seq(), params in strat_threads_levels()) {
         let (threads, level) = params;
@@ -381,7 +381,7 @@ proptest! {
             None,
         ).unwrap();
 
-        let mut dec = XBenDecoder::new(xben.as_slice()).unwrap();
+        let mut dec = XZAssignmentReader::new(xben.as_slice()).unwrap();
         let recs = collect_records(&mut dec).unwrap();
         let iter_jsonl = jsonl_from_records(&recs, 0);
 
@@ -391,7 +391,7 @@ proptest! {
         prop_assert_eq!(iter_jsonl, direct);
     }
 
-    // Iterator surface: BenDecoder over BEN produced by BenEncoder.
+    // Iterator surface: AssignmentReader over BEN produced by BenEncoder.
     #[test]
     fn fuzz_bendecoder_iterator_matches_jsonl(seq in strat_assignment_seq()) {
         let jsonl = jsonl_from_assignments(&seq);
@@ -400,15 +400,15 @@ proptest! {
         let mut ben = Vec::new();
         encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::Standard).unwrap();
 
-        // Iterate BenDecoder
-        let mut dec = BenDecoder::new(ben.as_slice()).unwrap();
+        // Iterate AssignmentReader
+        let mut dec = AssignmentReader::new(ben.as_slice()).unwrap();
         let recs = collect_records(&mut dec).unwrap();
         let out = jsonl_from_records(&recs, 0);
         prop_assert_eq!(out, jsonl);
 
     }
 
-    // Iterator surface: BenDecoder over TwoDelta BEN matches JSONL.
+    // Iterator surface: AssignmentReader over TwoDelta BEN matches JSONL.
     #[test]
     fn fuzz_bendecoder_iterator_matches_jsonl_twodelta(seq in strat_twodelta_seq()) {
         let jsonl = jsonl_from_assignments(&seq);
@@ -416,7 +416,7 @@ proptest! {
         let mut ben = Vec::new();
         encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::TwoDelta).unwrap();
 
-        let mut dec = BenDecoder::new(ben.as_slice()).unwrap();
+        let mut dec = AssignmentReader::new(ben.as_slice()).unwrap();
         let recs = collect_records(&mut dec).unwrap();
         let out = jsonl_from_records(&recs, 0);
         prop_assert_eq!(out, jsonl);
@@ -444,7 +444,7 @@ proptest! {
         let mut want: Vec<usize> = (1..=n).step_by(3).collect(); // 1,4,7,…
         if want.is_empty() { want.push(1); }
 
-        let xb = XBenDecoder::new(xben.as_slice()).unwrap();
+        let xb = XZAssignmentReader::new(xben.as_slice()).unwrap();
         let mut sub = xb.into_subsample_by_indices(want.clone());
         let recs = collect_records(&mut sub).unwrap();
 
@@ -488,7 +488,7 @@ proptest! {
             }
         }
 
-        let xb = XBenDecoder::new(xben.as_slice()).unwrap();
+        let xb = XZAssignmentReader::new(xben.as_slice()).unwrap();
         let mut sub = xb.into_subsample_every(step, offset);
         let recs = collect_records(&mut sub).unwrap();
 
@@ -522,7 +522,7 @@ proptest! {
 
         let truth: Vec<Vec<u16>> = (s..=e).map(|i| seq[i-1].clone()).collect();
 
-        let xb = XBenDecoder::new(xben.as_slice()).unwrap();
+        let xb = XZAssignmentReader::new(xben.as_slice()).unwrap();
         let mut sub = xb.into_subsample_by_range(s, e);
         let recs = collect_records(&mut sub).unwrap();
 
@@ -546,7 +546,7 @@ proptest! {
             want.push(1);
         }
 
-        let mut sub = BenDecoder::new(ben.as_slice())
+        let mut sub = AssignmentReader::new(ben.as_slice())
             .unwrap()
             .into_subsample_by_indices(want.clone());
         let recs = collect_records(&mut sub).unwrap();
@@ -590,7 +590,7 @@ fn invalid_ben_header_yields_error() {
     bogus.extend_from_slice(b"NOT A BEN HEADER!");
     bogus.resize(17, 0);
 
-    let err = BenDecoder::new(Cursor::new(bogus))
+    let err = AssignmentReader::new(Cursor::new(bogus))
         .err()
         .expect("expeced InvalidFileFormat error");
     match err {
@@ -608,10 +608,10 @@ fn xben_decoder_rejects_bad_banner() {
     let mut xz = Vec::new();
     xz_compress(BufReader::new(inner.as_slice()), &mut xz, Some(1), Some(0)).unwrap();
 
-    let err = XBenDecoder::new(xz.as_slice())
+    let err = XZAssignmentReader::new(xz.as_slice())
         .err()
         .expect("expeced InvalidFileFormat error");
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    assert_eq!(std::io::Error::from(err).kind(), std::io::ErrorKind::InvalidData);
 }
 
 #[test]
@@ -631,7 +631,7 @@ fn subsample_every_respects_offset() {
     .unwrap();
 
     // Keep every 1 starting at offset=2 -> only second sample.
-    let xb = XBenDecoder::new(xben.as_slice()).unwrap();
+    let xb = XZAssignmentReader::new(xben.as_slice()).unwrap();
     let mut sub = xb.into_subsample_every(1, 2);
     let recs = collect_records(&mut sub).unwrap();
 
@@ -712,7 +712,7 @@ fn ben_new_invalid_header_detects_xz() {
     .unwrap();
 
     // Try to treat it as BEN
-    let err = BenDecoder::new(xz.as_slice())
+    let err = AssignmentReader::new(xz.as_slice())
         .err()
         .expect("expected error");
     match err {
@@ -737,10 +737,10 @@ fn xben_new_invalid_banner() {
         Some(0),
     )
     .unwrap();
-    let err = XBenDecoder::new(wrong.as_slice())
+    let err = XZAssignmentReader::new(wrong.as_slice())
         .err()
         .expect("expected invalid data");
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    assert_eq!(std::io::Error::from(err).kind(), std::io::ErrorKind::InvalidData);
 }
 
 #[test]
@@ -763,7 +763,7 @@ fn xben_truncated_frame_reports_unexpected_eof() {
     // Trim the last byte to force partial frame after decompress
     let trimmed = &xz[..xz.len() - 1];
     // Iterating should surface UnexpectedEof (partial frame)
-    let mut it = XBenDecoder::new(trimmed).unwrap();
+    let mut it = XZAssignmentReader::new(trimmed).unwrap();
     // Drain until error
     while let Some(res) = it.next() {
         if let Err(e) = res {
@@ -846,7 +846,7 @@ fn subsample_by_indices_sorts_and_dedups() {
         None,
     )
     .unwrap();
-    let xb = XBenDecoder::new(xz.as_slice()).unwrap();
+    let xb = XZAssignmentReader::new(xz.as_slice()).unwrap();
 
     // Deliberately unsorted and duplicated indices
     let mut sub = xb.into_subsample_by_indices(vec![5, 2, 2, 1, 5, 3]);
@@ -942,7 +942,7 @@ fn ben_encoder_write_assignment_path_roundtrips() {
 
 #[test]
 fn ben_decoder_new_reports_short_header_as_io_error() {
-    let err = BenDecoder::new([1u8, 2, 3].as_slice()).err().unwrap();
+    let err = AssignmentReader::new([1u8, 2, 3].as_slice()).err().unwrap();
     match err {
         DecoderInitError::Io(e) => assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof),
         other => panic!("unexpected error: {other:?}"),
@@ -954,7 +954,7 @@ fn ben_decoder_write_all_jsonl_propagates_frame_errors() {
     let mut malformed = b"STANDARD BEN FILE".to_vec();
     malformed.extend_from_slice(&[3]); // start of a frame, but truncated
 
-    let mut decoder = BenDecoder::new(malformed.as_slice()).unwrap();
+    let mut decoder = AssignmentReader::new(malformed.as_slice()).unwrap();
     let err = decoder.write_all_jsonl(Vec::new()).unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
 }
@@ -964,7 +964,7 @@ fn ben_decoder_count_samples_propagates_frame_errors() {
     let mut malformed = b"STANDARD BEN FILE".to_vec();
     malformed.extend_from_slice(&[3]);
 
-    let err = BenDecoder::new(malformed.as_slice())
+    let err = AssignmentReader::new(malformed.as_slice())
         .unwrap()
         .count_samples()
         .unwrap_err();
@@ -987,11 +987,11 @@ fn xben_frame_decoder_new_and_truncated_iteration_paths() {
     )
     .unwrap();
 
-    let mut frames = binary_ensemble::io::reader::XBenFrameDecoder::new(xz.as_slice()).unwrap();
+    let mut frames = binary_ensemble::io::reader::XZAssignmentFrameReader::new(xz.as_slice()).unwrap();
     assert!(frames.next().unwrap().is_ok());
 
     let trimmed = &xz[..xz.len() - 1];
-    let mut frames = binary_ensemble::io::reader::XBenFrameDecoder::new(trimmed).unwrap();
+    let mut frames = binary_ensemble::io::reader::XZAssignmentFrameReader::new(trimmed).unwrap();
     loop {
         match frames.next() {
             Some(Err(e)) => {
@@ -1070,7 +1070,7 @@ impl std::io::Read for FailAfterN {
 fn ben_decoder_frame_read_error_paths() {
     let banner = b"STANDARD BEN FILE".to_vec();
 
-    let err = BenDecoder::new(FailAfterN {
+    let err = AssignmentReader::new(FailAfterN {
         data: [banner.clone(), vec![3]].concat(),
         pos: 0,
         fail_at: 18,
@@ -1081,7 +1081,7 @@ fn ben_decoder_frame_read_error_paths() {
     .unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::Other);
 
-    let err = BenDecoder::new(FailAfterN {
+    let err = AssignmentReader::new(FailAfterN {
         data: [banner.clone(), vec![3, 3, 0]].concat(),
         pos: 0,
         fail_at: 20,
@@ -1092,7 +1092,7 @@ fn ben_decoder_frame_read_error_paths() {
     .unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::Other);
 
-    let err = BenDecoder::new(FailAfterN {
+    let err = AssignmentReader::new(FailAfterN {
         data: [banner.clone(), vec![3, 3, 0, 0, 0, 1]].concat(),
         pos: 0,
         fail_at: 23,
@@ -1114,7 +1114,7 @@ fn ben_decoder_mkv_count_read_error_path() {
     )
     .unwrap();
     let truncated = ben[..ben.len() - 1].to_vec();
-    let err = BenDecoder::new(truncated.as_slice())
+    let err = AssignmentReader::new(truncated.as_slice())
         .unwrap()
         .next()
         .unwrap()
@@ -1197,7 +1197,7 @@ fn ben_decoder_and_xben_decoder_count_samples() {
     )
     .unwrap();
     assert_eq!(
-        BenDecoder::new(ben.as_slice())
+        AssignmentReader::new(ben.as_slice())
             .unwrap()
             .count_samples()
             .unwrap(),
@@ -1215,7 +1215,7 @@ fn ben_decoder_and_xben_decoder_count_samples() {
     )
     .unwrap();
     assert_eq!(
-        XBenDecoder::new(xben.as_slice())
+        XZAssignmentReader::new(xben.as_slice())
             .unwrap()
             .count_samples()
             .unwrap(),
@@ -1237,7 +1237,7 @@ fn ben_decoder_and_xben_decoder_count_samples() {
     )
     .unwrap();
     assert_eq!(
-        XBenDecoder::new(twodelta_xben.as_slice())
+        XZAssignmentReader::new(twodelta_xben.as_slice())
             .unwrap()
             .count_samples()
             .unwrap(),
@@ -1307,7 +1307,7 @@ fn ben_decoder_subsample_helpers_work_on_public_api() {
     )
     .unwrap();
 
-    let mut by_indices = BenDecoder::new(ben.as_slice())
+    let mut by_indices = AssignmentReader::new(ben.as_slice())
         .unwrap()
         .into_subsample_by_indices(vec![4, 1, 1, 3]);
     let picked = collect_records(&mut by_indices).unwrap();
@@ -1316,7 +1316,7 @@ fn ben_decoder_subsample_helpers_work_on_public_api() {
         vec![1, 3, 4]
     );
 
-    let mut by_range = BenDecoder::new(ben.as_slice())
+    let mut by_range = AssignmentReader::new(ben.as_slice())
         .unwrap()
         .into_subsample_by_range(2, 3);
     let picked = collect_records(&mut by_range).unwrap();
@@ -1325,7 +1325,7 @@ fn ben_decoder_subsample_helpers_work_on_public_api() {
         vec![2, 3]
     );
 
-    let mut every = BenDecoder::new(ben.as_slice())
+    let mut every = AssignmentReader::new(ben.as_slice())
         .unwrap()
         .into_subsample_every(2, 2);
     let picked = collect_records(&mut every).unwrap();
@@ -1354,7 +1354,7 @@ fn twodelta_roundtrips_and_counts_repeated_frames() {
         encoder.finish().unwrap();
     }
 
-    let records = collect_records(BenDecoder::new(ben.as_slice()).unwrap()).unwrap();
+    let records = collect_records(AssignmentReader::new(ben.as_slice()).unwrap()).unwrap();
     assert_eq!(
         records,
         vec![
@@ -1368,10 +1368,10 @@ fn twodelta_roundtrips_and_counts_repeated_frames() {
     decode_ben_to_jsonl(ben.as_slice(), &mut jsonl).unwrap();
     assert_eq!(jsonl, jsonl_from_assignments(&assignments));
 
-    let frames = BenDecoder::new(ben.as_slice()).unwrap().into_frames();
+    let frames = AssignmentReader::new(ben.as_slice()).unwrap().into_frames();
     assert_eq!(
         collect_frames(
-            frames.map(|res| res.map(|f| (DecodeFrame::Ben(f.clone()), f.count as u16)))
+            frames.map(|res| res.map(|(f, cnt)| (DecodeFrame::Ben(f), cnt)))
         )
         .unwrap()
         .len(),
@@ -1449,22 +1449,22 @@ fn twodelta_supports_frame_iteration_counting_and_sample_extraction() {
     .unwrap();
 
     assert_eq!(
-        BenDecoder::new(ben.as_slice())
+        AssignmentReader::new(ben.as_slice())
             .unwrap()
             .count_samples()
             .unwrap(),
         4
     );
 
-    let frames: Vec<_> = BenDecoder::new(ben.as_slice())
+    let frames: Vec<_> = AssignmentReader::new(ben.as_slice())
         .unwrap()
         .into_frames()
         .collect::<std::io::Result<Vec<_>>>()
         .unwrap();
     assert_eq!(frames.len(), 3);
-    assert_eq!(frames[0].count, 2);
-    assert_eq!(frames[1].count, 1);
-    assert_eq!(frames[2].count, 1);
+    assert_eq!(frames[0].1, 2);
+    assert_eq!(frames[1].1, 1);
+    assert_eq!(frames[2].1, 1);
 
     let picked = extract_assignment_ben(ben.as_slice(), 3).unwrap();
     assert_eq!(picked, assignments[2]);

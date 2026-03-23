@@ -1,3 +1,7 @@
+use super::BenDecode;
+use byteorder::{BigEndian, ReadBytesExt};
+use std::io;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BenDecodeFrame {
     // The number of bits used to encode the maximum label value in this frame.
@@ -8,8 +12,6 @@ pub struct BenDecodeFrame {
     pub n_bytes: u32,
     // The full serialized BEN frame bytes, including the header and payload.
     pub raw_bytes: Vec<u8>,
-    // The number of times this frame was repeated
-    pub count: u16,
 }
 
 impl BenDecodeFrame {
@@ -52,5 +54,32 @@ impl PartialEq<Vec<u8>> for BenDecodeFrame {
 impl PartialEq<BenDecodeFrame> for Vec<u8> {
     fn eq(&self, other: &BenDecodeFrame) -> bool {
         *self == other.raw_bytes
+    }
+}
+
+impl BenDecode for BenDecodeFrame {
+    /// Read the next Standard BEN frame from the stream.
+    ///
+    /// Standard BEN frames have no trailing count; `count` is always set to 1.
+    /// Returns `Ok(None)` on a clean EOF at a frame boundary.
+    fn from_reader(reader: &mut impl io::Read) -> io::Result<Option<Self>> {
+        let max_val_bit_count = match reader.read_u8() {
+            Ok(v) => v,
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
+            Err(e) => return Err(e),
+        };
+
+        let max_len_bit_count = reader.read_u8()?;
+        let n_bytes = reader.read_u32::<BigEndian>()?;
+
+        let mut raw_bytes = vec![0u8; n_bytes as usize];
+        reader.read_exact(&mut raw_bytes)?;
+
+        Ok(Some(BenDecodeFrame {
+            max_val_bit_count,
+            max_len_bit_count,
+            n_bytes,
+            raw_bytes,
+        }))
     }
 }

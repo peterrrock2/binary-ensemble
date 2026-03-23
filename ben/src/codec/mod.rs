@@ -10,4 +10,7 @@ pub mod encode;
 pub mod frames;
 pub mod translate;
 
-pub use frames::{BenConstruct, BenDecodeFrame, BenEncodeFrame, MkvBenEncodeFrame, TwoDeltaEncodeFrame};
+pub use frames::{
+    BenConstruct, BenDecode, BenDecodeFrame, BenEncodeFrame, MkvBenDecodeFrame, MkvBenEncodeFrame,
+    TwoDeltaDecodeFrame, TwoDeltaEncodeFrame,
+};
