@@ -16,6 +16,32 @@ use std::{
 type DynReader = Box<dyn io::BufRead>;
 type DynWriter = Box<dyn Write>;
 
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq)]
+enum CliVariant {
+    /// Store each sample independently.
+    Standard,
+    /// Store one frame plus a repetition count for repeated consecutive samples.
+    #[value(alias = "mkv_chain")]
+    Mkvchain,
+    /// Store delta-encoded frames.
+    #[value(alias = "two_delta")]
+    Twodelta,
+}
+
+/// Resolve the BEN variant from the CLI flags.
+///
+/// `--variant` takes precedence over `--save-all`.
+/// If neither is given, defaults to MkvChain.
+fn resolve_variant(variant: Option<CliVariant>, save_all: bool) -> BenVariant {
+    match variant {
+        Some(CliVariant::Standard) => BenVariant::Standard,
+        Some(CliVariant::Mkvchain) => BenVariant::MkvChain,
+        Some(CliVariant::Twodelta) => BenVariant::TwoDelta,
+        None if save_all => BenVariant::Standard,
+        None => BenVariant::MkvChain,
+    }
+}
+
 #[derive(Parser, Debug, Clone, ValueEnum, PartialEq)]
 /// Defines the mode of operation.
 enum Mode {
@@ -85,8 +111,15 @@ struct Args {
     /// of that assignment vector (this is useful for Markov chian methods
     /// like ReCom). This flag will cause the program to forgo the repetition
     /// count and just save all of the assignment vectors as they are encountered.
+    /// Equivalent to `--variant standard`. Ignored if `--variant` is set.
     #[arg(short = 'a', long)]
     save_all: bool,
+    /// BEN variant to use when encoding.
+    /// Possible values: standard, mkvchain, twodelta.
+    /// Defaults to mkvchain if neither this nor --save-all is given.
+    /// Takes precedence over --save-all when both are provided.
+    #[arg(short = 't', long, value_enum)]
+    variant: Option<CliVariant>,
     /// If the output file already exists, this flag
     /// will cause the program to overwrite it without
     /// asking the user for confirmation.
@@ -286,13 +319,8 @@ pub fn run() {
                 },
             };
 
-            let possible_error = if args.save_all {
-                encode_jsonl_to_ben(reader, writer, BenVariant::Standard)
-            } else {
-                encode_jsonl_to_ben(reader, writer, BenVariant::MkvChain)
-            };
-
-            if let Err(err) = possible_error {
+            let variant = resolve_variant(args.variant, args.save_all);
+            if let Err(err) = encode_jsonl_to_ben(reader, writer, variant) {
                 eprintln!("Error: {:?}", err);
             }
         }
@@ -340,26 +368,15 @@ pub fn run() {
                     eprintln!("Error: {:?}", err);
                 }
             } else if jsonl_and_xben {
-                let possible_error = if args.save_all {
-                    encode_jsonl_to_xben(
-                        reader,
-                        writer,
-                        BenVariant::Standard,
-                        args.n_cpus,
-                        args.compression_level,
-                        args.chunk_size,
-                    )
-                } else {
-                    encode_jsonl_to_xben(
-                        reader,
-                        writer,
-                        BenVariant::MkvChain,
-                        args.n_cpus,
-                        args.compression_level,
-                        args.chunk_size,
-                    )
-                };
-                if let Err(e) = possible_error {
+                let variant = resolve_variant(args.variant, args.save_all);
+                if let Err(e) = encode_jsonl_to_xben(
+                    reader,
+                    writer,
+                    variant,
+                    args.n_cpus,
+                    args.compression_level,
+                    args.chunk_size,
+                ) {
                     eprintln!("Error: {:?}", e);
                 }
             } else {
@@ -577,6 +594,63 @@ mod tests {
         assert_eq!(args.output_file.as_deref(), Some("out.ben"));
         assert!(args.save_all);
         assert!(args.verbose);
+    }
+
+    #[test]
+    fn parse_variant_flag() {
+        let args = Args::try_parse_from([
+            "ben",
+            "--mode",
+            "encode",
+            "--variant",
+            "twodelta",
+            "input.jsonl",
+        ])
+        .unwrap();
+
+        assert_eq!(args.variant, Some(CliVariant::Twodelta));
+    }
+
+    #[test]
+    fn parse_variant_aliases() {
+        let args = Args::try_parse_from([
+            "ben",
+            "--mode",
+            "encode",
+            "--variant",
+            "mkv_chain",
+            "input.jsonl",
+        ])
+        .unwrap();
+        assert_eq!(args.variant, Some(CliVariant::Mkvchain));
+
+        let args = Args::try_parse_from([
+            "ben",
+            "--mode",
+            "encode",
+            "--variant",
+            "two_delta",
+            "input.jsonl",
+        ])
+        .unwrap();
+        assert_eq!(args.variant, Some(CliVariant::Twodelta));
+    }
+
+    #[test]
+    fn resolve_variant_precedence() {
+        // --variant takes precedence over --save-all
+        assert_eq!(
+            resolve_variant(Some(CliVariant::Twodelta), true),
+            BenVariant::TwoDelta
+        );
+        assert_eq!(
+            resolve_variant(Some(CliVariant::Mkvchain), true),
+            BenVariant::MkvChain
+        );
+        // --save-all alone means Standard
+        assert_eq!(resolve_variant(None, true), BenVariant::Standard);
+        // neither means MkvChain
+        assert_eq!(resolve_variant(None, false), BenVariant::MkvChain);
     }
 
     #[test]
