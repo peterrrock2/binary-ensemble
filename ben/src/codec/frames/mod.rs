@@ -5,6 +5,9 @@ mod mkv_encode;
 mod twodelta_decode;
 mod twodelta_encode;
 
+#[cfg(test)]
+mod tests;
+
 pub use ben_decode::BenDecodeFrame;
 pub use ben_encode::BenEncodeFrame;
 pub use mkv_decode::MkvBenDecodeFrame;

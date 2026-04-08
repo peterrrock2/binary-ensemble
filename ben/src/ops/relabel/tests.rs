@@ -566,3 +566,23 @@ fn test_relabel_lines_with_map_propagate_non_eof_reader_error() {
     .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::Other);
 }
+
+#[test]
+fn relabel_error_io_passthrough() {
+    let inner = io::Error::new(io::ErrorKind::BrokenPipe, "pipe broke");
+    let relabel_err = super::errors::RelabelError::Io(inner);
+    let io_err: io::Error = relabel_err.into();
+    assert_eq!(io_err.kind(), io::ErrorKind::BrokenPipe);
+    assert_eq!(io_err.to_string(), "pipe broke");
+}
+
+#[test]
+fn relabel_error_non_io_becomes_invalid_input() {
+    let relabel_err = super::errors::RelabelError::NonContiguousMap {
+        max_key: 10,
+        missing: 3,
+    };
+    let io_err: io::Error = relabel_err.into();
+    assert_eq!(io_err.kind(), io::ErrorKind::InvalidInput);
+    assert!(io_err.to_string().contains("contiguous"));
+}

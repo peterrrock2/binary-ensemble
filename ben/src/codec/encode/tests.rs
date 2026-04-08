@@ -4,7 +4,7 @@ use crate::util::rle::rle_to_vec;
 use crate::BenVariant;
 use serde_json::json;
 use serde_json::Value;
-use std::io::{BufRead, Write};
+use std::io::{self, BufRead, Write};
 
 #[test]
 fn test_encode_jsonl_to_ben_underflow() {
@@ -671,4 +671,245 @@ fn encode_jsonl_to_ben32_multiple_simple_lines() {
         panic!("Error {}", e);
     }
     assert_eq!(buffer, expected_output)
+}
+
+#[test]
+fn encode_ben32_line_missing_assignment_field() {
+    let data = json!({"sample": 1});
+    let err = encode_ben32_line(data).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("assignment"));
+}
+
+#[test]
+fn encode_ben32_line_non_integer_value() {
+    let data = json!({"assignment": ["not_a_number"]});
+    let err = encode_ben32_line(data).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn encode_ben32_line_value_too_large_for_u16() {
+    let data = json!({"assignment": [100000]});
+    let err = encode_ben32_line(data).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("too large"));
+}
+
+#[test]
+fn encode_ben32_assignments_empty_vec() {
+    let result = encode_ben32_assignments(Vec::<u16>::new()).unwrap();
+    // Empty vec produces only the terminator
+    assert_eq!(result, vec![0, 0, 0, 0]);
+}
+
+#[test]
+fn encode_ben32_assignments_single_element() {
+    let result = encode_ben32_assignments(vec![5u16]).unwrap();
+    // (5 << 16) | 1 = 0x00050001, then terminator
+    assert_eq!(result, vec![0, 5, 0, 1, 0, 0, 0, 0]);
+}
+
+#[test]
+fn encode_jsonl_to_ben_invalid_json_errors() {
+    let input = b"not valid json\n";
+    let mut output = Vec::new();
+    let err = encode_jsonl_to_ben(input.as_slice(), &mut output, BenVariant::Standard).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn encode_jsonl_to_xben_roundtrip() {
+    let jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
+{"assignment":[2,2,1,1],"sample":2}
+"#;
+    let mut xben = Vec::new();
+    encode_jsonl_to_xben(
+        jsonl.as_bytes(),
+        &mut xben,
+        BenVariant::Standard,
+        Some(1),
+        Some(1),
+        None,
+    )
+    .unwrap();
+    assert!(!xben.is_empty());
+}
+
+#[test]
+fn encode_jsonl_to_xben_with_chunk_size() {
+    let jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
+{"assignment":[2,2,1,1],"sample":2}
+"#;
+    let mut xben = Vec::new();
+    encode_jsonl_to_xben(
+        jsonl.as_bytes(),
+        &mut xben,
+        BenVariant::Standard,
+        Some(1),
+        Some(1),
+        Some(2),
+    )
+    .unwrap();
+    assert!(!xben.is_empty());
+}
+
+#[test]
+fn encode_jsonl_to_xben_invalid_json_errors() {
+    let input = b"not valid json\n";
+    let mut output = Vec::new();
+    let err = encode_jsonl_to_xben(
+        input.as_slice(),
+        &mut output,
+        BenVariant::Standard,
+        Some(1),
+        Some(1),
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn encode_jsonl_to_xben_mkv_variant() {
+    let jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
+{"assignment":[1,1,2,2],"sample":2}
+{"assignment":[2,2,1,1],"sample":3}
+"#;
+    let mut xben = Vec::new();
+    encode_jsonl_to_xben(
+        jsonl.as_bytes(),
+        &mut xben,
+        BenVariant::MkvChain,
+        Some(1),
+        Some(1),
+        None,
+    )
+    .unwrap();
+    assert!(!xben.is_empty());
+}
+
+#[test]
+fn twodelta_encode_with_pair_and_mask_hints() {
+    use crate::codec::encode::encode_twodelta_frame_with_hint;
+    use std::collections::HashMap;
+
+    let prev = vec![1u16, 1, 2, 2];
+    let curr = vec![2u16, 1, 2, 1];
+    let mut masks: HashMap<u16, Vec<usize>> = HashMap::new();
+    masks.insert(1, vec![0, 1]);
+    masks.insert(2, vec![2, 3]);
+
+    let frame =
+        encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
+            .unwrap();
+    assert_eq!(frame.pair, (2, 1));
+    assert!(!frame.run_length_vector.is_empty());
+    // Verify masks were updated
+    assert_eq!(masks[&2], vec![0, 2]);
+    assert_eq!(masks[&1], vec![1, 3]);
+}
+
+#[test]
+fn twodelta_encode_with_mask_hint_only() {
+    use crate::codec::encode::encode_twodelta_frame_with_hint;
+    use std::collections::HashMap;
+
+    let prev = vec![1u16, 1, 2, 2];
+    let curr = vec![2u16, 1, 2, 1];
+    let mut masks: HashMap<u16, Vec<usize>> = HashMap::new();
+    masks.insert(1, vec![0, 1]);
+    masks.insert(2, vec![2, 3]);
+
+    let frame = encode_twodelta_frame_with_hint(&prev, &curr, None, Some(&mut masks), None)
+        .unwrap();
+    assert_eq!(frame.pair, (2, 1));
+}
+
+#[test]
+fn twodelta_encode_length_mismatch() {
+    use crate::codec::encode::encode_twodelta_frame_with_hint;
+
+    let prev = vec![1u16, 1, 2];
+    let curr = vec![2u16, 1, 2, 1];
+    let err = encode_twodelta_frame_with_hint(&prev, &curr, None, None, None).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn twodelta_encode_hint_without_masks_errors() {
+    use crate::codec::encode::encode_twodelta_frame_with_hint;
+
+    let prev = vec![1u16, 1, 2, 2];
+    let curr = vec![2u16, 1, 2, 1];
+    let err =
+        encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), None, None).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn twodelta_encode_identical_pair_hint_errors() {
+    use crate::codec::encode::encode_twodelta_frame_with_hint;
+    use std::collections::HashMap;
+
+    let prev = vec![1u16, 1, 2, 2];
+    let curr = vec![2u16, 1, 2, 1];
+    let mut masks = HashMap::new();
+    masks.insert(1u16, vec![0, 1]);
+
+    let err =
+        encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 1)), Some(&mut masks), None)
+            .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn twodelta_encode_identical_assignments_errors() {
+    use crate::codec::encode::encode_twodelta_frame;
+
+    let a = vec![1u16, 1, 2, 2];
+    let err = encode_twodelta_frame(&a, &a, None).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn twodelta_encode_too_many_ids_errors() {
+    use crate::codec::encode::encode_twodelta_frame;
+
+    let prev = vec![1u16, 2, 3, 4];
+    let curr = vec![2u16, 1, 4, 3]; // 4 ids changing
+    let err = encode_twodelta_frame(&prev, &curr, None).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn twodelta_encode_mask_hint_identical_errors() {
+    use crate::codec::encode::encode_twodelta_frame_with_hint;
+    use std::collections::HashMap;
+
+    let a = vec![1u16, 1, 2, 2];
+    let mut masks: HashMap<u16, Vec<usize>> = HashMap::new();
+    masks.insert(1, vec![0, 1]);
+    masks.insert(2, vec![2, 3]);
+
+    let err =
+        encode_twodelta_frame_with_hint(&a, &a, None, Some(&mut masks), None).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn encode_error_io_passthrough() {
+    let inner = io::Error::new(io::ErrorKind::BrokenPipe, "pipe broke");
+    let encode_err = super::errors::EncodeError::Io(inner);
+    let io_err: io::Error = encode_err.into();
+    assert_eq!(io_err.kind(), io::ErrorKind::BrokenPipe);
+    assert_eq!(io_err.to_string(), "pipe broke");
+}
+
+#[test]
+fn encode_error_non_io_becomes_invalid_data() {
+    let encode_err = super::errors::EncodeError::TwoDeltaTooManyIds;
+    let io_err: io::Error = encode_err.into();
+    assert_eq!(io_err.kind(), io::ErrorKind::InvalidData);
+    assert!(io_err.to_string().contains("two distinct"));
 }

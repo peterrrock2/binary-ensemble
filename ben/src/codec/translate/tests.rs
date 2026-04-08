@@ -331,3 +331,22 @@ fn test_ben_to_ben32_lines_mkv_roundtrip() {
 
     assert_eq!(round, ben[17..]);
 }
+
+#[test]
+fn test_ben_to_ben32_lines_rejects_twodelta() {
+    let ben_data = vec![2, 3, 0, 0, 0, 2, 0xAB, 0xCD];
+    let mut output = Vec::new();
+    let err = ben_to_ben32_lines(ben_data.as_slice(), &mut output, BenVariant::TwoDelta)
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::Unsupported);
+    assert!(err.to_string().contains("TwoDelta"));
+}
+
+#[test]
+fn test_translate_error_io_passthrough() {
+    let inner = io::Error::new(io::ErrorKind::BrokenPipe, "pipe broke");
+    let translate_err = super::errors::TranslateError::Io(inner);
+    let io_err: io::Error = translate_err.into();
+    assert_eq!(io_err.kind(), io::ErrorKind::BrokenPipe);
+    assert_eq!(io_err.to_string(), "pipe broke");
+}

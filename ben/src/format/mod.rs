@@ -3,3 +3,6 @@
 pub mod banners;
 pub mod errors;
 pub use errors::FormatError;
+
+#[cfg(test)]
+mod tests;
