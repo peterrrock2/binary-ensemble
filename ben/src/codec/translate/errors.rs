@@ -13,7 +13,10 @@ pub enum TranslateError {
     )]
     Ben32MissingTerminator { actual: [u8; 4], offset: usize },
 
-    #[error("TwoDelta BEN streams cannot be translated to ben32/XBEN via this path")]
+    #[error(
+        "TwoDelta BEN streams cannot be translated to ben32; \
+         use XZAssignmentWriter/XZAssignmentReader for TwoDelta compressed I/O"
+    )]
     TwoDeltaUnsupported,
 
     #[error("IO error: {0}")]

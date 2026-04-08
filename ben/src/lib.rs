@@ -56,6 +56,6 @@ pub enum BenVariant {
     Standard,
     /// Store one frame plus a repetition count for repeated consecutive samples.
     MkvChain,
-    /// Reserved for a future delta-based variant.
+    /// Store delta-encoded frames for improved compression of correlated samples.
     TwoDelta,
 }

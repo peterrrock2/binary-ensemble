@@ -1,4 +1,10 @@
 //! Translation helpers between BEN and ben32 representations.
+//!
+//! The ben32 intermediate format is used only by the Standard and MkvChain
+//! variants. TwoDelta streams use a separate columnar layout and bypass
+//! ben32 entirely — see [`XZAssignmentWriter`](crate::io::writer::XZAssignmentWriter)
+//! and [`XZAssignmentReader`](crate::io::reader::XZAssignmentReader) for the
+//! TwoDelta compressed-I/O path.
 
 mod errors;
 use errors::TranslateError;
@@ -58,6 +64,11 @@ fn ben32_to_ben_line(ben32_vec: Vec<u8>) -> io::Result<Vec<u8>> {
 ///
 /// This is primarily used while decoding XBEN, where the compressed payload is
 /// stored in ben32 form.
+///
+/// Only the [`Standard`](BenVariant::Standard) and
+/// [`MkvChain`](BenVariant::MkvChain) variants are supported.
+/// TwoDelta streams use a different compressed layout and do not pass through
+/// ben32; see the module-level documentation for details.
 ///
 /// # Arguments
 ///
@@ -146,6 +157,12 @@ fn ben_to_ben32_line<R: Read>(
 ///
 /// This is the format used inside XBEN after the outer XZ compression layer is
 /// removed.
+///
+/// Only the [`Standard`](BenVariant::Standard) and
+/// [`MkvChain`](BenVariant::MkvChain) variants are supported.
+/// Passing [`TwoDelta`](BenVariant::TwoDelta) returns an error. TwoDelta
+/// streams use a separate columnar layout and bypass ben32 entirely; see
+/// the module-level documentation for details.
 ///
 /// # Arguments
 ///
