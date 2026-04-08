@@ -913,3 +913,277 @@ fn encode_error_non_io_becomes_invalid_data() {
     assert_eq!(io_err.kind(), io::ErrorKind::InvalidData);
     assert!(io_err.to_string().contains("two distinct"));
 }
+
+// ── XBEN roundtrip with content verification ────────────────────────────────
+
+#[test]
+fn encode_jsonl_to_xben_roundtrip_verifies_content() {
+    use crate::codec::decode::decode_xben_to_jsonl;
+    use std::io::BufReader;
+    use serde_json::Value;
+
+    let jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
+{"assignment":[2,2,1,1],"sample":2}
+"#;
+    let mut xben = Vec::new();
+    encode_jsonl_to_xben(
+        jsonl.as_bytes(),
+        &mut xben,
+        BenVariant::Standard,
+        Some(1),
+        Some(1),
+        None,
+    )
+    .unwrap();
+
+    let mut decoded = Vec::new();
+    decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut decoded).unwrap();
+    let output_str = String::from_utf8(decoded).unwrap();
+    let lines: Vec<&str> = output_str.trim().split('\n').collect();
+    assert_eq!(lines.len(), 2);
+    let v1: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(v1["assignment"], serde_json::json!([1, 1, 2, 2]));
+    let v2: Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(v2["assignment"], serde_json::json!([2, 2, 1, 1]));
+}
+
+#[test]
+fn encode_jsonl_to_xben_mkv_verifies_content() {
+    use crate::codec::decode::decode_xben_to_jsonl;
+    use std::io::BufReader;
+    use serde_json::Value;
+
+    let jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
+{"assignment":[1,1,2,2],"sample":2}
+{"assignment":[2,2,1,1],"sample":3}
+"#;
+    let mut xben = Vec::new();
+    encode_jsonl_to_xben(
+        jsonl.as_bytes(),
+        &mut xben,
+        BenVariant::MkvChain,
+        Some(1),
+        Some(1),
+        None,
+    )
+    .unwrap();
+
+    let mut decoded = Vec::new();
+    decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut decoded).unwrap();
+    let output_str = String::from_utf8(decoded).unwrap();
+    let lines: Vec<&str> = output_str.trim().split('\n').collect();
+    assert_eq!(lines.len(), 3);
+    // First two should be identical (MkvChain de-duplication)
+    let v1: Value = serde_json::from_str(lines[0]).unwrap();
+    let v2: Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(v1["assignment"], serde_json::json!([1, 1, 2, 2]));
+    assert_eq!(v2["assignment"], serde_json::json!([1, 1, 2, 2]));
+    let v3: Value = serde_json::from_str(lines[2]).unwrap();
+    assert_eq!(v3["assignment"], serde_json::json!([2, 2, 1, 1]));
+}
+
+// ── TwoDelta with explicit count parameter ──────────────────────────────────
+
+#[test]
+fn twodelta_encode_with_count() {
+    use crate::codec::encode::encode_twodelta_frame;
+    let prev = vec![1u16, 1, 2, 2];
+    let next = vec![2u16, 1, 2, 1];
+    let frame = encode_twodelta_frame(&prev, &next, Some(5)).unwrap();
+    // Verify the count is embedded in the raw_bytes tail
+    let raw = &frame.raw_bytes;
+    let count = u16::from_be_bytes([raw[raw.len() - 2], raw[raw.len() - 1]]);
+    assert_eq!(count, 5);
+}
+
+// ── TwoDelta run_length_vector verification ─────────────────────────────────
+
+#[test]
+fn twodelta_encode_run_lengths_correct() {
+    use crate::codec::encode::encode_twodelta_frame;
+    // prev: [1,1,2,2], next: [2,1,2,1]
+    // pair positions (1 or 2): 0,1,2,3
+    // In next: pos0=2, pos1=1, pos2=2, pos3=1 → runs of (2,1,2,1) = [1,1,1,1]
+    // pair.0 = value at first pair position in next = 2
+    let prev = vec![1u16, 1, 2, 2];
+    let next = vec![2u16, 1, 2, 1];
+    let frame = encode_twodelta_frame(&prev, &next, None).unwrap();
+    assert_eq!(frame.pair, (2, 1));
+    assert_eq!(frame.run_length_vector, vec![1, 1, 1, 1]);
+}
+
+#[test]
+fn twodelta_encode_run_lengths_with_non_pair_gaps() {
+    use crate::codec::encode::encode_twodelta_frame;
+    // prev: [1,3,2,3,1], next: [2,3,1,3,2]
+    // pair=(1,2), pair positions: 0,2,4 (positions with value 1 or 2)
+    // In next: pos0=2, pos2=1, pos4=2 → runs [1,1,1]
+    let prev = vec![1u16, 3, 2, 3, 1];
+    let next = vec![2u16, 3, 1, 3, 2];
+    let frame = encode_twodelta_frame(&prev, &next, None).unwrap();
+    assert_eq!(frame.run_length_vector, vec![1, 1, 1]);
+}
+
+// ── TwoDelta encode→decode roundtrip ────────────────────────────────────────
+
+#[test]
+fn twodelta_encode_decode_roundtrip_via_codec() {
+    use crate::codec::decode::decode_twodelta_frame;
+    use crate::codec::encode::encode_twodelta_frame;
+
+    let prev = vec![1u16, 1, 2, 2, 1, 2, 1, 2];
+    let next = vec![2u16, 2, 1, 1, 1, 2, 1, 2]; // first 4 positions swap
+    let frame = encode_twodelta_frame(&prev, &next, None).unwrap();
+    let decoded = decode_twodelta_frame(prev, &frame).unwrap();
+    assert_eq!(decoded, next);
+}
+
+// ── TwoDelta error variants ─────────────────────────────────────────────────
+
+#[test]
+fn twodelta_encode_missing_mask_errors() {
+    use crate::codec::encode::encode_twodelta_frame_with_hint;
+    use std::collections::HashMap;
+
+    let prev = vec![1u16, 1, 2, 2];
+    let curr = vec![2u16, 1, 2, 1];
+    let mut masks: HashMap<u16, Vec<usize>> = HashMap::new();
+    masks.insert(1, vec![0, 1]);
+    // Missing mask for value 2
+
+    let err =
+        encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
+            .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn twodelta_encode_empty_mask_errors() {
+    use crate::codec::encode::encode_twodelta_frame_with_hint;
+    use std::collections::HashMap;
+
+    let prev = vec![1u16, 1, 2, 2];
+    let curr = vec![2u16, 1, 2, 1];
+    let mut masks: HashMap<u16, Vec<usize>> = HashMap::new();
+    masks.insert(1, vec![0, 1]);
+    masks.insert(2, vec![]); // Empty mask
+
+    let err =
+        encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
+            .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn twodelta_encode_mask_out_of_pair_errors() {
+    use crate::codec::encode::encode_twodelta_frame_with_hint;
+    use std::collections::HashMap;
+
+    // prev has value 3 at position 2, but mask claims it's part of pair (1,2)
+    let prev = vec![1u16, 1, 3, 2];
+    let curr = vec![2u16, 1, 3, 1];
+    let mut masks: HashMap<u16, Vec<usize>> = HashMap::new();
+    masks.insert(1, vec![0, 1]);
+    masks.insert(2, vec![2, 3]); // position 2 in prev is actually 3, not 2
+
+    let err =
+        encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
+            .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+// ── JSON encoding edge cases ────────────────────────────────────────────────
+
+#[test]
+fn encode_ben32_line_negative_value_errors() {
+    let data = serde_json::json!({"assignment": [-1, 2, 3]});
+    let err = encode_ben32_line(data).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn encode_ben32_line_float_value_errors() {
+    let data = serde_json::json!({"assignment": [1.5, 2, 3]});
+    let err = encode_ben32_line(data).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn encode_ben32_line_null_value_errors() {
+    let data = serde_json::json!({"assignment": [null, 2, 3]});
+    let err = encode_ben32_line(data).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn encode_ben32_line_value_at_u16_max() {
+    let data = serde_json::json!({"assignment": [65535, 1]});
+    let result = encode_ben32_line(data).unwrap();
+    // (65535 << 16) | 1 → 0xFFFF0001 then (1 << 16) | 1 → 0x00010001 then terminator
+    assert_eq!(
+        result,
+        vec![0xFF, 0xFF, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0]
+    );
+}
+
+// ── Encoding empty and single-element JSONL ─────────────────────────────────
+
+#[test]
+fn encode_jsonl_to_ben_empty_input() {
+    let jsonl = b"";
+    let mut output = Vec::new();
+    encode_jsonl_to_ben(jsonl.as_slice(), &mut output, BenVariant::Standard).unwrap();
+    // Should only have the banner
+    assert_eq!(output, b"STANDARD BEN FILE");
+}
+
+#[test]
+fn encode_jsonl_to_ben_single_sample() {
+    use crate::codec::decode::decode_ben_to_jsonl;
+    use serde_json::Value;
+
+    let jsonl = b"{\"assignment\":[42],\"sample\":1}\n";
+    let mut ben = Vec::new();
+    encode_jsonl_to_ben(jsonl.as_slice(), &mut ben, BenVariant::Standard).unwrap();
+
+    let mut decoded = Vec::new();
+    decode_ben_to_jsonl(ben.as_slice(), &mut decoded).unwrap();
+    let v: Value = serde_json::from_slice(decoded.trim_ascii()).unwrap();
+    assert_eq!(v["assignment"], serde_json::json!([42]));
+}
+
+// ── TwoDelta JSONL encoding edge cases ──────────────────────────────────────
+
+#[test]
+fn encode_jsonl_to_xben_twodelta_roundtrip() {
+    use crate::codec::decode::decode_xben_to_jsonl;
+    use std::io::BufReader;
+    use serde_json::Value;
+
+    let jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
+{"assignment":[2,1,2,1],"sample":2}
+{"assignment":[2,2,1,1],"sample":3}
+"#;
+    let mut xben = Vec::new();
+    encode_jsonl_to_xben(
+        jsonl.as_bytes(),
+        &mut xben,
+        BenVariant::TwoDelta,
+        Some(1),
+        Some(1),
+        None,
+    )
+    .unwrap();
+
+    let mut decoded = Vec::new();
+    decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut decoded).unwrap();
+    let output_str = String::from_utf8(decoded).unwrap();
+    let lines: Vec<&str> = output_str.trim().split('\n').collect();
+    assert_eq!(lines.len(), 3);
+    let v1: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(v1["assignment"], serde_json::json!([1, 1, 2, 2]));
+    let v2: Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(v2["assignment"], serde_json::json!([2, 1, 2, 1]));
+    let v3: Value = serde_json::from_str(lines[2]).unwrap();
+    assert_eq!(v3["assignment"], serde_json::json!([2, 2, 1, 1]));
+}
