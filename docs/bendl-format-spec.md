@@ -78,7 +78,7 @@ offset  size  field
 - `minor_version`
   - initial value: `0`
 - `flags`
-  - bundle-level feature flags
+  - bundle-level feature flags (64 bits available)
 - `complete`
   - `0` means incomplete/unfinalized
   - `1` means finalized
@@ -96,7 +96,7 @@ offset  size  field
   - `0` if unknown/unfinalized
 - `sample_count`
   - number of expanded samples in the assignment stream
-  - `u64::MAX` if unknown/unfinalized
+  - `-1` if unknown/unfinalized
 - `reserved`
   - reserved for future extension
 
@@ -294,14 +294,14 @@ pub struct BendlHeader {
     pub magic: [u8; 8],
     pub major_version: u16,
     pub minor_version: u16,
-    pub flags: u16,
+    pub flags: u64,
     pub complete: u8,
     pub assignment_format: u8,
     pub directory_offset: u64,
     pub directory_len: u64,
     pub stream_offset: u64,
     pub stream_len: u64,
-    pub sample_count: u64,
+    pub sample_count: i28,
     pub reserved: u64,
 }
 
