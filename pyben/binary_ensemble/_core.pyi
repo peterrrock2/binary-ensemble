@@ -138,7 +138,7 @@ class PyBenEncoder:
         self,
         file_path: str | Path,
         overwrite: bool = False,
-        variant: Literal["standard", "mkv_chain"] | None = None,
+        variant: Literal["standard", "mkv_chain", "twodelta"] | None = None,
     ) -> None:
         """Initializes the encoder and opens the underlying file.
 
@@ -148,7 +148,7 @@ class PyBenEncoder:
             Path to the output BEN file.
         overwrite :
             Whether to overwrite the output file if it exists. Defaults to False.
-        variant : {"standard", "mkv_chain"}, optional
+        variant : {"standard", "mkv_chain", "twodelta"}, optional
             Select BEN variant. If None, defaults to "mkv_chain".
 
         Raises
@@ -247,7 +247,7 @@ def compress_jsonl_to_ben(
     in_file: str | Path,
     out_file: str | Path,
     overwrite: bool = False,
-    variant: Literal["standard", "mkv_chain"] | None = None,
+    variant: Literal["standard", "mkv_chain", "twodelta"] | None = None,
 ) -> None:
     """Converts a JSONL file to a BEN file.
 
@@ -259,7 +259,7 @@ def compress_jsonl_to_ben(
         Path to the output BEN file.
     overwrite :
         Whether to overwrite the output file if it exists. Defaults to False.
-    variant : {"standard", "mkv_chain"}, optional
+    variant : {"standard", "mkv_chain", "twodelta"}, optional
         Select BEN variant. If None, defaults to "mkv_chain".
 
     Raises
@@ -275,7 +275,7 @@ def compress_jsonl_to_xben(
     in_file: str | Path,
     out_file: str | Path,
     overwrite: bool = False,
-    variant: Literal["standard", "mkv_chain"] | None = None,
+    variant: Literal["standard", "mkv_chain", "twodelta"] | None = None,
     n_threads: int | None = None,
     compression_level: int | None = None,
 ) -> None:
@@ -289,7 +289,7 @@ def compress_jsonl_to_xben(
         Path to the output XBEN file.
     overwrite :
         Whether to overwrite the output file if it exists. Defaults to False.
-    variant : {"standard", "mkv_chain"}, optional
+    variant : {"standard", "mkv_chain", "twodelta"}, optional
         Select BEN variant. If None, defaults to "mkv_chain".
     n_threads :
         Number of threads to use for compression. If None, defaults to the number of CPU cores.

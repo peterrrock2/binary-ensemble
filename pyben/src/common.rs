@@ -9,8 +9,9 @@ pub fn parse_variant(variant: Option<&str>) -> PyResult<BenVariant> {
     match variant {
         Some("standard") => Ok(BenVariant::Standard),
         Some("mkv_chain") | Some("markov") | None => Ok(BenVariant::MkvChain),
+        Some("twodelta") | Some("two_delta") => Ok(BenVariant::TwoDelta),
         Some(other) => Err(PyValueError::new_err(format!(
-            "Unknown variant: {other}. Supported variants are 'standard' and 'mkv_chain'."
+            "Unknown variant: {other}. Supported variants are 'standard', 'mkv_chain', and 'twodelta'."
         ))),
     }
 }
