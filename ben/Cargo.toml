@@ -17,6 +17,7 @@ name = "binary_ensemble"
 [dependencies]
 byteorder = "1.5.0"
 clap = { version = "^4.5.2", features = ["derive"] }
+indicatif = "0.17"
 pcompress = "1.0.7"
 petgraph = "0.8.3"
 pipe = "0.4.0"
