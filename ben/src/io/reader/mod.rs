@@ -1,7 +1,8 @@
 pub mod assignment_reader;
 pub mod errors;
 pub mod subsample;
-pub(crate) mod tests;
+#[cfg(test)]
+mod tests;
 pub(crate) mod twodelta;
 pub mod xz_assignment_reader;
 

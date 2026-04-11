@@ -3,7 +3,10 @@ mod permutation;
 mod sort;
 
 use super::nx_formats::NxAdjEntry;
-use petgraph::graph::{DiGraph, Graph, UnGraph};
+use petgraph::graph::Graph;
+#[cfg(test)]
+use petgraph::graph::{DiGraph, UnGraph};
+#[cfg(test)]
 use petgraph::{Directed, Undirected};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -40,12 +43,16 @@ where
 }
 
 /// Convenience alias for a directed [`PetxGraph`].
+#[cfg(test)]
 pub(crate) type PetxDiGraph = PetxGraph<Directed>;
 /// Convenience alias for an undirected [`PetxGraph`].
+#[cfg(test)]
 pub(crate) type PetxUnGraph = PetxGraph<Undirected>;
 /// Convenience alias for the inner directed petgraph type.
+#[cfg(test)]
 pub(crate) type PetxDiInnerGraph = DiGraph<PetxNode, NxAdjEntry>;
 /// Convenience alias for the inner undirected petgraph type.
+#[cfg(test)]
 pub(crate) type PetxUnInnerGraph = UnGraph<PetxNode, NxAdjEntry>;
 
 pub(in crate::json::graph) use permutation::apply_permutation;
