@@ -76,6 +76,37 @@ impl DecoderBackend {
     }
 }
 
+/// Stored form of the most recently installed subsampling selection.
+///
+/// The iterator is single-pass, so to support restarting iteration
+/// (e.g. `for x in dec: ... ; for x in dec: ...`) the decoder remembers
+/// the active selection and rebuilds a fresh frame decoder on every
+/// call to `__iter__`.
+#[derive(Clone)]
+enum ActiveSelection {
+    None,
+    Indices(Vec<usize>),
+    Range { start: usize, end: usize },
+    Every { step: usize, offset: usize },
+}
+
+impl ActiveSelection {
+    fn to_selection(&self) -> Option<Selection> {
+        match self {
+            Self::None => None,
+            Self::Indices(v) => Some(Selection::Indices(v.clone().into_iter().peekable())),
+            Self::Range { start, end } => Some(Selection::Range {
+                start: *start,
+                end: *end,
+            }),
+            Self::Every { step, offset } => Some(Selection::Every {
+                step: *step,
+                offset: *offset,
+            }),
+        }
+    }
+}
+
 #[pyclass(module = "binary_ensemble", unsendable)]
 pub struct PyBenDecoder {
     path: PathBuf,
@@ -86,6 +117,7 @@ pub struct PyBenDecoder {
     remaining_count: u16,
     base_len: Option<usize>,
     len_hint: Option<usize>,
+    active_selection: ActiveSelection,
 }
 
 #[pymethods]
@@ -161,9 +193,13 @@ impl PyBenDecoder {
                 remaining_count: 0,
                 base_len: None,
                 len_hint: None,
+                active_selection: ActiveSelection::None,
             })
         } else {
-            let iter = build_plain_iter(py, &file_path, parsed_mode)?;
+            if matches!(parsed_mode, DecoderMode::XBen) {
+                warn_xben_startup(py)?;
+            }
+            let iter = build_plain_iter(&file_path, parsed_mode)?;
             Ok(Self {
                 path: file_path,
                 mode: parsed_mode,
@@ -173,11 +209,40 @@ impl PyBenDecoder {
                 remaining_count: 0,
                 base_len: None,
                 len_hint: None,
+                active_selection: ActiveSelection::None,
             })
         }
     }
 
-    fn __iter__(slf: PyRefMut<Self>) -> PyResult<Py<Self>> {
+    /// Return `self` as an iterator, rebuilding the underlying frame
+    /// walker so iteration can be restarted.
+    ///
+    /// Calling `iter(dec)` (or using `for x in dec: …`) more than once
+    /// is supported: each call reopens the stream region from the start
+    /// and, if a subsample selection is active, reapplies it.
+    fn __iter__(mut slf: PyRefMut<Self>) -> PyResult<Py<Self>> {
+        slf.current_assignment = None;
+        slf.remaining_count = 0;
+
+        let path = slf.path.clone();
+        let mode = slf.mode;
+        let selection = slf.active_selection.clone();
+
+        let new_iter: DynIter = match selection {
+            ActiveSelection::None => match &slf.backend {
+                DecoderBackend::Plain => build_plain_iter(&path, mode)?,
+                DecoderBackend::Bundle(state) => build_bundle_iter(&path, state, mode)?,
+            },
+            sel => {
+                let frames = build_frames_for_subsample(&path, mode, &slf.backend)?;
+                let ben_sel = sel
+                    .to_selection()
+                    .expect("active subsample selection must be convertible");
+                Box::new(SubsampleFrameDecoder::new(frames, ben_sel))
+            }
+        };
+
+        slf.iter = new_iter;
         Ok(slf.into())
     }
 
@@ -266,6 +331,7 @@ impl PyBenDecoder {
         }
         let len_hint = indices.len();
 
+        slf.active_selection = ActiveSelection::Indices(indices.clone());
         let sel = Selection::Indices(indices.into_iter().peekable());
         reset_with_selection(&mut slf, sel, len_hint)?;
         Ok(slf.into())
@@ -291,6 +357,7 @@ impl PyBenDecoder {
             )));
         }
 
+        slf.active_selection = ActiveSelection::Range { start, end };
         let sel = Selection::Range { start, end };
         let len_hint = end - start + 1;
         reset_with_selection(&mut slf, sel, len_hint)?;
@@ -314,6 +381,7 @@ impl PyBenDecoder {
                 base_len
             )));
         }
+        slf.active_selection = ActiveSelection::Every { step, offset };
         let sel = Selection::Every { step, offset };
         let len_hint = (base_len + step - 1 - (offset - 1)) / step;
         reset_with_selection(&mut slf, sel, len_hint)?;
@@ -533,11 +601,7 @@ fn detect_is_bundle(path: &Path) -> io::Result<bool> {
 }
 
 /// Build a plain-stream iterator from `path` using `mode`.
-fn build_plain_iter(
-    py: Python<'_>,
-    path: &Path,
-    mode: DecoderMode,
-) -> PyResult<DynIter> {
+fn build_plain_iter(path: &Path, mode: DecoderMode) -> PyResult<DynIter> {
     let reader = open_input(&path.to_path_buf())?;
     match mode {
         DecoderMode::Ben => {
@@ -546,7 +610,6 @@ fn build_plain_iter(
             Ok(Box::new(ben))
         }
         DecoderMode::XBen => {
-            warn_xben_startup(py)?;
             let xben = XZAssignmentReader::new(reader)
                 .map_err(|e| PyException::new_err(format!("Failed to create XBenDecoder: {e}")))?;
             Ok(Box::new(xben))

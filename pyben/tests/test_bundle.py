@@ -1687,3 +1687,461 @@ def test_pybendecoder_opens_bundle_produced_by_pybenencoder(tmp_path: Path) -> N
     assert dec.assignment_format() == "ben"
     assert dec.read_graph() == SAMPLE_GRAPH
     assert list(dec) == [[1, 2, 3], [2, 3, 4]]
+
+
+def test_pybendecoder_incomplete_bundle_counts_via_scan(tmp_path: Path) -> None:
+    # An incomplete bundle has complete=0 and no directory — its header
+    # carries no authoritative sample_count, so __len__ must fall back
+    # to scanning the stream region. This exercises the
+    # `scan_bundle_samples` path in the decoder.
+    samples = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    stream = _ben_bytes_for(samples, tmp_path)
+    header = _pack_header(
+        complete=COMPLETE_NO,
+        assignment_format=ASSIGNMENT_FORMAT_BEN,
+        directory_offset=0,
+        directory_len=0,
+        stream_offset=HEADER_SIZE,
+        stream_len=len(stream),
+        sample_count=-1,
+    )
+    path = tmp_path / "incomplete.bendl"
+    path.write_bytes(header + stream)
+
+    dec = PyBenDecoder(path)
+    assert dec.is_bundle() is True
+    assert dec.is_complete() is False
+    # len() forces the fallback scan, which must agree with the data.
+    assert len(dec) == len(samples)
+    # A second call uses the cached value and still returns the same.
+    assert len(dec) == len(samples)
+    # The iterator itself still works.
+    assert list(dec) == samples
+
+
+def test_pybendecoder_incomplete_bundle_count_samples_matches_len(
+    tmp_path: Path,
+) -> None:
+    # Explicit count_samples() also flows through scan_bundle_samples
+    # for incomplete bundles.
+    samples = [[i, i + 1] for i in range(1, 6)]
+    stream = _ben_bytes_for(samples, tmp_path)
+    header = _pack_header(
+        complete=COMPLETE_NO,
+        assignment_format=ASSIGNMENT_FORMAT_BEN,
+        directory_offset=0,
+        directory_len=0,
+        stream_offset=HEADER_SIZE,
+        stream_len=len(stream),
+        sample_count=-1,
+    )
+    path = tmp_path / "incomplete_count.bendl"
+    path.write_bytes(header + stream)
+
+    dec = PyBenDecoder(path)
+    assert dec.count_samples() == len(samples)
+    assert len(dec) == len(samples)
+
+
+def test_pybendecoder_rejects_unknown_assignment_format(tmp_path: Path) -> None:
+    # A finalized bundle whose assignment_format byte is neither BEN
+    # nor XBEN must surface a clear error at decoder construction, not
+    # silently fall through.
+    samples = [[1, 2, 3]]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+        assignment_format=99,
+    )
+    path = _write_bundle(tmp_path / "weird_fmt.bendl", bundle)
+    with pytest.raises(Exception, match="unrecognized assignment_format"):
+        PyBenDecoder(path)
+
+
+def test_pybendecoder_empty_stream_bundle(tmp_path: Path) -> None:
+    # A bundle containing a valid BEN banner but zero frames must be
+    # openable and produce an empty iterator / zero-length decoder.
+    bundle = build_bundle(stream_bytes=_ben_bytes_for([], tmp_path), sample_count=0)
+    path = _write_bundle(tmp_path / "empty.bendl", bundle)
+
+    dec = PyBenDecoder(path)
+    assert dec.is_bundle() is True
+    assert len(dec) == 0
+    assert dec.count_samples() == 0
+    assert list(dec) == []
+    assert dec.asset_names() == []
+    assert dec.list_assets() == []
+
+
+def test_pybendecoder_bundle_toc_interleaved_with_iteration(tmp_path: Path) -> None:
+    # Calling TOC / asset methods in between __next__ calls must not
+    # break the iterator — the TOC access uses a separate BendlReader,
+    # not the file handle backing the iterator.
+    samples = [[1, 2], [3, 4], [5, 6]]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+        assets=[
+            _Asset(
+                asset_type=ASSET_TYPE_METADATA,
+                name="metadata.json",
+                payload=b'{"tag":42}',
+                is_json=True,
+            )
+        ],
+    )
+    path = _write_bundle(tmp_path / "interleave.bendl", bundle)
+
+    dec = PyBenDecoder(path)
+    it = iter(dec)
+
+    assert next(it) == samples[0]
+    # TOC read between samples
+    assert dec.read_metadata() == {"tag": 42}
+    assert dec.asset_names() == ["metadata.json"]
+    assert next(it) == samples[1]
+    # And another TOC read
+    assert dec.read_asset_bytes("metadata.json") == b'{"tag":42}'
+    assert next(it) == samples[2]
+    with pytest.raises(StopIteration):
+        next(it)
+
+
+def test_pybendecoder_bundle_subsample_range_rejects_out_of_bounds(
+    tmp_path: Path,
+) -> None:
+    samples = [[1, 2], [3, 4], [5, 6]]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "range_bad.bendl", bundle)
+    dec = PyBenDecoder(path)
+    with pytest.raises(Exception, match="end must be <= number of samples"):
+        dec.subsample_range(1, 99)
+    with pytest.raises(Exception, match="1-based"):
+        dec.subsample_range(0, 1)
+
+
+def test_pybendecoder_bundle_subsample_indices_rejects_out_of_bounds(
+    tmp_path: Path,
+) -> None:
+    samples = [[1, 2], [3, 4]]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "idx_bad.bendl", bundle)
+    dec = PyBenDecoder(path)
+    with pytest.raises(Exception, match="number of samples"):
+        dec.subsample_indices([1, 42])
+    # Empty index list is also rejected.
+    dec2 = PyBenDecoder(path)
+    with pytest.raises(Exception, match="must not be empty"):
+        dec2.subsample_indices([])
+
+
+def test_pybendecoder_bundle_subsample_every_rejects_bad_args(tmp_path: Path) -> None:
+    samples = [[1], [2], [3]]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "every_bad.bendl", bundle)
+    dec = PyBenDecoder(path)
+    with pytest.raises(Exception, match="offset must be <= number of samples"):
+        dec.subsample_every(1, 99)
+    dec2 = PyBenDecoder(path)
+    with pytest.raises(Exception, match="step and offset must be >= 1"):
+        dec2.subsample_every(0, 1)
+
+
+def test_pybendecoder_plain_stream_len_is_cached(tmp_path: Path) -> None:
+    # __len__ caches the scan result; calling it twice must not re-scan
+    # but must return the same answer.
+    samples = [[1, 2], [3, 4], [5, 6]]
+    ben_path = tmp_path / "cached.ben"
+    with PyBenEncoder(
+        ben_path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
+        for a in samples:
+            enc.write(a)
+    dec = PyBenDecoder(ben_path)
+    assert len(dec) == len(samples)
+    assert len(dec) == len(samples)
+    # Explicit count_samples must also agree.
+    assert dec.count_samples() == len(samples)
+
+
+def test_pybendecoder_detects_very_short_file_as_plain(tmp_path: Path) -> None:
+    # A 4-byte file cannot start with the BENDL magic; detect_is_bundle
+    # must return false on UnexpectedEof, after which plain-stream
+    # decoding fails with a banner error.
+    path = tmp_path / "tiny.ben"
+    path.write_bytes(b"abcd")
+    with pytest.raises(Exception):
+        PyBenDecoder(path)
+
+
+def test_pybendecoder_empty_file_is_treated_as_plain(tmp_path: Path) -> None:
+    path = tmp_path / "empty.ben"
+    path.write_bytes(b"")
+    with pytest.raises(Exception):
+        PyBenDecoder(path)
+
+
+def test_pybendecoder_bundle_read_json_asset_rejects_non_utf8(tmp_path: Path) -> None:
+    # read_json_asset on the decoder should mirror PyBundleReader's
+    # error behavior when an asset isn't valid UTF-8.
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for([[1]], tmp_path),
+        sample_count=1,
+        assets=[
+            _Asset(
+                asset_type=ASSET_TYPE_CUSTOM,
+                name="binary.bin",
+                payload=b"\xff\xfe\xfd",
+            )
+        ],
+    )
+    path = _write_bundle(tmp_path / "bad_utf8.bendl", bundle)
+    dec = PyBenDecoder(path)
+    # Raw bytes are fine.
+    assert dec.read_asset_bytes("binary.bin") == b"\xff\xfe\xfd"
+    with pytest.raises(Exception, match="not valid UTF-8"):
+        dec.read_json_asset("binary.bin")
+
+
+def test_pybendecoder_bundle_read_json_asset_rejects_bad_json(tmp_path: Path) -> None:
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for([[1]], tmp_path),
+        sample_count=1,
+        assets=[
+            _Asset(
+                asset_type=ASSET_TYPE_METADATA,
+                name="metadata.json",
+                payload=b"not json {",
+                is_json=True,
+            )
+        ],
+    )
+    path = _write_bundle(tmp_path / "bad_json.bendl", bundle)
+    dec = PyBenDecoder(path)
+    with pytest.raises(json.JSONDecodeError):
+        dec.read_metadata()
+
+
+def test_pybendecoder_bundle_graph_asset_is_xz_transparent(tmp_path: Path) -> None:
+    # A bundle built with PyBenEncoder compresses the graph asset as xz;
+    # read_graph() on PyBenDecoder must still return the decoded JSON.
+    out = tmp_path / "xz_graph.bendl"
+    with PyBenEncoder(
+        out, overwrite=True, variant="standard", graph=SAMPLE_GRAPH
+    ) as enc:
+        enc.write([1, 2, 3])
+    dec = PyBenDecoder(out)
+    # Spot-check that graph.json was actually stored compressed.
+    by_name = {a["name"]: a for a in dec.list_assets()}
+    assert "xz" in by_name["graph.json"]["flags"]
+    assert dec.read_graph() == SAMPLE_GRAPH
+
+
+def test_pybendecoder_bundle_xben_with_assets(tmp_path: Path) -> None:
+    # XBEN bundles with TOC entries were not previously covered — only
+    # the plain XBEN-bundle auto-detect case. Verify iteration AND TOC
+    # access both work on an XBEN bundle.
+    samples = [[1, 1, 2, 2], [2, 2, 1, 1], [3, 3, 3, 3]]
+    meta = b'{"variant":"mkv_chain"}'
+    bundle = build_bundle(
+        stream_bytes=_xben_bytes_for(samples, tmp_path, variant="mkv_chain"),
+        sample_count=len(samples),
+        assignment_format=ASSIGNMENT_FORMAT_XBEN,
+        assets=[
+            _Asset(
+                asset_type=ASSET_TYPE_METADATA,
+                name="metadata.json",
+                payload=meta,
+                is_json=True,
+            )
+        ],
+    )
+    path = _write_bundle(tmp_path / "xben_assets.bendl", bundle)
+
+    dec = PyBenDecoder(path)
+    assert dec.assignment_format() == "xben"
+    assert dec.asset_names() == ["metadata.json"]
+    assert dec.read_metadata() == {"variant": "mkv_chain"}
+    assert list(dec) == samples
+
+
+def test_pybendecoder_bundle_subsample_indices_unsorted_warns(tmp_path: Path) -> None:
+    # The subsample_indices path that sorts+dedupes unsorted input also
+    # has to work for bundles. Mixing in duplicates should still yield
+    # the deduplicated selection.
+    samples = [[i] for i in range(1, 6)]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "unsorted.bendl", bundle)
+    dec = PyBenDecoder(path)
+    with pytest.warns(UserWarning, match="sorted and unique"):
+        dec.subsample_indices([4, 1, 4, 1])
+    assert list(dec) == [[1], [4]]
+
+
+def test_pybendecoder_plain_xben_assignment_format(tmp_path: Path) -> None:
+    # `assignment_format()` must report "xben" when opened on a plain
+    # XBEN stream as well, not only on bundles.
+    samples = [[1, 1, 2, 2], [2, 2, 1, 1]]
+    src = tmp_path / "src.jsonl"
+    _write_jsonl(samples, src)
+    xben_path = tmp_path / "plain.xben"
+    compress_jsonl_to_xben(
+        src, xben_path, overwrite=True, variant="standard", n_threads=1, compression_level=1
+    )
+    with pytest.warns(UserWarning):
+        dec = PyBenDecoder(xben_path, mode="xben")
+    assert dec.is_bundle() is False
+    assert dec.assignment_format() == "xben"
+    assert list(dec) == samples
+
+
+def test_pybendecoder_incomplete_bundle_rejects_toc_methods_that_need_directory(
+    tmp_path: Path,
+) -> None:
+    # An incomplete bundle has no directory, so there are no assets to
+    # list — asset-free surface still returns empty structures, which is
+    # the contract for finalized asset-free bundles too. Just verify it
+    # doesn't crash.
+    samples = [[1, 2]]
+    stream = _ben_bytes_for(samples, tmp_path)
+    header = _pack_header(
+        complete=COMPLETE_NO,
+        assignment_format=ASSIGNMENT_FORMAT_BEN,
+        directory_offset=0,
+        directory_len=0,
+        stream_offset=HEADER_SIZE,
+        stream_len=len(stream),
+        sample_count=-1,
+    )
+    path = tmp_path / "incomplete_toc.bendl"
+    path.write_bytes(header + stream)
+
+    dec = PyBenDecoder(path)
+    assert dec.is_bundle() is True
+    assert dec.is_complete() is False
+    assert dec.asset_names() == []
+    assert dec.list_assets() == []
+    assert dec.read_graph() is None
+    assert dec.read_metadata() is None
+    assert dec.read_relabel_map() is None
+
+
+def test_pybendecoder_bundle_iteration_can_restart(tmp_path: Path) -> None:
+    # `__iter__` rebuilds the underlying frame walker so `for x in dec:`
+    # can be used more than once against a bundle.
+    samples = [[1, 2], [3, 4], [5, 6]]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "twice.bendl", bundle)
+    dec = PyBenDecoder(path)
+    assert list(dec) == samples
+    # A second pass reopens the stream region from the start.
+    assert list(dec) == samples
+
+
+def test_pybendecoder_plain_stream_iteration_can_restart(tmp_path: Path) -> None:
+    samples = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    ben_path = tmp_path / "twice.ben"
+    with PyBenEncoder(
+        ben_path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
+        for a in samples:
+            enc.write(a)
+    dec = PyBenDecoder(ben_path)
+    assert list(dec) == samples
+    assert list(dec) == samples
+
+
+def test_pybendecoder_subsample_range_survives_reiteration(tmp_path: Path) -> None:
+    # Subsample selections must persist across `__iter__` calls, so
+    # iterating the same (subsampled) decoder twice gives the same
+    # filtered window each time.
+    samples = [[i, i + 1] for i in range(1, 11)]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "range_twice.bendl", bundle)
+    dec = PyBenDecoder(path)
+    dec.subsample_range(3, 6)
+    expected = samples[2:6]
+    assert list(dec) == expected
+    assert list(dec) == expected
+
+
+def test_pybendecoder_subsample_indices_survives_reiteration(tmp_path: Path) -> None:
+    samples = [[i] for i in range(1, 8)]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "idx_twice.bendl", bundle)
+    dec = PyBenDecoder(path)
+    dec.subsample_indices([2, 5, 7])
+    expected = [samples[1], samples[4], samples[6]]
+    assert list(dec) == expected
+    assert list(dec) == expected
+
+
+def test_pybendecoder_subsample_every_survives_reiteration(tmp_path: Path) -> None:
+    samples = [[i] for i in range(1, 11)]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "every_twice.bendl", bundle)
+    dec = PyBenDecoder(path)
+    dec.subsample_every(3, 2)
+    expected = [samples[1], samples[4], samples[7]]
+    assert list(dec) == expected
+    assert list(dec) == expected
+
+
+def test_pybendecoder_resubsample_replaces_previous_selection(tmp_path: Path) -> None:
+    # Calling subsample_* a second time must replace the first selection
+    # AND survive reiteration with the new selection.
+    samples = [[i] for i in range(1, 8)]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "reselect.bendl", bundle)
+    dec = PyBenDecoder(path)
+    dec.subsample_range(1, 3)
+    assert list(dec) == samples[:3]
+    dec.subsample_indices([4, 7])
+    expected = [samples[3], samples[6]]
+    assert list(dec) == expected
+    assert list(dec) == expected
+
+
+def test_pybendecoder_partial_iteration_then_restart(tmp_path: Path) -> None:
+    # Consuming part of the iterator and then calling `iter()` / `list()`
+    # again must restart cleanly from the first sample, not resume
+    # mid-stream.
+    samples = [[1, 2], [3, 4], [5, 6], [7, 8]]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "partial.bendl", bundle)
+    dec = PyBenDecoder(path)
+    it = iter(dec)
+    assert next(it) == samples[0]
+    assert next(it) == samples[1]
+    # Any new pass (list / for / iter) rebuilds and starts over.
+    assert list(dec) == samples

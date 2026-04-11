@@ -34,7 +34,17 @@ class PyBenDecoder:
     def __init__(
         self, file_path: str | Path, mode: Literal["ben", "xben"] = "ben"
     ) -> None: ...
-    def __iter__(self) -> Iterator[list[int]]: ...
+    def __iter__(self) -> Iterator[list[int]]:
+        """Return an iterator over the samples, restarting from the start.
+
+        Each call to :func:`iter` (including the implicit call made by
+        ``for x in dec:``) rebuilds the underlying frame walker and, if a
+        subsample selection has been installed via :meth:`subsample_indices`,
+        :meth:`subsample_range`, or :meth:`subsample_every`, reapplies it.
+        Iteration can therefore be performed multiple times on the same
+        decoder.
+        """
+        ...
     def __next__(self) -> list[int]: ...
     def __len__(self) -> int:
         """Return the number of samples.
