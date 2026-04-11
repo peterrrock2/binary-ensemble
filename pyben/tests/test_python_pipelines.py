@@ -302,7 +302,9 @@ def test_pybenencoder_roundtrip(tmp_path: Path) -> None:
     seq = gen_sequence_standard(rng, n_samples)
 
     ben = tmp_path / "out.ben"
-    with PyBenEncoder(ben, overwrite=True, variant="standard") as enc:
+    with PyBenEncoder(
+        ben, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
         for a in seq:
             enc.write(a)
 
@@ -400,7 +402,7 @@ def test_pybenencoder_defaults_and_markov_alias_work(tmp_path: Path) -> None:
     samples = [[1, 1, 2], [1, 1, 2], [2, 3, 3]]
 
     default_ben = tmp_path / "default.ben"
-    with PyBenEncoder(default_ben, overwrite=True) as enc:
+    with PyBenEncoder(default_ben, overwrite=True, ben_file_only=True) as enc:
         for sample in samples:
             enc.write(sample)
     assert list(PyBenDecoder(default_ben, mode="ben")) == samples
@@ -425,7 +427,9 @@ def test_pybenencoder_defaults_and_markov_alias_work(tmp_path: Path) -> None:
 
 def test_pybenencoder_close_and_write_error_paths(tmp_path: Path) -> None:
     out = tmp_path / "out.ben"
-    enc = PyBenEncoder(out, overwrite=True, variant="standard")
+    enc = PyBenEncoder(
+        out, overwrite=True, variant="standard", ben_file_only=True
+    )
     enc.write([1, 2, 3])
     enc.close()
     enc.close()
@@ -433,7 +437,9 @@ def test_pybenencoder_close_and_write_error_paths(tmp_path: Path) -> None:
         enc.write([1, 2, 3])
 
     ctx_path = tmp_path / "ctx.ben"
-    with PyBenEncoder(ctx_path, overwrite=True, variant="standard") as ctx_enc:
+    with PyBenEncoder(
+        ctx_path, overwrite=True, variant="standard", ben_file_only=True
+    ) as ctx_enc:
         ctx_enc.write([4, 5, 6])
     assert list(PyBenDecoder(ctx_path, mode="ben")) == [[4, 5, 6]]
 

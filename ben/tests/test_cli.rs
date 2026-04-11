@@ -39,6 +39,7 @@ fn bin_path(name: &str) -> &'static str {
         "ben" => env!("CARGO_BIN_EXE_ben"),
         "pben" => env!("CARGO_BIN_EXE_pben"),
         "reben" => env!("CARGO_BIN_EXE_reben"),
+        "bendl" => env!("CARGO_BIN_EXE_bendl"),
         _ => panic!("unknown binary {name}"),
     }
 }
@@ -114,7 +115,7 @@ fn sample_graph() -> &'static str {
 
 #[test]
 fn all_clis_report_help_and_package_version() {
-    for bin in ["ben", "pben", "reben"] {
+    for bin in ["ben", "pben", "reben", "bendl"] {
         let help = run(bin, &["--help"], Path::new("."));
         assert_success(&help);
         let help_text = String::from_utf8_lossy(&help.stdout);
@@ -1499,4 +1500,170 @@ fn pben_cli_converts_between_formats() {
     assert_success(&xdecode);
     let printed = String::from_utf8_lossy(&xdecode.stdout);
     assert!(printed.contains(r#""assignment":[2,2,3]"#));
+}
+
+#[test]
+fn bendl_cli_create_inspect_extract_append_roundtrip() {
+    let temp = TempDir::new("bendl-workflow");
+
+    // Seed: a .ben assignment file to wrap.
+    let jsonl_path = temp.path().join("samples.jsonl");
+    let ben_path = temp.path().join("samples.ben");
+    fs::write(&jsonl_path, sample_jsonl()).unwrap();
+    assert_success(&run(
+        "ben",
+        &[
+            "--mode",
+            "encode",
+            jsonl_path.to_str().unwrap(),
+            "--output-file",
+            ben_path.to_str().unwrap(),
+            "--save-all",
+            "--overwrite",
+        ],
+        temp.path(),
+    ));
+
+    // Seed: a graph.json file to front-load as an asset.
+    let graph_path = temp.path().join("graph.json");
+    fs::write(&graph_path, sample_graph()).unwrap();
+
+    // Seed: a small metadata.json file.
+    let metadata_path = temp.path().join("metadata.json");
+    fs::write(&metadata_path, r#"{"note":"hello"}"#).unwrap();
+
+    // `bendl create` — build a finalized bundle.
+    let bundle_path = temp.path().join("out.bendl");
+    let create = run(
+        "bendl",
+        &[
+            "create",
+            "--input",
+            ben_path.to_str().unwrap(),
+            "--output",
+            bundle_path.to_str().unwrap(),
+            "--graph",
+            graph_path.to_str().unwrap(),
+            "--metadata",
+            metadata_path.to_str().unwrap(),
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_success(&create);
+    assert!(bundle_path.exists());
+
+    // `bendl inspect` — header should report both assets and complete=true.
+    let inspect = run(
+        "bendl",
+        &["inspect", bundle_path.to_str().unwrap()],
+        temp.path(),
+    );
+    assert_success(&inspect);
+    let inspect_out = String::from_utf8_lossy(&inspect.stdout);
+    assert!(inspect_out.contains("complete:          true"));
+    assert!(inspect_out.contains("assignment_format: ben"));
+    assert!(inspect_out.contains("graph.json"));
+    assert!(inspect_out.contains("metadata.json"));
+
+    // `bendl extract --stream` — recover the original .ben bytes exactly.
+    let recovered_ben = temp.path().join("recovered.ben");
+    let extract_stream = run(
+        "bendl",
+        &[
+            "extract",
+            bundle_path.to_str().unwrap(),
+            "--stream",
+            "--output",
+            recovered_ben.to_str().unwrap(),
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_success(&extract_stream);
+    assert_eq!(
+        fs::read(&recovered_ben).unwrap(),
+        fs::read(&ben_path).unwrap()
+    );
+
+    // `bendl extract --asset graph.json` — recover the decoded graph JSON.
+    let recovered_graph = temp.path().join("recovered-graph.json");
+    let extract_asset = run(
+        "bendl",
+        &[
+            "extract",
+            bundle_path.to_str().unwrap(),
+            "--asset",
+            "graph.json",
+            "--output",
+            recovered_graph.to_str().unwrap(),
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_success(&extract_asset);
+    assert_eq!(
+        fs::read_to_string(&recovered_graph).unwrap(),
+        sample_graph()
+    );
+
+    // `bendl append` — add a custom asset to the already-finalized bundle.
+    let custom_path = temp.path().join("notes.txt");
+    fs::write(&custom_path, b"bundle notes").unwrap();
+    let append = run(
+        "bendl",
+        &[
+            "append",
+            bundle_path.to_str().unwrap(),
+            "--asset",
+            &format!("notes={}", custom_path.display()),
+        ],
+        temp.path(),
+    );
+    assert_success(&append);
+
+    // Inspect again: new asset should be present, old assets preserved.
+    let inspect2 = run(
+        "bendl",
+        &["inspect", bundle_path.to_str().unwrap()],
+        temp.path(),
+    );
+    assert_success(&inspect2);
+    let inspect2_out = String::from_utf8_lossy(&inspect2.stdout);
+    assert!(inspect2_out.contains("graph.json"));
+    assert!(inspect2_out.contains("metadata.json"));
+    assert!(inspect2_out.contains("notes"));
+
+    // Stream bytes should still match after append.
+    let recovered_ben2 = temp.path().join("recovered2.ben");
+    let extract_stream2 = run(
+        "bendl",
+        &[
+            "extract",
+            bundle_path.to_str().unwrap(),
+            "--stream",
+            "--output",
+            recovered_ben2.to_str().unwrap(),
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_success(&extract_stream2);
+    assert_eq!(
+        fs::read(&recovered_ben2).unwrap(),
+        fs::read(&ben_path).unwrap()
+    );
+
+    // Appending a second graph.json is rejected — singleton constraint.
+    let append_duplicate = run(
+        "bendl",
+        &[
+            "append",
+            bundle_path.to_str().unwrap(),
+            "--graph",
+            graph_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_failure(&append_duplicate);
 }

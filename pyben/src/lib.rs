@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction; // <-- needed for wrap_pyfunction!
 
+pub mod bundle;
 pub mod common;
 pub mod decode;
 pub mod encode;
@@ -10,6 +11,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Export classes
     m.add_class::<crate::encode::PyBenEncoder>()?;
     m.add_class::<crate::decode::PyBenDecoder>()?;
+    m.add_class::<crate::bundle::PyBundleReader>()?;
     m.add_function(wrap_pyfunction!(crate::decode::decompress_ben_to_jsonl, m)?)?;
     m.add_function(wrap_pyfunction!(crate::decode::decompress_xben_to_ben, m)?)?;
     m.add_function(wrap_pyfunction!(

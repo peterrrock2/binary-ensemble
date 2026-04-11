@@ -1,6 +1,7 @@
 from ._core import (
     PyBenDecoder,
     PyBenEncoder,
+    PyBundleReader,
     compress_jsonl_to_ben,
     compress_ben_to_xben,
     compress_jsonl_to_xben,
@@ -12,6 +13,7 @@ from ._core import (
 __all__ = [
     "PyBenDecoder",
     "PyBenEncoder",
+    "PyBundleReader",
     "compress_jsonl_to_ben",
     "compress_ben_to_xben",
     "compress_jsonl_to_xben",
