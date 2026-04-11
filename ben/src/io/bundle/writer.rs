@@ -213,9 +213,7 @@ impl<W: Write + Seek> BendlWriter<W> {
         // Compute final payload bytes.
         let payload_bytes: Vec<u8> = if compress {
             let mut encoder = XzEncoder::new(Vec::new(), DEFAULT_XZ_PRESET);
-            encoder
-                .write_all(payload)
-                .map_err(BendlWriteError::Io)?;
+            encoder.write_all(payload).map_err(BendlWriteError::Io)?;
             encoder.finish().map_err(BendlWriteError::Io)?
         } else {
             payload.to_vec()
@@ -230,8 +228,7 @@ impl<W: Write + Seek> BendlWriter<W> {
             asset_flags |= ASSET_FLAG_XZ;
         }
         if options.checksum.is_some() {
-            asset_flags |=
-                crate::io::bundle::format::ASSET_FLAG_CHECKSUM;
+            asset_flags |= crate::io::bundle::format::ASSET_FLAG_CHECKSUM;
         }
 
         // Write at current file position.
@@ -260,7 +257,12 @@ impl<W: Write + Seek> BendlWriter<W> {
         name: &str,
         payload: &[u8],
     ) -> Result<(), BendlWriteError> {
-        self.add_asset(asset_type, name, payload, AddAssetOptions::defaults().json())
+        self.add_asset(
+            asset_type,
+            name,
+            payload,
+            AddAssetOptions::defaults().json(),
+        )
     }
 
     /// Transition from the asset phase into the stream phase and return
@@ -321,8 +323,7 @@ impl<W: Write + Seek> BendlWriter<W> {
         let mut handle = self.begin_stream()?;
         let mut sample_count: i64 = 0;
         {
-            let mut ben =
-                crate::io::writer::AssignmentWriter::new(&mut handle, variant)?;
+            let mut ben = crate::io::writer::AssignmentWriter::new(&mut handle, variant)?;
             {
                 let mut ctx = BundleAssignmentStreamCtx {
                     writer: &mut ben,
@@ -355,8 +356,7 @@ impl<W: Write + Seek> BendlWriter<W> {
         let mut sample_count: i64 = 0;
         {
             let encoder = xz2::write::XzEncoder::new(&mut handle, DEFAULT_XZ_PRESET);
-            let mut xben =
-                crate::io::writer::XZAssignmentWriter::new(encoder, variant)?;
+            let mut xben = crate::io::writer::XZAssignmentWriter::new(encoder, variant)?;
             {
                 let mut ctx = BundleAssignmentStreamCtx {
                     writer: &mut xben,
@@ -405,8 +405,7 @@ impl<W: Write + Seek> BendlWriter<W> {
         let directory_offset = self.header.stream_offset + stream_len;
         self.inner.seek(SeekFrom::Start(directory_offset))?;
 
-        let directory_bytes = encode_directory(&self.entries)
-            .map_err(BendlWriteError::Format)?;
+        let directory_bytes = encode_directory(&self.entries).map_err(BendlWriteError::Format)?;
         self.inner
             .write_all(&directory_bytes)
             .map_err(BendlWriteError::Io)?;
@@ -551,9 +550,7 @@ pub enum BendlWriteError {
     DuplicateSingletonType(u16),
 
     /// A singleton asset was added under the wrong canonical name.
-    #[error(
-        "asset type {asset_type} must use canonical name {expected:?}, got {found:?}"
-    )]
+    #[error("asset type {asset_type} must use canonical name {expected:?}, got {found:?}")]
     WrongCanonicalName {
         /// The asset type whose canonical name was violated.
         asset_type: u16,
@@ -651,8 +648,17 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
         }
 
         inner.seek(SeekFrom::Start(header.directory_offset))?;
-        let existing_entries =
-            read_directory(&mut inner).map_err(BendlWriteError::Format)?;
+        let mut bounded = (&mut inner).take(header.directory_len);
+        let existing_entries = read_directory(&mut bounded).map_err(BendlWriteError::Format)?;
+        let remaining = bounded.limit();
+        if remaining != 0 {
+            return Err(BendlWriteError::Format(
+                BendlFormatError::TrailingDirectoryBytes { remaining },
+            ));
+        }
+        super::reader::validate_directory_entries(&existing_entries).map_err(|e| {
+            BendlWriteError::Format(BendlFormatError::MalformedDirectory(e.to_string()))
+        })?;
 
         let mut existing_names = HashSet::new();
         let mut existing_singleton_types = HashSet::new();
@@ -740,7 +746,12 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
         name: &str,
         payload: &[u8],
     ) -> Result<(), BendlWriteError> {
-        self.add_asset(asset_type, name, payload, AddAssetOptions::defaults().json())
+        self.add_asset(
+            asset_type,
+            name,
+            payload,
+            AddAssetOptions::defaults().json(),
+        )
     }
 
     /// Commit all pending appends.
@@ -786,8 +797,7 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
                 asset_flags |= ASSET_FLAG_XZ;
             }
             if asset.checksum.is_some() {
-                asset_flags |=
-                    crate::io::bundle::format::ASSET_FLAG_CHECKSUM;
+                asset_flags |= crate::io::bundle::format::ASSET_FLAG_CHECKSUM;
             }
 
             encoded.push(EncodedPending {
@@ -830,8 +840,7 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
 
         // Write the new directory at the new EOF.
         let new_directory_offset = self.inner.seek(SeekFrom::Current(0))?;
-        let directory_bytes =
-            encode_directory(&new_entries).map_err(BendlWriteError::Format)?;
+        let directory_bytes = encode_directory(&new_entries).map_err(BendlWriteError::Format)?;
         self.inner.write_all(&directory_bytes)?;
         let new_directory_len = directory_bytes.len() as u64;
 
@@ -874,11 +883,7 @@ mod tests {
     fn minimal_bundle_round_trip_through_reader() {
         let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
         writer
-            .add_json_asset(
-                ASSET_TYPE_METADATA,
-                "metadata.json",
-                br#"{"note":"hello"}"#,
-            )
+            .add_json_asset(ASSET_TYPE_METADATA, "metadata.json", br#"{"note":"hello"}"#)
             .unwrap();
         let stream_bytes = b"STANDARD BEN FILE\x00\x01fake".to_vec();
         writer.write_stream_bytes(&stream_bytes, 7).unwrap();
@@ -915,7 +920,9 @@ mod tests {
         writer
             .add_json_asset(ASSET_TYPE_GRAPH, "graph.json", graph)
             .unwrap();
-        writer.write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1).unwrap();
+        writer
+            .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
+            .unwrap();
         let buf = writer.finish().unwrap().into_inner();
 
         let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
@@ -946,7 +953,9 @@ mod tests {
                 AddAssetOptions::defaults().json().raw(),
             )
             .unwrap();
-        writer.write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1).unwrap();
+        writer
+            .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
+            .unwrap();
         let buf = writer.finish().unwrap().into_inner();
 
         let reader = BendlReader::open(Cursor::new(buf)).unwrap();
@@ -977,7 +986,10 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             err,
-            BendlWriteError::WrongCanonicalName { asset_type: ASSET_TYPE_GRAPH, .. }
+            BendlWriteError::WrongCanonicalName {
+                asset_type: ASSET_TYPE_GRAPH,
+                ..
+            }
         ));
     }
 
@@ -1037,7 +1049,9 @@ mod tests {
         writer
             .add_json_asset(ASSET_TYPE_METADATA, "metadata.json", b"{}")
             .unwrap();
-        writer.write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1).unwrap();
+        writer
+            .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
+            .unwrap();
         let buf = writer.finish().unwrap().into_inner();
 
         let reader = BendlReader::open(Cursor::new(buf.clone())).unwrap();
@@ -1045,7 +1059,10 @@ mod tests {
         let file_len = buf.len() as u64;
         assert_eq!(header.directory_offset + header.directory_len, file_len);
         // Stream ends where directory begins.
-        assert_eq!(header.stream_offset + header.stream_len, header.directory_offset);
+        assert_eq!(
+            header.stream_offset + header.stream_len,
+            header.directory_offset
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1091,9 +1108,8 @@ mod tests {
     #[test]
     fn append_leaves_stream_bytes_byte_for_byte_unchanged() {
         let (bundle, (stream_offset, stream_len)) = build_base_bundle();
-        let original_stream_bytes = bundle
-            [stream_offset as usize..(stream_offset + stream_len) as usize]
-            .to_vec();
+        let original_stream_bytes =
+            bundle[stream_offset as usize..(stream_offset + stream_len) as usize].to_vec();
 
         let mut appender = BendlAppender::open(Cursor::new(bundle)).unwrap();
         appender
@@ -1140,7 +1156,10 @@ mod tests {
             .find_asset_by_name("metadata.json")
             .unwrap()
             .payload_offset;
-        assert_eq!(old_offset, new_offset, "existing asset offset must not move");
+        assert_eq!(
+            old_offset, new_offset,
+            "existing asset offset must not move"
+        );
     }
 
     #[test]
@@ -1204,7 +1223,10 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             err,
-            BendlWriteError::WrongCanonicalName { asset_type: ASSET_TYPE_GRAPH, .. }
+            BendlWriteError::WrongCanonicalName {
+                asset_type: ASSET_TYPE_GRAPH,
+                ..
+            }
         ));
 
         let buf = appender.abort().into_inner();
@@ -1215,8 +1237,9 @@ mod tests {
     fn append_rejects_incomplete_bundle() {
         // Construct a minimal incomplete bundle: just the provisional
         // header and some stream bytes, no directory.
-        use crate::io::bundle::format::{BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION,
-            COMPLETE_NO};
+        use crate::io::bundle::format::{
+            BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, COMPLETE_NO,
+        };
         let header = BendlHeader {
             magic: BENDL_MAGIC,
             major_version: BENDL_MAJOR_VERSION,
@@ -1464,8 +1487,7 @@ mod tests {
         let buf = writer.finish().unwrap().into_inner();
 
         let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
-        let decoder: BundleAssignmentReader<_> =
-            reader.open_assignment_reader().unwrap();
+        let decoder: BundleAssignmentReader<_> = reader.open_assignment_reader().unwrap();
         assert!(decoder.is_ben());
         assert!(!decoder.is_xben());
     }
@@ -1502,7 +1524,10 @@ mod tests {
             // now stuck in the Streaming state.
             drop(handle);
         }
-        let err = writer.begin_stream().err().expect("second begin_stream must fail");
+        let err = writer
+            .begin_stream()
+            .err()
+            .expect("second begin_stream must fail");
         assert!(matches!(err, BendlWriteError::WrongState { .. }));
     }
 
@@ -1517,7 +1542,10 @@ mod tests {
         let err = writer.finish().unwrap_err();
         assert!(matches!(
             err,
-            BendlWriteError::WrongState { found: "Streaming", .. }
+            BendlWriteError::WrongState {
+                found: "Streaming",
+                ..
+            }
         ));
     }
 
@@ -1529,7 +1557,12 @@ mod tests {
             let name = format!("blob_{i:05}");
             let payload = vec![(i & 0xFF) as u8; (i % 17) + 1];
             writer
-                .add_asset(ASSET_TYPE_CUSTOM, &name, &payload, AddAssetOptions::defaults())
+                .add_asset(
+                    ASSET_TYPE_CUSTOM,
+                    &name,
+                    &payload,
+                    AddAssetOptions::defaults(),
+                )
                 .unwrap();
         }
         writer
@@ -1676,18 +1709,20 @@ mod tests {
         let buf = writer.finish().unwrap().into_inner();
 
         let reader = BendlReader::open(Cursor::new(buf)).unwrap();
-        let entry = reader
-            .find_asset_by_name("with_checksum")
-            .cloned()
-            .unwrap();
+        let entry = reader.find_asset_by_name("with_checksum").cloned().unwrap();
         assert_eq!(entry.checksum, Some(checksum));
-        assert_ne!(entry.asset_flags & crate::io::bundle::format::ASSET_FLAG_CHECKSUM, 0);
+        assert_ne!(
+            entry.asset_flags & crate::io::bundle::format::ASSET_FLAG_CHECKSUM,
+            0
+        );
     }
 
     #[test]
     fn finished_writer_rejects_further_operations() {
         let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-        writer.write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1).unwrap();
+        writer
+            .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
+            .unwrap();
         // Take a handle to the writer by going through begin_stream first.
         // Actually finish() consumes self, so instead assert the state
         // machine barfs when we manually poke it in the Finished state.
@@ -1726,14 +1761,19 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             err,
-            BendlWriteError::WrongCanonicalName { asset_type: ASSET_TYPE_METADATA, .. }
+            BendlWriteError::WrongCanonicalName {
+                asset_type: ASSET_TYPE_METADATA,
+                ..
+            }
         ));
         // After a rejected add, no entries have been recorded — a
         // subsequent valid add proceeds normally.
         writer
             .add_json_asset(ASSET_TYPE_METADATA, "metadata.json", b"{}")
             .unwrap();
-        writer.write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1).unwrap();
+        writer
+            .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
+            .unwrap();
         let buf = writer.finish().unwrap().into_inner();
         let reader = BendlReader::open(Cursor::new(buf)).unwrap();
         assert_eq!(reader.assets().len(), 1);
@@ -1761,21 +1801,11 @@ mod tests {
         let mut appender = BendlAppender::open(Cursor::new(bundle)).unwrap();
         // First pending add: "blob".
         appender
-            .add_asset(
-                ASSET_TYPE_CUSTOM,
-                "blob",
-                b"1",
-                AddAssetOptions::defaults(),
-            )
+            .add_asset(ASSET_TYPE_CUSTOM, "blob", b"1", AddAssetOptions::defaults())
             .unwrap();
         // Second pending add with same name must be rejected.
         let err = appender
-            .add_asset(
-                ASSET_TYPE_CUSTOM,
-                "blob",
-                b"2",
-                AddAssetOptions::defaults(),
-            )
+            .add_asset(ASSET_TYPE_CUSTOM, "blob", b"2", AddAssetOptions::defaults())
             .unwrap_err();
         assert!(matches!(err, BendlWriteError::DuplicateName(_)));
         // Committing the still-valid first pending add should still work.
@@ -1909,10 +1939,8 @@ mod tests {
         assert!(baseline_samples.is_some());
         drop(baseline_reader);
 
-        let mut accumulated: Vec<(String, Vec<u8>)> = vec![(
-            "metadata.json".to_string(),
-            br#"{"version":1}"#.to_vec(),
-        )];
+        let mut accumulated: Vec<(String, Vec<u8>)> =
+            vec![("metadata.json".to_string(), br#"{"version":1}"#.to_vec())];
 
         for round in 0..5 {
             let cursor = Cursor::new(buf);
@@ -1967,10 +1995,8 @@ mod tests {
         use rand_chacha::ChaCha8Rng;
 
         let (mut buf, _) = build_base_bundle();
-        let mut accumulated: Vec<(String, Vec<u8>)> = vec![(
-            "metadata.json".to_string(),
-            br#"{"version":1}"#.to_vec(),
-        )];
+        let mut accumulated: Vec<(String, Vec<u8>)> =
+            vec![("metadata.json".to_string(), br#"{"version":1}"#.to_vec())];
 
         let mut rng = ChaCha8Rng::seed_from_u64(0xDEAD_BEEF_CAFE_F00D);
         let rounds: usize = rng.random_range(3..=8);
@@ -1980,8 +2006,7 @@ mod tests {
             let mut appender = BendlAppender::open(cursor).unwrap();
             for k in 0..adds {
                 let size: usize = rng.random_range(0..=256);
-                let payload: Vec<u8> =
-                    (0..size).map(|_| rng.random::<u8>()).collect();
+                let payload: Vec<u8> = (0..size).map(|_| rng.random::<u8>()).collect();
                 let name = format!("r{round}-a{k}.bin");
                 appender
                     .add_asset(

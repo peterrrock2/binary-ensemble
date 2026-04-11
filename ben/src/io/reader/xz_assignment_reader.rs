@@ -227,7 +227,9 @@ impl<R: Read> XZAssignmentReader<R> {
                 )))
             }
             XBEN_TWODELTA_CHUNK_TAG => None, // Handled by try_parse_twodelta_chunk.
-            _ => Some(Err(io::Error::from(DecodeError::XBenUnknownFrameTag { tag }))),
+            _ => Some(Err(io::Error::from(DecodeError::XBenUnknownFrameTag {
+                tag,
+            }))),
         }
     }
 
@@ -254,11 +256,27 @@ impl<R: Read> XZAssignmentReader<R> {
 
         // Calculate total chunk size: tag(1) + n_frames(4)
         //   + pairs(n*4) + counts(n*2) + run_counts(n*4) + run_data(variable)
-        let header_len = 5;
-        let pairs_len = n_frames * 4;
-        let counts_len = n_frames * 2;
-        let run_counts_len = n_frames * 4;
-        let fixed_len = header_len + pairs_len + counts_len + run_counts_len;
+        let header_len: usize = 5;
+        let pairs_len = match n_frames.checked_mul(4) {
+            Some(v) => v,
+            None => return Some(Err(io::Error::from(DecodeError::XBenTruncated))),
+        };
+        let counts_len = match n_frames.checked_mul(2) {
+            Some(v) => v,
+            None => return Some(Err(io::Error::from(DecodeError::XBenTruncated))),
+        };
+        let run_counts_len = match n_frames.checked_mul(4) {
+            Some(v) => v,
+            None => return Some(Err(io::Error::from(DecodeError::XBenTruncated))),
+        };
+        let fixed_len = match header_len
+            .checked_add(pairs_len)
+            .and_then(|v| v.checked_add(counts_len))
+            .and_then(|v| v.checked_add(run_counts_len))
+        {
+            Some(v) => v,
+            None => return Some(Err(io::Error::from(DecodeError::XBenTruncated))),
+        };
 
         if self.overflow.len() < fixed_len {
             return None;
@@ -277,11 +295,20 @@ impl<R: Read> XZAssignmentReader<R> {
                 self.overflow[offset + 3],
             ]) as usize;
             run_counts.push(rc);
-            total_runs += rc;
+            total_runs = match total_runs.checked_add(rc) {
+                Some(v) => v,
+                None => return Some(Err(io::Error::from(DecodeError::XBenTruncated))),
+            };
         }
 
-        let run_data_len = total_runs * 2;
-        let total_len = fixed_len + run_data_len;
+        let run_data_len = match total_runs.checked_mul(2) {
+            Some(v) => v,
+            None => return Some(Err(io::Error::from(DecodeError::XBenTruncated))),
+        };
+        let total_len = match fixed_len.checked_add(run_data_len) {
+            Some(v) => v,
+            None => return Some(Err(io::Error::from(DecodeError::XBenTruncated))),
+        };
         if self.overflow.len() < total_len {
             return None;
         }
@@ -409,6 +436,13 @@ impl<R: Read> XZAssignmentReader<R> {
     }
 }
 
+fn zero_count_frame_error() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        "XBEN frame count must be greater than zero",
+    )
+}
+
 /// Decode one raw ben32 frame from an XBEN stream into a full assignment vector.
 ///
 /// # Arguments
@@ -439,7 +473,14 @@ impl<R: Read> Iterator for XZAssignmentReader<R> {
                     if let Some((frame_bytes, consumed, count)) =
                         self.pop_frame_from_overflow(&self.overflow)
                     {
-                        let res = match decode_xben_frame_to_assignment(frame_bytes, self.inner_variant) {
+                        if count == 0 {
+                            self.overflow.drain(..consumed);
+                            return Some(Err(zero_count_frame_error()));
+                        }
+                        let res = match decode_xben_frame_to_assignment(
+                            frame_bytes,
+                            self.inner_variant,
+                        ) {
                             Ok(assignment) => {
                                 self.previous_assignment = Some(assignment.clone());
                                 Ok((assignment, count))
@@ -453,6 +494,9 @@ impl<R: Read> Iterator for XZAssignmentReader<R> {
                 BenVariant::TwoDelta => {
                     // Drain frames from a previously parsed chunk first.
                     if let Some((frame, count)) = self.chunk_queue.pop_front() {
+                        if count == 0 {
+                            return Some(Err(zero_count_frame_error()));
+                        }
                         let assignment = match frame {
                             XBenTwoDeltaFrame::Full { runs } => Ok(rle_to_vec(runs)),
                             XBenTwoDeltaFrame::Delta { pair, run_lengths } => {
@@ -487,6 +531,10 @@ impl<R: Read> Iterator for XZAssignmentReader<R> {
                     if let Some(parsed) = self.pop_twodelta_frame_from_overflow(&self.overflow) {
                         let res = match parsed {
                             Ok((frame, consumed, count)) => {
+                                if count == 0 {
+                                    self.overflow.drain(..consumed);
+                                    return Some(Err(zero_count_frame_error()));
+                                }
                                 let assignment = match frame {
                                     XBenTwoDeltaFrame::Full { runs } => Ok(rle_to_vec(runs)),
                                     XBenTwoDeltaFrame::Delta { pair, run_lengths } => {
@@ -581,6 +629,10 @@ impl<R: Read> Iterator for XZAssignmentFrameReader<R> {
             if let Some((frame, consumed, count)) =
                 self.inner.pop_frame_from_overflow(&self.inner.overflow)
             {
+                if count == 0 {
+                    self.inner.overflow.drain(..consumed);
+                    return Some(Err(zero_count_frame_error()));
+                }
                 let out = frame.to_vec();
                 self.inner.overflow.drain(..consumed);
                 return Some(Ok((out, count)));
@@ -675,4 +727,3 @@ impl<R: Read + Send> XZAssignmentReader<R> {
         SubsampleFrameDecoder::every(Box::new(frames), step, offset)
     }
 }
-

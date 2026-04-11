@@ -23,6 +23,15 @@ pub fn decode_ben_line<R: Read>(
     max_len_bits: u8,
     n_bytes: u32,
 ) -> io::Result<Vec<(u16, u16)>> {
+    if max_val_bits == 0 || max_val_bits > 16 || max_len_bits == 0 || max_len_bits > 16 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "invalid BEN bit width(s): max_val_bits={max_val_bits}, max_len_bits={max_len_bits}"
+            ),
+        ));
+    }
+
     let mut assign_bits: Vec<u8> = vec![0; n_bytes as usize];
     reader.read_exact(&mut assign_bits)?;
 

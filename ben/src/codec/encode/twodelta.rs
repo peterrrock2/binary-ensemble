@@ -261,6 +261,12 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
         }
 
         if new_val == run_value {
+            if current_mask_count == u16::MAX {
+                return Err(Error::new(
+                    ErrorKind::InvalidInput,
+                    "TwoDelta run length exceeds u16::MAX",
+                ));
+            }
             current_mask_count += 1;
         } else {
             run_lengths.push(current_mask_count);
@@ -382,6 +388,12 @@ fn construct_twodelta_frame_from_scratch(
                 enc_pair_known = true;
             }
             if curr_val == run_value {
+                if run_count == u16::MAX {
+                    return Err(Error::new(
+                        ErrorKind::InvalidInput,
+                        "TwoDelta run length exceeds u16::MAX",
+                    ));
+                }
                 run_count += 1;
             } else {
                 run_lengths.push(run_count);

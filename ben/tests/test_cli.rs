@@ -910,6 +910,83 @@ fn reben_cli_json_and_ben_modes_work() {
 }
 
 #[test]
+fn reben_cli_rejects_map_referencing_missing_assignment_index() {
+    let temp = TempDir::new("reben-bad-map");
+    let jsonl_path = temp.path().join("samples.jsonl");
+    let ben_path = temp.path().join("samples.jsonl.ben");
+    let map_path = temp.path().join("bad_map.json");
+    let out_path = temp.path().join("out.ben");
+
+    fs::write(
+        &jsonl_path,
+        r#"{"assignment":[9,4],"sample":1}
+"#,
+    )
+    .unwrap();
+
+    let mut ben_bytes = Vec::new();
+    encode_jsonl_to_ben(
+        BufReader::new(fs::File::open(&jsonl_path).unwrap()),
+        &mut ben_bytes,
+        BenVariant::Standard,
+    )
+    .unwrap();
+    fs::write(&ben_path, ben_bytes).unwrap();
+
+    fs::write(
+        &map_path,
+        r#"{"key":"map","relabeling_old_to_new_nodes_map":{"0":0,"2":1}}"#,
+    )
+    .unwrap();
+
+    let relabel = run(
+        "reben",
+        &[
+            ben_path.to_str().unwrap(),
+            "--mode",
+            "ben",
+            "--map-file",
+            map_path.to_str().unwrap(),
+            "--output-file",
+            out_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_failure(&relabel);
+    let stderr = String::from_utf8_lossy(&relabel.stderr);
+    assert!(
+        stderr.contains("Error: BEN relabeling with map")
+            && stderr.contains("old index 2")
+            && !stderr.contains("panicked"),
+        "stderr:\n{stderr}"
+    );
+
+    let malformed_map_path = temp.path().join("malformed_map.json");
+    fs::write(&malformed_map_path, r#"{"key":"map"}"#).unwrap();
+    let malformed = run(
+        "reben",
+        &[
+            ben_path.to_str().unwrap(),
+            "--mode",
+            "ben",
+            "--map-file",
+            malformed_map_path.to_str().unwrap(),
+            "--output-file",
+            out_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_failure(&malformed);
+    let stderr = String::from_utf8_lossy(&malformed.stderr);
+    assert!(
+        stderr.contains("Error: Map file")
+            && stderr.contains("relabeling_old_to_new_nodes_map")
+            && !stderr.contains("panicked"),
+        "stderr:\n{stderr}"
+    );
+}
+
+#[test]
 fn reben_cli_can_limit_ben_relabeling_to_first_n_items() {
     let temp = TempDir::new("reben-limit");
     let graph_path = temp.path().join("dual_graph.json");

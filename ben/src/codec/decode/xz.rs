@@ -64,7 +64,8 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
     let mut overflow: Vec<u8> = Vec::new();
 
     let mut line_count: usize = 0;
-    while let Ok(count) = decoder.read(&mut buffer) {
+    loop {
+        let count = decoder.read(&mut buffer)?;
         if count == 0 {
             break;
         }
@@ -123,7 +124,8 @@ pub fn xz_decompress<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::Resu
     let mut decoder = XzDecoder::new(reader);
     let mut buffer = [0u8; 4096];
 
-    while let Ok(count) = decoder.read(&mut buffer) {
+    loop {
+        let count = decoder.read(&mut buffer)?;
         if count == 0 {
             break;
         }

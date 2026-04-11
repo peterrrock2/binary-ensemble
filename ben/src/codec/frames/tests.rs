@@ -112,7 +112,9 @@ fn mkv_decode_frame_from_reader() {
     // Count: u16 BE = 5
     let data: Vec<u8> = vec![2, 3, 0, 0, 0, 2, 0xAB, 0xCD, 0, 5];
     let mut cursor = io::Cursor::new(data);
-    let frame = MkvBenDecodeFrame::from_reader(&mut cursor).unwrap().unwrap();
+    let frame = MkvBenDecodeFrame::from_reader(&mut cursor)
+        .unwrap()
+        .unwrap();
     assert_eq!(frame.max_val_bit_count, 2);
     assert_eq!(frame.max_len_bit_count, 3);
     assert_eq!(frame.n_bytes, 2);
@@ -310,8 +312,14 @@ fn ben_encode_decode_roundtrip_standard() {
     let mut cursor = io::Cursor::new(encode_frame.as_slice());
     let decode_frame = BenDecodeFrame::from_reader(&mut cursor).unwrap().unwrap();
 
-    assert_eq!(decode_frame.max_val_bit_count, encode_frame.max_val_bit_count);
-    assert_eq!(decode_frame.max_len_bit_count, encode_frame.max_len_bit_count);
+    assert_eq!(
+        decode_frame.max_val_bit_count,
+        encode_frame.max_val_bit_count
+    );
+    assert_eq!(
+        decode_frame.max_len_bit_count,
+        encode_frame.max_len_bit_count
+    );
     assert_eq!(decode_frame.n_bytes, encode_frame.n_bytes);
 
     // Verify the payload decodes back to the original RLE runs
@@ -332,10 +340,18 @@ fn mkv_encode_decode_roundtrip() {
     let encode_frame = MkvBenEncodeFrame::from_rle(runs.clone(), Some(42));
 
     let mut cursor = io::Cursor::new(encode_frame.as_slice());
-    let decode_frame = MkvBenDecodeFrame::from_reader(&mut cursor).unwrap().unwrap();
+    let decode_frame = MkvBenDecodeFrame::from_reader(&mut cursor)
+        .unwrap()
+        .unwrap();
 
-    assert_eq!(decode_frame.max_val_bit_count, encode_frame.max_val_bit_count);
-    assert_eq!(decode_frame.max_len_bit_count, encode_frame.max_len_bit_count);
+    assert_eq!(
+        decode_frame.max_val_bit_count,
+        encode_frame.max_val_bit_count
+    );
+    assert_eq!(
+        decode_frame.max_len_bit_count,
+        encode_frame.max_len_bit_count
+    );
     assert_eq!(decode_frame.n_bytes, encode_frame.n_bytes);
     assert_eq!(decode_frame.count, 42);
 
@@ -353,12 +369,13 @@ fn mkv_encode_decode_roundtrip() {
 fn twodelta_encode_decode_roundtrip() {
     use crate::codec::frames::twodelta_encode::TwoDeltaEncodeFrame;
     let run_lengths = vec![3u16, 2, 1, 4];
-    let encode_frame =
-        TwoDeltaEncodeFrame::from_run_lengths((5, 10), run_lengths.clone(), Some(7));
+    let encode_frame = TwoDeltaEncodeFrame::from_run_lengths((5, 10), run_lengths.clone(), Some(7));
 
     // Write the raw_bytes (which include pair, max_len_bits, n_bytes, payload, count)
     let mut cursor = io::Cursor::new(encode_frame.as_slice());
-    let decode_frame = TwoDeltaDecodeFrame::from_reader(&mut cursor).unwrap().unwrap();
+    let decode_frame = TwoDeltaDecodeFrame::from_reader(&mut cursor)
+        .unwrap()
+        .unwrap();
 
     assert_eq!(decode_frame.pair, (5, 10));
     assert_eq!(decode_frame.count, 7);
@@ -396,8 +413,12 @@ fn mkv_decode_two_frames_back_to_back() {
     data.extend_from_slice(f2.as_slice());
 
     let mut cursor = io::Cursor::new(data);
-    let d1 = MkvBenDecodeFrame::from_reader(&mut cursor).unwrap().unwrap();
-    let d2 = MkvBenDecodeFrame::from_reader(&mut cursor).unwrap().unwrap();
+    let d1 = MkvBenDecodeFrame::from_reader(&mut cursor)
+        .unwrap()
+        .unwrap();
+    let d2 = MkvBenDecodeFrame::from_reader(&mut cursor)
+        .unwrap()
+        .unwrap();
     let d3 = MkvBenDecodeFrame::from_reader(&mut cursor).unwrap();
 
     assert_eq!(d1.count, 10);
@@ -416,8 +437,12 @@ fn twodelta_decode_two_frames_back_to_back() {
     data.extend_from_slice(f2.as_slice());
 
     let mut cursor = io::Cursor::new(data);
-    let d1 = TwoDeltaDecodeFrame::from_reader(&mut cursor).unwrap().unwrap();
-    let d2 = TwoDeltaDecodeFrame::from_reader(&mut cursor).unwrap().unwrap();
+    let d1 = TwoDeltaDecodeFrame::from_reader(&mut cursor)
+        .unwrap()
+        .unwrap();
+    let d2 = TwoDeltaDecodeFrame::from_reader(&mut cursor)
+        .unwrap()
+        .unwrap();
     let d3 = TwoDeltaDecodeFrame::from_reader(&mut cursor).unwrap();
 
     assert_eq!(d1.pair, (1, 2));
@@ -435,7 +460,9 @@ fn twodelta_decode_two_frames_back_to_back() {
 fn mkv_decode_frame_count_max_u16() {
     let f = MkvBenEncodeFrame::from_rle(vec![(1u16, 1)], Some(u16::MAX));
     let mut cursor = io::Cursor::new(f.as_slice());
-    let d = MkvBenDecodeFrame::from_reader(&mut cursor).unwrap().unwrap();
+    let d = MkvBenDecodeFrame::from_reader(&mut cursor)
+        .unwrap()
+        .unwrap();
     assert_eq!(d.count, u16::MAX);
 }
 
@@ -444,7 +471,9 @@ fn twodelta_decode_frame_count_max_u16() {
     use crate::codec::frames::twodelta_encode::TwoDeltaEncodeFrame;
     let f = TwoDeltaEncodeFrame::from_run_lengths((1, 2), vec![1, 1], Some(u16::MAX));
     let mut cursor = io::Cursor::new(f.as_slice());
-    let d = TwoDeltaDecodeFrame::from_reader(&mut cursor).unwrap().unwrap();
+    let d = TwoDeltaDecodeFrame::from_reader(&mut cursor)
+        .unwrap()
+        .unwrap();
     assert_eq!(d.count, u16::MAX);
 }
 
@@ -510,7 +539,9 @@ fn twodelta_from_run_lengths_single_run() {
     let encoded = TwoDeltaEncodeFrame::from_run_lengths((1, 2), run_lengths.clone(), None);
 
     let mut cursor = io::Cursor::new(encoded.as_slice());
-    let decoded = TwoDeltaDecodeFrame::from_reader(&mut cursor).unwrap().unwrap();
+    let decoded = TwoDeltaDecodeFrame::from_reader(&mut cursor)
+        .unwrap()
+        .unwrap();
     assert_eq!(decoded.run_lengths, run_lengths);
 }
 

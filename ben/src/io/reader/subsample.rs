@@ -218,6 +218,12 @@ where
                 Ok(x) => x,
                 Err(e) => return Some(Err(e)),
             };
+            if count == 0 {
+                return Some(Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "frame count must be greater than zero",
+                )));
+            }
 
             let lo = self.sample + 1;
             let hi = self.sample + count as usize;
@@ -255,8 +261,7 @@ pub fn build_frame_iter(file_path: &PathBuf, mode: &str) -> io::Result<FrameIter
     match mode {
         "ben" => {
             let frames = AssignmentFrameReader::new(reader)?;
-            let mapped = frames
-                .map(|res| res.map(|(f, cnt)| (DecodeFrame::Ben(f), cnt)));
+            let mapped = frames.map(|res| res.map(|(f, cnt)| (DecodeFrame::Ben(f), cnt)));
             Ok(Box::new(mapped))
         }
         "xben" => {

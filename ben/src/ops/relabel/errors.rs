@@ -10,11 +10,17 @@ pub enum RelabelError {
     )]
     NonContiguousMap { max_key: usize, missing: usize },
 
-    #[error(
-        "relabel map length {map_len} does not match assignment length {assignment_len}"
-    )]
+    #[error("relabel map length {map_len} does not match assignment length {assignment_len}")]
     LengthMismatch {
         map_len: usize,
+        assignment_len: usize,
+    },
+
+    #[error(
+        "relabel map references old index {old_idx}, but assignment length is {assignment_len}"
+    )]
+    OldIndexOutOfRange {
+        old_idx: usize,
         assignment_len: usize,
     },
 

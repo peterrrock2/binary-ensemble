@@ -78,6 +78,12 @@ pub(crate) fn encode_ben32_assignments(assign_vec: impl AsRef<[u16]>) -> Result<
             continue;
         }
         if assign == prev_assign {
+            if count == u16::MAX {
+                let encoded = (prev_assign as u32) << 16 | count as u32;
+                ret.extend(&encoded.to_be_bytes());
+                count = 1;
+                continue;
+            }
             count += 1;
         } else {
             let encoded = (prev_assign as u32) << 16 | count as u32;

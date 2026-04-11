@@ -5,8 +5,10 @@ use thiserror::Error;
 /// Errors produced while decoding BEN or XBEN streams.
 #[derive(Debug, Error)]
 pub enum DecodeError {
-    #[error("TwoDelta run-length vector exhausted after {run_idx} runs \
-             before position {pos} was covered")]
+    #[error(
+        "TwoDelta run-length vector exhausted after {run_idx} runs \
+             before position {pos} was covered"
+    )]
     TwoDeltaRunsExhausted { run_idx: usize, pos: usize },
 
     #[error("unknown XBEN frame tag byte {tag:#04x}")]
@@ -18,9 +20,7 @@ pub enum DecodeError {
     #[error("TwoDelta frame encountered before an initial full-assignment frame")]
     TwoDeltaNoAnchorFrame,
 
-    #[error(
-        "unexpected TwoDelta frame in a non-TwoDelta BEN stream (variant: {variant:?})"
-    )]
+    #[error("unexpected TwoDelta frame in a non-TwoDelta BEN stream (variant: {variant:?})")]
     UnexpectedTwoDeltaFrame { variant: BenVariant },
 
     #[error("IO error: {0}")]

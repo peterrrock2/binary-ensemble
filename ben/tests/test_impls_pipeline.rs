@@ -611,7 +611,10 @@ fn xben_decoder_rejects_bad_banner() {
     let err = XZAssignmentReader::new(xz.as_slice())
         .err()
         .expect("expeced InvalidFileFormat error");
-    assert_eq!(std::io::Error::from(err).kind(), std::io::ErrorKind::InvalidData);
+    assert_eq!(
+        std::io::Error::from(err).kind(),
+        std::io::ErrorKind::InvalidData
+    );
 }
 
 #[test]
@@ -740,7 +743,10 @@ fn xben_new_invalid_banner() {
     let err = XZAssignmentReader::new(wrong.as_slice())
         .err()
         .expect("expected invalid data");
-    assert_eq!(std::io::Error::from(err).kind(), std::io::ErrorKind::InvalidData);
+    assert_eq!(
+        std::io::Error::from(err).kind(),
+        std::io::ErrorKind::InvalidData
+    );
 }
 
 #[test]
@@ -987,7 +993,8 @@ fn xben_frame_decoder_new_and_truncated_iteration_paths() {
     )
     .unwrap();
 
-    let mut frames = binary_ensemble::io::reader::XZAssignmentFrameReader::new(xz.as_slice()).unwrap();
+    let mut frames =
+        binary_ensemble::io::reader::XZAssignmentFrameReader::new(xz.as_slice()).unwrap();
     assert!(frames.next().unwrap().is_ok());
 
     let trimmed = &xz[..xz.len() - 1];
@@ -1370,11 +1377,9 @@ fn twodelta_roundtrips_and_counts_repeated_frames() {
 
     let frames = AssignmentReader::new(ben.as_slice()).unwrap().into_frames();
     assert_eq!(
-        collect_frames(
-            frames.map(|res| res.map(|(f, cnt)| (DecodeFrame::Ben(f), cnt)))
-        )
-        .unwrap()
-        .len(),
+        collect_frames(frames.map(|res| res.map(|(f, cnt)| (DecodeFrame::Ben(f), cnt))))
+            .unwrap()
+            .len(),
         3
     );
 }

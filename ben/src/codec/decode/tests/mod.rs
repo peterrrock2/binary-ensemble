@@ -22,7 +22,7 @@ fn decode_error_non_io_becomes_invalid_data() {
 
 #[test]
 fn decode_xben_to_ben_twodelta_roundtrip() {
-    use crate::codec::decode::{decode_xben_to_ben, decode_ben_to_jsonl};
+    use crate::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben};
     use crate::codec::encode::encode_jsonl_to_xben;
     use crate::BenVariant;
     use serde_json::Value;
@@ -139,7 +139,7 @@ fn encode_ben_to_xben_roundtrip() {
 
 #[test]
 fn encode_ben_to_xben_with_chunk_size() {
-    use crate::codec::decode::{decode_xben_to_ben, decode_ben_to_jsonl};
+    use crate::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben};
     use crate::codec::encode::{encode_ben_to_xben, encode_jsonl_to_ben};
     use crate::BenVariant;
     use serde_json::Value;
@@ -171,7 +171,7 @@ fn encode_ben_to_xben_with_chunk_size() {
 
 #[test]
 fn encode_ben_to_xben_mkvchain_roundtrip() {
-    use crate::codec::decode::{decode_xben_to_ben, decode_ben_to_jsonl};
+    use crate::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben};
     use crate::codec::encode::{encode_ben_to_xben, encode_jsonl_to_ben};
     use crate::BenVariant;
     use serde_json::Value;

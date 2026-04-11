@@ -5,12 +5,17 @@ use crate::codec::decode::{
 use crate::codec::encode::{
     encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben, xz_compress,
 };
+use crate::io::bundle::format::{AssignmentFormat, ASSET_TYPE_GRAPH, CANONICAL_NAME_GRAPH};
+use crate::io::bundle::writer::BendlAppender;
+use crate::io::bundle::{AddAssetOptions, BendlWriter};
+use crate::io::reader::subsample::count_samples_from_file;
 use crate::ops::extract::extract_assignment_ben;
 use crate::BenVariant;
 use clap::{Parser, ValueEnum};
 use std::{
-    fs::File,
-    io::{self, BufReader, BufWriter, Result, Write},
+    fs::{File, OpenOptions},
+    io::{self, BufRead, BufReader, BufWriter, Result, Write},
+    path::{Path, PathBuf},
 };
 
 type DynReader = Box<dyn io::BufRead>;
@@ -142,6 +147,12 @@ struct Args {
     /// Default is 10,000.
     #[arg(long)]
     chunk_size: Option<usize>,
+    /// Embed a graph JSON asset alongside the assignment stream and emit
+    /// the result as a `.bendl` bundle. The graph is added after the
+    /// assignment stream has been fully written. Only applies to the
+    /// `encode` and `x-encode` modes.
+    #[arg(long)]
+    graph: Option<PathBuf>,
 }
 
 /// Derive the output path for encode-style CLI modes.
@@ -152,6 +163,9 @@ struct Args {
 /// * `input_file_name` - The input file path supplied by the user.
 /// * `output_file_name` - An optional explicit output path.
 /// * `overwrite` - Whether to skip overwrite prompting.
+/// * `with_graph` - When true, the output is a `.bendl` bundle instead
+///   of a bare `.ben`/`.xben` stream, so the derived extension is
+///   `.bendl` regardless of `mode`.
 ///
 /// # Returns
 ///
@@ -161,8 +175,11 @@ fn encode_setup(
     input_file_name: String,
     output_file_name: Option<String>,
     overwrite: bool,
+    with_graph: bool,
 ) -> Result<String> {
-    let extension = if mode == Mode::XEncode {
+    let extension = if with_graph {
+        ".bendl"
+    } else if mode == Mode::XEncode {
         ".xben"
     } else if mode == Mode::Encode {
         ".ben"
@@ -173,8 +190,13 @@ fn encode_setup(
     let out_file_name = match output_file_name {
         Some(name) => name.to_owned(),
         None => {
-            if input_file_name.ends_with(".ben") && extension == ".xben" {
+            let stripped_ben = input_file_name.ends_with(".ben")
+                && (extension == ".xben" || extension == ".bendl");
+            let stripped_xben = input_file_name.ends_with(".xben") && extension == ".bendl";
+            if stripped_ben {
                 input_file_name.trim_end_matches(".ben").to_owned() + extension
+            } else if stripped_xben {
+                input_file_name.trim_end_matches(".xben").to_owned() + extension
             } else {
                 input_file_name.to_string() + extension
             }
@@ -287,14 +309,208 @@ fn open_derived_writer(path: String) -> DynWriter {
     Box::new(BufWriter::new(File::create(path).unwrap()))
 }
 
+/// Count the number of non-empty lines in a JSONL file. Used to populate
+/// the bundle header's `sample_count` when wrapping a stream encode in a
+/// `.bendl` container.
+fn count_jsonl_lines(path: &Path) -> io::Result<i64> {
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+    let mut n: i64 = 0;
+    for line in reader.lines() {
+        let line = line?;
+        if !line.is_empty() {
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
+/// After a finalized `.bendl` has been written, reopen it in append mode
+/// and attach the graph asset in-place. This runs *after* the stream has
+/// finished, which is why we print "Adding graph..." at this point.
+fn append_graph_asset(out_path: &str, graph_path: &Path) -> Result<()> {
+    eprintln!("Adding graph...");
+    let graph_bytes = std::fs::read(graph_path).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("failed to read graph {graph_path:?}: {e}"),
+        )
+    })?;
+
+    let file = OpenOptions::new().read(true).write(true).open(out_path)?;
+    let mut appender = BendlAppender::open(file)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+    appender
+        .add_asset(
+            ASSET_TYPE_GRAPH,
+            CANONICAL_NAME_GRAPH,
+            &graph_bytes,
+            AddAssetOptions::defaults().json(),
+        )
+        .map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("failed to add graph asset: {e}"),
+            )
+        })?;
+    appender
+        .commit()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+    Ok(())
+}
+
+/// Encode `input_path` (JSONL) to BEN inside a fresh `.bendl` bundle at
+/// `out_path` and then append the graph as a post-stream asset.
+fn run_encode_bundle_with_graph(
+    input_path: &Path,
+    out_path: &str,
+    variant: BenVariant,
+    graph_path: &Path,
+) -> Result<()> {
+    // Validate the graph file is readable before we do any real work,
+    // so a bad --graph path doesn't leave a half-written bundle behind.
+    std::fs::metadata(graph_path).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("failed to stat graph {graph_path:?}: {e}"),
+        )
+    })?;
+
+    let sample_count = count_jsonl_lines(input_path)?;
+
+    let out_file = File::create(out_path)?;
+    let mut bendl_writer = BendlWriter::new(out_file, AssignmentFormat::Ben)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+    {
+        let mut handle = bendl_writer
+            .begin_stream()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+        let reader = BufReader::new(File::open(input_path)?);
+        encode_jsonl_to_ben(reader, &mut handle, variant)?;
+        handle
+            .finish(sample_count)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+    }
+    bendl_writer
+        .finish()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+
+    append_graph_asset(out_path, graph_path)
+}
+
+/// Encode `input_path` (JSONL or `.ben`) to XBEN inside a fresh `.bendl`
+/// bundle at `out_path` and then append the graph as a post-stream asset.
+#[allow(clippy::too_many_arguments)]
+fn run_xencode_bundle_with_graph(
+    input_path: &Path,
+    out_path: &str,
+    variant: BenVariant,
+    from_ben: bool,
+    n_threads: Option<u32>,
+    compression_level: Option<u32>,
+    chunk_size: Option<usize>,
+    graph_path: &Path,
+) -> Result<()> {
+    std::fs::metadata(graph_path).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("failed to stat graph {graph_path:?}: {e}"),
+        )
+    })?;
+
+    let sample_count: i64 = if from_ben {
+        count_samples_from_file(input_path, "ben")? as i64
+    } else {
+        count_jsonl_lines(input_path)?
+    };
+
+    let out_file = File::create(out_path)?;
+    let mut bendl_writer = BendlWriter::new(out_file, AssignmentFormat::Xben)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+    {
+        let mut handle = bendl_writer
+            .begin_stream()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+        let reader = BufReader::new(File::open(input_path)?);
+        if from_ben {
+            encode_ben_to_xben(
+                reader,
+                &mut handle,
+                n_threads,
+                compression_level,
+                chunk_size,
+            )?;
+        } else {
+            encode_jsonl_to_xben(
+                reader,
+                &mut handle,
+                variant,
+                n_threads,
+                compression_level,
+                chunk_size,
+            )?;
+        }
+        handle
+            .finish(sample_count)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+    }
+    bendl_writer
+        .finish()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+
+    append_graph_asset(out_path, graph_path)
+}
+
 /// Parse CLI arguments and execute the selected `ben` sub-mode.
 pub fn run() {
     let args = Args::parse();
     set_verbose(args.verbose);
 
+    // --graph is only meaningful for the stream-producing modes.
+    if args.graph.is_some() && args.mode != Mode::Encode && args.mode != Mode::XEncode {
+        eprintln!("Error: --graph is only supported with --mode encode or --mode x-encode");
+        return;
+    }
+
     match args.mode {
         Mode::Encode => {
             tracing::trace!("Running in encode mode");
+
+            // --graph path: produce a .bendl bundle with the BEN stream
+            // plus a post-stream graph asset.
+            if let Some(graph_path) = args.graph.as_ref() {
+                let in_file = match args.input_file.as_ref() {
+                    Some(f) => f,
+                    None => {
+                        eprintln!("Error: --graph requires an input file (stdin not supported).");
+                        return;
+                    }
+                };
+                if args.print {
+                    eprintln!("Error: --graph is incompatible with --print.");
+                    return;
+                }
+                let out_path = match encode_setup(
+                    args.mode,
+                    in_file.clone(),
+                    args.output_file.clone(),
+                    args.overwrite,
+                    true,
+                ) {
+                    Ok(path) => path,
+                    Err(err) => {
+                        eprintln!("Error: {:?}", err);
+                        return;
+                    }
+                };
+                let variant = resolve_variant(args.variant, args.save_all);
+                if let Err(err) =
+                    run_encode_bundle_with_graph(Path::new(in_file), &out_path, variant, graph_path)
+                {
+                    eprintln!("Error: {:?}", err);
+                }
+                return;
+            }
 
             let reader = open_reader(args.input_file.as_deref());
             let writer = match args.input_file.as_ref() {
@@ -303,6 +519,7 @@ pub fn run() {
                     in_file.clone(),
                     args.output_file.clone(),
                     args.overwrite,
+                    false,
                 ) {
                     Ok(path) => open_derived_writer(path),
                     Err(err) => {
@@ -338,6 +555,53 @@ pub fn run() {
                 }
             }
 
+            // --graph path: produce a .bendl bundle with the XBEN stream
+            // plus a post-stream graph asset.
+            if let Some(graph_path) = args.graph.as_ref() {
+                let in_file = match args.input_file.as_ref() {
+                    Some(f) => f,
+                    None => {
+                        eprintln!("Error: --graph requires an input file (stdin not supported).");
+                        return;
+                    }
+                };
+                if args.print {
+                    eprintln!("Error: --graph is incompatible with --print.");
+                    return;
+                }
+                if !ben_and_xben && !jsonl_and_xben {
+                    eprintln!("Error: Unsupported file type(s) for xencode mode");
+                    return;
+                }
+                let out_path = match encode_setup(
+                    args.mode,
+                    in_file.clone(),
+                    args.output_file.clone(),
+                    args.overwrite,
+                    true,
+                ) {
+                    Ok(path) => path,
+                    Err(err) => {
+                        eprintln!("Error: {:?}", err);
+                        return;
+                    }
+                };
+                let variant = resolve_variant(args.variant, args.save_all);
+                if let Err(err) = run_xencode_bundle_with_graph(
+                    Path::new(in_file),
+                    &out_path,
+                    variant,
+                    ben_and_xben,
+                    args.n_cpus,
+                    args.compression_level,
+                    args.chunk_size,
+                    graph_path,
+                ) {
+                    eprintln!("Error: {:?}", err);
+                }
+                return;
+            }
+
             let reader = open_reader(args.input_file.as_deref());
             let writer = match args.input_file.as_ref() {
                 Some(in_file) if !args.print => match encode_setup(
@@ -345,6 +609,7 @@ pub fn run() {
                     in_file.clone(),
                     args.output_file.clone(),
                     args.overwrite,
+                    false,
                 ) {
                     Ok(path) => open_derived_writer(path),
                     Err(err) => {
@@ -362,9 +627,13 @@ pub fn run() {
             };
 
             if ben_and_xben {
-                if let Err(err) =
-                    encode_ben_to_xben(reader, writer, args.n_cpus, args.compression_level, args.chunk_size)
-                {
+                if let Err(err) = encode_ben_to_xben(
+                    reader,
+                    writer,
+                    args.n_cpus,
+                    args.compression_level,
+                    args.chunk_size,
+                ) {
                     eprintln!("Error: {:?}", err);
                 }
             } else if jsonl_and_xben {
@@ -674,16 +943,42 @@ mod tests {
     #[test]
     fn encode_setup_derives_extensions() {
         assert_eq!(
-            encode_setup(Mode::Encode, "samples.jsonl".to_string(), None, true).unwrap(),
+            encode_setup(Mode::Encode, "samples.jsonl".to_string(), None, true, false).unwrap(),
             "samples.jsonl.ben"
         );
         assert_eq!(
-            encode_setup(Mode::XEncode, "samples.ben".to_string(), None, true).unwrap(),
+            encode_setup(Mode::XEncode, "samples.ben".to_string(), None, true, false).unwrap(),
             "samples.xben"
         );
         assert_eq!(
-            encode_setup(Mode::XzCompress, "samples.jsonl".to_string(), None, true).unwrap(),
+            encode_setup(
+                Mode::XzCompress,
+                "samples.jsonl".to_string(),
+                None,
+                true,
+                false
+            )
+            .unwrap(),
             "samples.jsonl.xz"
+        );
+    }
+
+    #[test]
+    fn encode_setup_with_graph_derives_bendl_extension() {
+        // JSONL + encode + graph → .bendl
+        assert_eq!(
+            encode_setup(Mode::Encode, "samples.jsonl".to_string(), None, true, true).unwrap(),
+            "samples.jsonl.bendl"
+        );
+        // .ben input to x-encode with graph trims the .ben suffix
+        assert_eq!(
+            encode_setup(Mode::XEncode, "samples.ben".to_string(), None, true, true).unwrap(),
+            "samples.bendl"
+        );
+        // .xben input to x-encode with graph trims the .xben suffix
+        assert_eq!(
+            encode_setup(Mode::XEncode, "samples.xben".to_string(), None, true, true).unwrap(),
+            "samples.bendl"
         );
     }
 
@@ -695,6 +990,7 @@ mod tests {
                 "ignored.jsonl".to_string(),
                 Some("custom-output.ben".to_string()),
                 true,
+                false,
             )
             .unwrap(),
             "custom-output.ben"
@@ -711,6 +1007,7 @@ mod tests {
             "input.jsonl".to_string(),
             Some(path.to_string_lossy().into_owned()),
             true,
+            false,
         );
         assert!(err.is_ok());
 

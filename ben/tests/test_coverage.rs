@@ -15,7 +15,8 @@ use binary_ensemble::format::banners::{
     MKVCHAIN_BEN_BANNER, STANDARD_BEN_BANNER, TWODELTA_BEN_BANNER,
 };
 use binary_ensemble::io::reader::{
-    AssignmentReader, AssignmentFrameReader, DecoderInitError, XZAssignmentReader, XZAssignmentFrameReader,
+    AssignmentFrameReader, AssignmentReader, DecoderInitError, XZAssignmentFrameReader,
+    XZAssignmentReader,
 };
 use binary_ensemble::io::writer::AssignmentWriter;
 use binary_ensemble::json::graph::{
@@ -1922,7 +1923,9 @@ fn ben_frame_decoder_twodelta_yields_standard_frames() {
     encode_jsonl_to_ben(jsonl.as_slice(), &mut ben, BenVariant::TwoDelta).unwrap();
 
     // AssignmentFrameReader should re-encode TwoDelta frames back to standard BEN frames
-    let decoder = AssignmentReader::new(Cursor::new(ben)).unwrap().silent(true);
+    let decoder = AssignmentReader::new(Cursor::new(ben))
+        .unwrap()
+        .silent(true);
     let frame_iter = decoder.into_frames();
     let frames: Vec<_> = frame_iter.map(|r| r.unwrap()).collect();
     assert_eq!(frames.len(), 2);
@@ -1936,7 +1939,9 @@ fn ben_frame_decoder_twodelta_yields_standard_frames() {
 fn ben_decoder_subsample_by_indices() {
     let assignments: Vec<Vec<u16>> = (0u16..10).map(|i| vec![i; 4]).collect();
     let ben = encode_standard_ben(&assignments);
-    let decoder = AssignmentReader::new(Cursor::new(ben)).unwrap().silent(true);
+    let decoder = AssignmentReader::new(Cursor::new(ben))
+        .unwrap()
+        .silent(true);
     // 1-based indices: 2, 5, 8
     let selected: Vec<Vec<u16>> = decoder
         .into_subsample_by_indices(vec![2usize, 5, 8])
@@ -1952,7 +1957,9 @@ fn ben_decoder_subsample_by_indices() {
 fn ben_decoder_subsample_by_range() {
     let assignments: Vec<Vec<u16>> = (0u16..10).map(|i| vec![i; 3]).collect();
     let ben = encode_standard_ben(&assignments);
-    let decoder = AssignmentReader::new(Cursor::new(ben)).unwrap().silent(true);
+    let decoder = AssignmentReader::new(Cursor::new(ben))
+        .unwrap()
+        .silent(true);
     // Inclusive 1-based range [3, 6]
     let selected: Vec<Vec<u16>> = decoder
         .into_subsample_by_range(3, 6)
@@ -1967,7 +1974,9 @@ fn ben_decoder_subsample_by_range() {
 fn ben_decoder_subsample_every_nth() {
     let assignments: Vec<Vec<u16>> = (0u16..10).map(|i| vec![i; 2]).collect();
     let ben = encode_standard_ben(&assignments);
-    let decoder = AssignmentReader::new(Cursor::new(ben)).unwrap().silent(true);
+    let decoder = AssignmentReader::new(Cursor::new(ben))
+        .unwrap()
+        .silent(true);
     // Every 3rd sample starting at 1-based offset 1: samples 1, 4, 7, 10
     let selected: Vec<Vec<u16>> = decoder
         .into_subsample_every(3, 1)
@@ -1984,7 +1993,9 @@ fn ben_decoder_subsample_every_nth() {
 fn ben_decoder_subsample_by_indices_dedup() {
     let assignments: Vec<Vec<u16>> = (0u16..5).map(|i| vec![i; 2]).collect();
     let ben = encode_standard_ben(&assignments);
-    let decoder = AssignmentReader::new(Cursor::new(ben)).unwrap().silent(true);
+    let decoder = AssignmentReader::new(Cursor::new(ben))
+        .unwrap()
+        .silent(true);
     // Duplicate index 2 → after dedup only samples 2 and 3 are selected
     let selected: Vec<Vec<u16>> = decoder
         .into_subsample_by_indices(vec![2usize, 2, 3])

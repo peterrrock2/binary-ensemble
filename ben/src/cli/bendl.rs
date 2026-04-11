@@ -21,10 +21,8 @@ use crate::io::bundle::format::{
     AssignmentFormat, ASSET_FLAG_CHECKSUM, ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM,
     ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA, ASSET_TYPE_RELABEL_MAP,
 };
-use crate::io::bundle::{
-    AddAssetOptions, BendlReader, BendlWriteError, BendlWriter,
-};
 use crate::io::bundle::writer::BendlAppender;
+use crate::io::bundle::{AddAssetOptions, BendlReader, BendlWriteError, BendlWriter};
 use crate::io::reader::subsample::count_samples_from_file;
 
 /// Parsed form of a `name=path` option such as `--asset myblob=/tmp/x`.
@@ -290,8 +288,8 @@ fn add_file_asset<W: Write + Seek>(
 }
 
 fn run_inspect(args: InspectArgs) -> Result<(), String> {
-    let file = File::open(&args.input)
-        .map_err(|e| format!("failed to open {:?}: {e}", args.input))?;
+    let file =
+        File::open(&args.input).map_err(|e| format!("failed to open {:?}: {e}", args.input))?;
     let reader = BendlReader::open(BufReader::new(file))
         .map_err(|e| format!("failed to parse bundle header: {e}"))?;
 
@@ -363,21 +361,21 @@ fn run_extract(args: ExtractArgs) -> Result<(), String> {
     )
     .map_err(|e| format!("{e}"))?;
 
-    let file = File::open(&args.input)
-        .map_err(|e| format!("failed to open {:?}: {e}", args.input))?;
+    let file =
+        File::open(&args.input).map_err(|e| format!("failed to open {:?}: {e}", args.input))?;
     let mut reader = BendlReader::open(BufReader::new(file))
         .map_err(|e| format!("failed to parse bundle header: {e}"))?;
 
     let mut out = BufWriter::new(
-        File::create(&args.output).map_err(|e| format!("failed to create {:?}: {e}", args.output))?,
+        File::create(&args.output)
+            .map_err(|e| format!("failed to create {:?}: {e}", args.output))?,
     );
 
     if args.stream {
         let mut stream = reader
             .assignment_stream_reader()
             .map_err(|e| format!("failed to open stream region: {e}"))?;
-        io::copy(&mut stream, &mut out)
-            .map_err(|e| format!("failed to copy stream bytes: {e}"))?;
+        io::copy(&mut stream, &mut out).map_err(|e| format!("failed to copy stream bytes: {e}"))?;
     } else if let Some(name) = args.asset.as_deref() {
         let entry = reader
             .find_asset_by_name(name)
@@ -386,8 +384,7 @@ fn run_extract(args: ExtractArgs) -> Result<(), String> {
         let mut asset = reader
             .asset_reader(&entry)
             .map_err(|e| format!("failed to open asset {name:?}: {e}"))?;
-        io::copy(&mut asset, &mut out)
-            .map_err(|e| format!("failed to copy asset bytes: {e}"))?;
+        io::copy(&mut asset, &mut out).map_err(|e| format!("failed to copy asset bytes: {e}"))?;
     }
 
     out.flush().map_err(|e| format!("flush failed: {e}"))?;
@@ -400,8 +397,8 @@ fn run_append(args: AppendArgs) -> Result<(), String> {
         .write(true)
         .open(&args.input)
         .map_err(|e| format!("failed to open {:?} for read+write: {e}", args.input))?;
-    let mut appender = BendlAppender::open(file)
-        .map_err(|e| format!("failed to open appender: {e}"))?;
+    let mut appender =
+        BendlAppender::open(file).map_err(|e| format!("failed to open appender: {e}"))?;
 
     let mut added = 0usize;
     if let Some(ref path) = args.metadata {

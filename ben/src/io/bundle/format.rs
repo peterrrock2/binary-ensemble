@@ -290,11 +290,13 @@ impl BendlDirectoryEntry {
     /// Serialize the entry into a byte vector.
     pub fn to_bytes(&self) -> Result<Vec<u8>, BendlFormatError> {
         let name_bytes = self.name.as_bytes();
-        let name_len: u16 = name_bytes.len().try_into().map_err(|_| {
-            BendlFormatError::NameTooLong {
-                length: name_bytes.len(),
-            }
-        })?;
+        let name_len: u16 =
+            name_bytes
+                .len()
+                .try_into()
+                .map_err(|_| BendlFormatError::NameTooLong {
+                    length: name_bytes.len(),
+                })?;
         let checksum_bytes = self.checksum.as_deref().unwrap_or(&[]);
         let checksum_len: u32 =
             checksum_bytes
@@ -379,12 +381,13 @@ pub fn read_directory<R: Read>(
 
 /// Serialize a directory table into a byte vector.
 pub fn encode_directory(entries: &[BendlDirectoryEntry]) -> Result<Vec<u8>, BendlFormatError> {
-    let entry_count: u32 = entries
-        .len()
-        .try_into()
-        .map_err(|_| BendlFormatError::TooManyEntries {
-            length: entries.len(),
-        })?;
+    let entry_count: u32 =
+        entries
+            .len()
+            .try_into()
+            .map_err(|_| BendlFormatError::TooManyEntries {
+                length: entries.len(),
+            })?;
 
     let body_len: usize = entries.iter().map(|e| e.encoded_len()).sum();
     let mut out = Vec::with_capacity(4 + body_len);
@@ -440,6 +443,17 @@ pub enum BendlFormatError {
     #[error("directory entry name is not valid UTF-8")]
     NameNotUtf8,
 
+    /// A directory table contained bytes after the declared entries.
+    #[error("directory table has {remaining} trailing byte(s) after declared entries")]
+    TrailingDirectoryBytes {
+        /// Number of unread bytes left in the bounded directory region.
+        remaining: u64,
+    },
+
+    /// A directory table violated bundle-level validation rules.
+    #[error("malformed directory: {0}")]
+    MalformedDirectory(String),
+
     /// An I/O error occurred while reading or writing the format layer.
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
@@ -470,7 +484,10 @@ mod tests {
 
     #[test]
     fn canonical_name_lookup() {
-        assert_eq!(canonical_name_for(ASSET_TYPE_METADATA), Some("metadata.json"));
+        assert_eq!(
+            canonical_name_for(ASSET_TYPE_METADATA),
+            Some("metadata.json")
+        );
         assert_eq!(canonical_name_for(ASSET_TYPE_GRAPH), Some("graph.json"));
         assert_eq!(
             canonical_name_for(ASSET_TYPE_RELABEL_MAP),
@@ -510,7 +527,10 @@ mod tests {
         let decoded = BendlHeader::from_bytes(&header.to_bytes()).unwrap();
         assert_eq!(header, decoded);
         assert!(!decoded.is_complete());
-        assert_eq!(decoded.assignment_format_typed(), Some(AssignmentFormat::Xben));
+        assert_eq!(
+            decoded.assignment_format_typed(),
+            Some(AssignmentFormat::Xben)
+        );
         assert_eq!(decoded.sample_count, -1);
         assert_eq!(decoded.stream_len, 0);
         assert_eq!(decoded.directory_offset, 0);
@@ -588,7 +608,10 @@ mod tests {
         let mut cursor = &bytes[..];
         let decoded = BendlDirectoryEntry::read_from(&mut cursor).unwrap();
         assert_eq!(decoded, entry);
-        assert_eq!(decoded.checksum.unwrap(), vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE]);
+        assert_eq!(
+            decoded.checksum.unwrap(),
+            vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE]
+        );
     }
 
     #[test]

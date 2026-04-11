@@ -77,6 +77,11 @@ pub(crate) fn assign_slice_to_rle(assign_vec: &[u16], rle_vec: &mut Vec<(u16, u1
             continue;
         }
         if assign == prev_assign {
+            if count == u16::MAX {
+                rle_vec.push((prev_assign, count));
+                count = 1;
+                continue;
+            }
             count += 1;
         } else {
             rle_vec.push((prev_assign, count));

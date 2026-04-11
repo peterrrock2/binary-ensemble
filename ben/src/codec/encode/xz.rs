@@ -49,7 +49,8 @@ pub fn xz_compress<R: BufRead, W: Write>(
         .map_err(|e| io::Error::from(EncodeError::XzInit(e)))?;
     let mut encoder = XzEncoder::new_stream(writer, mt);
 
-    while let Ok(count) = reader.read(&mut buff) {
+    loop {
+        let count = reader.read(&mut buff)?;
         if count == 0 {
             break;
         }

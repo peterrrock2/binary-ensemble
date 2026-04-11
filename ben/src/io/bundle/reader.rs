@@ -36,7 +36,15 @@ impl<R: Read + Seek> BendlReader<R> {
 
         let directory = if header.directory_offset != 0 && header.directory_len != 0 {
             inner.seek(SeekFrom::Start(header.directory_offset))?;
-            read_directory(&mut inner)?
+            let mut bounded = (&mut inner).take(header.directory_len);
+            let directory = read_directory(&mut bounded)?;
+            let remaining = bounded.limit();
+            if remaining != 0 {
+                return Err(BendlFormatError::TrailingDirectoryBytes { remaining });
+            }
+            validate_directory_entries(&directory)
+                .map_err(|e| BendlFormatError::MalformedDirectory(e.to_string()))?;
+            directory
         } else {
             Vec::new()
         };
@@ -135,11 +143,9 @@ impl<R: Read + Seek> BendlReader<R> {
     pub fn open_assignment_reader(
         &mut self,
     ) -> Result<BundleAssignmentReader<Take<&mut R>>, BundleAssignmentReaderError> {
-        let format = self
-            .assignment_format()
-            .ok_or(BundleAssignmentReaderError::UnknownAssignmentFormat(
-                self.header.assignment_format,
-            ))?;
+        let format = self.assignment_format().ok_or(
+            BundleAssignmentReaderError::UnknownAssignmentFormat(self.header.assignment_format),
+        )?;
         let stream = self.assignment_stream_reader()?;
         match format {
             AssignmentFormat::Ben => {
@@ -194,35 +200,41 @@ impl<R: Read + Seek> BendlReader<R> {
     /// writer is already expected to enforce these rules and a
     /// malformed bundle is a program bug somewhere else.
     pub fn validate_directory(&self) -> Result<(), BundleValidationError> {
-        let mut seen_names = std::collections::HashSet::new();
-        let mut seen_singleton_types = std::collections::HashSet::new();
-
-        for entry in &self.directory {
-            if !seen_names.insert(entry.name.as_str()) {
-                return Err(BundleValidationError::DuplicateName(entry.name.clone()));
-            }
-            if let Some(canonical) = canonical_name_for(entry.asset_type) {
-                if entry.name != canonical {
-                    return Err(BundleValidationError::WrongCanonicalName {
-                        asset_type: entry.asset_type,
-                        expected: canonical.to_string(),
-                        found: entry.name.clone(),
-                    });
-                }
-                if !seen_singleton_types.insert(entry.asset_type) {
-                    return Err(BundleValidationError::DuplicateSingletonType(
-                        entry.asset_type,
-                    ));
-                }
-            }
-        }
-        Ok(())
+        validate_directory_entries(&self.directory)
     }
 
     /// Release the underlying reader.
     pub fn into_inner(self) -> R {
         self.inner
     }
+}
+
+pub(crate) fn validate_directory_entries(
+    directory: &[BendlDirectoryEntry],
+) -> Result<(), BundleValidationError> {
+    let mut seen_names = std::collections::HashSet::new();
+    let mut seen_singleton_types = std::collections::HashSet::new();
+
+    for entry in directory {
+        if !seen_names.insert(entry.name.as_str()) {
+            return Err(BundleValidationError::DuplicateName(entry.name.clone()));
+        }
+        if let Some(canonical) = canonical_name_for(entry.asset_type) {
+            if entry.name != canonical {
+                return Err(BundleValidationError::WrongCanonicalName {
+                    asset_type: entry.asset_type,
+                    expected: canonical.to_string(),
+                    found: entry.name.clone(),
+                });
+            }
+            if !seen_singleton_types.insert(entry.asset_type) {
+                return Err(BundleValidationError::DuplicateSingletonType(
+                    entry.asset_type,
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Either a BEN or an XBEN assignment decoder over a bundle's embedded
@@ -277,9 +289,7 @@ pub enum BundleValidationError {
     DuplicateSingletonType(u16),
 
     /// An entry with a known singleton type is not using its canonical name.
-    #[error(
-        "asset type {asset_type} must use canonical name {expected:?}, found {found:?}"
-    )]
+    #[error("asset type {asset_type} must use canonical name {expected:?}, found {found:?}")]
     WrongCanonicalName {
         /// The asset type whose canonical name was violated.
         asset_type: u16,
@@ -427,7 +437,11 @@ mod tests {
         let (offset, len) = reader.assignment_stream_range().unwrap();
         assert_eq!(len, fake_stream.len() as u64);
         let mut buf = Vec::new();
-        reader.assignment_stream_reader().unwrap().read_to_end(&mut buf).unwrap();
+        reader
+            .assignment_stream_reader()
+            .unwrap()
+            .read_to_end(&mut buf)
+            .unwrap();
         assert_eq!(buf, fake_stream);
         // Sanity-check the offset is consistent with the header.
         assert_eq!(offset, reader.header().stream_offset);
@@ -465,7 +479,11 @@ mod tests {
         assert_eq!(len, fake_stream.len() as u64);
 
         let mut buf = Vec::new();
-        reader.assignment_stream_reader().unwrap().read_to_end(&mut buf).unwrap();
+        reader
+            .assignment_stream_reader()
+            .unwrap()
+            .read_to_end(&mut buf)
+            .unwrap();
         assert_eq!(buf, fake_stream);
     }
 
@@ -527,7 +545,10 @@ mod tests {
         let err = reader.validate_directory().unwrap_err();
         assert!(matches!(
             err,
-            BundleValidationError::WrongCanonicalName { asset_type: ASSET_TYPE_GRAPH, .. }
+            BundleValidationError::WrongCanonicalName {
+                asset_type: ASSET_TYPE_GRAPH,
+                ..
+            }
         ));
     }
 
@@ -609,12 +630,10 @@ mod tests {
     fn open_rejects_directory_with_inflated_entry_count() {
         let mut bytes = build_basic_finalized_bundle();
         // Read directory_offset from the header (bytes 24..32).
-        let directory_offset =
-            u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
+        let directory_offset = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
         // Blow up the entry count at the start of the directory to a
         // value that cannot possibly fit in the remaining file bytes.
-        bytes[directory_offset..directory_offset + 4]
-            .copy_from_slice(&9999u32.to_le_bytes());
+        bytes[directory_offset..directory_offset + 4].copy_from_slice(&9999u32.to_le_bytes());
         match BendlReader::open(Cursor::new(bytes)) {
             Err(BendlFormatError::Io(_)) => {}
             Err(other) => panic!("expected Io, got {other:?}"),
@@ -682,14 +701,12 @@ mod tests {
         // claims a payload_len that extends well past EOF.
         let mut bytes = build_basic_finalized_bundle();
         // Parse the directory offset to find where the entry lives.
-        let directory_offset =
-            u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
+        let directory_offset = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
         // Skip the u32 entry count (4 bytes) and then the 16-byte fixed
         // entry header up to `payload_len` (bytes 16..24 of the entry).
         let entry_start = directory_offset + 4;
         let payload_len_offset = entry_start + 16;
-        bytes[payload_len_offset..payload_len_offset + 8]
-            .copy_from_slice(&u64::MAX.to_le_bytes());
+        bytes[payload_len_offset..payload_len_offset + 8].copy_from_slice(&u64::MAX.to_le_bytes());
 
         let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
         let entry = reader.find_asset_by_name("metadata.json").cloned().unwrap();

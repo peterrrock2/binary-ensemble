@@ -1,6 +1,6 @@
 use super::utils::parse_json_assignment;
 use crate::codec::encode::encode_twodelta_frame_with_hint;
-use crate::codec::{BenConstruct, BenEncodeFrame, MkvBenEncodeFrame};
+use crate::codec::{BenConstruct, BenEncodeFrame, MkvBenEncodeFrame, TwoDeltaEncodeFrame};
 use crate::format::banners::banner_for_variant;
 use crate::BenVariant;
 use serde_json::Value;
@@ -81,6 +81,9 @@ impl<W: Write> AssignmentWriter<W> {
                         Some(self.sample_count),
                     );
                     self.writer.write_all(frame.as_slice())?;
+                } else if self.previous_sample == pending_sample {
+                    let frame = twodelta_repeat_frame(&pending_sample, self.sample_count)?;
+                    self.writer.write_all(frame.as_slice())?;
                 } else {
                     let frame = encode_twodelta_frame_with_hint(
                         &self.previous_sample,
@@ -112,6 +115,12 @@ impl<W: Write> AssignmentWriter<W> {
     /// Returns `Ok(())` after the assignment has been queued or written.
     pub fn write_assignment(&mut self, assign_vec: Vec<u16>) -> Result<()> {
         if self.pending_sample.as_deref() == Some(assign_vec.as_slice()) {
+            if self.sample_count == u16::MAX {
+                self.flush_pending_frame()?;
+                self.pending_sample = Some(assign_vec);
+                self.sample_count = 1;
+                return Ok(());
+            }
             self.sample_count += 1;
             return Ok(());
         }
@@ -151,6 +160,49 @@ impl<W: Write> AssignmentWriter<W> {
         self.complete = true;
         Ok(())
     }
+}
+
+fn twodelta_repeat_frame(assignment: &[u16], count: u16) -> io::Result<TwoDeltaEncodeFrame> {
+    let first = assignment.first().copied().unwrap_or(0);
+    let second = assignment
+        .iter()
+        .copied()
+        .find(|&value| value != first)
+        .unwrap_or_else(|| if first == u16::MAX { 0 } else { first + 1 });
+
+    let mut run_lengths = Vec::new();
+    let mut current = first;
+    let mut run_len = 0u16;
+
+    for &value in assignment {
+        if value != first && value != second {
+            continue;
+        }
+        if value == current {
+            if run_len == u16::MAX {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "TwoDelta repeat frame contains a run longer than u16::MAX",
+                ));
+            }
+            run_len += 1;
+        } else {
+            if run_len > 0 {
+                run_lengths.push(run_len);
+            }
+            current = value;
+            run_len = 1;
+        }
+    }
+    if run_len > 0 {
+        run_lengths.push(run_len);
+    }
+
+    Ok(TwoDeltaEncodeFrame::from_run_lengths(
+        (first, second),
+        run_lengths,
+        Some(count),
+    ))
 }
 
 impl<W: Write> Drop for AssignmentWriter<W> {

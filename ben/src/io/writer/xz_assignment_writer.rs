@@ -174,6 +174,12 @@ impl<W: Write> XZAssignmentWriter<W> {
             }
             BenVariant::MkvChain => {
                 if self.pending_assignment.as_deref() == Some(assign_vec.as_slice()) {
+                    if self.count == u16::MAX {
+                        self.flush_pending_frame()?;
+                        self.pending_assignment = Some(assign_vec);
+                        self.count = 1;
+                        return Ok(());
+                    }
                     self.count += 1;
                     return Ok(());
                 }
@@ -190,6 +196,13 @@ impl<W: Write> XZAssignmentWriter<W> {
                 }
                 // Repeat of the pending initial full frame.
                 if self.pending_assignment.as_deref() == Some(assign_vec.as_slice()) {
+                    if self.count == u16::MAX {
+                        self.flush_pending_frame()?;
+                        let repeat = twodelta_repeat_buffered_frame(&assign_vec, 1)?;
+                        self.chunk_buffer.push(repeat);
+                        self.previous_assignment = assign_vec;
+                        return Ok(());
+                    }
                     self.count += 1;
                     return Ok(());
                 }
@@ -197,7 +210,13 @@ impl<W: Write> XZAssignmentWriter<W> {
                 if !self.chunk_buffer.is_empty()
                     && self.previous_assignment.as_slice() == assign_vec.as_slice()
                 {
-                    self.chunk_buffer.last_mut().unwrap().count += 1;
+                    if self.chunk_buffer.last().unwrap().count == u16::MAX {
+                        self.flush_chunk()?;
+                        let repeat = twodelta_repeat_buffered_frame(&assign_vec, 1)?;
+                        self.chunk_buffer.push(repeat);
+                    } else {
+                        self.chunk_buffer.last_mut().unwrap().count += 1;
+                    }
                     return Ok(());
                 }
                 // New distinct assignment: flush the initial full frame if pending.
@@ -352,6 +371,52 @@ impl<W: Write> XZAssignmentWriter<W> {
 
         ben_to_ben32_lines(&mut reader, &mut self.encoder, self.variant)
     }
+}
+
+fn twodelta_repeat_buffered_frame(
+    assignment: &[u16],
+    count: u16,
+) -> io::Result<BufferedDeltaFrame> {
+    let first = assignment.first().copied().unwrap_or(0);
+    let second = assignment
+        .iter()
+        .copied()
+        .find(|&value| value != first)
+        .unwrap_or_else(|| if first == u16::MAX { 0 } else { first + 1 });
+
+    let mut run_lengths = Vec::new();
+    let mut current = first;
+    let mut run_len = 0u16;
+
+    for &value in assignment {
+        if value != first && value != second {
+            continue;
+        }
+        if value == current {
+            if run_len == u16::MAX {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "TwoDelta repeat frame contains a run longer than u16::MAX",
+                ));
+            }
+            run_len += 1;
+        } else {
+            if run_len > 0 {
+                run_lengths.push(run_len);
+            }
+            current = value;
+            run_len = 1;
+        }
+    }
+    if run_len > 0 {
+        run_lengths.push(run_len);
+    }
+
+    Ok(BufferedDeltaFrame {
+        pair: (first, second),
+        run_lengths,
+        count,
+    })
 }
 
 impl<W: Write> Drop for XZAssignmentWriter<W> {

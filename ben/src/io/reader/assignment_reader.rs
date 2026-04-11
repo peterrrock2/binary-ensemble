@@ -1,8 +1,7 @@
 use super::errors::DecoderInitError;
 use crate::codec::decode::{apply_twodelta_runs_to_assignment, decode_ben_line, DecodeError};
 use crate::codec::{
-    BenConstruct, BenDecode, BenDecodeFrame, BenEncodeFrame, MkvBenDecodeFrame,
-    TwoDeltaDecodeFrame,
+    BenConstruct, BenDecode, BenDecodeFrame, BenEncodeFrame, MkvBenDecodeFrame, TwoDeltaDecodeFrame,
 };
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::util::rle::rle_to_vec;
@@ -38,6 +37,13 @@ impl StoredBenFrame {
             Self::TwoDelta(f) => f.count,
         }
     }
+}
+
+fn zero_count_frame_error() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        "BEN frame count must be greater than zero",
+    )
 }
 
 impl<R: Read> AssignmentReader<R> {
@@ -149,7 +155,11 @@ impl<R: Read> AssignmentReader<R> {
         let mut this = self;
         let mut total = 0usize;
         while let Some(frame_res) = this.pop_frame_from_reader() {
-            total += frame_res?.count() as usize;
+            let count = frame_res?.count();
+            if count == 0 {
+                return Err(zero_count_frame_error());
+            }
+            total += count as usize;
         }
         Ok(total)
     }
@@ -171,6 +181,9 @@ impl<R: Read> AssignmentReader<R> {
             };
 
             let count = frame.count();
+            if count == 0 {
+                return Err(zero_count_frame_error());
+            }
 
             let assignment = match frame {
                 StoredBenFrame::Standard(f) => decode_ben_frame_to_assignment(&f)?,
@@ -246,6 +259,9 @@ impl<R: Read> Iterator for AssignmentReader<R> {
             None => return None,
         };
         let count = frame.count();
+        if count == 0 {
+            return Some(Err(zero_count_frame_error()));
+        }
         let assignment =
             match decode_stored_frame_to_assignment(&mut self.previous_assignment, &frame) {
                 Ok(assgn) => assgn,
@@ -289,6 +305,9 @@ impl<R: Read> Iterator for AssignmentFrameReader<R> {
                     Some(Ok(StoredBenFrame::Standard(frame))) => Some(Ok((frame, 1))),
                     Some(Ok(StoredBenFrame::MkvChain(frame))) => {
                         let count = frame.count;
+                        if count == 0 {
+                            return Some(Err(zero_count_frame_error()));
+                        }
                         Some(Ok((
                             BenDecodeFrame {
                                 max_val_bit_count: frame.max_val_bit_count,
@@ -299,11 +318,11 @@ impl<R: Read> Iterator for AssignmentFrameReader<R> {
                             count,
                         )))
                     }
-                    Some(Ok(StoredBenFrame::TwoDelta(_))) => Some(Err(io::Error::from(
-                        DecodeError::UnexpectedTwoDeltaFrame {
+                    Some(Ok(StoredBenFrame::TwoDelta(_))) => {
+                        Some(Err(io::Error::from(DecodeError::UnexpectedTwoDeltaFrame {
                             variant: self.inner.variant,
-                        },
-                    ))),
+                        })))
+                    }
                     Some(Err(err)) => Some(Err(err)),
                     None => None,
                 }
@@ -370,4 +389,3 @@ impl<R: Read + Send> AssignmentReader<R> {
         super::subsample::SubsampleFrameDecoder::every(frames, step, offset)
     }
 }
-

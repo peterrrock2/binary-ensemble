@@ -50,7 +50,8 @@ mod tests {
 
     #[test]
     fn manifest_accepts_missing_variant() {
-        let json = r#"{"major_version":1,"minor_version":0,"assignment_format":"ben","complete":true}"#;
+        let json =
+            r#"{"major_version":1,"minor_version":0,"assignment_format":"ben","complete":true}"#;
         let decoded: BendlManifest = serde_json::from_str(json).unwrap();
         assert_eq!(decoded.variant, None);
         assert!(decoded.complete);

@@ -584,8 +584,7 @@ fn jsonl_decode_ben32_single_element() {
     let mut out = Vec::new();
     jsonl_decode_ben32(input.as_slice(), &mut out, 0, BenVariant::MkvChain).unwrap();
 
-    let expected =
-        json!({"assignment": [23u16], "sample": 1}).to_string() + "\n";
+    let expected = json!({"assignment": [23u16], "sample": 1}).to_string() + "\n";
     assert_eq!(out, expected.as_bytes());
 }
 
@@ -594,9 +593,7 @@ fn jsonl_decode_ben32_three_frames() {
     // Three ben32 records with count=1 each — mirrors test_decode_ben32_multiple_simple_lines.
     let mut input: Vec<u8> = Vec::new();
     // Record 1: rle [(1,4),(2,4),(3,4),(4,4)]
-    input.extend_from_slice(&[
-        0, 1, 0, 4, 0, 2, 0, 4, 0, 3, 0, 4, 0, 4, 0, 4, 0, 0, 0, 0,
-    ]);
+    input.extend_from_slice(&[0, 1, 0, 4, 0, 2, 0, 4, 0, 3, 0, 4, 0, 4, 0, 4, 0, 0, 0, 0]);
     input.extend_from_slice(&1u16.to_be_bytes());
     // Record 2: rle [(2,2),(3,7),(1,1),(2,1),(3,1)]
     input.extend_from_slice(&[
@@ -605,8 +602,8 @@ fn jsonl_decode_ben32_three_frames() {
     input.extend_from_slice(&1u16.to_be_bytes());
     // Record 3: rle [(1..10, each 1)]
     input.extend_from_slice(&[
-        0, 1, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 4, 0, 1, 0, 5, 0, 1, 0, 6, 0, 1, 0, 7, 0, 1, 0,
-        8, 0, 1, 0, 9, 0, 1, 0, 10, 0, 1, 0, 0, 0, 0,
+        0, 1, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 4, 0, 1, 0, 5, 0, 1, 0, 6, 0, 1, 0, 7, 0, 1, 0, 8,
+        0, 1, 0, 9, 0, 1, 0, 10, 0, 1, 0, 0, 0, 0,
     ]);
     input.extend_from_slice(&1u16.to_be_bytes());
 

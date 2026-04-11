@@ -34,6 +34,12 @@ impl BenDecode for TwoDeltaDecodeFrame {
 
         let pair_b = reader.read_u16::<BigEndian>()?;
         let max_len_bits = reader.read_u8()?;
+        if max_len_bits == 0 || max_len_bits > 16 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid TwoDelta run-length bit width: {max_len_bits}"),
+            ));
+        }
         let n_bytes = reader.read_u32::<BigEndian>()?;
 
         let mut payload = vec![0u8; n_bytes as usize];
@@ -41,8 +47,7 @@ impl BenDecode for TwoDeltaDecodeFrame {
 
         let count = reader.read_u16::<BigEndian>()?;
 
-        let encode_frame =
-            TwoDeltaEncodeFrame::from_parts((pair_a, pair_b), max_len_bits, payload);
+        let encode_frame = TwoDeltaEncodeFrame::from_parts((pair_a, pair_b), max_len_bits, payload);
 
         Ok(Some(TwoDeltaDecodeFrame {
             pair: encode_frame.pair,

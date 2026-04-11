@@ -96,6 +96,12 @@ fn permute_assignment(assignment: &[u16], permutation: &[usize]) -> io::Result<V
 
     let mut out = vec![0u16; permutation.len()];
     for (new_idx, &old_idx) in permutation.iter().enumerate() {
+        if old_idx >= assignment.len() {
+            return Err(io::Error::from(RelabelError::OldIndexOutOfRange {
+                old_idx,
+                assignment_len: assignment.len(),
+            }));
+        }
         out[new_idx] = assignment[old_idx];
     }
     Ok(out)
@@ -568,6 +574,12 @@ fn relabel_ben_lines_with_map_impl<R: Read, W: Write>(
         }
 
         for (new_idx, &old_idx) in permutation.iter().enumerate() {
+            if old_idx >= assignment_vec.len() {
+                return Err(io::Error::from(RelabelError::OldIndexOutOfRange {
+                    old_idx,
+                    assignment_len: assignment_vec.len(),
+                }));
+            }
             new_assignment_vec[new_idx] = assignment_vec[old_idx];
         }
 

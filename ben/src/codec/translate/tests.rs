@@ -238,7 +238,10 @@ fn test_random_translation_ben_to_ben32() {
 fn test_ben32_to_ben_line_rejects_invalid_length() {
     let err = ben32_to_ben_line(vec![1, 2, 3]).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-    assert_eq!(err.to_string(), "ben32 frame payload length 3 is not a multiple of 4");
+    assert_eq!(
+        err.to_string(),
+        "ben32 frame payload length 3 is not a multiple of 4"
+    );
 }
 
 #[test]
@@ -336,8 +339,8 @@ fn test_ben_to_ben32_lines_mkv_roundtrip() {
 fn test_ben_to_ben32_lines_rejects_twodelta() {
     let ben_data = vec![2, 3, 0, 0, 0, 2, 0xAB, 0xCD];
     let mut output = Vec::new();
-    let err = ben_to_ben32_lines(ben_data.as_slice(), &mut output, BenVariant::TwoDelta)
-        .unwrap_err();
+    let err =
+        ben_to_ben32_lines(ben_data.as_slice(), &mut output, BenVariant::TwoDelta).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::Unsupported);
     assert!(err.to_string().contains("TwoDelta"));
 }

@@ -128,8 +128,11 @@ mod mkvchain {
         let b = vec![2u16, 2, 2];
         let c = vec![3u16, 3, 3];
         let assignments = [
-            a.clone(), a.clone(), a.clone(),
-            b.clone(), b.clone(),
+            a.clone(),
+            a.clone(),
+            a.clone(),
+            b.clone(),
+            b.clone(),
             c.clone(),
         ];
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
@@ -191,7 +194,13 @@ mod mkvchain {
     fn count_samples_with_no_repetitions() {
         let assignments = vec![vec![1u16, 2], vec![3u16, 4], vec![5u16, 6]];
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
-        assert_eq!(AssignmentReader::new(ben.as_slice()).unwrap().count_samples().unwrap(), 3);
+        assert_eq!(
+            AssignmentReader::new(ben.as_slice())
+                .unwrap()
+                .count_samples()
+                .unwrap(),
+            3
+        );
     }
 
     #[test]
@@ -199,15 +208,30 @@ mod mkvchain {
         // 3×A + 2×B = 5 total samples from 2 frames.
         let a = vec![1u16, 0];
         let b = vec![0u16, 1];
-        let assignments: Vec<_> = (0..3).map(|_| a.clone()).chain((0..2).map(|_| b.clone())).collect();
+        let assignments: Vec<_> = (0..3)
+            .map(|_| a.clone())
+            .chain((0..2).map(|_| b.clone()))
+            .collect();
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
-        assert_eq!(AssignmentReader::new(ben.as_slice()).unwrap().count_samples().unwrap(), 5);
+        assert_eq!(
+            AssignmentReader::new(ben.as_slice())
+                .unwrap()
+                .count_samples()
+                .unwrap(),
+            5
+        );
     }
 
     #[test]
     fn count_samples_empty_stream() {
         let ben = MKVCHAIN_BEN_BANNER.to_vec();
-        assert_eq!(AssignmentReader::new(ben.as_slice()).unwrap().count_samples().unwrap(), 0);
+        assert_eq!(
+            AssignmentReader::new(ben.as_slice())
+                .unwrap()
+                .count_samples()
+                .unwrap(),
+            0
+        );
     }
 
     // ─── write_all_jsonl ──────────────────────────────────────────────────────
@@ -219,7 +243,10 @@ mod mkvchain {
         let ben = encode_ben(&vec![assignment.clone(); 3], BenVariant::MkvChain);
 
         let mut out = Vec::new();
-        AssignmentReader::new(ben.as_slice()).unwrap().write_all_jsonl(&mut out).unwrap();
+        AssignmentReader::new(ben.as_slice())
+            .unwrap()
+            .write_all_jsonl(&mut out)
+            .unwrap();
         let s = String::from_utf8(out).unwrap();
 
         assert_eq!(s.lines().count(), 3, "expected 3 JSONL lines for 3 samples");
@@ -235,13 +262,22 @@ mod mkvchain {
         let ben = encode_ben(&vec![assignment; 3], BenVariant::MkvChain);
 
         let mut out = Vec::new();
-        AssignmentReader::new(ben.as_slice()).unwrap().write_all_jsonl(&mut out).unwrap();
+        AssignmentReader::new(ben.as_slice())
+            .unwrap()
+            .write_all_jsonl(&mut out)
+            .unwrap();
         let s = String::from_utf8(out).unwrap();
 
-        let parsed: Vec<serde_json::Value> =
-            s.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        let parsed: Vec<serde_json::Value> = s
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
         for (i, v) in parsed.iter().enumerate() {
-            assert_eq!(v["sample"], i as u64 + 1, "sample number mismatch at position {i}");
+            assert_eq!(
+                v["sample"],
+                i as u64 + 1,
+                "sample number mismatch at position {i}"
+            );
         }
     }
 
@@ -253,7 +289,10 @@ mod mkvchain {
         let ben = encode_ben(&[a.clone(), a.clone(), b.clone()], BenVariant::MkvChain);
 
         let mut out = Vec::new();
-        AssignmentReader::new(ben.as_slice()).unwrap().write_all_jsonl(&mut out).unwrap();
+        AssignmentReader::new(ben.as_slice())
+            .unwrap()
+            .write_all_jsonl(&mut out)
+            .unwrap();
         let s = String::from_utf8(out).unwrap();
         let lines: Vec<&str> = s.lines().collect();
 
@@ -273,7 +312,10 @@ mod mkvchain {
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
         let mut via_reader = Vec::new();
-        AssignmentReader::new(ben.as_slice()).unwrap().write_all_jsonl(&mut via_reader).unwrap();
+        AssignmentReader::new(ben.as_slice())
+            .unwrap()
+            .write_all_jsonl(&mut via_reader)
+            .unwrap();
 
         let mut via_codec = Vec::new();
         decode_ben_to_jsonl(ben.as_slice(), &mut via_codec).unwrap();
@@ -306,7 +348,14 @@ mod mkvchain {
         let a = vec![1u16, 1];
         let b = vec![2u16, 2];
         let c = vec![3u16, 3];
-        let assignments = [a.clone(), a.clone(), a.clone(), b.clone(), b.clone(), c.clone()];
+        let assignments = [
+            a.clone(),
+            a.clone(),
+            a.clone(),
+            b.clone(),
+            b.clone(),
+            c.clone(),
+        ];
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
         let mut frames: Vec<(Vec<u16>, u16)> = Vec::new();
@@ -411,7 +460,10 @@ mod mkvchain {
         // A×5, B×5; index 3 is in the A run, index 6 is the first B.
         let a = vec![1u16; 4];
         let b = vec![2u16; 4];
-        let assignments: Vec<_> = (0..5).map(|_| a.clone()).chain((0..5).map(|_| b.clone())).collect();
+        let assignments: Vec<_> = (0..5)
+            .map(|_| a.clone())
+            .chain((0..5).map(|_| b.clone()))
+            .collect();
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
         let selected: Vec<(Vec<u16>, u16)> = AssignmentReader::new(ben.as_slice())
@@ -435,7 +487,11 @@ mod mkvchain {
             .into_subsample_by_indices(vec![2usize, 4])
             .map(|r| r.unwrap())
             .collect();
-        assert_eq!(selected.len(), 1, "two indices in same frame → one result tuple");
+        assert_eq!(
+            selected.len(),
+            1,
+            "two indices in same frame → one result tuple"
+        );
         assert_eq!(selected[0].0, a);
         assert_eq!(selected[0].1, 2, "count should be 2");
     }
@@ -445,7 +501,10 @@ mod mkvchain {
         // A×3, B×3; range [2, 5] → A contributes samples 2,3 (count=2) and B contributes 4,5 (count=2).
         let a = vec![10u16; 3];
         let b = vec![20u16; 3];
-        let assignments: Vec<_> = (0..3).map(|_| a.clone()).chain((0..3).map(|_| b.clone())).collect();
+        let assignments: Vec<_> = (0..3)
+            .map(|_| a.clone())
+            .chain((0..3).map(|_| b.clone()))
+            .collect();
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
         let selected: Vec<(Vec<u16>, u16)> = AssignmentReader::new(ben.as_slice())
@@ -471,7 +530,11 @@ mod mkvchain {
             .into_subsample_every(2, 1)
             .map(|r| r.unwrap())
             .collect();
-        assert_eq!(selected.len(), 1, "all selected indices in one frame → one result");
+        assert_eq!(
+            selected.len(),
+            1,
+            "all selected indices in one frame → one result"
+        );
         assert_eq!(selected[0].0, a);
         assert_eq!(selected[0].1, 3, "indices 1,3,5 selected → count=3");
     }
@@ -481,7 +544,10 @@ mod mkvchain {
         // A×4, B×4; every 2nd from offset 2 → indices 2,4,6,8 → 2 from A, 2 from B.
         let a = vec![10u16; 2];
         let b = vec![20u16; 2];
-        let assignments: Vec<_> = (0..4).map(|_| a.clone()).chain((0..4).map(|_| b.clone())).collect();
+        let assignments: Vec<_> = (0..4)
+            .map(|_| a.clone())
+            .chain((0..4).map(|_| b.clone()))
+            .collect();
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
         let selected: Vec<(Vec<u16>, u16)> = AssignmentReader::new(ben.as_slice())
@@ -501,7 +567,11 @@ mod mkvchain {
         let assignment = vec![1u16, 1];
         let ben = encode_ben(&[assignment], BenVariant::MkvChain);
         let truncated = &ben[..ben.len() - 1];
-        let err = AssignmentReader::new(truncated).unwrap().next().unwrap().unwrap_err();
+        let err = AssignmentReader::new(truncated)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
     }
 
@@ -510,7 +580,11 @@ mod mkvchain {
         let assignment = vec![1u16, 2, 3, 4, 5];
         let ben = encode_ben(&[assignment], BenVariant::MkvChain);
         let truncated = &ben[..ben.len() - 5];
-        let err = AssignmentReader::new(truncated).unwrap().next().unwrap().unwrap_err();
+        let err = AssignmentReader::new(truncated)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
     }
 
@@ -519,7 +593,10 @@ mod mkvchain {
         let assignment = vec![1u16, 2];
         let ben = encode_ben(&[assignment], BenVariant::MkvChain);
         let truncated = &ben[..ben.len() - 1];
-        let err = AssignmentReader::new(truncated).unwrap().count_samples().unwrap_err();
+        let err = AssignmentReader::new(truncated)
+            .unwrap()
+            .count_samples()
+            .unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
     }
 
@@ -633,7 +710,9 @@ mod twodelta {
         // A longer chain: a, b, a, b, a, b (6 assignments, 3 a→b and 2 b→a deltas).
         let a = vec![1u16, 1, 2, 2, 1, 2];
         let b = vec![2u16, 2, 1, 1, 2, 1]; // 1↔2 everywhere
-        let input: Vec<Vec<u16>> = (0..6).map(|i| if i % 2 == 0 { a.clone() } else { b.clone() }).collect();
+        let input: Vec<Vec<u16>> = (0..6)
+            .map(|i| if i % 2 == 0 { a.clone() } else { b.clone() })
+            .collect();
         let ben = encode_twodelta(&input);
         assert_eq!(expand_assignments(&ben), input);
     }
@@ -681,7 +760,10 @@ mod twodelta {
         // a×2, b×3 → anchor(2), delta(3).  Expanding must give 5 correct assignments.
         let a = vec![1u16, 1, 2, 2];
         let b = vec![2u16, 2, 1, 1];
-        let assignments: Vec<_> = (0..2).map(|_| a.clone()).chain((0..3).map(|_| b.clone())).collect();
+        let assignments: Vec<_> = (0..2)
+            .map(|_| a.clone())
+            .chain((0..3).map(|_| b.clone()))
+            .collect();
         let ben = encode_twodelta(&assignments);
         assert_eq!(expand_assignments(&ben), assignments);
     }
@@ -693,8 +775,11 @@ mod twodelta {
         let b = vec![2u16, 2, 1, 1];
         let assignments = vec![
             a.clone(),
-            b.clone(), b.clone(),
-            a.clone(), a.clone(), a.clone(),
+            b.clone(),
+            b.clone(),
+            a.clone(),
+            a.clone(),
+            a.clone(),
             b.clone(),
         ];
         let ben = encode_twodelta(&assignments);
@@ -706,7 +791,13 @@ mod twodelta {
     #[test]
     fn count_samples_single_anchor() {
         let ben = encode_twodelta(&[vec![1u16, 2, 3]]);
-        assert_eq!(AssignmentReader::new(ben.as_slice()).unwrap().count_samples().unwrap(), 1);
+        assert_eq!(
+            AssignmentReader::new(ben.as_slice())
+                .unwrap()
+                .count_samples()
+                .unwrap(),
+            1
+        );
     }
 
     #[test]
@@ -715,7 +806,13 @@ mod twodelta {
         let b = vec![2u16, 2, 1, 1];
         let assignments = vec![a.clone(), b.clone(), a.clone()];
         let ben = encode_twodelta(&assignments);
-        assert_eq!(AssignmentReader::new(ben.as_slice()).unwrap().count_samples().unwrap(), 3);
+        assert_eq!(
+            AssignmentReader::new(ben.as_slice())
+                .unwrap()
+                .count_samples()
+                .unwrap(),
+            3
+        );
     }
 
     #[test]
@@ -723,9 +820,18 @@ mod twodelta {
         // a×2, b×3 → 5 total.
         let a = vec![1u16, 1, 2, 2];
         let b = vec![2u16, 2, 1, 1];
-        let assignments: Vec<_> = (0..2).map(|_| a.clone()).chain((0..3).map(|_| b.clone())).collect();
+        let assignments: Vec<_> = (0..2)
+            .map(|_| a.clone())
+            .chain((0..3).map(|_| b.clone()))
+            .collect();
         let ben = encode_twodelta(&assignments);
-        assert_eq!(AssignmentReader::new(ben.as_slice()).unwrap().count_samples().unwrap(), 5);
+        assert_eq!(
+            AssignmentReader::new(ben.as_slice())
+                .unwrap()
+                .count_samples()
+                .unwrap(),
+            5
+        );
     }
 
     // ─── write_all_jsonl ──────────────────────────────────────────────────────
@@ -736,7 +842,10 @@ mod twodelta {
         let ben = encode_twodelta(&[assignment.clone()]);
 
         let mut out = Vec::new();
-        AssignmentReader::new(ben.as_slice()).unwrap().write_all_jsonl(&mut out).unwrap();
+        AssignmentReader::new(ben.as_slice())
+            .unwrap()
+            .write_all_jsonl(&mut out)
+            .unwrap();
         let s = String::from_utf8(out).unwrap();
 
         assert_eq!(s.lines().count(), 1);
@@ -748,11 +857,17 @@ mod twodelta {
         // a×2, b×3 → 5 lines with correct content.
         let a = vec![1u16, 1, 2, 2];
         let b = vec![2u16, 2, 1, 1];
-        let assignments: Vec<_> = (0..2).map(|_| a.clone()).chain((0..3).map(|_| b.clone())).collect();
+        let assignments: Vec<_> = (0..2)
+            .map(|_| a.clone())
+            .chain((0..3).map(|_| b.clone()))
+            .collect();
         let ben = encode_twodelta(&assignments);
 
         let mut out = Vec::new();
-        AssignmentReader::new(ben.as_slice()).unwrap().write_all_jsonl(&mut out).unwrap();
+        AssignmentReader::new(ben.as_slice())
+            .unwrap()
+            .write_all_jsonl(&mut out)
+            .unwrap();
         let s = String::from_utf8(out).unwrap();
         let lines: Vec<&str> = s.lines().collect();
 
@@ -768,15 +883,23 @@ mod twodelta {
     fn write_all_jsonl_sample_numbers_are_sequential() {
         let a = vec![1u16, 1, 2, 2];
         let b = vec![2u16, 2, 1, 1];
-        let assignments: Vec<_> = (0..2).map(|_| a.clone()).chain((0..3).map(|_| b.clone())).collect();
+        let assignments: Vec<_> = (0..2)
+            .map(|_| a.clone())
+            .chain((0..3).map(|_| b.clone()))
+            .collect();
         let ben = encode_twodelta(&assignments);
 
         let mut out = Vec::new();
-        AssignmentReader::new(ben.as_slice()).unwrap().write_all_jsonl(&mut out).unwrap();
+        AssignmentReader::new(ben.as_slice())
+            .unwrap()
+            .write_all_jsonl(&mut out)
+            .unwrap();
         let s = String::from_utf8(out).unwrap();
 
-        let parsed: Vec<serde_json::Value> =
-            s.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        let parsed: Vec<serde_json::Value> = s
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
         for (i, v) in parsed.iter().enumerate() {
             assert_eq!(v["sample"], i as u64 + 1, "sample number at position {i}");
         }
@@ -789,7 +912,10 @@ mod twodelta {
         let ben = encode_twodelta(&[a.clone(), b.clone(), a.clone()]);
 
         let mut via_reader = Vec::new();
-        AssignmentReader::new(ben.as_slice()).unwrap().write_all_jsonl(&mut via_reader).unwrap();
+        AssignmentReader::new(ben.as_slice())
+            .unwrap()
+            .write_all_jsonl(&mut via_reader)
+            .unwrap();
 
         let mut via_codec = Vec::new();
         decode_ben_to_jsonl(ben.as_slice(), &mut via_codec).unwrap();
@@ -822,7 +948,10 @@ mod twodelta {
         // a×2, b×3 → callback invoked twice: (a, 2) then (b, 3).
         let a = vec![1u16, 1, 2, 2];
         let b = vec![2u16, 2, 1, 1];
-        let assignments: Vec<_> = (0..2).map(|_| a.clone()).chain((0..3).map(|_| b.clone())).collect();
+        let assignments: Vec<_> = (0..2)
+            .map(|_| a.clone())
+            .chain((0..3).map(|_| b.clone()))
+            .collect();
         let ben = encode_twodelta(&assignments);
 
         let mut frames: Vec<(Vec<u16>, u16)> = Vec::new();
@@ -868,7 +997,10 @@ mod twodelta {
         // a×2, b×3 → 2 re-encoded frames with counts [2, 3].
         let a = vec![1u16, 1, 2, 2];
         let b = vec![2u16, 2, 1, 1];
-        let assignments: Vec<_> = (0..2).map(|_| a.clone()).chain((0..3).map(|_| b.clone())).collect();
+        let assignments: Vec<_> = (0..2)
+            .map(|_| a.clone())
+            .chain((0..3).map(|_| b.clone()))
+            .collect();
         let ben = encode_twodelta(&assignments);
 
         let frames: Vec<_> = AssignmentReader::new(ben.as_slice())
@@ -932,7 +1064,9 @@ mod twodelta {
         // a, b, a, b, a → 5 distinct frames (no run-length compression).
         let a = vec![1u16, 1, 2, 2];
         let b = vec![2u16, 2, 1, 1];
-        let input: Vec<_> = (0..5).map(|i| if i % 2 == 0 { a.clone() } else { b.clone() }).collect();
+        let input: Vec<_> = (0..5)
+            .map(|i| if i % 2 == 0 { a.clone() } else { b.clone() })
+            .collect();
         let ben = encode_twodelta(&input);
 
         let frames: Vec<_> = AssignmentReader::new(ben.as_slice())
@@ -990,7 +1124,14 @@ mod twodelta {
         let a = vec![1u16, 1, 2, 2];
         let b = vec![2u16, 2, 1, 1];
         let c = vec![1u16, 2, 1, 2];
-        let input = vec![a.clone(), b.clone(), c.clone(), a.clone(), b.clone(), c.clone()];
+        let input = vec![
+            a.clone(),
+            b.clone(),
+            c.clone(),
+            a.clone(),
+            b.clone(),
+            c.clone(),
+        ];
         let ben = encode_twodelta(&input);
 
         let selected: Vec<Vec<u16>> = AssignmentReader::new(ben.as_slice())
@@ -1010,7 +1151,10 @@ mod twodelta {
         // Index 4 is the first b → (b, 1).
         let a = vec![1u16, 1, 2, 2];
         let b = vec![2u16, 2, 1, 1];
-        let assignments: Vec<_> = (0..3).map(|_| a.clone()).chain((0..3).map(|_| b.clone())).collect();
+        let assignments: Vec<_> = (0..3)
+            .map(|_| a.clone())
+            .chain((0..3).map(|_| b.clone()))
+            .collect();
         let ben = encode_twodelta(&assignments);
 
         let selected: Vec<(Vec<u16>, u16)> = AssignmentReader::new(ben.as_slice())
@@ -1032,7 +1176,11 @@ mod twodelta {
         let assignment = vec![1u16, 2, 3];
         let ben = encode_twodelta(&[assignment]);
         let truncated = &ben[..ben.len() - 1];
-        let err = AssignmentReader::new(truncated).unwrap().next().unwrap().unwrap_err();
+        let err = AssignmentReader::new(truncated)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
     }
 
@@ -1055,7 +1203,10 @@ mod twodelta {
         let b = vec![2u16, 2, 1, 1];
         let ben = encode_twodelta(&[a, b]);
         let truncated = &ben[..ben.len() - 1];
-        let err = AssignmentReader::new(truncated).unwrap().count_samples().unwrap_err();
+        let err = AssignmentReader::new(truncated)
+            .unwrap()
+            .count_samples()
+            .unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
     }
 

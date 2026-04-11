@@ -9,15 +9,7 @@ use xz2::write::XzEncoder;
 /// Build a minimal XBEN stream from JSONL input for testing.
 fn make_xben(jsonl: &str, variant: BenVariant) -> Vec<u8> {
     let mut xben = Vec::new();
-    encode_jsonl_to_xben(
-        jsonl.as_bytes(),
-        &mut xben,
-        variant,
-        Some(1),
-        Some(1),
-        None,
-    )
-    .unwrap();
+    encode_jsonl_to_xben(jsonl.as_bytes(), &mut xben, variant, Some(1), Some(1), None).unwrap();
     xben
 }
 
@@ -69,11 +61,7 @@ fn xz_reader_mkv_iterator() {
 
 #[test]
 fn xz_reader_twodelta_iterator() {
-    let assignments = vec![
-        vec![1u16, 1, 2, 2],
-        vec![2, 1, 2, 2],
-        vec![2, 2, 2, 2],
-    ];
+    let assignments = vec![vec![1u16, 1, 2, 2], vec![2, 1, 2, 2], vec![2, 2, 2, 2]];
     let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
     let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
     assert_eq!(reader.variant(), BenVariant::TwoDelta);
@@ -202,10 +190,7 @@ fn xz_reader_into_frames_standard() {
 
 #[test]
 fn xz_reader_into_frames_twodelta() {
-    let assignments = vec![
-        vec![1u16, 1, 2, 2],
-        vec![2, 1, 2, 2],
-    ];
+    let assignments = vec![vec![1u16, 1, 2, 2], vec![2, 1, 2, 2]];
     let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
     let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
     let frames: Vec<_> = reader.into_frames().collect();
@@ -308,11 +293,7 @@ fn xz_reader_for_each_assignment_silent() {
 
 #[test]
 fn xz_reader_write_all_jsonl_twodelta() {
-    let assignments = vec![
-        vec![1u16, 1, 2, 2],
-        vec![2, 1, 2, 2],
-        vec![2, 2, 2, 2],
-    ];
+    let assignments = vec![vec![1u16, 1, 2, 2], vec![2, 1, 2, 2], vec![2, 2, 2, 2]];
     let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
     let mut reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
     let mut output = Vec::new();
@@ -326,10 +307,7 @@ fn xz_reader_write_all_jsonl_twodelta() {
 
 #[test]
 fn xz_reader_count_samples_twodelta() {
-    let assignments = vec![
-        vec![1u16, 1, 2, 2],
-        vec![2, 1, 2, 2],
-    ];
+    let assignments = vec![vec![1u16, 1, 2, 2], vec![2, 1, 2, 2]];
     let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
     let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
     assert_eq!(reader.count_samples().unwrap(), 2);
@@ -504,11 +482,7 @@ fn xz_reader_subsample_mkv_with_count_gt_1() {
 
 #[test]
 fn xz_reader_subsample_twodelta() {
-    let assignments = vec![
-        vec![1u16, 1, 2, 2],
-        vec![2, 1, 2, 2],
-        vec![2, 2, 2, 2],
-    ];
+    let assignments = vec![vec![1u16, 1, 2, 2], vec![2, 1, 2, 2], vec![2, 2, 2, 2]];
     let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
     let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader
@@ -551,7 +525,10 @@ fn decoder_init_error_io() {
     struct FailReader;
     impl std::io::Read for FailReader {
         fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "broken"))
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "broken",
+            ))
         }
     }
     let result = AssignmentReader::new(FailReader);
@@ -581,7 +558,10 @@ fn xz_reader_for_each_assignment_callback_error_propagates() {
     let mut reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
     let err = reader
         .for_each_assignment(|_assignment, _count| {
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "callback failed"))
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "callback failed",
+            ))
         })
         .unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::Other);
@@ -647,11 +627,7 @@ fn assignment_reader_twodelta_roundtrip() {
     use crate::io::reader::AssignmentReader;
     use crate::io::writer::AssignmentWriter;
 
-    let assignments = vec![
-        vec![1u16, 1, 2, 2],
-        vec![2, 1, 2, 2],
-        vec![2, 2, 2, 2],
-    ];
+    let assignments = vec![vec![1u16, 1, 2, 2], vec![2, 1, 2, 2], vec![2, 2, 2, 2]];
 
     let mut ben = Vec::new();
     {

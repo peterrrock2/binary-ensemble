@@ -1,8 +1,8 @@
-use crate::io::reader::{AssignmentReader, XZAssignmentReader};
-use crate::{progress, BenVariant};
 use crate::codec::decode::jsonl_decode_ben32;
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
+use crate::io::reader::{AssignmentReader, XZAssignmentReader};
+use crate::{progress, BenVariant};
 use serde_json::json;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use xz2::read::XzDecoder;
@@ -85,7 +85,8 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
 
     let mut line_count: usize = 0;
     let mut starting_sample: usize = 0;
-    while let Ok(count) = decoder.read(&mut buffer) {
+    loop {
+        let count = decoder.read(&mut buffer)?;
         if count == 0 {
             break;
         }

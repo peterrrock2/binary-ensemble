@@ -800,9 +800,8 @@ fn twodelta_encode_with_pair_and_mask_hints() {
     masks.insert(1, vec![0, 1]);
     masks.insert(2, vec![2, 3]);
 
-    let frame =
-        encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
-            .unwrap();
+    let frame = encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
+        .unwrap();
     assert_eq!(frame.pair, (2, 1));
     assert!(!frame.run_length_vector.is_empty());
     // Verify masks were updated
@@ -821,8 +820,8 @@ fn twodelta_encode_with_mask_hint_only() {
     masks.insert(1, vec![0, 1]);
     masks.insert(2, vec![2, 3]);
 
-    let frame = encode_twodelta_frame_with_hint(&prev, &curr, None, Some(&mut masks), None)
-        .unwrap();
+    let frame =
+        encode_twodelta_frame_with_hint(&prev, &curr, None, Some(&mut masks), None).unwrap();
     assert_eq!(frame.pair, (2, 1));
 }
 
@@ -842,8 +841,7 @@ fn twodelta_encode_hint_without_masks_errors() {
 
     let prev = vec![1u16, 1, 2, 2];
     let curr = vec![2u16, 1, 2, 1];
-    let err =
-        encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), None, None).unwrap_err();
+    let err = encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), None, None).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 }
 
@@ -857,9 +855,8 @@ fn twodelta_encode_identical_pair_hint_errors() {
     let mut masks = HashMap::new();
     masks.insert(1u16, vec![0, 1]);
 
-    let err =
-        encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 1)), Some(&mut masks), None)
-            .unwrap_err();
+    let err = encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 1)), Some(&mut masks), None)
+        .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 }
 
@@ -892,8 +889,7 @@ fn twodelta_encode_mask_hint_identical_errors() {
     masks.insert(1, vec![0, 1]);
     masks.insert(2, vec![2, 3]);
 
-    let err =
-        encode_twodelta_frame_with_hint(&a, &a, None, Some(&mut masks), None).unwrap_err();
+    let err = encode_twodelta_frame_with_hint(&a, &a, None, Some(&mut masks), None).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 }
 
@@ -919,8 +915,8 @@ fn encode_error_non_io_becomes_invalid_data() {
 #[test]
 fn encode_jsonl_to_xben_roundtrip_verifies_content() {
     use crate::codec::decode::decode_xben_to_jsonl;
-    use std::io::BufReader;
     use serde_json::Value;
+    use std::io::BufReader;
 
     let jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
 {"assignment":[2,2,1,1],"sample":2}
@@ -950,8 +946,8 @@ fn encode_jsonl_to_xben_roundtrip_verifies_content() {
 #[test]
 fn encode_jsonl_to_xben_mkv_verifies_content() {
     use crate::codec::decode::decode_xben_to_jsonl;
-    use std::io::BufReader;
     use serde_json::Value;
+    use std::io::BufReader;
 
     let jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
 {"assignment":[1,1,2,2],"sample":2}
@@ -1051,9 +1047,8 @@ fn twodelta_encode_missing_mask_errors() {
     masks.insert(1, vec![0, 1]);
     // Missing mask for value 2
 
-    let err =
-        encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
-            .unwrap_err();
+    let err = encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
+        .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 }
 
@@ -1068,9 +1063,8 @@ fn twodelta_encode_empty_mask_errors() {
     masks.insert(1, vec![0, 1]);
     masks.insert(2, vec![]); // Empty mask
 
-    let err =
-        encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
-            .unwrap_err();
+    let err = encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
+        .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 }
 
@@ -1086,9 +1080,8 @@ fn twodelta_encode_mask_out_of_pair_errors() {
     masks.insert(1, vec![0, 1]);
     masks.insert(2, vec![2, 3]); // position 2 in prev is actually 3, not 2
 
-    let err =
-        encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
-            .unwrap_err();
+    let err = encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
+        .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 }
 
@@ -1120,10 +1113,7 @@ fn encode_ben32_line_value_at_u16_max() {
     let data = serde_json::json!({"assignment": [65535, 1]});
     let result = encode_ben32_line(data).unwrap();
     // (65535 << 16) | 1 → 0xFFFF0001 then (1 << 16) | 1 → 0x00010001 then terminator
-    assert_eq!(
-        result,
-        vec![0xFF, 0xFF, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0]
-    );
+    assert_eq!(result, vec![0xFF, 0xFF, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0]);
 }
 
 // ── Encoding empty and single-element JSONL ─────────────────────────────────
@@ -1157,8 +1147,8 @@ fn encode_jsonl_to_ben_single_sample() {
 #[test]
 fn encode_jsonl_to_xben_twodelta_roundtrip() {
     use crate::codec::decode::decode_xben_to_jsonl;
-    use std::io::BufReader;
     use serde_json::Value;
+    use std::io::BufReader;
 
     let jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
 {"assignment":[2,1,2,1],"sample":2}

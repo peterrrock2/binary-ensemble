@@ -51,6 +51,13 @@ pub(crate) fn apply_twodelta_runs_to_assignment(
         }
     }
 
+    if remaining_in_run > 0 || run_lengths.iter().skip(run_idx + 1).any(|&run| run > 0) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "TwoDelta run lengths exceed the number of positions in the assignment",
+        ));
+    }
+
     Ok(assignment)
 }
 
