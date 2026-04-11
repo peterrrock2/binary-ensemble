@@ -642,6 +642,55 @@ def test_open_rejects_bundle_with_chopped_directory_bytes(tmp_path: Path) -> Non
         PyBundleReader(path)
 
 
+def test_open_rejects_malformed_directory_invariants(tmp_path: Path) -> None:
+    stream = _ben_bytes_for([[1, 2]], tmp_path)
+
+    duplicate_names = build_bundle(
+        stream_bytes=stream,
+        sample_count=1,
+        assets=[
+            _Asset(asset_type=ASSET_TYPE_CUSTOM, name="dup.bin", payload=b"a"),
+            _Asset(asset_type=ASSET_TYPE_CUSTOM, name="dup.bin", payload=b"b"),
+        ],
+    )
+    path = _write_bundle(tmp_path / "dup.bendl", duplicate_names)
+    with pytest.raises(Exception, match="malformed directory"):
+        PyBundleReader(path)
+
+    wrong_singleton_name = build_bundle(
+        stream_bytes=stream,
+        sample_count=1,
+        assets=[
+            _Asset(
+                asset_type=ASSET_TYPE_METADATA,
+                name="not_metadata.json",
+                payload=b"{}",
+                is_json=True,
+            )
+        ],
+    )
+    path = _write_bundle(tmp_path / "singleton.bendl", wrong_singleton_name)
+    with pytest.raises(Exception, match="malformed directory"):
+        PyBundleReader(path)
+
+
+def test_open_rejects_declared_directory_len_with_trailing_bytes(tmp_path: Path) -> None:
+    bundle = bytearray(
+        build_bundle(
+            stream_bytes=_ben_bytes_for([[1, 2]], tmp_path),
+            sample_count=1,
+            assets=[_Asset(asset_type=ASSET_TYPE_CUSTOM, name="x", payload=b"abc")],
+        )
+    )
+    directory_len = struct.unpack_from("<Q", bundle, 32)[0]
+    struct.pack_into("<Q", bundle, 32, directory_len + 1)
+    bundle.append(0)
+
+    path = _write_bundle(tmp_path / "trailing_dir.bendl", bytes(bundle))
+    with pytest.raises(Exception, match="trailing byte"):
+        PyBundleReader(path)
+
+
 def test_incomplete_bundle_reports_none_sample_count(tmp_path: Path) -> None:
     # Provisional bundle with complete=0: sample_count() must be None.
     stream = _ben_bytes_for([[1, 2, 3]], tmp_path)
@@ -1373,3 +1422,268 @@ def test_pybenencoder_bundle_rejects_invalid_graph_type(tmp_path: Path) -> None:
     out = tmp_path / "bad.bendl"
     with pytest.raises(ValueError, match="graph must be"):
         PyBenEncoder(out, overwrite=True, variant="standard", graph=12345)
+
+
+# ---------------------------------------------------------------------------
+# PyBenDecoder opened directly on a .bendl bundle.
+#
+# The decoder auto-detects the BENDL magic and, when present, iterates only
+# the embedded stream region while exposing TOC / asset helpers on the side.
+# When opened on a plain .ben/.xben stream, iteration still works but the
+# bundle methods must raise a clear error.
+# ---------------------------------------------------------------------------
+
+
+def test_pybendecoder_auto_detects_ben_bundle(tmp_path: Path) -> None:
+    samples = [[1, 2, 3], [1, 2, 3], [4, 4, 5]]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+        assignment_format=ASSIGNMENT_FORMAT_BEN,
+    )
+    path = _write_bundle(tmp_path / "stream.bendl", bundle)
+
+    dec = PyBenDecoder(path)
+    assert dec.is_bundle() is True
+    assert dec.assignment_format() == "ben"
+    assert dec.is_complete() is True
+    assert dec.version() == (BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION)
+    assert len(dec) == len(samples)
+    assert list(dec) == samples
+
+
+def test_pybendecoder_auto_detects_xben_bundle(tmp_path: Path) -> None:
+    samples = [[1, 1, 2, 2], [3, 3, 4, 4]]
+    bundle = build_bundle(
+        stream_bytes=_xben_bytes_for(samples, tmp_path, variant="mkv_chain"),
+        sample_count=len(samples),
+        assignment_format=ASSIGNMENT_FORMAT_XBEN,
+    )
+    path = _write_bundle(tmp_path / "stream.bendl", bundle)
+
+    dec = PyBenDecoder(path)
+    assert dec.is_bundle() is True
+    assert dec.assignment_format() == "xben"
+    assert len(dec) == len(samples)
+    assert list(dec) == samples
+
+
+def test_pybendecoder_bundle_toc_and_assets(tmp_path: Path) -> None:
+    samples = [[1, 2, 3]]
+    graph_json = b'{"nodes":[0,1],"edges":[[0,1]]}'
+    metadata_json = b'{"note":"hello"}'
+    relabel_json = b'{"0":"A","1":"B"}'
+
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+        assets=[
+            _Asset(
+                asset_type=ASSET_TYPE_METADATA,
+                name="metadata.json",
+                payload=metadata_json,
+                is_json=True,
+            ),
+            _Asset(
+                asset_type=ASSET_TYPE_GRAPH,
+                name="graph.json",
+                payload=graph_json,
+                is_json=True,
+                compress=True,
+            ),
+            _Asset(
+                asset_type=ASSET_TYPE_RELABEL_MAP,
+                name="relabel_map.json",
+                payload=relabel_json,
+                is_json=True,
+            ),
+            _Asset(
+                asset_type=ASSET_TYPE_CUSTOM,
+                name="notes.bin",
+                payload=b"\x00\x01\x02",
+            ),
+        ],
+    )
+    path = _write_bundle(tmp_path / "rich.bendl", bundle)
+
+    dec = PyBenDecoder(path)
+
+    # TOC surface
+    assert dec.asset_names() == [
+        "metadata.json",
+        "graph.json",
+        "relabel_map.json",
+        "notes.bin",
+    ]
+    assets = dec.list_assets()
+    assert [a["name"] for a in assets] == dec.asset_names()
+    by_name = {a["name"]: a for a in assets}
+    assert "xz" in by_name["graph.json"]["flags"]
+    assert "json" in by_name["graph.json"]["flags"]
+    assert by_name["notes.bin"]["flags"] == []
+
+    # Raw and JSON asset access
+    assert dec.read_asset_bytes("metadata.json") == metadata_json
+    assert dec.read_asset_bytes("graph.json") == graph_json
+    assert dec.read_metadata() == json.loads(metadata_json)
+    assert dec.read_graph() == json.loads(graph_json)
+    assert dec.read_relabel_map() == json.loads(relabel_json)
+    assert dec.read_json_asset("metadata.json") == json.loads(metadata_json)
+
+    # Unknown asset by name raises KeyError.
+    with pytest.raises(KeyError, match="no asset named"):
+        dec.read_asset_bytes("missing.bin")
+
+    # Iteration still works after the TOC surface has been used.
+    assert list(dec) == samples
+
+
+def test_pybendecoder_bundle_canonical_helpers_return_none_when_absent(
+    tmp_path: Path,
+) -> None:
+    samples = [[1, 2]]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+        assets=[
+            _Asset(asset_type=ASSET_TYPE_CUSTOM, name="custom.bin", payload=b"x")
+        ],
+    )
+    path = _write_bundle(tmp_path / "sparse.bendl", bundle)
+    dec = PyBenDecoder(path)
+    assert dec.read_graph() is None
+    assert dec.read_metadata() is None
+    assert dec.read_relabel_map() is None
+
+
+def test_pybendecoder_bundle_subsample_range(tmp_path: Path) -> None:
+    samples = [[i, i + 1] for i in range(1, 11)]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "range.bendl", bundle)
+
+    dec = PyBenDecoder(path)
+    dec.subsample_range(3, 6)
+    assert list(dec) == samples[2:6]
+
+
+def test_pybendecoder_bundle_subsample_indices(tmp_path: Path) -> None:
+    samples = [[i] for i in range(1, 9)]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "idx.bendl", bundle)
+
+    dec = PyBenDecoder(path)
+    dec.subsample_indices([1, 4, 8])
+    assert list(dec) == [samples[0], samples[3], samples[7]]
+
+
+def test_pybendecoder_bundle_subsample_every(tmp_path: Path) -> None:
+    samples = [[i, i] for i in range(1, 11)]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "every.bendl", bundle)
+
+    dec = PyBenDecoder(path)
+    dec.subsample_every(3, 2)
+    assert list(dec) == [samples[1], samples[4], samples[7]]
+
+
+def test_pybendecoder_bundle_mode_arg_is_ignored(tmp_path: Path) -> None:
+    # For bundles, the header decides the format — a caller-supplied
+    # `mode="xben"` on a BEN bundle must not confuse the reader.
+    samples = [[1, 2, 3]]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+        assignment_format=ASSIGNMENT_FORMAT_BEN,
+    )
+    path = _write_bundle(tmp_path / "ignore_mode.bendl", bundle)
+
+    dec = PyBenDecoder(path, mode="xben")
+    assert dec.assignment_format() == "ben"
+    assert list(dec) == samples
+
+
+def test_pybendecoder_on_plain_stream_supports_iteration(tmp_path: Path) -> None:
+    # Opening a plain .ben file must still iterate unchanged; the new
+    # bundle surface is simply unavailable.
+    samples = [[1, 2, 3], [4, 5, 6]]
+    ben_path = tmp_path / "plain.ben"
+    with PyBenEncoder(
+        ben_path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(ben_path)
+    assert dec.is_bundle() is False
+    assert dec.assignment_format() == "ben"
+    assert list(dec) == samples
+
+
+@pytest.mark.parametrize(
+    "method_call",
+    [
+        lambda d: d.version(),
+        lambda d: d.is_complete(),
+        lambda d: d.asset_names(),
+        lambda d: d.list_assets(),
+        lambda d: d.read_asset_bytes("metadata.json"),
+        lambda d: d.read_json_asset("metadata.json"),
+        lambda d: d.read_graph(),
+        lambda d: d.read_metadata(),
+        lambda d: d.read_relabel_map(),
+    ],
+)
+def test_pybendecoder_plain_stream_rejects_bundle_methods(
+    tmp_path: Path, method_call
+) -> None:
+    ben_path = tmp_path / "plain.ben"
+    with PyBenEncoder(
+        ben_path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
+        enc.write([1, 2, 3])
+
+    dec = PyBenDecoder(ben_path)
+    with pytest.raises(Exception, match="only available on .bendl bundles"):
+        method_call(dec)
+
+
+def test_pybendecoder_plain_stream_error_mentions_ben_file_only(
+    tmp_path: Path,
+) -> None:
+    ben_path = tmp_path / "plain.ben"
+    with PyBenEncoder(
+        ben_path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
+        enc.write([1])
+
+    dec = PyBenDecoder(ben_path)
+    with pytest.raises(Exception, match="ben_file_only=False"):
+        dec.read_graph()
+
+
+def test_pybendecoder_opens_bundle_produced_by_pybenencoder(tmp_path: Path) -> None:
+    # End-to-end: a bundle written by PyBenEncoder (with a graph asset)
+    # must round-trip through a single PyBenDecoder call — no need to
+    # extract the stream first.
+    out = tmp_path / "e2e.bendl"
+    with PyBenEncoder(
+        out, overwrite=True, variant="standard", graph=SAMPLE_GRAPH
+    ) as enc:
+        for a in [[1, 2, 3], [2, 3, 4]]:
+            enc.write(a)
+
+    dec = PyBenDecoder(out)
+    assert dec.is_bundle() is True
+    assert dec.is_complete() is True
+    assert dec.assignment_format() == "ben"
+    assert dec.read_graph() == SAMPLE_GRAPH
+    assert list(dec) == [[1, 2, 3], [2, 3, 4]]

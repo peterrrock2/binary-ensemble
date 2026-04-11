@@ -443,6 +443,15 @@ def test_pybenencoder_close_and_write_error_paths(tmp_path: Path) -> None:
         ctx_enc.write([4, 5, 6])
     assert list(PyBenDecoder(ctx_path, mode="ben")) == [[4, 5, 6]]
 
+    invalid_path = tmp_path / "invalid_assignment.ben"
+    with PyBenEncoder(
+        invalid_path, overwrite=True, variant="standard", ben_file_only=True
+    ) as invalid_enc:
+        with pytest.raises(Exception):
+            invalid_enc.write([-1])
+        with pytest.raises(Exception):
+            invalid_enc.write([65536])
+
 
 def test_pybenencoder_rejects_overwrite_and_unknown_variant(tmp_path: Path) -> None:
     out = tmp_path / "out.ben"
@@ -628,11 +637,17 @@ def test_decoder_subsample_validations_and_warning_paths(tmp_path: Path) -> None
     with pytest.raises(Exception, match="indices must be 1-based"):
         PyBenDecoder(ben, mode="ben").subsample_indices([0, 1])
 
+    with pytest.raises(Exception):
+        PyBenDecoder(ben, mode="ben").subsample_indices([-1])
+
     with pytest.raises(Exception, match="indices must be <="):
         PyBenDecoder(ben, mode="ben").subsample_indices([6])
 
     with pytest.raises(Exception, match="range must be 1-based"):
         PyBenDecoder(ben, mode="ben").subsample_range(0, 2)
+
+    with pytest.raises(Exception):
+        PyBenDecoder(ben, mode="ben").subsample_range(-1, 2)
 
     with pytest.raises(Exception, match="end must be <="):
         PyBenDecoder(ben, mode="ben").subsample_range(1, 99)
@@ -670,7 +685,7 @@ def test_decoder_reports_zero_count_and_bad_frame_errors(tmp_path: Path) -> None
     data = bytearray(mkv_ben.read_bytes())
     data[-2:] = b"\x00\x00"
     mkv_ben.write_bytes(data)
-    with pytest.raises(Exception, match="zero-count"):
+    with pytest.raises(Exception, match="count must be greater than zero"):
         next(iter(PyBenDecoder(mkv_ben, mode="ben")))
 
     standard_ben = tmp_path / "standard.ben"

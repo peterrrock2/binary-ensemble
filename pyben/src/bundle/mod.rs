@@ -87,11 +87,7 @@ impl PyBundleReader {
     /// Names of all directory entries, in directory order.
     #[pyo3(text_signature = "(self)")]
     fn asset_names(&self) -> Vec<String> {
-        self.inner
-            .assets()
-            .iter()
-            .map(|e| e.name.clone())
-            .collect()
+        self.inner.assets().iter().map(|e| e.name.clone()).collect()
     }
 
     /// Return the full directory as a list of dicts with keys
@@ -141,9 +137,8 @@ impl PyBundleReader {
     fn read_json_asset<'py>(&mut self, py: Python<'py>, name: &str) -> PyResult<Py<PyAny>> {
         let bytes = self.read_asset_bytes(name)?;
         let json_mod = py.import("json")?;
-        let text = std::str::from_utf8(&bytes).map_err(|e| {
-            PyException::new_err(format!("asset {name:?} is not valid UTF-8: {e}"))
-        })?;
+        let text = std::str::from_utf8(&bytes)
+            .map_err(|e| PyException::new_err(format!("asset {name:?} is not valid UTF-8: {e}")))?;
         let parsed = json_mod.call_method1("loads", (text,))?;
         Ok(parsed.into())
     }
@@ -152,11 +147,7 @@ impl PyBundleReader {
     /// Returns `None` if the bundle does not carry a graph asset.
     #[pyo3(text_signature = "(self)")]
     fn read_graph<'py>(&mut self, py: Python<'py>) -> PyResult<Option<Py<PyAny>>> {
-        if self
-            .inner
-            .find_asset_by_type(ASSET_TYPE_GRAPH)
-            .is_none()
-        {
+        if self.inner.find_asset_by_type(ASSET_TYPE_GRAPH).is_none() {
             return Ok(None);
         }
         Ok(Some(self.read_json_asset(py, "graph.json")?))
@@ -166,11 +157,7 @@ impl PyBundleReader {
     /// or `None` if absent.
     #[pyo3(text_signature = "(self)")]
     fn read_metadata<'py>(&mut self, py: Python<'py>) -> PyResult<Option<Py<PyAny>>> {
-        if self
-            .inner
-            .find_asset_by_type(ASSET_TYPE_METADATA)
-            .is_none()
-        {
+        if self.inner.find_asset_by_type(ASSET_TYPE_METADATA).is_none() {
             return Ok(None);
         }
         Ok(Some(self.read_json_asset(py, "metadata.json")?))
@@ -214,17 +201,15 @@ impl PyBundleReader {
                 .create_new(true)
                 .open(&out_path)
         }
-        .map_err(|e| {
-            PyIOError::new_err(format!("Failed to create {}: {e}", out_path.display()))
-        })?;
+        .map_err(|e| PyIOError::new_err(format!("Failed to create {}: {e}", out_path.display())))?;
         let mut out = BufWriter::new(out);
 
-        let mut stream = self.inner.assignment_stream_reader().map_err(|e| {
-            PyException::new_err(format!("Failed to open stream region: {e}"))
-        })?;
-        io::copy(&mut stream, &mut out).map_err(|e| {
-            PyIOError::new_err(format!("Failed to copy stream bytes: {e}"))
-        })?;
+        let mut stream = self
+            .inner
+            .assignment_stream_reader()
+            .map_err(|e| PyException::new_err(format!("Failed to open stream region: {e}")))?;
+        io::copy(&mut stream, &mut out)
+            .map_err(|e| PyIOError::new_err(format!("Failed to copy stream bytes: {e}")))?;
         Ok(())
     }
 

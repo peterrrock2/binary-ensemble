@@ -6,7 +6,7 @@ use super::xz_assignment_reader::XZAssignmentReader;
 use crate::codec::BenDecodeFrame;
 use crate::BenVariant;
 use std::fs::File;
-use std::io::{self, BufReader};
+use std::io::{self, BufReader, Read};
 use std::iter::Peekable;
 use std::path::{Path, PathBuf};
 
@@ -257,7 +257,30 @@ where
 pub fn build_frame_iter(file_path: &PathBuf, mode: &str) -> io::Result<FrameIter> {
     let file = File::options().read(true).open(file_path)?;
     let reader = BufReader::new(file);
+    build_frame_iter_from_reader(reader, mode)
+}
 
+/// Build a generic frame iterator from an already-opened reader.
+///
+/// This is the reader-driven variant of [`build_frame_iter`], useful when
+/// the caller needs to iterate frames over a sub-region of a file (e.g.
+/// the assignment stream embedded in a `.bendl` bundle, wrapped in a
+/// [`std::io::Read::take`] guard) without re-opening the file from offset
+/// zero.
+///
+/// # Arguments
+///
+/// * `reader` - Any owned reader positioned at the start of a `.ben` or
+///   `.xben` byte stream.
+/// * `mode` - Either `"ben"` or `"xben"`.
+///
+/// # Returns
+///
+/// Returns a boxed iterator over generic frames and their repetition counts.
+pub fn build_frame_iter_from_reader<R: Read + Send + 'static>(
+    reader: R,
+    mode: &str,
+) -> io::Result<FrameIter> {
     match mode {
         "ben" => {
             let frames = AssignmentFrameReader::new(reader)?;
@@ -293,6 +316,16 @@ pub fn build_frame_iter(file_path: &PathBuf, mode: &str) -> io::Result<FrameIter
 /// Returns the number of samples in the file.
 pub fn count_samples_from_file(path: &Path, mode: &str) -> io::Result<usize> {
     let iter = build_frame_iter(&path.to_path_buf(), mode)?;
+    count_samples_from_frame_iter(iter)
+}
+
+/// Count the number of samples reachable through a pre-built frame iterator.
+///
+/// Mirror of [`count_samples_from_file`] that operates on an existing
+/// [`FrameIter`], so callers that already have one (e.g. constructed via
+/// [`build_frame_iter_from_reader`] over a bundle's stream region) can
+/// reuse the walking logic without re-opening any files.
+pub fn count_samples_from_frame_iter(iter: FrameIter) -> io::Result<usize> {
     let mut total = 0usize;
     for item in iter {
         let (_frame, cnt) = item?;

@@ -89,7 +89,9 @@ impl PyBenEncoder {
         graph = None,
         ben_file_only = false,
     ))]
-    #[pyo3(text_signature = "(file_path, overwrite=False, variant=None, graph=None, ben_file_only=False)")]
+    #[pyo3(
+        text_signature = "(file_path, overwrite=False, variant=None, graph=None, ben_file_only=False)"
+    )]
     fn new(
         py: Python<'_>,
         file_path: PathBuf,
@@ -126,9 +128,9 @@ impl PyBenEncoder {
                 let mut slot = file.borrow_mut();
                 slot.seek(SeekFrom::Start(0))
                     .map_err(|e| PyIOError::new_err(format!("Failed to seek output: {e}")))?;
-                header
-                    .write_to(&mut *slot)
-                    .map_err(|e| PyIOError::new_err(format!("Failed to write bundle header: {e}")))?;
+                header.write_to(&mut *slot).map_err(|e| {
+                    PyIOError::new_err(format!("Failed to write bundle header: {e}"))
+                })?;
 
                 if let Some(bytes) = graph_bytes {
                     let compressed = xz_compress(&bytes).map_err(|e| {
@@ -151,9 +153,10 @@ impl PyBenEncoder {
                 }
             }
 
-            let stream_start = file.borrow_mut().stream_position().map_err(|e| {
-                PyIOError::new_err(format!("Failed to query output position: {e}"))
-            })?;
+            let stream_start = file
+                .borrow_mut()
+                .stream_position()
+                .map_err(|e| PyIOError::new_err(format!("Failed to query output position: {e}")))?;
             header.stream_offset = stream_start;
 
             OutputMode::Bundle {
@@ -181,9 +184,10 @@ impl PyBenEncoder {
     #[pyo3(signature = (assignment))]
     #[pyo3(text_signature = "(assignment)")]
     fn write(&mut self, assignment: Vec<u16>) -> PyResult<()> {
-        let enc = self.encoder.as_mut().ok_or_else(|| {
-            PyIOError::new_err("Encoder has already been closed.")
-        })?;
+        let enc = self
+            .encoder
+            .as_mut()
+            .ok_or_else(|| PyIOError::new_err("Encoder has already been closed."))?;
         enc.write_assignment(assignment)
             .map_err(|e| PyIOError::new_err(format!("Failed to encode assignment: {e}")))?;
         if let OutputMode::Bundle { sample_count, .. } = &mut self.mode {
