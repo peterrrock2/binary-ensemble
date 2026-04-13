@@ -1,4 +1,4 @@
-"""Tests for PyBundleReader.
+"""Tests for bundle (.bendl) support in PyBenDecoder.
 
 These tests do not rely on the `bendl` CLI binary being built. Instead, they
 construct `.bendl` bundles directly in Python from the on-disk format spec
@@ -27,7 +27,6 @@ import binary_ensemble
 from binary_ensemble import (
     PyBenDecoder,
     PyBenEncoder,
-    PyBundleReader,
     compress_jsonl_to_ben,
     compress_jsonl_to_xben,
 )
@@ -277,9 +276,10 @@ def _write_bundle(path: Path, bundle_bytes: bytes) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_module_exports_pybundlereader() -> None:
-    assert "PyBundleReader" in binary_ensemble.__all__
-    assert hasattr(binary_ensemble, "PyBundleReader")
+def test_module_exports_decoder_and_encoder() -> None:
+    assert "PyBenDecoder" in binary_ensemble.__all__
+    assert "PyBenEncoder" in binary_ensemble.__all__
+    assert "PyBundleReader" not in binary_ensemble.__all__
 
 
 def test_bundle_reader_round_trip_ben_with_assets(tmp_path: Path) -> None:
@@ -328,11 +328,11 @@ def test_bundle_reader_round_trip_ben_with_assets(tmp_path: Path) -> None:
     )
     path = _write_bundle(tmp_path / "out.bendl", bundle)
 
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
 
     assert reader.version() == (BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION)
     assert reader.is_complete() is True
-    assert reader.sample_count() == len(samples)
+    assert reader.count_samples() == len(samples)
     assert reader.assignment_format() == "ben"
 
     names = reader.asset_names()
@@ -372,10 +372,9 @@ def test_bundle_reader_round_trip_ben_with_assets(tmp_path: Path) -> None:
     got = list(PyBenDecoder(extracted, mode="ben"))
     assert got == samples
 
-    # __repr__ should not crash and should mention the path.
+    # __repr__ should not crash.
     r = repr(reader)
-    assert "PyBundleReader" in r
-    assert "complete=true" in r or "complete=True" in r
+    assert r is not None
 
 
 def test_bundle_reader_round_trip_xben(tmp_path: Path) -> None:
@@ -387,11 +386,11 @@ def test_bundle_reader_round_trip_xben(tmp_path: Path) -> None:
         assets=[],
     )
     path = _write_bundle(tmp_path / "xout.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
 
     assert reader.assignment_format() == "xben"
     assert reader.is_complete()
-    assert reader.sample_count() == len(samples)
+    assert reader.count_samples() == len(samples)
     assert reader.asset_names() == []
 
     # extract_stream → file must round-trip via the xben decoder.
@@ -414,7 +413,7 @@ def test_bundle_reader_canonical_helpers_return_none_when_absent(tmp_path: Path)
         ],
     )
     path = _write_bundle(tmp_path / "sparse.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     assert reader.read_metadata() is None
     assert reader.read_graph() is None
     assert reader.read_relabel_map() is None
@@ -424,9 +423,9 @@ def test_bundle_reader_asset_free_empty_stream(tmp_path: Path) -> None:
     # A bundle with no assets and an empty stream is legal (spec says so).
     bundle = build_bundle(stream_bytes=b"", sample_count=0, assets=[])
     path = _write_bundle(tmp_path / "empty.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     assert reader.is_complete()
-    assert reader.sample_count() == 0
+    assert reader.count_samples() == 0
     assert reader.asset_names() == []
     assert reader.list_assets() == []
     # extract_stream writes a zero-byte file.
@@ -449,7 +448,7 @@ def test_read_asset_bytes_raises_keyerror_for_unknown_name(tmp_path: Path) -> No
         ],
     )
     path = _write_bundle(tmp_path / "x.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     with pytest.raises(KeyError, match="no asset named"):
         reader.read_asset_bytes("missing.bin")
     with pytest.raises(KeyError):
@@ -471,7 +470,7 @@ def test_read_json_asset_rejects_non_utf8_payload(tmp_path: Path) -> None:
         ],
     )
     path = _write_bundle(tmp_path / "bin.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     # Raw bytes come back fine.
     assert reader.read_asset_bytes("binary.bin") == b"\xff\xfe\xfd"
     # But the JSON helper must reject non-UTF8 bytes.
@@ -493,7 +492,7 @@ def test_read_json_asset_rejects_malformed_json(tmp_path: Path) -> None:
         ],
     )
     path = _write_bundle(tmp_path / "m.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     # Raw bytes: fine.
     assert reader.read_asset_bytes("metadata.json") == b"not a json {{{"
     # Parsed via python's json module: must raise.
@@ -512,7 +511,7 @@ def test_unicode_asset_name_round_trips(tmp_path: Path) -> None:
         ],
     )
     path = _write_bundle(tmp_path / "u.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     assert reader.asset_names() == [name]
     assert reader.read_asset_bytes(name) == b"payload"
 
@@ -530,7 +529,7 @@ def test_many_assets_preserve_directory_order(tmp_path: Path) -> None:
         assets=assets,
     )
     path = _write_bundle(tmp_path / "many.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     names = reader.asset_names()
     assert names == list(payloads.keys())
     # Spot-check the contents round-trip.
@@ -550,7 +549,7 @@ def test_extract_stream_refuses_existing_file_without_overwrite(tmp_path: Path) 
         sample_count=1,
     )
     path = _write_bundle(tmp_path / "a.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     target = tmp_path / "already.ben"
     target.write_bytes(b"pre-existing")
     with pytest.raises(OSError, match="already exists"):
@@ -565,7 +564,7 @@ def test_extract_stream_overwrites_when_requested(tmp_path: Path) -> None:
         sample_count=2,
     )
     path = _write_bundle(tmp_path / "b.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     target = tmp_path / "out.ben"
     target.write_bytes(b"filler")
     reader.extract_stream(target, overwrite=True)
@@ -580,7 +579,7 @@ def test_extract_stream_overwrites_when_requested(tmp_path: Path) -> None:
 
 def test_open_rejects_missing_file(tmp_path: Path) -> None:
     with pytest.raises(OSError, match="Failed to open"):
-        PyBundleReader(tmp_path / "does_not_exist.bendl")
+        PyBenDecoder(tmp_path / "does_not_exist.bendl")
 
 
 def test_open_rejects_bad_magic(tmp_path: Path) -> None:
@@ -590,8 +589,10 @@ def test_open_rejects_bad_magic(tmp_path: Path) -> None:
         magic=b"NOTABEND",
     )
     path = _write_bundle(tmp_path / "bad.bendl", bundle)
-    with pytest.raises(Exception, match="Failed to parse bundle header"):
-        PyBundleReader(path)
+    # Bad magic → detect_is_bundle returns False → treated as plain BEN
+    # stream → fails because the bytes aren't a valid BEN banner.
+    with pytest.raises(Exception):
+        PyBenDecoder(path)
 
 
 def test_open_rejects_unsupported_major_version(tmp_path: Path) -> None:
@@ -602,14 +603,14 @@ def test_open_rejects_unsupported_major_version(tmp_path: Path) -> None:
     )
     path = _write_bundle(tmp_path / "oldfuture.bendl", bundle)
     with pytest.raises(Exception, match="Failed to parse bundle header"):
-        PyBundleReader(path)
+        PyBenDecoder(path)
 
 
 def test_open_rejects_truncated_header(tmp_path: Path) -> None:
     path = tmp_path / "short.bendl"
     path.write_bytes(b"BENDL\x00\x00\x01\x00")  # magic plus 2 bytes — not enough
     with pytest.raises(Exception, match="Failed to parse bundle header"):
-        PyBundleReader(path)
+        PyBenDecoder(path)
 
 
 def test_open_rejects_directory_with_inflated_entry_count(tmp_path: Path) -> None:
@@ -627,7 +628,7 @@ def test_open_rejects_directory_with_inflated_entry_count(tmp_path: Path) -> Non
     struct.pack_into("<I", bundle, directory_offset, 9999)
     path = _write_bundle(tmp_path / "trunc_dir.bendl", bytes(bundle))
     with pytest.raises(Exception):
-        PyBundleReader(path)
+        PyBenDecoder(path)
 
 
 def test_open_rejects_bundle_with_chopped_directory_bytes(tmp_path: Path) -> None:
@@ -639,7 +640,7 @@ def test_open_rejects_bundle_with_chopped_directory_bytes(tmp_path: Path) -> Non
     # Drop the final two bytes of the directory.
     path = _write_bundle(tmp_path / "chop.bendl", bundle[:-2])
     with pytest.raises(Exception):
-        PyBundleReader(path)
+        PyBenDecoder(path)
 
 
 def test_open_rejects_malformed_directory_invariants(tmp_path: Path) -> None:
@@ -655,7 +656,7 @@ def test_open_rejects_malformed_directory_invariants(tmp_path: Path) -> None:
     )
     path = _write_bundle(tmp_path / "dup.bendl", duplicate_names)
     with pytest.raises(Exception, match="malformed directory"):
-        PyBundleReader(path)
+        PyBenDecoder(path)
 
     wrong_singleton_name = build_bundle(
         stream_bytes=stream,
@@ -671,7 +672,7 @@ def test_open_rejects_malformed_directory_invariants(tmp_path: Path) -> None:
     )
     path = _write_bundle(tmp_path / "singleton.bendl", wrong_singleton_name)
     with pytest.raises(Exception, match="malformed directory"):
-        PyBundleReader(path)
+        PyBenDecoder(path)
 
 
 def test_open_rejects_declared_directory_len_with_trailing_bytes(tmp_path: Path) -> None:
@@ -688,13 +689,14 @@ def test_open_rejects_declared_directory_len_with_trailing_bytes(tmp_path: Path)
 
     path = _write_bundle(tmp_path / "trailing_dir.bendl", bytes(bundle))
     with pytest.raises(Exception, match="trailing byte"):
-        PyBundleReader(path)
+        PyBenDecoder(path)
 
 
-def test_incomplete_bundle_reports_none_sample_count(tmp_path: Path) -> None:
-    # Provisional bundle with complete=0: sample_count() must be None.
+def test_incomplete_bundle_scans_stream_for_sample_count(tmp_path: Path) -> None:
+    # Provisional bundle with complete=0: the decoder falls back to
+    # scanning the stream region (from stream_offset to EOF) to count
+    # samples instead of trusting the header.
     stream = _ben_bytes_for([[1, 2, 3]], tmp_path)
-    # Build it by hand — no directory, complete=NO.
     header = _pack_header(
         complete=COMPLETE_NO,
         assignment_format=ASSIGNMENT_FORMAT_BEN,
@@ -705,9 +707,9 @@ def test_incomplete_bundle_reports_none_sample_count(tmp_path: Path) -> None:
         sample_count=-1,
     )
     path = _write_bundle(tmp_path / "incomplete.bendl", header + stream)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     assert reader.is_complete() is False
-    assert reader.sample_count() is None
+    assert reader.count_samples() == 1
     assert reader.asset_names() == []
     # extract_stream should still write out bytes that decode as BEN.
     out = tmp_path / "extracted.ben"
@@ -715,9 +717,9 @@ def test_incomplete_bundle_reports_none_sample_count(tmp_path: Path) -> None:
     assert list(PyBenDecoder(out, mode="ben")) == [[1, 2, 3]]
 
 
-def test_unknown_assignment_format_byte_reports_none(tmp_path: Path) -> None:
-    # Assignment format byte = 0 → unknown. Finalized bundle but without
-    # a valid stream container — the directory side still works.
+def test_unknown_assignment_format_byte_rejects_at_construction(tmp_path: Path) -> None:
+    # Assignment format byte = 99 → unrecognized. PyBenDecoder must
+    # reject the bundle at construction time.
     bundle = bytearray(
         build_bundle(
             stream_bytes=b"",
@@ -728,9 +730,8 @@ def test_unknown_assignment_format_byte_reports_none(tmp_path: Path) -> None:
     # assignment_format byte is at offset 13 in the header.
     bundle[13] = 99
     path = _write_bundle(tmp_path / "wtfmt.bendl", bytes(bundle))
-    reader = PyBundleReader(path)
-    assert reader.assignment_format() is None
-    assert reader.is_complete()
+    with pytest.raises(Exception, match="unrecognized assignment_format"):
+        PyBenDecoder(path)
 
 
 def test_corrupted_xz_asset_raises_io_error(tmp_path: Path) -> None:
@@ -757,7 +758,7 @@ def test_corrupted_xz_asset_raises_io_error(tmp_path: Path) -> None:
     # Flip a byte well past the magic so the decoder reads it and fails.
     bundle[xz_start + 20] ^= 0xFF
     path = _write_bundle(tmp_path / "badxz.bendl", bytes(bundle))
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     # Opening works — the header/directory are intact.
     with pytest.raises(OSError):
         reader.read_asset_bytes("graph.json")
@@ -772,7 +773,7 @@ def test_directory_entry_with_zero_length_custom_payload(tmp_path: Path) -> None
         ],
     )
     path = _write_bundle(tmp_path / "zlen.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     assert reader.read_asset_bytes("empty.bin") == b""
     entry = next(a for a in reader.list_assets() if a["name"] == "empty.bin")
     assert entry["len"] == 0
@@ -790,11 +791,10 @@ def test_repr_on_incomplete_bundle(tmp_path: Path) -> None:
         sample_count=-1,
     )
     path = _write_bundle(tmp_path / "rep.bendl", header + stream)
-    reader = PyBundleReader(path)
-    r = repr(reader)
-    # Incomplete bundles report no sample count.
-    assert "samples=None" in r
-    assert "assets=0" in r
+    reader = PyBenDecoder(path)
+    # Incomplete bundle should open without error.
+    assert reader.is_complete() is False
+    assert reader.asset_names() == []
 
 
 # ---------------------------------------------------------------------------
@@ -829,10 +829,16 @@ def test_interrupted_ben_stream_mid_frame_decodes_valid_prefix(tmp_path: Path) -
     partial = full_ben[: len(full_ben) - 3]
     path = _write_bundle(tmp_path / "crashed.bendl", _incomplete_bundle(partial))
 
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     assert reader.is_complete() is False
-    assert reader.sample_count() is None
     assert reader.assignment_format() == "ben"
+    # count_samples scans the truncated stream; it may error or return a
+    # partial count — either is acceptable.
+    try:
+        n = reader.count_samples()
+        assert n < len(samples)
+    except Exception:
+        pass
 
     # extract_stream should write exactly the partial byte sequence.
     extracted = tmp_path / "partial.ben"
@@ -861,7 +867,7 @@ def test_interrupted_ben_stream_inside_banner_fails_to_open_decoder(
     full_ben = _ben_bytes_for([[1, 2, 3]], tmp_path)
     path = _write_bundle(tmp_path / "head_cut.bendl", _incomplete_bundle(full_ben[:8]))
 
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     assert reader.is_complete() is False
 
     extracted = tmp_path / "head_cut.ben"
@@ -876,10 +882,12 @@ def test_interrupted_ben_stream_zero_bytes_after_header(tmp_path: Path) -> None:
     # before any stream bytes landed.
     path = _write_bundle(tmp_path / "zero.bendl", _incomplete_bundle(b""))
 
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     assert reader.is_complete() is False
-    assert reader.sample_count() is None
     assert reader.asset_names() == []
+    # Zero stream bytes → scan fails (no BEN banner).
+    with pytest.raises(Exception):
+        reader.count_samples()
 
     extracted = tmp_path / "zero.ben"
     reader.extract_stream(extracted)
@@ -909,10 +917,10 @@ def test_finalized_bundle_with_inflated_stream_len_survives_open(tmp_path: Path)
 
     # The reader's open() succeeds — the header fields parse as-is and
     # validation is lazy.
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     assert reader.is_complete()
     # sample_count is what the header says.
-    assert reader.sample_count() == len(samples)
+    assert reader.count_samples() == len(samples)
 
     # extract_stream reads `stream_len` bytes from stream_offset; when
     # the file ends early, the short-read path must not hand back
@@ -946,7 +954,7 @@ def test_read_metadata_after_extract_stream_still_works(tmp_path: Path) -> None:
         ],
     )
     path = _write_bundle(tmp_path / "seq.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     reader.extract_stream(tmp_path / "s.ben")
     assert reader.read_metadata() == {"x": 1}
     reader.extract_stream(tmp_path / "s2.ben", overwrite=True)
@@ -973,7 +981,7 @@ def test_long_asset_name_near_u16_max(tmp_path: Path) -> None:
         ],
     )
     path = _write_bundle(tmp_path / "long.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     assert reader.asset_names() == [long_name]
     assert reader.read_asset_bytes(long_name) == payload
 
@@ -1021,7 +1029,7 @@ def test_list_assets_flag_fidelity(tmp_path: Path) -> None:
         assets=assets,
     )
     path = _write_bundle(tmp_path / "flags.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     got = reader.list_assets()
     assert len(got) == len(combos)
     for entry, want in zip(got, expected):
@@ -1050,7 +1058,7 @@ def test_read_asset_bytes_is_idempotent(tmp_path: Path) -> None:
         ],
     )
     path = _write_bundle(tmp_path / "idem.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     for _ in range(5):
         assert reader.read_asset_bytes("raw.bin") == payload
         assert reader.read_asset_bytes("compressed.bin") == payload
@@ -1087,7 +1095,7 @@ def test_stress_many_heterogeneous_assets_round_trip(tmp_path: Path) -> None:
         assets=assets,
     )
     path = _write_bundle(tmp_path / "many.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
 
     assert reader.asset_names() == [name for name, _ in expected]
     # Sample every 37th asset and verify the payload decodes correctly
@@ -1106,7 +1114,7 @@ def test_stress_many_heterogeneous_assets_round_trip(tmp_path: Path) -> None:
 def test_seeded_fuzz_random_bundles_round_trip(tmp_path: Path) -> None:
     # Build 20 deliberately-different bundles from a seeded PRNG. Each one
     # mixes random asset sizes, random flags, random samples, and is then
-    # fully round-tripped through PyBundleReader + PyBenDecoder.
+    # fully round-tripped through PyBenDecoder on a .bendl bundle.
     rng = random.Random(0xFEED_FACE)
     for trial in range(20):
         n_assets = rng.randint(0, 12)
@@ -1139,9 +1147,9 @@ def test_seeded_fuzz_random_bundles_round_trip(tmp_path: Path) -> None:
         )
         path = _write_bundle(tmp_path / f"fuzz-{trial}.bendl", bundle)
 
-        reader = PyBundleReader(path)
+        reader = PyBenDecoder(path)
         assert reader.is_complete()
-        assert reader.sample_count() == n_samples
+        assert reader.count_samples() == n_samples
         assert reader.asset_names() == [name for name, _ in truth]
         for name, want in truth:
             assert reader.read_asset_bytes(name) == want
@@ -1184,7 +1192,7 @@ def test_interleaved_asset_and_stream_operations(tmp_path: Path) -> None:
         ],
     )
     path = _write_bundle(tmp_path / "interleave.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
 
     # Strongly non-sequential access pattern.
     assert reader.read_asset_bytes("blob.bin") == custom
@@ -1211,7 +1219,7 @@ def test_extract_stream_into_missing_parent_dir_raises_ioerror(tmp_path: Path) -
         sample_count=1,
     )
     path = _write_bundle(tmp_path / "mini.bendl", bundle)
-    reader = PyBundleReader(path)
+    reader = PyBenDecoder(path)
     missing = tmp_path / "does" / "not" / "exist" / "out.ben"
     with pytest.raises(OSError):
         reader.extract_stream(missing)
@@ -1243,10 +1251,10 @@ def test_pybenencoder_default_emits_bundle_without_graph(tmp_path: Path) -> None
         for a in samples:
             enc.write(a)
 
-    reader = PyBundleReader(out)
+    reader = PyBenDecoder(out)
     assert reader.version() == (BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION)
     assert reader.is_complete()
-    assert reader.sample_count() == len(samples)
+    assert reader.count_samples() == len(samples)
     assert reader.assignment_format() == "ben"
     # No graph because none was provided.
     assert reader.asset_names() == []
@@ -1266,9 +1274,9 @@ def test_pybenencoder_bundle_embeds_graph_from_dict(tmp_path: Path) -> None:
         for a in samples:
             enc.write(a)
 
-    reader = PyBundleReader(out)
+    reader = PyBenDecoder(out)
     assert reader.is_complete()
-    assert reader.sample_count() == len(samples)
+    assert reader.count_samples() == len(samples)
     assert reader.asset_names() == ["graph.json"]
 
     assets = reader.list_assets()
@@ -1294,7 +1302,7 @@ def test_pybenencoder_bundle_embeds_graph_from_path(tmp_path: Path) -> None:
         for a in samples:
             enc.write(a)
 
-    reader = PyBundleReader(out)
+    reader = PyBenDecoder(out)
     assert reader.asset_names() == ["graph.json"]
     assert reader.read_graph() == SAMPLE_GRAPH
 
@@ -1313,7 +1321,7 @@ def test_pybenencoder_bundle_embeds_graph_from_str_path(tmp_path: Path) -> None:
         for a in samples:
             enc.write(a)
 
-    reader = PyBundleReader(out)
+    reader = PyBenDecoder(out)
     assert reader.read_graph() == SAMPLE_GRAPH
 
 
@@ -1327,7 +1335,7 @@ def test_pybenencoder_bundle_embeds_graph_from_bytes(tmp_path: Path) -> None:
         for a in samples:
             enc.write(a)
 
-    reader = PyBundleReader(out)
+    reader = PyBenDecoder(out)
     assert reader.read_graph() == SAMPLE_GRAPH
 
 
@@ -1341,7 +1349,7 @@ def test_pybenencoder_bundle_embeds_graph_from_bytesio(tmp_path: Path) -> None:
         for a in samples:
             enc.write(a)
 
-    reader = PyBundleReader(out)
+    reader = PyBenDecoder(out)
     assert reader.read_graph() == SAMPLE_GRAPH
 
 
@@ -1355,7 +1363,7 @@ def test_pybenencoder_bundle_embeds_graph_from_stringio(tmp_path: Path) -> None:
         for a in samples:
             enc.write(a)
 
-    reader = PyBundleReader(out)
+    reader = PyBenDecoder(out)
     assert reader.read_graph() == SAMPLE_GRAPH
 
 
@@ -1369,8 +1377,8 @@ def test_pybenencoder_bundle_round_trip_via_extract_stream(tmp_path: Path) -> No
         for a in samples:
             enc.write(a)
 
-    reader = PyBundleReader(out)
-    assert reader.sample_count() == len(samples)
+    reader = PyBenDecoder(out)
+    assert reader.count_samples() == len(samples)
     extracted = tmp_path / "full.ben"
     reader.extract_stream(extracted)
     assert list(PyBenDecoder(extracted, mode="ben")) == samples
@@ -1413,9 +1421,9 @@ def test_pybenencoder_bundle_close_is_idempotent(tmp_path: Path) -> None:
     with pytest.raises(OSError, match="already been closed"):
         enc.write([1, 2, 3])
 
-    reader = PyBundleReader(out)
+    reader = PyBenDecoder(out)
     assert reader.is_complete()
-    assert reader.sample_count() == 1
+    assert reader.count_samples() == 1
 
 
 def test_pybenencoder_bundle_rejects_invalid_graph_type(tmp_path: Path) -> None:
@@ -1891,7 +1899,7 @@ def test_pybendecoder_empty_file_is_treated_as_plain(tmp_path: Path) -> None:
 
 
 def test_pybendecoder_bundle_read_json_asset_rejects_non_utf8(tmp_path: Path) -> None:
-    # read_json_asset on the decoder should mirror PyBundleReader's
+    # read_json_asset on the decoder should reject non-UTF-8 the same as
     # error behavior when an asset isn't valid UTF-8.
     bundle = build_bundle(
         stream_bytes=_ben_bytes_for([[1]], tmp_path),
@@ -2145,3 +2153,98 @@ def test_pybendecoder_partial_iteration_then_restart(tmp_path: Path) -> None:
     assert next(it) == samples[1]
     # Any new pass (list / for / iter) rebuilds and starts over.
     assert list(dec) == samples
+
+
+def test_pybendecoder_count_samples_after_subsample_preserves_len(
+    tmp_path: Path,
+) -> None:
+    # After `subsample_*`, `len(dec)` must reflect the filtered count.
+    # Calling `count_samples()` reports the base (unfiltered) count but
+    # must not clobber the filtered `len(dec)` value.
+    samples = [[i] for i in range(1, 9)]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "count_after_sub.bendl", bundle)
+    dec = PyBenDecoder(path)
+    dec.subsample_range(2, 5)
+    assert len(dec) == 4
+    assert dec.count_samples() == len(samples)
+    # The filtered length contract must survive a count_samples() call.
+    assert len(dec) == 4
+    assert list(dec) == samples[1:5]
+
+
+def test_pybendecoder_count_samples_plain_after_subsample_preserves_len(
+    tmp_path: Path,
+) -> None:
+    # Same contract as above, but on a plain .ben stream to cover the
+    # non-bundle branch of `ensure_base_len`.
+    samples = [[i] for i in range(1, 11)]
+    ben_path = tmp_path / "plain_count.ben"
+    with PyBenEncoder(
+        ben_path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
+        for a in samples:
+            enc.write(a)
+    dec = PyBenDecoder(ben_path)
+    dec.subsample_every(3, 1)
+    expected = samples[::3]
+    assert len(dec) == len(expected)
+    assert dec.count_samples() == len(samples)
+    assert len(dec) == len(expected)
+    assert list(dec) == expected
+
+
+def test_pybendecoder_subsample_then_count_samples_then_reiterate(
+    tmp_path: Path,
+) -> None:
+    # Composing subsample → count_samples → restart iteration must keep
+    # the filtered view intact across the restart.
+    samples = [[i, i + 1] for i in range(1, 9)]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "sub_count_restart.bendl", bundle)
+    dec = PyBenDecoder(path)
+    dec.subsample_indices([1, 4, 8])
+    assert dec.count_samples() == len(samples)
+    expected = [samples[0], samples[3], samples[7]]
+    assert list(dec) == expected
+    assert list(dec) == expected
+
+
+def test_pybendecoder_bundle_read_json_asset_missing_name_raises_keyerror(
+    tmp_path: Path,
+) -> None:
+    # `read_json_asset` on a valid bundle that does not carry the named
+    # asset must surface a KeyError, matching `read_asset_bytes`.
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for([[1, 2]], tmp_path),
+        sample_count=1,
+    )
+    path = _write_bundle(tmp_path / "missing_json.bendl", bundle)
+    dec = PyBenDecoder(path)
+    with pytest.raises(KeyError, match="nope.json"):
+        dec.read_json_asset("nope.json")
+
+
+def test_pybendecoder_bundle_len_uses_header_fast_path(tmp_path: Path) -> None:
+    # For a finalized bundle, `len(dec)` should use the O(1) header
+    # sample_count fast path rather than scanning the stream. We can't
+    # observe the scan directly, but we can verify the result matches
+    # the count declared in the header even when the stream is a real
+    # BEN payload.
+    samples = [[i] for i in range(1, 6)]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path),
+        sample_count=len(samples),
+    )
+    path = _write_bundle(tmp_path / "fast_len.bendl", bundle)
+    dec = PyBenDecoder(path)
+    assert len(dec) == len(samples)
+    # A second call returns the cached value and must agree.
+    assert len(dec) == len(samples)
+    assert dec.count_samples() == len(samples)

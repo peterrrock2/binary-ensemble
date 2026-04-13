@@ -1,3 +1,4 @@
+import io
 import json
 import random
 from pathlib import Path
@@ -744,3 +745,763 @@ def test_decode_helpers_reject_same_paths_missing_inputs_existing_output_and_inv
     out.write_text("exists\n", encoding="utf-8")
     with pytest.raises(OSError, match="already exists"):
         decompress_ben_to_jsonl(ben, out, overwrite=False)
+
+
+# ---------------------------------------------------------------------------
+# Bundle inspection via PyBenDecoder
+# ---------------------------------------------------------------------------
+
+
+def test_decoder_bundle_round_trip_all_methods(tmp_path: Path) -> None:
+    samples = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    graph = {"nodes": [{"id": 0}, {"id": 1}], "links": [{"source": 0, "target": 1}]}
+    path = tmp_path / "full.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard", graph=graph) as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    assert dec.is_bundle()
+    assert dec.is_complete()
+    assert dec.count_samples() == len(samples)
+    assert dec.assignment_format() == "ben"
+    v = dec.version()
+    assert isinstance(v, tuple) and len(v) == 2
+
+    names = dec.asset_names()
+    assert "graph.json" in names
+
+    assets = dec.list_assets()
+    assert len(assets) >= 1
+    for entry in assets:
+        assert "name" in entry
+        assert "type" in entry
+        assert "flags" in entry
+
+    raw = dec.read_asset_bytes("graph.json")
+    assert isinstance(raw, bytes)
+
+    parsed = dec.read_json_asset("graph.json")
+    assert parsed["nodes"] == graph["nodes"]
+
+    g = dec.read_graph()
+    assert g is not None
+    assert g["nodes"] == graph["nodes"]
+
+    assert dec.read_metadata() is None
+    assert dec.read_relabel_map() is None
+
+    assert list(dec) == samples
+
+
+def test_decoder_bundle_extract_stream_and_decode(tmp_path: Path) -> None:
+    samples = [[10, 20], [30, 40]]
+    path = tmp_path / "extract.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    out = tmp_path / "extracted.ben"
+    dec.extract_stream(out)
+    assert list(PyBenDecoder(out, mode="ben")) == samples
+
+
+def test_decoder_bundle_extract_stream_overwrite_and_refuse(tmp_path: Path) -> None:
+    samples = [[1]]
+    path = tmp_path / "ow.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        enc.write(samples[0])
+
+    dec = PyBenDecoder(path)
+    out = tmp_path / "out.ben"
+    dec.extract_stream(out)
+    with pytest.raises(OSError, match="already exists"):
+        dec.extract_stream(out, overwrite=False)
+    dec.extract_stream(out, overwrite=True)
+    assert list(PyBenDecoder(out, mode="ben")) == samples
+
+
+def test_decoder_bundle_missing_asset_raises_keyerror(tmp_path: Path) -> None:
+    path = tmp_path / "no_asset.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        enc.write([1, 2])
+
+    dec = PyBenDecoder(path)
+    with pytest.raises(KeyError, match="nope"):
+        dec.read_asset_bytes("nope")
+    with pytest.raises(KeyError, match="nope"):
+        dec.read_json_asset("nope")
+
+
+# ---------------------------------------------------------------------------
+# PyBenEncoder bundle-mode coverage
+# ---------------------------------------------------------------------------
+
+
+def test_pybenencoder_bundle_without_graph(tmp_path: Path) -> None:
+    samples = [[1, 2], [3, 4]]
+    path = tmp_path / "no_graph.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    assert dec.is_bundle()
+    assert dec.assignment_format() == "ben"
+    assert dec.read_graph() is None
+    assert list(dec) == samples
+
+
+def test_pybenencoder_bundle_graph_from_dict(tmp_path: Path) -> None:
+    graph = {"test": True}
+    path = tmp_path / "dict_graph.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard", graph=graph) as enc:
+        enc.write([1])
+    dec = PyBenDecoder(path)
+    assert dec.read_graph() == graph
+
+
+def test_pybenencoder_bundle_graph_from_bytes(tmp_path: Path) -> None:
+    graph = {"test": "bytes"}
+    path = tmp_path / "bytes_graph.bendl"
+    with PyBenEncoder(
+        path, overwrite=True, variant="standard", graph=json.dumps(graph).encode()
+    ) as enc:
+        enc.write([1])
+    assert PyBenDecoder(path).read_graph() == graph
+
+
+def test_pybenencoder_bundle_graph_from_bytearray(tmp_path: Path) -> None:
+    graph = {"test": "bytearray"}
+    path = tmp_path / "ba_graph.bendl"
+    with PyBenEncoder(
+        path,
+        overwrite=True,
+        variant="standard",
+        graph=bytearray(json.dumps(graph).encode()),
+    ) as enc:
+        enc.write([1])
+    assert PyBenDecoder(path).read_graph() == graph
+
+
+def test_pybenencoder_bundle_graph_from_file_path(tmp_path: Path) -> None:
+    graph = {"test": "path"}
+    gpath = tmp_path / "g.json"
+    gpath.write_text(json.dumps(graph), encoding="utf-8")
+    path = tmp_path / "path_graph.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard", graph=gpath) as enc:
+        enc.write([1])
+    assert PyBenDecoder(path).read_graph() == graph
+
+
+def test_pybenencoder_bundle_graph_from_str_path(tmp_path: Path) -> None:
+    graph = {"test": "str_path"}
+    gpath = tmp_path / "g2.json"
+    gpath.write_text(json.dumps(graph), encoding="utf-8")
+    path = tmp_path / "str_path_graph.bendl"
+    with PyBenEncoder(
+        path, overwrite=True, variant="standard", graph=str(gpath)
+    ) as enc:
+        enc.write([1])
+    assert PyBenDecoder(path).read_graph() == graph
+
+
+def test_pybenencoder_bundle_graph_from_bytesio(tmp_path: Path) -> None:
+    graph = {"test": "bytesio"}
+    path = tmp_path / "bio_graph.bendl"
+    with PyBenEncoder(
+        path,
+        overwrite=True,
+        variant="standard",
+        graph=io.BytesIO(json.dumps(graph).encode()),
+    ) as enc:
+        enc.write([1])
+    assert PyBenDecoder(path).read_graph() == graph
+
+
+def test_pybenencoder_bundle_graph_from_stringio(tmp_path: Path) -> None:
+    graph = {"test": "stringio"}
+    path = tmp_path / "sio_graph.bendl"
+    with PyBenEncoder(
+        path,
+        overwrite=True,
+        variant="standard",
+        graph=io.StringIO(json.dumps(graph)),
+    ) as enc:
+        enc.write([1])
+    assert PyBenDecoder(path).read_graph() == graph
+
+
+def test_pybenencoder_bundle_rejects_graph_with_ben_file_only(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="graph.*cannot be combined"):
+        PyBenEncoder(
+            tmp_path / "bad.ben",
+            overwrite=True,
+            variant="standard",
+            graph={"a": 1},
+            ben_file_only=True,
+        )
+
+
+def test_pybenencoder_bundle_rejects_invalid_graph_type(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="graph must be"):
+        PyBenEncoder(
+            tmp_path / "bad.bendl",
+            overwrite=True,
+            variant="standard",
+            graph=42,
+        )
+
+
+def test_pybenencoder_bundle_close_is_idempotent(tmp_path: Path) -> None:
+    path = tmp_path / "idempotent.bendl"
+    enc = PyBenEncoder(path, overwrite=True, variant="standard")
+    enc.write([1, 2])
+    enc.close()
+    enc.close()
+    assert list(PyBenDecoder(path)) == [[1, 2]]
+
+
+def test_pybenencoder_bundle_write_after_close_raises(tmp_path: Path) -> None:
+    path = tmp_path / "closed.bendl"
+    enc = PyBenEncoder(path, overwrite=True, variant="standard")
+    enc.write([1])
+    enc.close()
+    with pytest.raises(OSError, match="already been closed"):
+        enc.write([2])
+
+
+# ---------------------------------------------------------------------------
+# PyBenDecoder bundle-path coverage
+# ---------------------------------------------------------------------------
+
+
+def test_pybendecoder_bundle_auto_detect_and_iterate(tmp_path: Path) -> None:
+    samples = [[1, 2], [3, 4], [5, 6]]
+    path = tmp_path / "auto.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+    dec = PyBenDecoder(path)
+    assert dec.is_bundle()
+    assert list(dec) == samples
+
+
+def test_pybendecoder_bundle_toc_methods(tmp_path: Path) -> None:
+    graph = {"g": 1}
+    path = tmp_path / "toc.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard", graph=graph) as enc:
+        enc.write([1, 2, 3])
+
+    dec = PyBenDecoder(path)
+    assert dec.is_bundle()
+    assert dec.assignment_format() == "ben"
+    v = dec.version()
+    assert isinstance(v, tuple) and len(v) == 2
+    assert dec.is_complete()
+
+    names = dec.asset_names()
+    assert "graph.json" in names
+
+    assets = dec.list_assets()
+    assert len(assets) >= 1
+    for entry in assets:
+        assert "name" in entry
+        assert "type" in entry
+        assert "flags" in entry
+
+    raw = dec.read_asset_bytes("graph.json")
+    assert isinstance(raw, bytes)
+
+    parsed = dec.read_json_asset("graph.json")
+    assert parsed == graph
+
+    assert dec.read_graph() == graph
+    assert dec.read_metadata() is None
+    assert dec.read_relabel_map() is None
+
+
+def test_pybendecoder_bundle_subsample_all_modes(tmp_path: Path) -> None:
+    samples = [[i] for i in range(1, 11)]
+    path = tmp_path / "subsample.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    dec.subsample_range(2, 5)
+    assert list(dec) == samples[1:5]
+
+    dec2 = PyBenDecoder(path)
+    dec2.subsample_indices([1, 3, 10])
+    assert list(dec2) == [samples[0], samples[2], samples[9]]
+
+    dec3 = PyBenDecoder(path)
+    dec3.subsample_every(3, 2)
+    assert list(dec3) == [samples[1], samples[4], samples[7]]
+
+
+def test_pybendecoder_bundle_len_and_count(tmp_path: Path) -> None:
+    samples = [[1], [2], [3], [4], [5]]
+    path = tmp_path / "len.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    assert len(dec) == len(samples)
+    assert dec.count_samples() == len(samples)
+    assert list(dec) == samples
+
+
+def test_pybendecoder_bundle_iteration_restart(tmp_path: Path) -> None:
+    samples = [[1, 2], [3, 4]]
+    path = tmp_path / "restart.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    assert list(dec) == samples
+    assert list(dec) == samples
+
+
+def test_pybendecoder_bundle_subsample_survives_reiteration(tmp_path: Path) -> None:
+    samples = [[i] for i in range(1, 8)]
+    path = tmp_path / "re_sub.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    dec.subsample_range(2, 5)
+    expected = samples[1:5]
+    assert list(dec) == expected
+    assert list(dec) == expected
+
+
+def test_pybendecoder_plain_rejects_bundle_methods(tmp_path: Path) -> None:
+    path = tmp_path / "plain.ben"
+    with PyBenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+        enc.write([1, 2])
+
+    dec = PyBenDecoder(path)
+    assert not dec.is_bundle()
+    assert dec.assignment_format() == "ben"
+
+    for method, args in [
+        ("version", ()),
+        ("is_complete", ()),
+        ("asset_names", ()),
+        ("list_assets", ()),
+        ("read_asset_bytes", ("x",)),
+        ("read_json_asset", ("x",)),
+        ("read_graph", ()),
+        ("read_metadata", ()),
+        ("read_relabel_map", ()),
+    ]:
+        with pytest.raises(Exception, match="only available on .bendl"):
+            getattr(dec, method)(*args)
+
+
+def test_pybendecoder_bundle_count_samples_preserves_subsample_len(
+    tmp_path: Path,
+) -> None:
+    samples = [[i] for i in range(1, 9)]
+    path = tmp_path / "count_sub.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    dec.subsample_range(2, 5)
+    assert len(dec) == 4
+    assert dec.count_samples() == len(samples)
+    assert len(dec) == 4
+
+
+# ---------------------------------------------------------------------------
+# PyBenDecoder XBEN bundle coverage
+# ---------------------------------------------------------------------------
+
+
+def test_pybendecoder_xben_bundle_roundtrip(tmp_path: Path) -> None:
+    samples = [[1, 2], [3, 4], [5, 6]]
+    src = tmp_path / "src.jsonl"
+    write_jsonl(samples, src)
+
+    xben_path = tmp_path / "samples.xben"
+    compress_jsonl_to_xben(
+        src, xben_path, overwrite=True, variant="standard",
+        n_threads=1, compression_level=1,
+    )
+
+    bendl_path = tmp_path / "xben_bundle.bendl"
+    with PyBenEncoder(bendl_path, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(bendl_path)
+    assert dec.is_bundle()
+    assert list(dec) == samples
+
+
+def test_pybendecoder_xben_plain_stream(tmp_path: Path) -> None:
+    samples = [[1, 2], [3, 4]]
+    src = tmp_path / "src.jsonl"
+    write_jsonl(samples, src)
+
+    xben_path = tmp_path / "plain.xben"
+    compress_jsonl_to_xben(
+        src, xben_path, overwrite=True, variant="standard",
+        n_threads=1, compression_level=1,
+    )
+
+    dec = PyBenDecoder(xben_path, mode="xben")
+    assert not dec.is_bundle()
+    assert dec.assignment_format() == "xben"
+    assert list(dec) == samples
+
+
+# ---------------------------------------------------------------------------
+# PyBenDecoder subsample validation errors
+# ---------------------------------------------------------------------------
+
+
+def test_pybendecoder_subsample_indices_empty_raises(tmp_path: Path) -> None:
+    samples = [[1], [2]]
+    path = tmp_path / "empty_idx.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    with pytest.raises(Exception):
+        dec.subsample_indices([])
+
+
+def test_pybendecoder_subsample_indices_zero_raises(tmp_path: Path) -> None:
+    samples = [[1], [2]]
+    path = tmp_path / "zero_idx.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    with pytest.raises(Exception):
+        dec.subsample_indices([0, 1, 2])
+
+
+def test_pybendecoder_subsample_range_zero_start_raises(tmp_path: Path) -> None:
+    samples = [[1], [2]]
+    path = tmp_path / "zero_start.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    with pytest.raises(Exception):
+        dec.subsample_range(0, 2)
+
+
+def test_pybendecoder_subsample_range_end_lt_start_raises(tmp_path: Path) -> None:
+    samples = [[1], [2]]
+    path = tmp_path / "bad_range.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    with pytest.raises(Exception):
+        dec.subsample_range(5, 2)
+
+
+def test_pybendecoder_subsample_every_zero_step_raises(tmp_path: Path) -> None:
+    samples = [[1], [2]]
+    path = tmp_path / "zero_step.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    with pytest.raises(Exception):
+        dec.subsample_every(0)
+
+
+def test_pybendecoder_subsample_every_zero_offset_raises(tmp_path: Path) -> None:
+    samples = [[1], [2]]
+    path = tmp_path / "zero_off.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    with pytest.raises(Exception):
+        dec.subsample_every(1, offset=0)
+
+
+# ---------------------------------------------------------------------------
+# PyBenDecoder subsample on plain streams
+# ---------------------------------------------------------------------------
+
+
+def test_pybendecoder_plain_subsample_indices(tmp_path: Path) -> None:
+    samples = [[1], [2], [3], [4], [5]]
+    path = tmp_path / "plain_sub.ben"
+    with PyBenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    dec.subsample_indices([1, 3, 5])
+    assert list(dec) == [[1], [3], [5]]
+
+
+def test_pybendecoder_plain_subsample_range(tmp_path: Path) -> None:
+    samples = [[1], [2], [3], [4], [5]]
+    path = tmp_path / "plain_range.ben"
+    with PyBenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    dec.subsample_range(2, 4)
+    assert list(dec) == [[2], [3], [4]]
+
+
+def test_pybendecoder_plain_subsample_every(tmp_path: Path) -> None:
+    samples = [[1], [2], [3], [4], [5], [6]]
+    path = tmp_path / "plain_every.ben"
+    with PyBenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    dec.subsample_every(2, offset=1)
+    assert list(dec) == [[1], [3], [5]]
+
+
+# ---------------------------------------------------------------------------
+# PyBenDecoder len/count on plain streams
+# ---------------------------------------------------------------------------
+
+
+def test_pybendecoder_plain_len_and_count(tmp_path: Path) -> None:
+    samples = [[1], [2], [3]]
+    path = tmp_path / "plain_len.ben"
+    with PyBenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    assert dec.count_samples() == 3
+    assert len(dec) == 3
+
+
+def test_pybendecoder_plain_len_after_subsample(tmp_path: Path) -> None:
+    samples = [[1], [2], [3], [4], [5]]
+    path = tmp_path / "plain_sub_len.ben"
+    with PyBenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    dec.subsample_range(2, 4)
+    assert len(dec) == 3
+    assert dec.count_samples() == 5
+    assert len(dec) == 3
+
+
+# ---------------------------------------------------------------------------
+# PyBenDecoder multiple iteration passes
+# ---------------------------------------------------------------------------
+
+
+def test_pybendecoder_plain_multiple_iterations(tmp_path: Path) -> None:
+    samples = [[1, 2], [3, 4]]
+    path = tmp_path / "multi_iter.ben"
+    with PyBenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    assert list(dec) == samples
+    assert list(dec) == samples
+    assert list(dec) == samples
+
+
+def test_pybendecoder_plain_subsample_survives_reiteration(tmp_path: Path) -> None:
+    samples = [[i] for i in range(1, 8)]
+    path = tmp_path / "plain_re_sub.ben"
+    with PyBenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path)
+    dec.subsample_every(2, offset=1)
+    expected = [[1], [3], [5], [7]]
+    assert list(dec) == expected
+    assert list(dec) == expected
+
+
+# ---------------------------------------------------------------------------
+# PyBenEncoder ben_file_only mode coverage
+# ---------------------------------------------------------------------------
+
+
+def test_pybenencoder_ben_file_only_roundtrip(tmp_path: Path) -> None:
+    samples = [[10, 20, 30], [40, 50, 60]]
+    path = tmp_path / "ben_only.ben"
+    with PyBenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path, mode="ben")
+    assert not dec.is_bundle()
+    assert list(dec) == samples
+
+
+def test_pybenencoder_ben_file_only_mkv(tmp_path: Path) -> None:
+    samples = [[1, 2], [1, 2], [3, 4]]
+    path = tmp_path / "ben_mkv.ben"
+    with PyBenEncoder(path, overwrite=True, variant="mkv_chain", ben_file_only=True) as enc:
+        for a in samples:
+            enc.write(a)
+
+    dec = PyBenDecoder(path, mode="ben")
+    assert list(dec) == samples
+
+
+def test_pybenencoder_ben_file_only_close_and_reopen(tmp_path: Path) -> None:
+    samples = [[5, 6]]
+    path = tmp_path / "close_reopen.ben"
+    enc = PyBenEncoder(path, overwrite=True, variant="standard", ben_file_only=True)
+    enc.write(samples[0])
+    enc.close()
+
+    dec = PyBenDecoder(path, mode="ben")
+    assert list(dec) == samples
+
+
+# ---------------------------------------------------------------------------
+# PyBenEncoder bundle with metadata
+# ---------------------------------------------------------------------------
+
+
+def test_pybenencoder_bundle_with_metadata(tmp_path: Path) -> None:
+    samples = [[1, 2]]
+    graph = {"nodes": [{"id": 0}], "adjacency": [[]]}
+    path = tmp_path / "with_meta.bendl"
+    with PyBenEncoder(path, overwrite=True, variant="standard", graph=graph) as enc:
+        enc.write(samples[0])
+
+    dec = PyBenDecoder(path)
+    assert dec.read_graph() == graph
+    assert list(dec) == samples
+
+
+# ---------------------------------------------------------------------------
+# PyBenDecoder extract_stream on plain stream raises
+# ---------------------------------------------------------------------------
+
+
+def test_pybendecoder_extract_stream_on_plain_raises(tmp_path: Path) -> None:
+    path = tmp_path / "plain_extract.ben"
+    with PyBenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+        enc.write([1, 2])
+
+    dec = PyBenDecoder(path, mode="ben")
+    with pytest.raises(Exception, match="only available on .bendl"):
+        dec.extract_stream(tmp_path / "out.ben")
+
+
+# ---------------------------------------------------------------------------
+# decompress_ben_to_jsonl and decompress_xben_to_jsonl coverage
+# ---------------------------------------------------------------------------
+
+
+def test_decompress_ben_to_jsonl_roundtrip(tmp_path: Path) -> None:
+    samples = [[1, 2, 3], [4, 5, 6]]
+    src = tmp_path / "src.jsonl"
+    write_jsonl(samples, src)
+
+    ben = tmp_path / "out.ben"
+    compress_jsonl_to_ben(src, ben, overwrite=True, variant="standard")
+
+    out = tmp_path / "round.jsonl"
+    decompress_ben_to_jsonl(ben, out, overwrite=True)
+
+    restored = read_jsonl_assignments(out)
+    assert restored == samples
+
+
+def test_decompress_xben_to_jsonl_roundtrip(tmp_path: Path) -> None:
+    samples = [[1, 2, 3], [4, 5, 6]]
+    src = tmp_path / "src.jsonl"
+    write_jsonl(samples, src)
+
+    xben = tmp_path / "out.xben"
+    compress_jsonl_to_xben(
+        src, xben, overwrite=True, variant="standard",
+        n_threads=1, compression_level=1,
+    )
+
+    out = tmp_path / "round.jsonl"
+    decompress_xben_to_jsonl(xben, out, overwrite=True)
+
+    restored = read_jsonl_assignments(out)
+    assert restored == samples
+
+
+# ---------------------------------------------------------------------------
+# compress_ben_to_xben coverage
+# ---------------------------------------------------------------------------
+
+
+def test_compress_ben_to_xben_roundtrip(tmp_path: Path) -> None:
+    samples = [[1, 2], [3, 4], [5, 6]]
+    src = tmp_path / "src.jsonl"
+    write_jsonl(samples, src)
+
+    ben = tmp_path / "out.ben"
+    compress_jsonl_to_ben(src, ben, overwrite=True, variant="standard")
+
+    xben = tmp_path / "from_ben.xben"
+    compress_ben_to_xben(ben, xben, overwrite=True, n_threads=1, compression_level=1)
+
+    out = tmp_path / "round.jsonl"
+    decompress_xben_to_jsonl(xben, out, overwrite=True)
+
+    restored = read_jsonl_assignments(out)
+    assert restored == samples
+
+
+# ---------------------------------------------------------------------------
+# PyBenDecoder unknown mode error
+# ---------------------------------------------------------------------------
+
+
+def test_pybendecoder_unknown_mode_raises(tmp_path: Path) -> None:
+    path = tmp_path / "dummy.ben"
+    path.write_bytes(b"\x00" * 100)
+    with pytest.raises(Exception):
+        PyBenDecoder(path, mode="bogus")
+
+
+# ---------------------------------------------------------------------------
+# PyBenDecoder MkvChain plain stream
+# ---------------------------------------------------------------------------
+
+
+def test_pybendecoder_mkv_plain_stream(tmp_path: Path) -> None:
+    samples = [[1, 2], [1, 2], [3, 4]]
+    src = tmp_path / "mkv_src.jsonl"
+    write_jsonl(samples, src)
+
+    ben = tmp_path / "mkv.ben"
+    compress_jsonl_to_ben(src, ben, overwrite=True, variant="mkv_chain")
+
+    dec = PyBenDecoder(ben, mode="ben")
+    assert list(dec) == samples
+    assert dec.count_samples() == 3

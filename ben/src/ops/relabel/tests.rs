@@ -586,3 +586,373 @@ fn relabel_error_non_io_becomes_invalid_input() {
     assert_eq!(io_err.kind(), io::ErrorKind::InvalidInput);
     assert!(io_err.to_string().contains("contiguous"));
 }
+
+// ── convert_ben_file ─────────────────────────────────────────────────
+
+#[test]
+fn test_convert_ben_file_standard_to_mkv() {
+    let file = concat!(
+        "{\"assignment\":[1,2,3],\"sample\":1}\n",
+        "{\"assignment\":[1,2,3],\"sample\":2}\n",
+        "{\"assignment\":[4,5,6],\"sample\":3}\n",
+    );
+
+    let mut encoded = Vec::new();
+    encode_jsonl_to_ben(
+        file.as_bytes(),
+        io::BufWriter::new(&mut encoded),
+        BenVariant::Standard,
+    )
+    .unwrap();
+
+    let mut converted = Vec::new();
+    convert_ben_file(
+        encoded.as_slice(),
+        io::BufWriter::new(&mut converted),
+        BenVariant::MkvChain,
+    )
+    .unwrap();
+
+    let mut decoded = Vec::new();
+    decode_ben_to_jsonl(converted.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
+    let output_str = String::from_utf8(decoded).unwrap();
+    let expected = concat!(
+        "{\"assignment\":[1,2,3],\"sample\":1}\n",
+        "{\"assignment\":[1,2,3],\"sample\":2}\n",
+        "{\"assignment\":[4,5,6],\"sample\":3}\n",
+    );
+    assert_eq!(output_str, expected);
+}
+
+#[test]
+fn test_convert_ben_file_limit_truncates() {
+    let file = concat!(
+        "{\"assignment\":[1,2,3],\"sample\":1}\n",
+        "{\"assignment\":[1,2,3],\"sample\":2}\n",
+        "{\"assignment\":[1,2,3],\"sample\":3}\n",
+        "{\"assignment\":[4,5,6],\"sample\":4}\n",
+    );
+
+    let mut encoded = Vec::new();
+    encode_jsonl_to_ben(
+        file.as_bytes(),
+        io::BufWriter::new(&mut encoded),
+        BenVariant::MkvChain,
+    )
+    .unwrap();
+
+    let mut converted = Vec::new();
+    convert_ben_file_limit(
+        encoded.as_slice(),
+        io::BufWriter::new(&mut converted),
+        BenVariant::Standard,
+        2,
+    )
+    .unwrap();
+
+    let mut decoded = Vec::new();
+    decode_ben_to_jsonl(converted.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
+    let output_str = String::from_utf8(decoded).unwrap();
+    let expected = concat!(
+        "{\"assignment\":[1,2,3],\"sample\":1}\n",
+        "{\"assignment\":[1,2,3],\"sample\":2}\n",
+    );
+    assert_eq!(output_str, expected);
+}
+
+// ── relabel_ben_lines_limit ──────────────────────────────────────────
+
+#[test]
+fn test_relabel_ben_lines_limit_standard() {
+    let file = concat!(
+        "{\"assignment\":[3,1,2],\"sample\":1}\n",
+        "{\"assignment\":[2,3,1],\"sample\":2}\n",
+        "{\"assignment\":[1,2,3],\"sample\":3}\n",
+    );
+
+    let mut encoded = Vec::new();
+    encode_jsonl_to_ben(
+        file.as_bytes(),
+        io::BufWriter::new(&mut encoded),
+        BenVariant::Standard,
+    )
+    .unwrap();
+
+    let mut relabeled = Vec::new();
+    relabel_ben_lines_limit(
+        &encoded[17..],
+        io::BufWriter::new(&mut relabeled),
+        BenVariant::Standard,
+        2,
+    )
+    .unwrap();
+
+    let mut full_relabeled = b"STANDARD BEN FILE".to_vec();
+    full_relabeled.extend_from_slice(&relabeled);
+
+    let mut decoded = Vec::new();
+    decode_ben_to_jsonl(full_relabeled.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
+    let output_str = String::from_utf8(decoded).unwrap();
+    let expected = concat!(
+        "{\"assignment\":[1,2,3],\"sample\":1}\n",
+        "{\"assignment\":[1,2,3],\"sample\":2}\n",
+    );
+    assert_eq!(output_str, expected);
+}
+
+// ── relabel_ben_lines_with_map_limit ─────────────────────────────────
+
+#[test]
+fn test_relabel_ben_lines_with_map_limit_standard() {
+    let file = concat!(
+        "{\"assignment\":[1,2,3],\"sample\":1}\n",
+        "{\"assignment\":[4,5,6],\"sample\":2}\n",
+        "{\"assignment\":[7,8,9],\"sample\":3}\n",
+    );
+
+    let mut encoded = Vec::new();
+    encode_jsonl_to_ben(
+        file.as_bytes(),
+        io::BufWriter::new(&mut encoded),
+        BenVariant::Standard,
+    )
+    .unwrap();
+
+    let map: HashMap<usize, usize> = [(0, 2), (1, 0), (2, 1)].iter().cloned().collect();
+
+    let mut relabeled = Vec::new();
+    relabel_ben_lines_with_map_limit(
+        &encoded[17..],
+        io::BufWriter::new(&mut relabeled),
+        map,
+        BenVariant::Standard,
+        1,
+    )
+    .unwrap();
+
+    let mut full_relabeled = b"STANDARD BEN FILE".to_vec();
+    full_relabeled.extend_from_slice(&relabeled);
+
+    let mut decoded = Vec::new();
+    decode_ben_to_jsonl(full_relabeled.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
+    let output_str = String::from_utf8(decoded).unwrap();
+    assert_eq!(output_str, "{\"assignment\":[3,1,2],\"sample\":1}\n");
+}
+
+// ── relabel_ben_file_as_variant ──────────────────────────────────────
+
+#[test]
+fn test_relabel_ben_file_as_variant_standard_to_twodelta() {
+    let file = concat!(
+        "{\"assignment\":[3,3,1,1],\"sample\":1}\n",
+        "{\"assignment\":[1,3,1,3],\"sample\":2}\n",
+    );
+
+    let mut encoded = Vec::new();
+    encode_jsonl_to_ben(
+        file.as_bytes(),
+        io::BufWriter::new(&mut encoded),
+        BenVariant::Standard,
+    )
+    .unwrap();
+
+    let mut converted = Vec::new();
+    relabel_ben_file_as_variant(
+        encoded.as_slice(),
+        io::BufWriter::new(&mut converted),
+        BenVariant::TwoDelta,
+    )
+    .unwrap();
+
+    let mut decoded = Vec::new();
+    decode_ben_to_jsonl(converted.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
+    let output_str = String::from_utf8(decoded).unwrap();
+    let expected = concat!(
+        "{\"assignment\":[1,1,2,2],\"sample\":1}\n",
+        "{\"assignment\":[1,2,1,2],\"sample\":2}\n",
+    );
+    assert_eq!(output_str, expected);
+}
+
+#[test]
+fn test_relabel_ben_file_as_variant_limit() {
+    let file = concat!(
+        "{\"assignment\":[3,1,2],\"sample\":1}\n",
+        "{\"assignment\":[2,3,1],\"sample\":2}\n",
+        "{\"assignment\":[1,2,3],\"sample\":3}\n",
+    );
+
+    let mut encoded = Vec::new();
+    encode_jsonl_to_ben(
+        file.as_bytes(),
+        io::BufWriter::new(&mut encoded),
+        BenVariant::Standard,
+    )
+    .unwrap();
+
+    let mut converted = Vec::new();
+    relabel_ben_file_as_variant_limit(
+        encoded.as_slice(),
+        io::BufWriter::new(&mut converted),
+        BenVariant::MkvChain,
+        2,
+    )
+    .unwrap();
+
+    let mut decoded = Vec::new();
+    decode_ben_to_jsonl(converted.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
+    let output_str = String::from_utf8(decoded).unwrap();
+    let expected = concat!(
+        "{\"assignment\":[1,2,3],\"sample\":1}\n",
+        "{\"assignment\":[1,2,3],\"sample\":2}\n",
+    );
+    assert_eq!(output_str, expected);
+}
+
+// ── relabel_ben_file_with_map_as_variant ─────────────────────────────
+
+#[test]
+fn test_relabel_ben_file_with_map_as_variant() {
+    let file = concat!(
+        "{\"assignment\":[1,2,3],\"sample\":1}\n",
+        "{\"assignment\":[4,5,6],\"sample\":2}\n",
+    );
+
+    let mut encoded = Vec::new();
+    encode_jsonl_to_ben(
+        file.as_bytes(),
+        io::BufWriter::new(&mut encoded),
+        BenVariant::Standard,
+    )
+    .unwrap();
+
+    let map: HashMap<usize, usize> = [(0, 2), (1, 0), (2, 1)].iter().cloned().collect();
+
+    let mut converted = Vec::new();
+    relabel_ben_file_with_map_as_variant(
+        encoded.as_slice(),
+        io::BufWriter::new(&mut converted),
+        map,
+        BenVariant::MkvChain,
+    )
+    .unwrap();
+
+    let mut decoded = Vec::new();
+    decode_ben_to_jsonl(converted.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
+    let output_str = String::from_utf8(decoded).unwrap();
+    let expected = concat!(
+        "{\"assignment\":[3,1,2],\"sample\":1}\n",
+        "{\"assignment\":[6,4,5],\"sample\":2}\n",
+    );
+    assert_eq!(output_str, expected);
+}
+
+#[test]
+fn test_relabel_ben_file_with_map_as_variant_limit() {
+    let file = concat!(
+        "{\"assignment\":[1,2,3],\"sample\":1}\n",
+        "{\"assignment\":[1,2,3],\"sample\":2}\n",
+        "{\"assignment\":[4,5,6],\"sample\":3}\n",
+    );
+
+    let mut encoded = Vec::new();
+    encode_jsonl_to_ben(
+        file.as_bytes(),
+        io::BufWriter::new(&mut encoded),
+        BenVariant::MkvChain,
+    )
+    .unwrap();
+
+    let map: HashMap<usize, usize> = [(0, 2), (1, 0), (2, 1)].iter().cloned().collect();
+
+    let mut converted = Vec::new();
+    relabel_ben_file_with_map_as_variant_limit(
+        encoded.as_slice(),
+        io::BufWriter::new(&mut converted),
+        map,
+        BenVariant::Standard,
+        2,
+    )
+    .unwrap();
+
+    let mut decoded = Vec::new();
+    decode_ben_to_jsonl(converted.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
+    let output_str = String::from_utf8(decoded).unwrap();
+    let expected = concat!(
+        "{\"assignment\":[3,1,2],\"sample\":1}\n",
+        "{\"assignment\":[3,1,2],\"sample\":2}\n",
+    );
+    assert_eq!(output_str, expected);
+}
+
+// ── convert_ben_file rejects invalid banner ──────────────────────────
+
+#[test]
+fn test_convert_ben_file_rejects_invalid_banner() {
+    let err = convert_ben_file(
+        b"not a valid banner".as_slice(),
+        Vec::new(),
+        BenVariant::Standard,
+    )
+    .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+// ── relabel_ben_file_as_variant rejects invalid banner ───────────────
+
+#[test]
+fn test_relabel_ben_file_as_variant_rejects_invalid_banner() {
+    let err = relabel_ben_file_as_variant(
+        b"not a valid banner".as_slice(),
+        Vec::new(),
+        BenVariant::Standard,
+    )
+    .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+// ── dense_permutation error paths ────────────────────────────────────
+
+#[test]
+fn test_dense_permutation_empty_map() {
+    let map = HashMap::new();
+    let perm = dense_permutation(&map).unwrap();
+    assert!(perm.is_empty());
+}
+
+#[test]
+fn test_dense_permutation_non_contiguous() {
+    let map: HashMap<usize, usize> = [(0, 0), (2, 1)].iter().cloned().collect();
+    let err = dense_permutation(&map).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    assert!(err.to_string().contains("contiguous"));
+}
+
+// ── permute_assignment error paths ───────────────────────────────────
+
+#[test]
+fn test_permute_assignment_length_mismatch() {
+    let assignment = vec![1u16, 2, 3];
+    let perm = vec![0, 1];
+    let err = permute_assignment(&assignment, &perm).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    assert!(err.to_string().contains("length"));
+}
+
+#[test]
+fn test_permute_assignment_index_out_of_range() {
+    let assignment = vec![1u16, 2, 3];
+    let perm = vec![0, 1, 99];
+    let err = permute_assignment(&assignment, &perm).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    assert!(err.to_string().contains("old index"));
+}
+
+// ── canonicalize_assignment ──────────────────────────────────────────
+
+#[test]
+fn test_canonicalize_assignment() {
+    assert_eq!(canonicalize_assignment(&[5, 3, 5, 7]), vec![1, 2, 1, 3]);
+    assert_eq!(canonicalize_assignment(&[]), Vec::<u16>::new());
+    assert_eq!(canonicalize_assignment(&[42]), vec![1]);
+}

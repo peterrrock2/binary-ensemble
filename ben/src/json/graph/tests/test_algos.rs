@@ -323,3 +323,125 @@ fn test_sort_json_file_by_multi_level_cluster() {
     assert_eq!(sorted, [0, 1, 2, 3]);
     assert_eq!(output_json["nodes"].as_array().unwrap().len(), 4);
 }
+
+#[test]
+fn test_extract_usize_ids_rejects_non_integer_node_id() {
+    let input = r#"{
+        "nodes": [
+            {"id": 0},
+            {"id": "not-a-number"},
+            {"id": 2}
+        ],
+        "adjacency": [
+            [{"id": 2}],
+            [{"id": 0}],
+            [{"id": 0}]
+        ]
+    }"#;
+    let mut output = Vec::new();
+    let err = sort_json_file_by_key(input.as_bytes(), &mut output, "id").unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("not an unsigned integer"));
+}
+
+#[test]
+fn test_extract_usize_ids_rejects_negative_node_id() {
+    let input = r#"{
+        "nodes": [
+            {"id": -1},
+            {"id": 1}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": -1}]
+        ]
+    }"#;
+    let mut output = Vec::new();
+    let err = sort_json_file_by_key(input.as_bytes(), &mut output, "id").unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn test_extract_usize_ids_rejects_float_node_id() {
+    let input = r#"{
+        "nodes": [
+            {"id": 1.5}
+        ],
+        "adjacency": [
+            []
+        ]
+    }"#;
+    let mut output = Vec::new();
+    let err = sort_json_file_by_key(input.as_bytes(), &mut output, "id").unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn test_sort_by_ordering_directed_rcm() {
+    let input = r#"{
+        "directed": true,
+        "nodes": [
+            {"id": 0},
+            {"id": 1},
+            {"id": 2}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 2}],
+            [{"id": 0}]
+        ]
+    }"#;
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_ordering(
+        input.as_bytes(),
+        &mut output,
+        GraphOrderingMethod::ReverseCuthillMckee,
+    )
+    .unwrap();
+    assert_eq!(mapping.len(), 3);
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(output_json["nodes"].as_array().unwrap().len(), 3);
+    assert_eq!(output_json["directed"], true);
+}
+
+#[test]
+fn test_sort_by_ordering_directed_mlc() {
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_ordering(
+        path_graph_json(),
+        &mut output,
+        GraphOrderingMethod::MultiLevelCluster,
+    )
+    .unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(output_json["nodes"].as_array().unwrap().len(), 4);
+    assert!(!mapping.is_empty());
+}
+
+#[test]
+fn test_sort_by_key_directed_graph() {
+    let input = r#"{
+        "directed": true,
+        "nodes": [
+            {"id": 0, "label": "c"},
+            {"id": 1, "label": "a"},
+            {"id": 2, "label": "b"}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 2}],
+            [{"id": 0}]
+        ]
+    }"#;
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_key(input.as_bytes(), &mut output, "label").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(output_json["nodes"].as_array().unwrap().len(), 3);
+    assert_eq!(output_json["directed"], true);
+    assert_eq!(output_json["nodes"][0]["label"], "a");
+    assert_eq!(output_json["nodes"][1]["label"], "b");
+    assert_eq!(output_json["nodes"][2]["label"], "c");
+    assert_eq!(mapping[&1], 0);
+    assert_eq!(mapping[&2], 1);
+    assert_eq!(mapping[&0], 2);
+}

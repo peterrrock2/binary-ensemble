@@ -800,3 +800,110 @@ fn json_fidelity_small_directed() {
 fn json_fidelity_directed_cycle() {
     assert_json_roundtrip_directed(DIRECTED_CYCLE_JSON);
 }
+
+// ── nx_convert error paths ───────────────────────────────────────────
+
+#[test]
+fn directedness_mismatch_undirected_as_directed() {
+    let nx = parse_nx(P4_JSON);
+    assert!(!nx.directed);
+    let err = PetxDiGraph::try_from(nx).unwrap_err();
+    assert!(err.to_string().contains("directedness mismatch"));
+}
+
+#[test]
+fn directedness_mismatch_directed_as_undirected() {
+    let nx = parse_nx(SMALL_DIRECTED_JSON);
+    assert!(nx.directed);
+    let err = PetxUnGraph::try_from(nx).unwrap_err();
+    assert!(err.to_string().contains("directedness mismatch"));
+}
+
+#[test]
+fn node_adjacency_length_mismatch() {
+    let mut nx = parse_nx(P4_JSON);
+    nx.adjacency.pop();
+    let err = PetxUnGraph::try_from(nx).unwrap_err();
+    assert!(err.to_string().contains("length mismatch"));
+}
+
+#[test]
+fn duplicate_node_id() {
+    let json = r#"{
+        "directed": false, "multigraph": false, "graph": [],
+        "nodes": [{"id": 0}, {"id": 0}],
+        "adjacency": [[], []]
+    }"#;
+    let nx = parse_nx(json);
+    let err = PetxUnGraph::try_from(nx).unwrap_err();
+    assert!(err.to_string().contains("duplicate node id"));
+}
+
+#[test]
+fn missing_neighbor_node() {
+    let json = r#"{
+        "directed": false, "multigraph": false, "graph": [],
+        "nodes": [{"id": 0}, {"id": 1}],
+        "adjacency": [[{"id": 99}], []]
+    }"#;
+    let nx = parse_nx(json);
+    let err = PetxUnGraph::try_from(nx).unwrap_err();
+    assert!(err.to_string().contains("unknown node id"));
+}
+
+#[test]
+fn petx_node_to_nx_node_missing_networkx_id() {
+    let node = PetxNode {
+        attrs: BTreeMap::new(),
+    };
+    let err = petx_node_to_nx_node(&node).unwrap_err();
+    assert!(err.to_string().contains("__networkx_id__"));
+}
+
+#[test]
+fn graph_has_parallel_edges_detects_multigraph() {
+    let mut graph = UnGraph::<PetxNode, NxAdjEntry>::new_undirected();
+    let a = graph.add_node(PetxNode {
+        attrs: BTreeMap::from([("__networkx_id__".to_string(), json!(0))]),
+    });
+    let b = graph.add_node(PetxNode {
+        attrs: BTreeMap::from([("__networkx_id__".to_string(), json!(1))]),
+    });
+    let edge = NxAdjEntry {
+        id: json!(1),
+        key: None,
+        attrs: BTreeMap::new(),
+    };
+    graph.add_edge(a, b, edge.clone());
+    graph.add_edge(a, b, edge);
+    assert!(graph_has_parallel_edges(&graph));
+}
+
+#[test]
+fn graph_has_no_parallel_edges_for_simple_graph() {
+    let mut graph = DiGraph::<PetxNode, NxAdjEntry>::new();
+    let a = graph.add_node(PetxNode {
+        attrs: BTreeMap::from([("__networkx_id__".to_string(), json!(0))]),
+    });
+    let b = graph.add_node(PetxNode {
+        attrs: BTreeMap::from([("__networkx_id__".to_string(), json!(1))]),
+    });
+    let edge = NxAdjEntry {
+        id: json!(1),
+        key: None,
+        attrs: BTreeMap::new(),
+    };
+    graph.add_edge(a, b, edge);
+    assert!(!graph_has_parallel_edges(&graph));
+}
+
+#[test]
+fn nx_node_to_petx_node_preserves_attrs() {
+    let nx_node = NxNode {
+        id: json!(42),
+        attrs: BTreeMap::from([("color".to_string(), json!("red"))]),
+    };
+    let petx = nx_node_to_petx_node(nx_node);
+    assert_eq!(petx.attrs["__networkx_id__"], json!(42));
+    assert_eq!(petx.attrs["color"], json!("red"));
+}

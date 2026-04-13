@@ -15,8 +15,8 @@ use binary_ensemble::io::reader::{
 use pyo3::exceptions::{PyException, PyIOError, PyKeyError, PyUserWarning};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use std::fs::File;
-use std::io::{self, BufReader, Read, Seek, SeekFrom};
+use std::fs::{File, OpenOptions};
+use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 type DynIter = Box<dyn Iterator<Item = io::Result<MkvRecord>> + Send>;
@@ -156,7 +156,7 @@ impl PyBenDecoder {
                     file_path.display()
                 ))
             })?;
-            let reader = BendlReader::open(BufReader::new(file)).map_err(|e| {
+            let mut reader = BendlReader::open(BufReader::new(file)).map_err(|e| {
                 PyException::new_err(format!(
                     "Failed to parse bundle header in {}: {e}",
                     file_path.display()
@@ -168,10 +168,11 @@ impl PyBenDecoder {
                 )
             })?;
             let derived_mode = DecoderMode::from_assignment_format(fmt);
-            let (stream_offset, stream_len) = {
-                let header = reader.header();
-                (header.stream_offset, header.stream_len)
-            };
+            let (stream_offset, stream_len) = reader.assignment_stream_range()
+                .map_err(|e| PyException::new_err(format!(
+                    "Failed to determine stream region in {}: {e}",
+                    file_path.display()
+                )))?;
             let state = BundleState {
                 reader,
                 stream_offset,
@@ -283,9 +284,13 @@ impl PyBenDecoder {
 
     #[pyo3(text_signature = "(self)")]
     fn count_samples(mut slf: PyRefMut<Self>, py: Python<'_>) -> PyResult<usize> {
-        let base_len = ensure_base_len(&mut slf, py)?;
-        slf.len_hint = Some(base_len);
-        Ok(base_len)
+        // Always reports the total number of samples in the source file,
+        // even after `subsample_*` has been applied. We deliberately do
+        // not touch `len_hint` here: when a subsample selection is
+        // active, `len_hint` tracks the filtered count that `__len__`
+        // should return, and clobbering it would break `len(dec)` after
+        // a `count_samples()` call.
+        ensure_base_len(&mut slf, py)
     }
 
     #[pyo3(text_signature = "(self, indices, /)")]
@@ -541,6 +546,46 @@ impl PyBenDecoder {
             }
         }
         Ok(Some(self.read_json_asset(py, "relabel_map.json")?))
+    }
+
+    /// Copy the embedded assignment stream region verbatim to
+    /// `out_path`. The resulting file can be opened directly with
+    /// `PyBenDecoder(out_path, mode=dec.assignment_format())`.
+    /// Errors on plain streams.
+    #[pyo3(signature = (out_path, overwrite=false))]
+    #[pyo3(text_signature = "(self, out_path, overwrite=False)")]
+    fn extract_stream(&mut self, out_path: PathBuf, overwrite: bool) -> PyResult<()> {
+        let state = self.require_bundle_mut("extract_stream()")?;
+        if out_path.exists() && !overwrite {
+            return Err(PyIOError::new_err(format!(
+                "Output file {} already exists (use overwrite=True to replace).",
+                out_path.display()
+            )));
+        }
+        let out = if overwrite {
+            OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&out_path)
+        } else {
+            OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&out_path)
+        }
+        .map_err(|e| PyIOError::new_err(format!("Failed to create {}: {e}", out_path.display())))?;
+        let mut out = BufWriter::new(out);
+
+        let mut stream = state
+            .reader
+            .assignment_stream_reader()
+            .map_err(|e| PyException::new_err(format!("Failed to open stream region: {e}")))?;
+        io::copy(&mut stream, &mut out)
+            .map_err(|e| PyIOError::new_err(format!("Failed to copy stream bytes: {e}")))?;
+        out.flush()
+            .map_err(|e| PyIOError::new_err(format!("Failed to flush output: {e}")))?;
+        Ok(())
     }
 }
 

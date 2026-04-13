@@ -59,8 +59,10 @@ class PyBenDecoder:
     def count_samples(self) -> int:
         """Count and cache the total number of samples in the source file.
 
-        This is equivalent to calling :func:`len`, but is more explicit about
-        the fact that the first call may perform a full-file scan.
+        Always reports the base (unfiltered) sample count, even after a
+        ``subsample_*`` call has been applied. Equivalent to ``len(dec)``
+        when no subsample selection is active. The first call may perform
+        a full-file scan; the result is cached.
         """
         ...
     def subsample_indices(self, indices: Iterable[int]) -> "PyBenDecoder":
@@ -199,6 +201,17 @@ class PyBenDecoder:
     def read_relabel_map(self) -> Any | None:
         """Return the bundle's ``relabel_map.json`` asset as a parsed
         JSON object, or ``None`` if absent. Raises on plain streams.
+        """
+        ...
+
+    def extract_stream(self, out_path: str | Path, overwrite: bool = False) -> None:
+        """Copy the embedded assignment stream to a file.
+
+        The resulting file can be opened directly with
+        ``PyBenDecoder(out_path, mode=dec.assignment_format())``.
+
+        Raises an error on plain streams, an ``OSError`` when the output
+        file already exists and *overwrite* is ``False``.
         """
         ...
 

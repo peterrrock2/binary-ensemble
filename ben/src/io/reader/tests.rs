@@ -580,6 +580,396 @@ fn xz_reader_large_assignment_roundtrip() {
     assert_eq!(results[0], big_assign);
 }
 
+// ── build_frame_iter_from_reader unknown mode ─────────────────────────
+
+#[test]
+fn build_frame_iter_from_reader_unknown_mode_errors() {
+    use crate::io::reader::subsample::build_frame_iter_from_reader;
+    let data = Cursor::new(b"dummy data for unknown mode test".to_vec());
+    let result = build_frame_iter_from_reader(data, "bogus");
+    assert!(result.is_err());
+    let err = result.err().unwrap();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    assert!(err.to_string().contains("bogus"));
+}
+
+// ── SubsampleFrameDecoder stress tests ────────────────────────────────
+
+#[test]
+fn subsample_every_start_beyond_hi_returns_zero() {
+    let assignments = vec![vec![1u16, 2, 3], vec![4, 5, 6]];
+    let xben = make_xben_from_assignments(&assignments, BenVariant::Standard);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader
+        .into_subsample_every(1, 100)
+        .map(|r| r.unwrap().0)
+        .collect();
+    assert_eq!(results.len(), 0);
+}
+
+#[test]
+fn subsample_range_non_overlapping_returns_empty() {
+    let assignments = vec![vec![1u16, 2], vec![3, 4], vec![5, 6]];
+    let xben = make_xben_from_assignments(&assignments, BenVariant::Standard);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader
+        .into_subsample_by_range(10, 20)
+        .map(|r| r.unwrap().0)
+        .collect();
+    assert_eq!(results.len(), 0);
+}
+
+#[test]
+fn subsample_indices_mixed_before_and_after() {
+    let assignments: Vec<Vec<u16>> = (1..=5).map(|i| vec![i; 3]).collect();
+    let xben = make_xben_from_assignments(&assignments, BenVariant::Standard);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader
+        .into_subsample_by_indices(vec![2, 4, 100])
+        .map(|r| r.unwrap().0)
+        .collect();
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0], vec![2, 2, 2]);
+    assert_eq!(results[1], vec![4, 4, 4]);
+}
+
+#[test]
+fn subsample_every_step_larger_than_stream() {
+    let assignments = vec![vec![1u16, 2], vec![3, 4]];
+    let xben = make_xben_from_assignments(&assignments, BenVariant::Standard);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader
+        .into_subsample_every(100, 1)
+        .map(|r| r.unwrap().0)
+        .collect();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], vec![1, 2]);
+}
+
+#[test]
+fn subsample_indices_empty_yields_nothing() {
+    let assignments = vec![vec![1u16, 2]];
+    let xben = make_xben_from_assignments(&assignments, BenVariant::Standard);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader
+        .into_subsample_by_indices(Vec::<usize>::new())
+        .map(|r| r.unwrap().0)
+        .collect();
+    assert_eq!(results.len(), 0);
+}
+
+#[test]
+fn subsample_twodelta_by_range() {
+    let assignments = vec![
+        vec![1u16, 1, 2, 2],
+        vec![2, 1, 2, 2],
+        vec![2, 2, 2, 2],
+    ];
+    let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader
+        .into_subsample_by_range(2, 3)
+        .map(|r| r.unwrap().0)
+        .collect();
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0], vec![2, 1, 2, 2]);
+    assert_eq!(results[1], vec![2, 2, 2, 2]);
+}
+
+#[test]
+fn subsample_twodelta_every() {
+    let assignments = vec![
+        vec![1u16, 1, 2, 2],
+        vec![2, 1, 1, 2],
+        vec![1, 2, 1, 2],
+        vec![2, 1, 2, 1],
+    ];
+    let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader
+        .into_subsample_every(2, 1)
+        .map(|r| r.unwrap().0)
+        .collect();
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0], vec![1, 1, 2, 2]);
+    assert_eq!(results[1], vec![1, 2, 1, 2]);
+}
+
+// ── XBEN TwoDelta writer stress tests (roundtrip via reader) ──────────
+
+#[test]
+fn xz_twodelta_many_identical_assignments_roundtrip() {
+    let assign = vec![1u16, 2, 1, 2];
+    let assignments: Vec<_> = (0..100).map(|_| assign.clone()).collect();
+    let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader.map(|r| r.unwrap()).collect();
+    let total_samples: usize = results.iter().map(|(_, c)| *c as usize).sum();
+    assert_eq!(total_samples, 100);
+    for (a, _) in &results {
+        assert_eq!(a, &assign);
+    }
+}
+
+#[test]
+fn xz_twodelta_all_identical_single_value_roundtrip() {
+    let assign = vec![5u16; 10];
+    let assignments: Vec<_> = (0..10).map(|_| assign.clone()).collect();
+    let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader.map(|r| r.unwrap()).collect();
+    let total: usize = results.iter().map(|(_, c)| *c as usize).sum();
+    assert_eq!(total, 10);
+    for (a, _) in &results {
+        assert_eq!(a, &assign);
+    }
+}
+
+#[test]
+fn xz_twodelta_alternating_assignments_roundtrip() {
+    let a = vec![1u16, 1, 2, 2];
+    let b = vec![2u16, 2, 1, 1];
+    let assignments: Vec<_> = (0..50).map(|i| if i % 2 == 0 { a.clone() } else { b.clone() }).collect();
+    let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
+    assert_eq!(results.len(), 50);
+    for (i, r) in results.iter().enumerate() {
+        if i % 2 == 0 {
+            assert_eq!(r, &a);
+        } else {
+            assert_eq!(r, &b);
+        }
+    }
+}
+
+#[test]
+fn xz_twodelta_large_assignment_roundtrip() {
+    let n = 500;
+    let a1: Vec<u16> = (0..n).map(|i| if i < n / 2 { 1 } else { 2 }).collect();
+    let a2: Vec<u16> = (0..n).map(|i| if i < n / 2 { 2 } else { 1 }).collect();
+    let assignments = vec![a1.clone(), a2.clone(), a1.clone()];
+    let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
+    assert_eq!(results, assignments);
+}
+
+#[test]
+fn xz_twodelta_chunk_boundary_roundtrip() {
+    use crate::io::writer::XZAssignmentWriter;
+    use xz2::write::XzEncoder;
+
+    let anchor = vec![1u16, 2, 1, 2];
+    let delta = vec![2u16, 1, 2, 1];
+
+    let mut xben = Vec::new();
+    {
+        let encoder = XzEncoder::new(&mut xben, 1);
+        let mut writer = XZAssignmentWriter::new(encoder, BenVariant::TwoDelta)
+            .unwrap()
+            .with_chunk_size(3);
+        writer.write_assignment(anchor.clone()).unwrap();
+        for _ in 0..10 {
+            writer.write_assignment(delta.clone()).unwrap();
+            writer.write_assignment(anchor.clone()).unwrap();
+        }
+    }
+
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
+    assert_eq!(results.len(), 21);
+    assert_eq!(results[0], anchor);
+    for i in 1..=20 {
+        if i % 2 == 1 {
+            assert_eq!(results[i], delta);
+        } else {
+            assert_eq!(results[i], anchor);
+        }
+    }
+}
+
+#[test]
+fn xz_twodelta_repeated_delta_in_chunk_roundtrip() {
+    use crate::io::writer::XZAssignmentWriter;
+    use xz2::write::XzEncoder;
+
+    let anchor = vec![1u16, 1, 2, 2];
+    let delta = vec![2u16, 1, 2, 2];
+
+    let mut xben = Vec::new();
+    {
+        let encoder = XzEncoder::new(&mut xben, 1);
+        let mut writer = XZAssignmentWriter::new(encoder, BenVariant::TwoDelta)
+            .unwrap()
+            .with_chunk_size(100);
+        writer.write_assignment(anchor.clone()).unwrap();
+        writer.write_assignment(delta.clone()).unwrap();
+        writer.write_assignment(delta.clone()).unwrap();
+        writer.write_assignment(delta.clone()).unwrap();
+    }
+
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader.map(|r| r.unwrap()).collect();
+    let total: usize = results.iter().map(|(_, c)| *c as usize).sum();
+    assert_eq!(total, 4);
+    assert_eq!(results[0].0, anchor);
+    for r in &results[1..] {
+        assert_eq!(r.0, delta);
+    }
+}
+
+// ── translate_ben_twodelta_to_xben ────────────────────────────────────
+
+#[test]
+fn translate_ben_twodelta_to_xben_roundtrip() {
+    use crate::codec::encode::encode_ben_to_xben;
+    use crate::codec::decode::decode_xben_to_jsonl;
+    use crate::io::writer::AssignmentWriter;
+    use std::io::BufReader;
+
+    let a0 = vec![1u16, 2, 1, 2];
+    let a1 = vec![1u16, 1, 2, 2];
+    let a2 = vec![2u16, 1, 2, 1];
+    let assignments = vec![a0.clone(), a1.clone(), a2.clone()];
+
+    let mut ben = Vec::new();
+    {
+        let mut w = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
+        for a in &assignments {
+            w.write_assignment(a.clone()).unwrap();
+        }
+    }
+
+    let mut xben = Vec::new();
+    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None).unwrap();
+
+    let mut jsonl = Vec::new();
+    decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut jsonl).unwrap();
+
+    let output_str = String::from_utf8(jsonl).unwrap();
+    let lines: Vec<&str> = output_str.trim().split('\n').collect();
+    assert_eq!(lines.len(), 3);
+
+    for (i, (line, expected)) in lines.iter().zip(assignments.iter()).enumerate() {
+        let v: serde_json::Value = serde_json::from_str(line).unwrap();
+        let assign: Vec<u16> = v["assignment"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_u64().unwrap() as u16)
+            .collect();
+        assert_eq!(&assign, expected, "mismatch at sample {}", i + 1);
+    }
+}
+
+#[test]
+fn translate_ben_twodelta_to_xben_with_repetitions() {
+    use crate::codec::encode::encode_ben_to_xben;
+    use crate::io::writer::AssignmentWriter;
+    use std::io::BufReader;
+
+    let anchor = vec![1u16, 2, 1, 2];
+    let delta = vec![2u16, 1, 2, 1];
+    let assignments = vec![
+        anchor.clone(),
+        anchor.clone(),
+        anchor.clone(),
+        delta.clone(),
+        delta.clone(),
+    ];
+
+    let mut ben = Vec::new();
+    {
+        let mut w = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
+        for a in &assignments {
+            w.write_assignment(a.clone()).unwrap();
+        }
+    }
+
+    let mut xben = Vec::new();
+    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None).unwrap();
+
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader.map(|r| r.unwrap()).collect();
+    let total: usize = results.iter().map(|(_, c)| *c as usize).sum();
+    assert_eq!(total, 5);
+}
+
+#[test]
+fn translate_ben_twodelta_to_xben_many_deltas() {
+    use crate::codec::encode::encode_ben_to_xben;
+    use crate::io::writer::AssignmentWriter;
+    use std::io::BufReader;
+
+    let a = vec![1u16, 1, 2, 2];
+    let b = vec![2u16, 2, 1, 1];
+    let assignments: Vec<_> = (0..20)
+        .map(|i| if i % 2 == 0 { a.clone() } else { b.clone() })
+        .collect();
+
+    let mut ben = Vec::new();
+    {
+        let mut w = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
+        for a in &assignments {
+            w.write_assignment(a.clone()).unwrap();
+        }
+    }
+
+    let mut xben = Vec::new();
+    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None).unwrap();
+
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
+    assert_eq!(results, assignments);
+}
+
+// ── count_samples_from_frame_iter ─────────────────────────────────────
+
+#[test]
+fn count_samples_from_frame_iter_basic() {
+    use crate::io::reader::subsample::{build_frame_iter_from_reader, count_samples_from_frame_iter};
+    use crate::codec::encode::encode_jsonl_to_ben;
+
+    let jsonl = r#"{"assignment":[1,2],"sample":1}
+{"assignment":[3,4],"sample":2}
+{"assignment":[5,6],"sample":3}
+"#;
+    let mut ben = Vec::new();
+    encode_jsonl_to_ben(jsonl.as_bytes(), &mut ben, BenVariant::Standard).unwrap();
+
+    let iter = build_frame_iter_from_reader(Cursor::new(ben), "ben").unwrap();
+    assert_eq!(count_samples_from_frame_iter(iter).unwrap(), 3);
+}
+
+#[test]
+fn count_samples_from_frame_iter_xben() {
+    use crate::io::reader::subsample::{build_frame_iter_from_reader, count_samples_from_frame_iter};
+
+    let jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
+{"assignment":[2,2,1,1],"sample":2}
+"#;
+    let xben = make_xben(jsonl, BenVariant::Standard);
+    let iter = build_frame_iter_from_reader(Cursor::new(xben), "xben").unwrap();
+    assert_eq!(count_samples_from_frame_iter(iter).unwrap(), 2);
+}
+
+#[test]
+fn count_samples_from_frame_iter_mkv() {
+    use crate::io::reader::subsample::{build_frame_iter_from_reader, count_samples_from_frame_iter};
+    use crate::codec::encode::encode_jsonl_to_ben;
+
+    let jsonl = r#"{"assignment":[1,2],"sample":1}
+{"assignment":[1,2],"sample":2}
+{"assignment":[3,4],"sample":3}
+"#;
+    let mut ben = Vec::new();
+    encode_jsonl_to_ben(jsonl.as_bytes(), &mut ben, BenVariant::MkvChain).unwrap();
+
+    let iter = build_frame_iter_from_reader(Cursor::new(ben), "ben").unwrap();
+    assert_eq!(count_samples_from_frame_iter(iter).unwrap(), 3);
+}
+
 // ── AssignmentReader tests ─────────────────────────────────────────────────
 
 #[test]
