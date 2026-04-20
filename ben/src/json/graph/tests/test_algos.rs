@@ -445,3 +445,55 @@ fn test_sort_by_key_directed_graph() {
     assert_eq!(mapping[&2], 1);
     assert_eq!(mapping[&0], 2);
 }
+
+#[test]
+fn test_sort_json_file_by_key_id() {
+    let input = r#"{
+        "nodes": [
+            {"id": 2},
+            {"id": 0},
+            {"id": 1}
+        ],
+        "adjacency": [
+            [{"id": 0}],
+            [{"id": 1}],
+            [{"id": 2}]
+        ]
+    }"#;
+
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_key(input.as_bytes(), &mut output, "id").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(output_json["nodes"][0]["id"], 0);
+    assert_eq!(output_json["nodes"][1]["id"], 1);
+    assert_eq!(output_json["nodes"][2]["id"], 2);
+    assert_eq!(mapping[&0], 0);
+    assert_eq!(mapping[&1], 1);
+    assert_eq!(mapping[&2], 2);
+}
+
+#[test]
+fn test_sort_json_file_by_key_mixed_numeric_and_string() {
+    let input = r#"{
+        "nodes": [
+            {"id": 0, "key": 42},
+            {"id": 1, "key": "alpha"},
+            {"id": 2, "key": 7}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 2}],
+            [{"id": 0}]
+        ]
+    }"#;
+
+    let mut output = Vec::new();
+    sort_json_file_by_key(input.as_bytes(), &mut output, "key").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    // Numeric values come first (7 < 42), then string "alpha"
+    assert_eq!(output_json["nodes"][0]["key"], 7);
+    assert_eq!(output_json["nodes"][1]["key"], 42);
+    assert_eq!(output_json["nodes"][2]["key"], "alpha");
+}

@@ -1,8 +1,6 @@
 use super::errors::DecoderInitError;
 use super::subsample::{Ben32Frame, DecodeFrame, MkvRecord, SubsampleFrameDecoder};
-use super::twodelta::{
-    XBenTwoDeltaFrame, XBEN_TWODELTA_CHUNK_TAG, XBEN_TWODELTA_DELTA_TAG, XBEN_TWODELTA_FULL_TAG,
-};
+use super::twodelta::{XBenTwoDeltaFrame, XBEN_TWODELTA_CHUNK_TAG, XBEN_TWODELTA_FULL_TAG};
 use crate::codec::decode::{apply_twodelta_runs_to_assignment, decode_ben32_line, DecodeError};
 use crate::codec::encode::encode_ben32_assignments;
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
@@ -190,41 +188,6 @@ impl<R: Read> XZAssignmentReader<R> {
                 }
                 let count = u16::from_be_bytes([overflow[cursor], overflow[cursor + 1]]);
                 Some(Ok((XBenTwoDeltaFrame::Full { runs }, total_len, count)))
-            }
-            XBEN_TWODELTA_DELTA_TAG => {
-                if overflow.len() < 11 {
-                    return None;
-                }
-                let pair = (
-                    u16::from_be_bytes([overflow[1], overflow[2]]),
-                    u16::from_be_bytes([overflow[3], overflow[4]]),
-                );
-                let run_count =
-                    u32::from_be_bytes([overflow[5], overflow[6], overflow[7], overflow[8]])
-                        as usize;
-                let payload_len = run_count.checked_mul(2)?;
-                let total_len = 1usize
-                    .checked_add(2)?
-                    .checked_add(2)?
-                    .checked_add(4)?
-                    .checked_add(payload_len)?
-                    .checked_add(2)?;
-                if overflow.len() < total_len {
-                    return None;
-                }
-
-                let mut run_lengths = Vec::with_capacity(run_count);
-                let mut cursor = 9usize;
-                for _ in 0..run_count {
-                    run_lengths.push(u16::from_be_bytes([overflow[cursor], overflow[cursor + 1]]));
-                    cursor += 2;
-                }
-                let count = u16::from_be_bytes([overflow[cursor], overflow[cursor + 1]]);
-                Some(Ok((
-                    XBenTwoDeltaFrame::Delta { pair, run_lengths },
-                    total_len,
-                    count,
-                )))
             }
             XBEN_TWODELTA_CHUNK_TAG => None, // Handled by try_parse_twodelta_chunk.
             _ => Some(Err(io::Error::from(DecodeError::XBenUnknownFrameTag {
@@ -493,22 +456,19 @@ impl<R: Read> Iterator for XZAssignmentReader<R> {
                 }
                 BenVariant::TwoDelta => {
                     // Drain frames from a previously parsed chunk first.
+                    // Chunks only contain Delta frames.
                     if let Some((frame, count)) = self.chunk_queue.pop_front() {
                         if count == 0 {
                             return Some(Err(zero_count_frame_error()));
                         }
-                        let assignment = match frame {
-                            XBenTwoDeltaFrame::Full { runs } => Ok(rle_to_vec(runs)),
-                            XBenTwoDeltaFrame::Delta { pair, run_lengths } => {
-                                match self.previous_assignment.take() {
-                                    Some(prev) => {
-                                        apply_twodelta_runs_to_assignment(prev, pair, &run_lengths)
-                                    }
-                                    None => {
-                                        Err(io::Error::from(DecodeError::TwoDeltaNoAnchorFrame))
-                                    }
-                                }
+                        let XBenTwoDeltaFrame::Delta { pair, run_lengths } = frame else {
+                            unreachable!("chunk queue only contains Delta frames");
+                        };
+                        let assignment = match self.previous_assignment.take() {
+                            Some(prev) => {
+                                apply_twodelta_runs_to_assignment(prev, pair, &run_lengths)
                             }
+                            None => Err(io::Error::from(DecodeError::TwoDeltaNoAnchorFrame)),
                         };
                         return Some(match assignment {
                             Ok(a) => {
@@ -527,7 +487,8 @@ impl<R: Read> Iterator for XZAssignmentReader<R> {
                         }
                     }
 
-                    // Try a single legacy frame (tag 0 or 1).
+                    // Try a single frame from overflow (only Full/tag-0 frames
+                    // or errors — tag-1 is no longer supported).
                     if let Some(parsed) = self.pop_twodelta_frame_from_overflow(&self.overflow) {
                         let res = match parsed {
                             Ok((frame, consumed, count)) => {
@@ -535,34 +496,15 @@ impl<R: Read> Iterator for XZAssignmentReader<R> {
                                     self.overflow.drain(..consumed);
                                     return Some(Err(zero_count_frame_error()));
                                 }
-                                let assignment = match frame {
-                                    XBenTwoDeltaFrame::Full { runs } => Ok(rle_to_vec(runs)),
-                                    XBenTwoDeltaFrame::Delta { pair, run_lengths } => {
-                                        match self.previous_assignment.take() {
-                                            Some(previous_assignment) => {
-                                                apply_twodelta_runs_to_assignment(
-                                                    previous_assignment,
-                                                    pair,
-                                                    &run_lengths,
-                                                )
-                                            }
-                                            None => Err(io::Error::from(
-                                                DecodeError::TwoDeltaNoAnchorFrame,
-                                            )),
-                                        }
-                                    }
+                                let XBenTwoDeltaFrame::Full { runs } = frame else {
+                                    unreachable!(
+                                        "pop_twodelta_frame_from_overflow only returns Full frames"
+                                    );
                                 };
-                                match assignment {
-                                    Ok(assignment) => {
-                                        self.previous_assignment = Some(assignment.clone());
-                                        self.overflow.drain(..consumed);
-                                        Ok((assignment, count))
-                                    }
-                                    Err(err) => {
-                                        self.overflow.drain(..consumed);
-                                        Err(err)
-                                    }
-                                }
+                                let assignment = rle_to_vec(runs);
+                                self.previous_assignment = Some(assignment.clone());
+                                self.overflow.drain(..consumed);
+                                Ok((assignment, count))
                             }
                             Err(err) => {
                                 self.overflow.clear();

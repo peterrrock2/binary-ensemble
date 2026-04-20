@@ -179,3 +179,11 @@ fn test_sample_error_conversion_and_sources() {
     assert!(sample_err.to_string().starts_with("JSON Error: "));
     assert!(sample_err.source().is_some());
 }
+
+#[test]
+fn test_sample_error_new_io_error() {
+    let io_err = io::Error::new(io::ErrorKind::NotFound, "file gone");
+    let sample_err = SampleError::new_io_error(io_err);
+    assert!(matches!(sample_err, SampleError::IoError(_)));
+    assert_eq!(sample_err.to_string(), "IO Error: file gone");
+}

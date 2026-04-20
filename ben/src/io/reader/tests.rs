@@ -3,7 +3,7 @@ use crate::io::reader::errors::DecoderInitError;
 use crate::io::reader::{XZAssignmentFrameReader, XZAssignmentReader};
 use crate::io::writer::XZAssignmentWriter;
 use crate::BenVariant;
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 use xz2::write::XzEncoder;
 
 /// Build a minimal XBEN stream from JSONL input for testing.
@@ -1070,4 +1070,446 @@ fn assignment_reader_write_all_jsonl() {
     assert_eq!(v1["assignment"], serde_json::json!([10, 20]));
     let v2: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
     assert_eq!(v2["assignment"], serde_json::json!([30, 40]));
+}
+
+// ── Zero-count frame errors in XZAssignmentReader ──────────────────────────
+
+#[test]
+fn xz_reader_standard_zero_count_frame_errors() {
+    use xz2::write::XzEncoder;
+
+    let mut xben = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben, 1);
+        // Write banner
+        encoder
+            .write_all(b"STANDARD BEN FILE")
+            .unwrap();
+        // Write a ben32 frame: one RLE pair (value=1, count=3) + zero terminator
+        let frame: &[u8] = &[
+            0, 1, 0, 3, // (value=1, count=3)
+            0, 0, 0, 0, // zero terminator
+        ];
+        encoder.write_all(frame).unwrap();
+        encoder.finish().unwrap();
+    }
+
+    // Manually patch: for Standard, there's no count field after the
+    // terminator. Zero-count only fires for MkvChain where the count is explicit.
+    // So test MkvChain zero-count instead.
+    let mut xben_mkv = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben_mkv, 1);
+        encoder
+            .write_all(b"MKVCHAIN BEN FILE")
+            .unwrap();
+        let frame: &[u8] = &[
+            0, 1, 0, 3, // (value=1, count=3)
+            0, 0, 0, 0, // zero terminator
+            0, 0,        // count = 0  <-- triggers zero_count_frame_error
+        ];
+        encoder.write_all(frame).unwrap();
+        encoder.finish().unwrap();
+    }
+
+    let reader = XZAssignmentReader::new(Cursor::new(xben_mkv)).unwrap();
+    let err = reader.into_iter().next().unwrap().unwrap_err();
+    assert!(err.to_string().contains("zero"));
+}
+
+#[test]
+fn xz_reader_twodelta_unknown_frame_tag_errors() {
+    use xz2::write::XzEncoder;
+
+    let mut xben = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben, 1);
+        encoder
+            .write_all(b"TWODELTA BEN FILE")
+            .unwrap();
+        // Write a byte with unknown tag (0xFF)
+        encoder.write_all(&[0xFF]).unwrap();
+        encoder.finish().unwrap();
+    }
+
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let err = reader.into_iter().next().unwrap().unwrap_err();
+    assert!(err.to_string().contains("0xff") || err.to_string().contains("unknown"));
+}
+
+#[test]
+fn xz_reader_truncated_stream_errors() {
+    use xz2::write::XzEncoder;
+
+    let mut xben = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben, 1);
+        encoder
+            .write_all(b"STANDARD BEN FILE")
+            .unwrap();
+        // Write a partial ben32 frame (no zero terminator)
+        encoder.write_all(&[0, 1, 0, 3]).unwrap();
+        encoder.finish().unwrap();
+    }
+
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let err = reader.into_iter().next().unwrap().unwrap_err();
+    assert!(err.to_string().contains("truncated") || err.to_string().contains("Truncated"));
+}
+
+// ── Subsample Every branch: first > hi ─────────────────────────────────────
+
+#[test]
+fn subsample_every_first_past_hi() {
+    // 4 samples, step=10, offset=5: first selected = 5, but only 4 samples
+    // exist → the `first > hi` branch fires for every frame.
+    let jsonl = concat!(
+        "{\"assignment\":[1,2],\"sample\":1}\n",
+        "{\"assignment\":[3,4],\"sample\":2}\n",
+        "{\"assignment\":[5,6],\"sample\":3}\n",
+        "{\"assignment\":[7,8],\"sample\":4}\n",
+    );
+    let xben = make_xben(jsonl, BenVariant::Standard);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let sub = reader.into_subsample_every(10, 5);
+    let results: Vec<_> = sub.map(|r| r.unwrap()).collect();
+    assert!(results.is_empty());
+}
+
+// ── MkvChain extract with count>1 mid-block sample ─────────────────────────
+
+#[test]
+fn extract_assignment_ben_mkv_mid_block() {
+    use crate::codec::encode::encode_jsonl_to_ben;
+    use crate::ops::extract::extract_assignment_ben;
+
+    let jsonl = concat!(
+        "{\"assignment\":[1,2,3],\"sample\":1}\n",
+        "{\"assignment\":[1,2,3],\"sample\":2}\n",
+        "{\"assignment\":[1,2,3],\"sample\":3}\n",
+        "{\"assignment\":[4,5,6],\"sample\":4}\n",
+    );
+
+    let mut ben = Vec::new();
+    encode_jsonl_to_ben(
+        jsonl.as_bytes(),
+        std::io::BufWriter::new(&mut ben),
+        BenVariant::MkvChain,
+    )
+    .unwrap();
+
+    // Sample 2 is in the middle of the first MkvChain block (count=3)
+    let result = extract_assignment_ben(ben.as_slice(), 2).unwrap();
+    assert_eq!(result, vec![1, 2, 3]);
+}
+
+#[test]
+fn xz_reader_twodelta_full_frame_zero_count_errors() {
+    use xz2::write::XzEncoder;
+
+    let mut xben = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben, 1);
+        encoder.write_all(b"TWODELTA BEN FILE").unwrap();
+
+        // Full frame with count=0
+        encoder.write_all(&[0u8]).unwrap(); // tag=0
+        encoder.write_all(&1u32.to_be_bytes()).unwrap(); // 1 run
+        encoder.write_all(&1u16.to_be_bytes()).unwrap(); // value=1
+        encoder.write_all(&2u16.to_be_bytes()).unwrap(); // len=2
+        encoder.write_all(&0u16.to_be_bytes()).unwrap(); // count=0
+
+        encoder.finish().unwrap();
+    }
+
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let err = reader.into_iter().next().unwrap().unwrap_err();
+    assert!(err.to_string().contains("zero"));
+}
+
+#[test]
+fn xz_reader_twodelta_chunk_zero_count_errors() {
+    use xz2::write::XzEncoder;
+
+    let mut xben = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben, 1);
+        encoder.write_all(b"TWODELTA BEN FILE").unwrap();
+
+        // Full frame (tag=0): anchor [1,2]
+        encoder.write_all(&[0u8]).unwrap();
+        encoder.write_all(&2u32.to_be_bytes()).unwrap();
+        encoder.write_all(&1u16.to_be_bytes()).unwrap();
+        encoder.write_all(&1u16.to_be_bytes()).unwrap();
+        encoder.write_all(&2u16.to_be_bytes()).unwrap();
+        encoder.write_all(&1u16.to_be_bytes()).unwrap();
+        encoder.write_all(&1u16.to_be_bytes()).unwrap(); // count=1
+
+        // Chunk (tag=2) with 1 frame, count=0
+        encoder.write_all(&[2u8]).unwrap(); // tag=2
+        encoder.write_all(&1u32.to_be_bytes()).unwrap(); // n_frames=1
+        // Pair channel: (2,1)
+        encoder.write_all(&2u16.to_be_bytes()).unwrap();
+        encoder.write_all(&1u16.to_be_bytes()).unwrap();
+        // Count channel: 0
+        encoder.write_all(&0u16.to_be_bytes()).unwrap();
+        // Run-count channel: 1 run
+        encoder.write_all(&1u32.to_be_bytes()).unwrap();
+        // Run-length data: 2
+        encoder.write_all(&2u16.to_be_bytes()).unwrap();
+
+        encoder.finish().unwrap();
+    }
+
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader.collect();
+    assert_eq!(results.len(), 2); // anchor + chunk frame
+    assert!(results[0].is_ok());
+    assert!(results[1].as_ref().unwrap_err().to_string().contains("zero"));
+}
+
+// ── Subsample with indices that skip past frame boundaries ──────────
+
+#[test]
+fn subsample_indices_skip_past_lo() {
+    // MkvChain stream where first frame has count=5 but we only want indices [7,8].
+    // This forces the Indices selection to skip past `lo` (line 160-161 in subsample.rs).
+    let jsonl = concat!(
+        "{\"assignment\":[1,2,3],\"sample\":1}\n",
+        "{\"assignment\":[1,2,3],\"sample\":2}\n",
+        "{\"assignment\":[1,2,3],\"sample\":3}\n",
+        "{\"assignment\":[1,2,3],\"sample\":4}\n",
+        "{\"assignment\":[1,2,3],\"sample\":5}\n",
+        "{\"assignment\":[4,5,6],\"sample\":6}\n",
+        "{\"assignment\":[4,5,6],\"sample\":7}\n",
+        "{\"assignment\":[4,5,6],\"sample\":8}\n",
+    );
+    let xben = make_xben(jsonl, BenVariant::MkvChain);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader
+        .into_subsample_by_indices(vec![7, 8])
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(results.len(), 1); // one frame covering both
+    assert_eq!(results[0].0, vec![4, 5, 6]);
+    assert_eq!(results[0].1, 2);
+}
+
+// ── Subsample indices with zero (below 1-based lo) ──────────────────
+
+#[test]
+fn subsample_indices_with_zero_skips_past_lo() {
+    let assignments = vec![vec![1u16, 2], vec![3, 4], vec![5, 6]];
+    let xben = make_xben_from_assignments(&assignments, BenVariant::Standard);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    // Index 0 is below the 1-based lo boundary, exercises the `next < lo` skip.
+    let results: Vec<_> = reader
+        .into_subsample_by_indices(vec![0, 2])
+        .map(|r| r.unwrap().0)
+        .collect();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], vec![3, 4]);
+}
+
+// ── XZAssignmentFrameReader for MkvChain zero-count ─────────────────
+
+#[test]
+fn xz_frame_reader_mkv_zero_count_errors() {
+    use xz2::write::XzEncoder;
+
+    let mut xben = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben, 1);
+        encoder.write_all(b"MKVCHAIN BEN FILE").unwrap();
+        let frame: &[u8] = &[
+            0, 1, 0, 3, // (value=1, count=3)
+            0, 0, 0, 0, // zero terminator
+            0, 0, // count = 0
+        ];
+        encoder.write_all(frame).unwrap();
+        encoder.finish().unwrap();
+    }
+
+    let reader = XZAssignmentFrameReader::new(Cursor::new(xben)).unwrap();
+    let err = reader.into_iter().next().unwrap().unwrap_err();
+    assert!(err.to_string().contains("zero"));
+}
+
+// ── XZAssignmentReader TwoDelta truncated stream ─────────────────────
+
+#[test]
+fn xz_reader_twodelta_truncated_stream_errors() {
+    use xz2::write::XzEncoder;
+
+    let mut xben = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben, 1);
+        encoder.write_all(b"TWODELTA BEN FILE").unwrap();
+        // Write a full tag + partial run count (not enough bytes for a complete frame)
+        encoder.write_all(&[0u8, 0, 0]).unwrap();
+        encoder.finish().unwrap();
+    }
+
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let err = reader.into_iter().next().unwrap().unwrap_err();
+    assert!(
+        err.to_string().contains("truncated") || err.to_string().contains("Truncated"),
+        "got: {}",
+        err
+    );
+}
+
+// ── Legacy TwoDelta delta without anchor (NoAnchorFrame) ────────────
+
+#[test]
+fn xz_reader_twodelta_tag1_rejected_as_unknown() {
+    use xz2::write::XzEncoder;
+
+    let mut xben = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben, 1);
+        encoder.write_all(b"TWODELTA BEN FILE").unwrap();
+
+        // Full frame (tag=0) anchor so the stream is valid up to this point.
+        encoder.write_all(&[0u8]).unwrap();
+        encoder.write_all(&1u32.to_be_bytes()).unwrap(); // 1 run
+        encoder.write_all(&1u16.to_be_bytes()).unwrap(); // value=1
+        encoder.write_all(&2u16.to_be_bytes()).unwrap(); // len=2
+        encoder.write_all(&1u16.to_be_bytes()).unwrap(); // count=1
+
+        // Tag 1 (removed legacy delta) should now be rejected as unknown.
+        encoder.write_all(&[1u8]).unwrap();
+        // Enough trailing bytes so the reader can attempt to parse.
+        encoder.write_all(&[0u8; 20]).unwrap();
+
+        encoder.finish().unwrap();
+    }
+
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let mut iter = reader.into_iter();
+    let _first = iter.next().unwrap().unwrap(); // consume the valid full frame
+    let err = iter.next().unwrap().unwrap_err();
+    assert!(
+        err.to_string().to_lowercase().contains("unknown")
+            || err.to_string().contains("tag"),
+        "expected unknown-tag error, got: {}",
+        err
+    );
+}
+
+// ── Chunk delta without anchor (NoAnchorFrame via chunk queue) ───────
+
+#[test]
+fn xz_reader_twodelta_chunk_delta_without_anchor_errors() {
+    use xz2::write::XzEncoder;
+
+    let mut xben = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben, 1);
+        encoder.write_all(b"TWODELTA BEN FILE").unwrap();
+
+        // Write a chunk (tag=2) with 1 delta frame but no preceding full frame.
+        encoder.write_all(&[2u8]).unwrap(); // tag=2
+        encoder.write_all(&1u32.to_be_bytes()).unwrap(); // n_frames=1
+        encoder.write_all(&1u16.to_be_bytes()).unwrap(); // pair.0=1
+        encoder.write_all(&2u16.to_be_bytes()).unwrap(); // pair.1=2
+        encoder.write_all(&1u16.to_be_bytes()).unwrap(); // count=1
+        encoder.write_all(&1u32.to_be_bytes()).unwrap(); // 1 run
+        encoder.write_all(&2u16.to_be_bytes()).unwrap(); // rl=2
+
+        encoder.finish().unwrap();
+    }
+
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let err = reader.into_iter().next().unwrap().unwrap_err();
+    assert!(
+        err.to_string().contains("full-assignment") || err.to_string().contains("anchor"),
+        "got: {}",
+        err
+    );
+}
+
+// ── for_each_assignment with stream error ────────────────────────────
+
+#[test]
+fn xz_reader_for_each_assignment_stream_error() {
+    use xz2::write::XzEncoder;
+
+    // Create a valid TwoDelta stream that ends with truncated data
+    let mut xben = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben, 1);
+        encoder.write_all(b"TWODELTA BEN FILE").unwrap();
+
+        // Valid full frame
+        encoder.write_all(&[0u8]).unwrap();
+        encoder.write_all(&1u32.to_be_bytes()).unwrap();
+        encoder.write_all(&1u16.to_be_bytes()).unwrap();
+        encoder.write_all(&2u16.to_be_bytes()).unwrap();
+        encoder.write_all(&1u16.to_be_bytes()).unwrap(); // count=1
+
+        // Truncated second frame
+        encoder.write_all(&[0u8, 0]).unwrap();
+        encoder.finish().unwrap();
+    }
+
+    let mut reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let mut count = 0usize;
+    let result = reader.for_each_assignment(|_assignment, _cnt| {
+        count += 1;
+        Ok(true)
+    });
+    // Should get the first assignment but error on the truncated second frame
+    assert!(count >= 1);
+    assert!(result.is_err());
+}
+
+// ── XZAssignmentFrameReader truncated TwoDelta ──────────────────────
+
+#[test]
+fn xz_frame_reader_twodelta_truncated_errors() {
+    use xz2::write::XzEncoder;
+
+    let mut xben = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben, 1);
+        encoder.write_all(b"STANDARD BEN FILE").unwrap();
+        // Partial ben32 frame — no zero terminator, triggers truncated error
+        encoder.write_all(&[0, 1, 0, 3]).unwrap();
+        encoder.finish().unwrap();
+    }
+
+    let reader = XZAssignmentFrameReader::new(Cursor::new(xben)).unwrap();
+    let err = reader.into_iter().next().unwrap().unwrap_err();
+    assert!(
+        err.to_string().contains("truncated") || err.to_string().contains("Truncated"),
+        "got: {}",
+        err
+    );
+}
+
+// ── Standard/MkvChain frame decode error ─────────────────────────────
+
+#[test]
+fn xz_reader_standard_corrupt_frame_errors() {
+    use xz2::write::XzEncoder;
+
+    // Write a valid-looking ben32 frame structure but with corrupted content
+    // that decode_xben_frame_to_assignment can't parse
+    let mut xben = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben, 1);
+        encoder.write_all(b"STANDARD BEN FILE").unwrap();
+        // Write 4 bytes followed by zero terminator — the frame decodes to
+        // a single run (value=255, count=255). This should actually be valid.
+        // Instead, write a completely empty frame (just the zero terminator).
+        encoder.write_all(&[0, 0, 0, 0]).unwrap(); // just zero terminator (no runs)
+        encoder.finish().unwrap();
+    }
+
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader.collect();
+    // An empty frame (no RLE pairs before terminator) yields an empty assignment
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_ref().unwrap().0, Vec::<u16>::new());
 }

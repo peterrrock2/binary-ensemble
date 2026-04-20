@@ -665,4 +665,66 @@ mod tests {
         assert_eq!(HEADER_SIZE, 64);
         assert_eq!(DIRECTORY_ENTRY_HEADER_SIZE, 28);
     }
+
+    #[test]
+    fn directory_entry_name_too_long() {
+        let entry = BendlDirectoryEntry {
+            asset_type: ASSET_TYPE_CUSTOM,
+            asset_flags: 0,
+            name: "x".repeat(u16::MAX as usize + 1),
+            payload_offset: 0,
+            payload_len: 0,
+            checksum: None,
+        };
+        let err = entry.to_bytes().unwrap_err();
+        assert!(matches!(err, BendlFormatError::NameTooLong { .. }));
+        assert!(err.to_string().contains("exceeds"));
+    }
+
+    #[test]
+    fn directory_entry_name_not_utf8() {
+        let mut bytes = BendlDirectoryEntry {
+            asset_type: ASSET_TYPE_CUSTOM,
+            asset_flags: 0,
+            name: "ok".to_string(),
+            payload_offset: 0,
+            payload_len: 0,
+            checksum: None,
+        }
+        .to_bytes()
+        .unwrap();
+
+        // Patch the name bytes to invalid UTF-8 (0xFF 0xFE)
+        let name_offset = DIRECTORY_ENTRY_HEADER_SIZE;
+        bytes[name_offset] = 0xFF;
+        bytes[name_offset + 1] = 0xFE;
+
+        let mut cursor = &bytes[..];
+        let err = BendlDirectoryEntry::read_from(&mut cursor).unwrap_err();
+        assert!(matches!(err, BendlFormatError::NameNotUtf8));
+        assert!(err.to_string().contains("UTF-8"));
+    }
+
+    #[test]
+    fn header_read_from_truncated() {
+        let short = [0u8; 10];
+        let err = BendlHeader::read_from(&mut &short[..]).unwrap_err();
+        assert!(matches!(err, BendlFormatError::Io(_)));
+    }
+
+    #[test]
+    fn bendl_format_error_io_passthrough() {
+        let inner = io::Error::new(io::ErrorKind::BrokenPipe, "pipe broke");
+        let fmt_err = BendlFormatError::Io(inner);
+        let io_err: io::Error = fmt_err.into();
+        assert_eq!(io_err.kind(), io::ErrorKind::BrokenPipe);
+        assert_eq!(io_err.to_string(), "pipe broke");
+    }
+
+    #[test]
+    fn trailing_directory_bytes_error_display() {
+        let err = BendlFormatError::TrailingDirectoryBytes { remaining: 42 };
+        assert!(err.to_string().contains("42"));
+        assert!(err.to_string().contains("trailing"));
+    }
 }

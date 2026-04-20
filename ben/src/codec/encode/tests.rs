@@ -1177,3 +1177,15 @@ fn encode_jsonl_to_xben_twodelta_roundtrip() {
     let v3: Value = serde_json::from_str(lines[2]).unwrap();
     assert_eq!(v3["assignment"], serde_json::json!([2, 2, 1, 1]));
 }
+
+#[test]
+fn twodelta_encode_outside_pair_change_errors() {
+    use super::twodelta::encode_twodelta_frame;
+
+    // prev=[1,2,3,4], curr=[2,1,3,5] — positions 0,1 swap pair (1,2),
+    // but position 3 changes from 4→5 which is outside the pair.
+    let prev = vec![1u16, 2, 3, 4];
+    let curr = vec![2u16, 1, 3, 5];
+    let err = encode_twodelta_frame(&prev, &curr, None).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}

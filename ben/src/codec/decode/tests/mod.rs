@@ -224,3 +224,100 @@ fn decode_error_remaining_variants() {
     let io_err: io::Error = err.into();
     assert_eq!(io_err.kind(), io::ErrorKind::InvalidData);
 }
+
+#[test]
+fn decode_xben_to_ben_twodelta_with_repeated_assignments() {
+    use crate::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben};
+    use crate::codec::encode::encode_jsonl_to_xben;
+    use crate::BenVariant;
+    use serde_json::Value;
+    use std::io::BufReader;
+
+    let jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
+{"assignment":[1,1,2,2],"sample":2}
+{"assignment":[1,1,2,2],"sample":3}
+{"assignment":[2,1,2,2],"sample":4}
+"#;
+    let mut xben = Vec::new();
+    encode_jsonl_to_xben(
+        jsonl.as_bytes(),
+        &mut xben,
+        BenVariant::TwoDelta,
+        Some(1),
+        Some(1),
+        None,
+    )
+    .unwrap();
+
+    let mut ben = Vec::new();
+    decode_xben_to_ben(BufReader::new(xben.as_slice()), &mut ben).unwrap();
+
+    let mut jsonl_out = Vec::new();
+    decode_ben_to_jsonl(ben.as_slice(), &mut jsonl_out).unwrap();
+    let output_str = String::from_utf8(jsonl_out).unwrap();
+    let lines: Vec<&str> = output_str.trim().split('\n').collect();
+    assert_eq!(lines.len(), 4);
+    let v1: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(v1["assignment"], serde_json::json!([1, 1, 2, 2]));
+    let v4: Value = serde_json::from_str(lines[3]).unwrap();
+    assert_eq!(v4["assignment"], serde_json::json!([2, 1, 2, 2]));
+}
+
+#[test]
+fn xz_decompress_roundtrip() {
+    use crate::codec::decode::xz_decompress;
+    use crate::codec::encode::xz_compress;
+    use std::io::BufReader;
+
+    let original = b"hello world, this is a test of xz_decompress";
+    let mut compressed = Vec::new();
+    xz_compress(original.as_slice(), &mut compressed, Some(1), Some(1)).unwrap();
+
+    let mut decompressed = Vec::new();
+    xz_decompress(BufReader::new(compressed.as_slice()), &mut decompressed).unwrap();
+    assert_eq!(decompressed, original);
+}
+
+#[test]
+fn xz_compress_direct_test() {
+    use crate::codec::encode::xz_compress;
+
+    let data = b"compress me please with xz";
+    let mut out = Vec::new();
+    xz_compress(data.as_slice(), &mut out, None, None).unwrap();
+    assert!(!out.is_empty());
+
+    let mut decompressed = Vec::new();
+    crate::codec::decode::xz_decompress(
+        std::io::BufReader::new(out.as_slice()),
+        &mut decompressed,
+    )
+    .unwrap();
+    assert_eq!(decompressed, data);
+}
+
+#[test]
+fn encode_ben_to_xben_rejects_invalid_banner() {
+    use crate::codec::encode::encode_ben_to_xben;
+
+    let garbage = b"GARBAGE BANNER!!!extra_padding";
+    let mut out = Vec::new();
+    let err = encode_ben_to_xben(garbage.as_slice(), &mut out, Some(1), Some(1), None).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn decode_xben_to_ben_rejects_invalid_banner() {
+    use crate::codec::decode::decode_xben_to_ben;
+    use crate::codec::encode::xz_compress;
+    use std::io::BufReader;
+
+    let mut bad_data = b"GARBAGE BANNER!!!".to_vec();
+    bad_data.extend_from_slice(&[0u8; 20]);
+    let mut xz = Vec::new();
+    xz_compress(bad_data.as_slice(), &mut xz, Some(1), Some(1)).unwrap();
+
+    let mut output = Vec::new();
+    let err = decode_xben_to_ben(BufReader::new(xz.as_slice()), &mut output).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}

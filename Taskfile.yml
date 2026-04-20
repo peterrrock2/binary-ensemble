@@ -137,7 +137,7 @@ tasks:
     env:
       PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
     cmds:
-      - cargo llvm-cov --package binary-ensemble --summary-only --ignore-filename-regex '(^|/)bin/'
+      - cargo llvm-cov --package binary-ensemble --summary-only --ignore-filename-regex '(^|/)(bin|cli)/'
 
   coverage-pyben:
     desc: Run Python-driven Rust coverage for pyben
@@ -208,7 +208,7 @@ tasks:
         ben_report_file=/tmp/ben-coverage-report.txt;
         pyben_report_file=/tmp/pyben-coverage-report.txt;
 
-        cargo llvm-cov --color always --package binary-ensemble --summary-only --ignore-filename-regex '"'"'(^|/)bin/'"'"' > "$ben_report_file";
+        cargo llvm-cov --color always --package binary-ensemble --summary-only --ignore-filename-regex '"'"'(^|/)(bin|cli)/'"'"' > "$ben_report_file";
         ben_total="$(awk '"'"'$1=="TOTAL"{print $10}'"'"' "$ben_report_file")";
 
         cargo llvm-cov clean --workspace >/dev/null;

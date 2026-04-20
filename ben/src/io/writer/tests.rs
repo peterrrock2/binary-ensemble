@@ -35,13 +35,19 @@ fn roundtrip_xben_counts(assignments: &[Vec<u16>], variant: BenVariant) -> Vec<(
 #[test]
 fn writer_standard_basic_roundtrip() {
     let assignments = vec![vec![1u16, 2, 3], vec![4, 5, 6]];
-    assert_eq!(roundtrip_xben(&assignments, BenVariant::Standard), assignments);
+    assert_eq!(
+        roundtrip_xben(&assignments, BenVariant::Standard),
+        assignments
+    );
 }
 
 #[test]
 fn writer_standard_single_element_assignments() {
     let assignments = vec![vec![42u16], vec![99]];
-    assert_eq!(roundtrip_xben(&assignments, BenVariant::Standard), assignments);
+    assert_eq!(
+        roundtrip_xben(&assignments, BenVariant::Standard),
+        assignments
+    );
 }
 
 // ── MkvChain variant roundtrips ───────────────────────────────────────
@@ -60,13 +66,19 @@ fn writer_mkv_deduplication() {
 #[test]
 fn writer_twodelta_basic_roundtrip() {
     let assignments = vec![vec![1u16, 1, 2, 2], vec![2, 1, 2, 2], vec![2, 2, 2, 2]];
-    assert_eq!(roundtrip_xben(&assignments, BenVariant::TwoDelta), assignments);
+    assert_eq!(
+        roundtrip_xben(&assignments, BenVariant::TwoDelta),
+        assignments
+    );
 }
 
 #[test]
 fn writer_twodelta_anchor_only() {
     let assignments = vec![vec![1u16, 2, 3, 4]];
-    assert_eq!(roundtrip_xben(&assignments, BenVariant::TwoDelta), assignments);
+    assert_eq!(
+        roundtrip_xben(&assignments, BenVariant::TwoDelta),
+        assignments
+    );
 }
 
 #[test]
@@ -85,12 +97,7 @@ fn writer_twodelta_repeated_anchor() {
 fn writer_twodelta_repeated_delta() {
     let anchor = vec![1u16, 1, 2, 2];
     let delta = vec![2u16, 1, 2, 2];
-    let assignments = vec![
-        anchor.clone(),
-        delta.clone(),
-        delta.clone(),
-        delta.clone(),
-    ];
+    let assignments = vec![anchor.clone(), delta.clone(), delta.clone(), delta.clone()];
     let results = roundtrip_xben_counts(&assignments, BenVariant::TwoDelta);
     let total: usize = results.iter().map(|(_, c)| *c as usize).sum();
     assert_eq!(total, 4);
@@ -103,7 +110,13 @@ fn writer_twodelta_chunk_size_1() {
     let anchor = vec![1u16, 1, 2, 2];
     let delta = vec![2u16, 2, 1, 1];
     let assignments: Vec<_> = (0..10)
-        .map(|i| if i % 2 == 0 { anchor.clone() } else { delta.clone() })
+        .map(|i| {
+            if i % 2 == 0 {
+                anchor.clone()
+            } else {
+                delta.clone()
+            }
+        })
         .collect();
 
     let mut xben = Vec::new();
@@ -168,6 +181,31 @@ fn writer_twodelta_u16_max_value_in_assignment() {
     }
 }
 
+// ── BEN AssignmentWriter TwoDelta repeat frame ──────────────────────
+
+#[test]
+fn ben_writer_twodelta_repeat_frame_via_u16max_overflow() {
+    use crate::io::reader::AssignmentReader;
+    use crate::io::writer::AssignmentWriter;
+
+    // Assignment with 3 distinct values exercises the `continue` skip path
+    // inside `twodelta_repeat_frame` for values outside the picked pair.
+    let assign = vec![1u16, 2, 3, 1, 2];
+    let n = u16::MAX as usize + 2; // 65537: triggers overflow → repeat frame
+
+    let mut ben = Vec::new();
+    {
+        let mut w = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
+        for _ in 0..n {
+            w.write_assignment(assign.clone()).unwrap();
+        }
+    }
+
+    let reader = AssignmentReader::new(ben.as_slice()).unwrap();
+    let total: usize = reader.map(|r| r.unwrap().1 as usize).sum();
+    assert_eq!(total, n);
+}
+
 // ── TwoDelta write_json_value ─────────────────────────────────────────
 
 #[test]
@@ -198,9 +236,7 @@ fn writer_finish_is_idempotent() {
     {
         let encoder = XzEncoder::new(&mut xben, 1);
         let mut writer = XZAssignmentWriter::new(encoder, BenVariant::TwoDelta).unwrap();
-        writer
-            .write_assignment(vec![1u16, 2, 3, 4])
-            .unwrap();
+        writer.write_assignment(vec![1u16, 2, 3, 4]).unwrap();
         writer.finish().unwrap();
         writer.finish().unwrap();
     }
@@ -226,7 +262,9 @@ fn writer_write_ben_file_standard_roundtrip() {
     {
         let encoder = XzEncoder::new(&mut xben, 1);
         let mut writer = XZAssignmentWriter::new(encoder, BenVariant::Standard).unwrap();
-        writer.write_ben_file(BufReader::new(ben.as_slice())).unwrap();
+        writer
+            .write_ben_file(BufReader::new(ben.as_slice()))
+            .unwrap();
         writer.finish().unwrap();
     }
 
@@ -251,7 +289,9 @@ fn writer_write_ben_file_mkv_roundtrip() {
     {
         let encoder = XzEncoder::new(&mut xben, 1);
         let mut writer = XZAssignmentWriter::new(encoder, BenVariant::MkvChain).unwrap();
-        writer.write_ben_file(BufReader::new(ben.as_slice())).unwrap();
+        writer
+            .write_ben_file(BufReader::new(ben.as_slice()))
+            .unwrap();
         writer.finish().unwrap();
     }
 
@@ -266,11 +306,7 @@ fn writer_write_ben_file_twodelta_roundtrip() {
     use crate::io::writer::AssignmentWriter;
     use std::io::BufReader;
 
-    let assignments = vec![
-        vec![1u16, 2, 1, 2],
-        vec![1, 1, 2, 2],
-        vec![2, 1, 2, 1],
-    ];
+    let assignments = vec![vec![1u16, 2, 1, 2], vec![1, 1, 2, 2], vec![2, 1, 2, 1]];
 
     let mut ben = Vec::new();
     {
@@ -284,7 +320,9 @@ fn writer_write_ben_file_twodelta_roundtrip() {
     {
         let encoder = XzEncoder::new(&mut xben, 1);
         let mut writer = XZAssignmentWriter::new(encoder, BenVariant::TwoDelta).unwrap();
-        writer.write_ben_file(BufReader::new(ben.as_slice())).unwrap();
+        writer
+            .write_ben_file(BufReader::new(ben.as_slice()))
+            .unwrap();
         writer.finish().unwrap();
     }
 
@@ -329,4 +367,107 @@ fn writer_twodelta_stress_many_unique_deltas() {
 
     let results = roundtrip_xben(&assignments, BenVariant::TwoDelta);
     assert_eq!(results, assignments);
+}
+
+// ── TwoDelta u16::MAX count overflow paths ───────────────────────────
+
+#[test]
+fn writer_twodelta_anchor_count_overflow_u16max() {
+    // Use 3 distinct values to exercise the `continue` skip in
+    // twodelta_repeat_buffered_frame for values outside the picked pair.
+    let assign = vec![1u16, 2, 3, 1, 2];
+    let n = u16::MAX as usize + 2; // 65537 — triggers the overflow branch
+
+    let mut xben = Vec::new();
+    {
+        let encoder = XzEncoder::new(&mut xben, 1);
+        let mut writer = XZAssignmentWriter::new(encoder, BenVariant::TwoDelta).unwrap();
+        for _ in 0..n {
+            writer.write_assignment(assign.clone()).unwrap();
+        }
+    }
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let total: usize = reader.map(|r| r.unwrap().1 as usize).sum();
+    assert_eq!(total, n);
+}
+
+#[test]
+fn writer_twodelta_delta_count_overflow_u16max() {
+    let anchor = vec![1u16, 1, 2, 2];
+    let delta = vec![2u16, 1, 2, 2];
+    let n_delta = u16::MAX as usize + 1; // 65536 identical deltas
+
+    let mut xben = Vec::new();
+    {
+        let encoder = XzEncoder::new(&mut xben, 1);
+        let mut writer = XZAssignmentWriter::new(encoder, BenVariant::TwoDelta)
+            .unwrap()
+            .with_chunk_size(n_delta + 1);
+        writer.write_assignment(anchor.clone()).unwrap();
+        for _ in 0..n_delta {
+            writer.write_assignment(delta.clone()).unwrap();
+        }
+    }
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader.map(|r| r.unwrap()).collect();
+    let total: usize = results.iter().map(|(_, c)| *c as usize).sum();
+    assert_eq!(total, n_delta + 1);
+}
+
+// ── TwoDelta translate via write_ben_file with chunk flush ───────────
+
+#[test]
+fn writer_translate_ben_twodelta_chunk_flush() {
+    use crate::io::writer::AssignmentWriter;
+    use std::io::BufReader;
+
+    let a = vec![1u16, 1, 2, 2];
+    let b = vec![2u16, 2, 1, 1];
+    let assignments: Vec<_> = (0..30)
+        .map(|i| if i % 2 == 0 { a.clone() } else { b.clone() })
+        .collect();
+
+    let mut ben = Vec::new();
+    {
+        let mut w = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
+        for a in &assignments {
+            w.write_assignment(a.clone()).unwrap();
+        }
+    }
+
+    let mut xben = Vec::new();
+    {
+        let encoder = XzEncoder::new(&mut xben, 1);
+        let mut writer = XZAssignmentWriter::new(encoder, BenVariant::TwoDelta)
+            .unwrap()
+            .with_chunk_size(5);
+        writer
+            .write_ben_file(BufReader::new(ben.as_slice()))
+            .unwrap();
+        writer.finish().unwrap();
+    }
+
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
+    assert_eq!(results, assignments);
+}
+
+// ── MkvChain u16::MAX overflow ───────────────────────────────────────
+
+#[test]
+fn writer_mkv_count_overflow_u16max() {
+    let assign = vec![1u16, 2, 3];
+    let n = u16::MAX as usize + 2; // overflow
+
+    let mut xben = Vec::new();
+    {
+        let encoder = XzEncoder::new(&mut xben, 1);
+        let mut writer = XZAssignmentWriter::new(encoder, BenVariant::MkvChain).unwrap();
+        for _ in 0..n {
+            writer.write_assignment(assign.clone()).unwrap();
+        }
+    }
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let total: usize = reader.map(|r| r.unwrap().1 as usize).sum();
+    assert_eq!(total, n);
 }
