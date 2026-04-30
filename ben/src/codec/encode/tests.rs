@@ -1189,3 +1189,142 @@ fn twodelta_encode_outside_pair_change_errors() {
     let err = encode_twodelta_frame(&prev, &curr, None).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 }
+
+#[test]
+fn twodelta_encode_missing_mask_for_pair0_errors() {
+    use crate::codec::encode::encode_twodelta_frame_with_hint;
+    use std::collections::HashMap;
+
+    // Only the mask for pair.1 (2) is provided; pair.0 (1) is absent.
+    let prev = vec![1u16, 1, 2, 2];
+    let curr = vec![2u16, 1, 2, 1];
+    let mut masks: HashMap<u16, Vec<usize>> = HashMap::new();
+    masks.insert(2, vec![2, 3]);
+
+    let err = encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn twodelta_encode_empty_mask_for_pair0_errors() {
+    use crate::codec::encode::encode_twodelta_frame_with_hint;
+    use std::collections::HashMap;
+
+    // pair.0 (1) has an empty mask; pair.1 (2) is non-empty.
+    let prev = vec![1u16, 1, 2, 2];
+    let curr = vec![2u16, 1, 2, 1];
+    let mut masks: HashMap<u16, Vec<usize>> = HashMap::new();
+    masks.insert(1, vec![]);
+    masks.insert(2, vec![2, 3]);
+
+    let err = encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn twodelta_encode_new_val_out_of_pair_errors() {
+    use crate::codec::encode::encode_twodelta_frame_with_hint;
+    use std::collections::HashMap;
+
+    // At position 2: prev=1 (in pair), but curr=3 (outside pair {1,2}).
+    let prev = vec![1u16, 2, 1, 2];
+    let curr = vec![2u16, 1, 3, 2];
+    let mut masks: HashMap<u16, Vec<usize>> = HashMap::new();
+    masks.insert(1, vec![0, 2]);
+    masks.insert(2, vec![1, 3]);
+
+    let err = encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn twodelta_encode_pair_mask_hint_identical_errors() {
+    use crate::codec::encode::encode_twodelta_frame_with_hint;
+    use std::collections::HashMap;
+
+    // Explicit pair + mask hints, but prev == curr → TwoDeltaIdentical.
+    let a = vec![1u16, 1, 2, 2];
+    let mut masks: HashMap<u16, Vec<usize>> = HashMap::new();
+    masks.insert(1, vec![0, 1]);
+    masks.insert(2, vec![2, 3]);
+
+    let err =
+        encode_twodelta_frame_with_hint(&a, &a, Some((1, 2)), Some(&mut masks), None).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn twodelta_encode_pair_position_changes_to_third_id_errors() {
+    use crate::codec::encode::encode_twodelta_frame;
+
+    // At position 2: prev=1 ∈ {1,2}, but curr=3 ∉ {1,2} → TwoDeltaTooManyIds.
+    let prev = vec![1u16, 2, 1, 2];
+    let curr = vec![2u16, 1, 3, 2];
+    let err = encode_twodelta_frame(&prev, &curr, None).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn twodelta_encode_pair_mask_run_exceeds_u16_max_errors() {
+    use crate::codec::encode::encode_twodelta_frame_with_hint;
+    use std::collections::HashMap;
+
+    // 65538 positions: pair positions 0..65537 hold value 1 in prev, one more
+    // (65537) holds value 2.  In curr all pair positions hold value 2, so the
+    // run of value-2 positions reaches u16::MAX and the encoder must error.
+    let mut prev = vec![1u16; 65538];
+    prev[65537] = 2;
+    let mut curr = vec![2u16; 65538];
+    curr[65537] = 1;
+
+    let mut masks: HashMap<u16, Vec<usize>> = HashMap::new();
+    masks.insert(1, (0..65537_usize).collect());
+    masks.insert(2, vec![65537_usize]);
+
+    let err =
+        encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
+            .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    assert!(err.to_string().contains("u16::MAX"));
+}
+
+#[test]
+fn twodelta_encode_from_scratch_run_exceeds_u16_max_errors() {
+    use crate::codec::encode::encode_twodelta_frame;
+
+    // 65538 positions all in pair {1, 2}: first 65537 change 1→2, last 1 changes 2→1.
+    // The from-scratch encoder hits u16::MAX consecutive positions with value 2 and errors.
+    let mut prev = vec![1u16; 65538];
+    prev[65537] = 2;
+    let mut curr = vec![2u16; 65538];
+    curr[65537] = 1;
+
+    let err = encode_twodelta_frame(&prev, &curr, None).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    assert!(err.to_string().contains("u16::MAX"));
+}
+
+#[test]
+fn ben32_encode_run_exceeding_u16_max_splits_correctly() {
+    use super::ben::encode_ben32_assignments;
+
+    // Build an assignment with 65537 identical values: the run reaches u16::MAX
+    // (65535) and must be flushed early, then continues with a new run.
+    // encode_ben32_assignments appends a 4-byte zero sentinel at the end.
+    let assign: Vec<u16> = vec![7u16; 65537];
+    let encoded = encode_ben32_assignments(&assign).unwrap();
+
+    // Should be: (7, 65535) + (7, 2) + [0,0,0,0] sentinel = 12 bytes.
+    assert_eq!(encoded.len(), 12);
+    let first = u32::from_be_bytes(encoded[0..4].try_into().unwrap());
+    let second = u32::from_be_bytes(encoded[4..8].try_into().unwrap());
+    let sentinel = u32::from_be_bytes(encoded[8..12].try_into().unwrap());
+    assert_eq!(first >> 16, 7u32);
+    assert_eq!(first & 0xFFFF, 65535u32); // count = u16::MAX
+    assert_eq!(second >> 16, 7u32);
+    assert_eq!(second & 0xFFFF, 2u32); // remaining 2 elements
+    assert_eq!(sentinel, 0u32); // always-present zero sentinel
+}

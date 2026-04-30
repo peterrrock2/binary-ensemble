@@ -203,17 +203,12 @@ impl<R: Read + Seek> BendlReader<R> {
         validate_directory_entries(&self.directory)
     }
 
-    /// Release the underlying reader.
-    pub fn into_inner(self) -> R {
-        self.inner
-    }
 }
 
 pub(crate) fn validate_directory_entries(
     directory: &[BendlDirectoryEntry],
 ) -> Result<(), BundleValidationError> {
     let mut seen_names = std::collections::HashSet::new();
-    let mut seen_singleton_types = std::collections::HashSet::new();
 
     for entry in directory {
         if !seen_names.insert(entry.name.as_str()) {
@@ -226,11 +221,6 @@ pub(crate) fn validate_directory_entries(
                     expected: canonical.to_string(),
                     found: entry.name.clone(),
                 });
-            }
-            if !seen_singleton_types.insert(entry.asset_type) {
-                return Err(BundleValidationError::DuplicateSingletonType(
-                    entry.asset_type,
-                ));
             }
         }
     }
@@ -283,10 +273,6 @@ pub enum BundleValidationError {
     /// Two entries share the same name.
     #[error("duplicate asset name: {0:?}")]
     DuplicateName(String),
-
-    /// Two entries share the same singleton asset type.
-    #[error("duplicate singleton asset type: {0}")]
-    DuplicateSingletonType(u16),
 
     /// An entry with a known singleton type is not using its canonical name.
     #[error("asset type {asset_type} must use canonical name {expected:?}, found {found:?}")]
@@ -836,13 +822,11 @@ mod tests {
             directory: entries,
         };
         // The second entry has asset_type METADATA but name "meta2.json"
-        // which fails the canonical-name check before the singleton
-        // check; that's still a valid rejection.
+        // which fails the canonical-name check.
         let err = reader.validate_directory().unwrap_err();
         assert!(matches!(
             err,
             BundleValidationError::WrongCanonicalName { .. }
-                | BundleValidationError::DuplicateSingletonType(_)
         ));
     }
 
@@ -1059,5 +1043,60 @@ mod tests {
         // assert only that we got *at least* the real stream bytes as a
         // prefix, which is the basic "no truncation of what exists" check.
         assert!(buf.starts_with(&fake_stream));
+    }
+
+    #[test]
+    fn incomplete_bundle_with_nonzero_directory_offset_uses_it_as_stream_end() {
+        // An incomplete bundle where directory_offset is non-zero:
+        // the stream end is taken as directory_offset, not EOF.
+        let fake_stream = b"STANDARD BEN FILE\x00partial".to_vec();
+        let fake_dir = b"some-directory-bytes";
+        let stream_start = HEADER_SIZE as u64;
+        let dir_offset = stream_start + fake_stream.len() as u64;
+
+        let header = BendlHeader {
+            magic: BENDL_MAGIC,
+            major_version: BENDL_MAJOR_VERSION,
+            minor_version: BENDL_MINOR_VERSION,
+            complete: COMPLETE_NO,
+            assignment_format: AssignmentFormat::Ben.to_u8(),
+            reserved_0: 0,
+            flags: 0,
+            directory_offset: dir_offset,
+            directory_len: 0,
+            stream_offset: stream_start,
+            stream_len: 0,
+            sample_count: -1,
+        };
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&header.to_bytes());
+        bytes.extend_from_slice(&fake_stream);
+        bytes.extend_from_slice(fake_dir);
+
+        let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+        assert!(!reader.is_complete());
+
+        let (offset, len) = reader.assignment_stream_range().unwrap();
+        assert_eq!(offset, stream_start);
+        assert_eq!(len, fake_stream.len() as u64);
+    }
+
+    #[test]
+    fn validate_directory_rejects_wrong_canonical_name() {
+        use crate::io::bundle::format::BendlDirectoryEntry;
+
+        let entries = vec![BendlDirectoryEntry {
+            asset_type: ASSET_TYPE_GRAPH,
+            asset_flags: ASSET_FLAG_JSON,
+            name: "not_the_canonical_name.json".to_string(),
+            payload_offset: 64,
+            payload_len: 10,
+            checksum: None,
+        }];
+        let err = validate_directory_entries(&entries).unwrap_err();
+        match err {
+            BundleValidationError::WrongCanonicalName { .. } => {}
+            _ => panic!("expected WrongCanonicalName, got {err:?}"),
+        }
     }
 }

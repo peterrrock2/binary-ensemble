@@ -211,3 +211,19 @@ impl<W: Write> Drop for AssignmentWriter<W> {
         let _ = self.finish();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::twodelta_repeat_frame;
+    use std::io;
+
+    #[test]
+    fn twodelta_repeat_frame_run_exceeds_u16_max_errors() {
+        // All-identical-value assignment with 65536 elements: the pair-position
+        // run reaches u16::MAX and the encoder must error.
+        let assign = vec![1u16; 65536];
+        let err = twodelta_repeat_frame(&assign, 1).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        assert!(err.to_string().contains("u16::MAX"));
+    }
+}

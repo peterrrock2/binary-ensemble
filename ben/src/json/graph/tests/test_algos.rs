@@ -497,3 +497,67 @@ fn test_sort_json_file_by_key_mixed_numeric_and_string() {
     assert_eq!(output_json["nodes"][1]["key"], 42);
     assert_eq!(output_json["nodes"][2]["key"], "alpha");
 }
+
+#[test]
+fn test_sort_json_file_by_key_missing_attribute_uses_null() {
+    // When a node lacks the sort key, compare_attr_values receives None
+    // which maps to the string "null" for comparison purposes.
+    let input = r#"{
+        "nodes": [
+            {"id": 0, "rank": 5},
+            {"id": 1},
+            {"id": 2, "rank": 3}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 0}, {"id": 2}],
+            [{"id": 1}]
+        ]
+    }"#;
+
+    let mut output = Vec::new();
+    sort_json_file_by_key(input.as_bytes(), &mut output, "rank").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    // Numeric values (3, 5) sort first; the node missing "rank" sorts as "null" (string).
+    assert_eq!(output_json["nodes"][0]["rank"], 3);
+    assert_eq!(output_json["nodes"][1]["rank"], 5);
+    // The node without "rank" is last (string "null" > numeric).
+    assert!(output_json["nodes"][2].get("rank").is_none());
+}
+
+#[test]
+fn test_mlc_with_isolated_node() {
+    // A graph containing an isolated node (no edges) triggers the
+    // single-node-component early return in mlc_component.
+    let input = r#"{
+        "nodes": [
+            {"id": 0},
+            {"id": 1},
+            {"id": 2},
+            {"id": 3}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 0}],
+            [],
+            []
+        ]
+    }"#;
+
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_ordering(
+        input.as_bytes(),
+        &mut output,
+        GraphOrderingMethod::MultiLevelCluster,
+    )
+    .unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(output_json["nodes"].as_array().unwrap().len(), 4);
+    assert_eq!(mapping.len(), 4);
+    // Every original node appears exactly once in the mapping.
+    let mut positions: Vec<usize> = mapping.values().copied().collect();
+    positions.sort();
+    assert_eq!(positions, vec![0, 1, 2, 3]);
+}

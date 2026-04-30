@@ -298,13 +298,7 @@ impl BendlDirectoryEntry {
                     length: name_bytes.len(),
                 })?;
         let checksum_bytes = self.checksum.as_deref().unwrap_or(&[]);
-        let checksum_len: u32 =
-            checksum_bytes
-                .len()
-                .try_into()
-                .map_err(|_| BendlFormatError::ChecksumTooLong {
-                    length: checksum_bytes.len(),
-                })?;
+        let checksum_len = checksum_bytes.len() as u32;
 
         let mut out = Vec::with_capacity(self.encoded_len());
         out.extend_from_slice(&self.asset_type.to_le_bytes());
@@ -381,13 +375,7 @@ pub fn read_directory<R: Read>(
 
 /// Serialize a directory table into a byte vector.
 pub fn encode_directory(entries: &[BendlDirectoryEntry]) -> Result<Vec<u8>, BendlFormatError> {
-    let entry_count: u32 =
-        entries
-            .len()
-            .try_into()
-            .map_err(|_| BendlFormatError::TooManyEntries {
-                length: entries.len(),
-            })?;
+    let entry_count = entries.len() as u32;
 
     let body_len: usize = entries.iter().map(|e| e.encoded_len()).sum();
     let mut out = Vec::with_capacity(4 + body_len);
@@ -422,20 +410,6 @@ pub enum BendlFormatError {
     #[error("directory entry name is {length} bytes which exceeds the u16 length limit")]
     NameTooLong {
         /// The offending length in bytes.
-        length: usize,
-    },
-
-    /// A directory entry's checksum exceeded the `u32` length limit.
-    #[error("directory entry checksum is {length} bytes which exceeds the u32 length limit")]
-    ChecksumTooLong {
-        /// The offending length in bytes.
-        length: usize,
-    },
-
-    /// A directory table exceeded the `u32` entry count limit.
-    #[error("directory has {length} entries which exceeds the u32 entry count limit")]
-    TooManyEntries {
-        /// The offending entry count.
         length: usize,
     },
 
@@ -719,6 +693,14 @@ mod tests {
         let io_err: io::Error = fmt_err.into();
         assert_eq!(io_err.kind(), io::ErrorKind::BrokenPipe);
         assert_eq!(io_err.to_string(), "pipe broke");
+    }
+
+    #[test]
+    fn bendl_format_error_non_io_becomes_invalid_data() {
+        let fmt_err = BendlFormatError::MalformedDirectory("bad dir".to_string());
+        let io_err: io::Error = fmt_err.into();
+        assert_eq!(io_err.kind(), io::ErrorKind::InvalidData);
+        assert!(io_err.to_string().contains("bad dir"));
     }
 
     #[test]

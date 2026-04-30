@@ -59,11 +59,8 @@ impl BendlTruncate for std::io::Cursor<Vec<u8>> {
     fn truncate_at(&mut self, len: u64) -> io::Result<()> {
         let target = len as usize;
         let vec = self.get_mut();
-        if vec.len() > target {
-            vec.truncate(target);
-        } else if vec.len() < target {
-            vec.resize(target, 0);
-        }
+        debug_assert!(vec.len() >= target, "truncate_at called past end of buffer");
+        vec.truncate(target);
         Ok(())
     }
 }
@@ -276,7 +273,11 @@ impl<W: Write + Seek> BendlWriter<W> {
         if self.state != WriterState::Assets {
             return Err(BendlWriteError::WrongState {
                 expected: "Assets",
-                found: self.state_name(),
+                found: if matches!(self.state, WriterState::Streaming) {
+                    "Streaming"
+                } else {
+                    "StreamWritten"
+                },
             });
         }
 
@@ -375,31 +376,21 @@ impl<W: Write + Seek> BendlWriter<W> {
     /// Write the trailing directory, patch the header, and return the
     /// underlying writer.
     pub fn finish(mut self) -> Result<W, BendlWriteError> {
-        let (stream_len, sample_count) = match self.state {
-            WriterState::StreamWritten {
-                stream_len,
-                sample_count,
-            } => (stream_len, sample_count),
-            // Allow finalizing a bundle that has no stream at all (useful
-            // for asset-only bundles), treating the stream as empty.
-            WriterState::Assets => {
+        if matches!(self.state, WriterState::Streaming) {
+            return Err(BendlWriteError::WrongState {
+                expected: "StreamWritten",
+                found: "Streaming",
+            });
+        }
+        let (stream_len, sample_count) =
+            if let WriterState::StreamWritten { stream_len, sample_count } = self.state {
+                (stream_len, sample_count)
+            } else {
+                // Assets state: no stream written; treat as empty stream.
                 let stream_offset = self.inner.seek(SeekFrom::Current(0))?;
                 self.header.stream_offset = stream_offset;
                 (0, 0)
-            }
-            WriterState::Streaming => {
-                return Err(BendlWriteError::WrongState {
-                    expected: "StreamWritten",
-                    found: "Streaming",
-                });
-            }
-            WriterState::Finished => {
-                return Err(BendlWriteError::WrongState {
-                    expected: "StreamWritten",
-                    found: "Finished",
-                });
-            }
-        };
+            };
 
         // Position at end of stream (== start of directory).
         let directory_offset = self.header.stream_offset + stream_len;
@@ -428,14 +419,6 @@ impl<W: Write + Seek> BendlWriter<W> {
         Ok(self.inner)
     }
 
-    fn state_name(&self) -> &'static str {
-        match self.state {
-            WriterState::Assets => "Assets",
-            WriterState::Streaming => "Streaming",
-            WriterState::StreamWritten { .. } => "StreamWritten",
-            WriterState::Finished => "Finished",
-        }
-    }
 }
 
 /// Mutable handle to the stream region held by a [`BendlWriter`].
@@ -679,11 +662,6 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
             pending_names: HashSet::new(),
             pending_singleton_types: HashSet::new(),
         })
-    }
-
-    /// The currently loaded (pre-append) directory entries.
-    pub fn existing_assets(&self) -> &[BendlDirectoryEntry] {
-        &self.existing_entries
     }
 
     /// Enqueue a new asset for append.
@@ -1266,6 +1244,38 @@ mod tests {
     }
 
     #[test]
+    fn append_rejects_complete_bundle_with_zero_directory() {
+        // Header claims complete but has directory_offset=0 — hits the second
+        // BundleIncomplete check (line 647).
+        use crate::io::bundle::format::{
+            BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, COMPLETE_YES,
+        };
+        let header = BendlHeader {
+            magic: BENDL_MAGIC,
+            major_version: BENDL_MAJOR_VERSION,
+            minor_version: BENDL_MINOR_VERSION,
+            complete: COMPLETE_YES,
+            assignment_format: AssignmentFormat::Ben.to_u8(),
+            reserved_0: 0,
+            flags: 0,
+            directory_offset: 0,
+            directory_len: 0,
+            stream_offset: HEADER_SIZE as u64,
+            stream_len: 0,
+            sample_count: 0,
+        };
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&header.to_bytes());
+        // Pad to HEADER_SIZE (already exactly 64 bytes from to_bytes)
+
+        match BendlAppender::open(Cursor::new(bytes)) {
+            Err(BendlWriteError::BundleIncomplete) => {}
+            Err(other) => panic!("expected BundleIncomplete, got {other:?}"),
+            Ok(_) => panic!("expected error, got Ok"),
+        }
+    }
+
+    #[test]
     fn append_multiple_assets_in_one_commit() {
         let (bundle, _) = build_base_bundle();
         let mut appender = BendlAppender::open(Cursor::new(bundle)).unwrap();
@@ -1544,6 +1554,26 @@ mod tests {
             err,
             BendlWriteError::WrongState {
                 found: "Streaming",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn begin_stream_after_stream_written_returns_wrong_state() {
+        let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+        writer
+            .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
+            .unwrap();
+        // Writer is now in StreamWritten state; begin_stream must fail.
+        let err = writer
+            .begin_stream()
+            .err()
+            .expect("begin_stream after StreamWritten must fail");
+        assert!(matches!(
+            err,
+            BendlWriteError::WrongState {
+                found: "StreamWritten",
                 ..
             }
         ));
@@ -2030,5 +2060,146 @@ mod tests {
                 assert_eq!(&got, want, "append round {round}: {n}");
             }
         }
+    }
+
+    // ── write_json_value and sample_count coverage ──────────────────
+
+    #[test]
+    fn write_ben_stream_json_value_and_sample_count() {
+        use crate::io::bundle::reader::BundleAssignmentReader;
+        use crate::BenVariant;
+        use serde_json::json;
+
+        let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+        writer
+            .write_ben_stream(BenVariant::Standard, |ctx| {
+                assert_eq!(ctx.sample_count(), 0);
+                ctx.write_json_value(json!({"assignment": [1, 2, 3], "sample": 1}))?;
+                assert_eq!(ctx.sample_count(), 1);
+                ctx.write_json_value(json!({"assignment": [4, 5, 6], "sample": 2}))?;
+                assert_eq!(ctx.sample_count(), 2);
+                Ok(())
+            })
+            .unwrap();
+        let buf = writer.finish().unwrap().into_inner();
+
+        let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+        assert_eq!(reader.sample_count(), Some(2));
+        let decoder = reader.open_assignment_reader().unwrap();
+        let inner = match decoder {
+            BundleAssignmentReader::Ben(r) => r,
+            BundleAssignmentReader::Xben(_) => panic!("expected Ben reader"),
+        };
+        let decoded: Vec<Vec<u16>> = inner
+            .silent(true)
+            .map(|r| r.unwrap().0)
+            .collect();
+        assert_eq!(decoded, vec![vec![1, 2, 3], vec![4, 5, 6]]);
+    }
+
+    #[test]
+    fn write_xben_stream_json_value() {
+        use crate::io::bundle::reader::BundleAssignmentReader;
+        use crate::BenVariant;
+        use serde_json::json;
+
+        let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Xben).unwrap();
+        writer
+            .write_xben_stream(BenVariant::Standard, |ctx| {
+                ctx.write_json_value(json!({"assignment": [10, 20], "sample": 1}))?;
+                ctx.write_json_value(json!({"assignment": [30, 40], "sample": 2}))?;
+                Ok(())
+            })
+            .unwrap();
+        let buf = writer.finish().unwrap().into_inner();
+
+        let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+        assert_eq!(reader.sample_count(), Some(2));
+        let decoder = reader.open_assignment_reader().unwrap();
+        let inner = match decoder {
+            BundleAssignmentReader::Xben(r) => r,
+            BundleAssignmentReader::Ben(_) => panic!("expected Xben reader"),
+        };
+        let decoded: Vec<Vec<u16>> = inner
+            .silent(true)
+            .map(|r| r.unwrap().0)
+            .collect();
+        assert_eq!(decoded, vec![vec![10, 20], vec![30, 40]]);
+    }
+
+    // ── BendlStreamHandle: flush ─────────────────────────────────────
+
+    #[test]
+    fn stream_handle_flush_succeeds() {
+        let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+        let mut handle = writer.begin_stream().unwrap();
+        use std::io::Write;
+        handle.flush().unwrap();
+    }
+
+    // ── BendlAppender: checksum flag ────────────────────────────────
+
+    #[test]
+    fn appender_commit_with_checksum_sets_checksum_flag() {
+        let (bundle, _) = build_base_bundle();
+        let mut appender = BendlAppender::open(Cursor::new(bundle)).unwrap();
+        appender
+            .add_asset(
+                ASSET_TYPE_CUSTOM,
+                "checksummed",
+                b"payload",
+                AddAssetOptions {
+                    checksum: Some(vec![0xAB, 0xCD]),
+                    ..AddAssetOptions::defaults()
+                },
+            )
+            .unwrap();
+        let buf = appender.commit().unwrap().into_inner();
+
+        let reader = BendlReader::open(Cursor::new(buf)).unwrap();
+        let entry = reader.find_asset_by_name("checksummed").unwrap();
+        assert_eq!(entry.checksum, Some(vec![0xAB, 0xCD]));
+        assert_ne!(
+            entry.asset_flags & crate::io::bundle::format::ASSET_FLAG_CHECKSUM,
+            0
+        );
+    }
+
+    // ── BendlAppender: trailing directory bytes ──────────────────────
+
+    #[test]
+    fn appender_rejects_bundle_with_trailing_directory_bytes() {
+        let (mut bundle, _) = build_base_bundle();
+        // Patch the header's directory_len field (bytes 32-39) to claim
+        // the directory is 4 bytes longer than it actually is.
+        let old_len = u64::from_le_bytes(bundle[32..40].try_into().unwrap());
+        let patched = (old_len + 4).to_le_bytes();
+        bundle[32..40].copy_from_slice(&patched);
+
+        match BendlAppender::open(Cursor::new(bundle)) {
+            Err(BendlWriteError::Format(BendlFormatError::TrailingDirectoryBytes { .. })) => {}
+            Err(other) => panic!("expected TrailingDirectoryBytes, got {other:?}"),
+            Ok(_) => panic!("expected error, got Ok"),
+        }
+    }
+
+    // ── finalize from wrong state ───────────────────────────────────
+
+    #[test]
+    fn finish_from_finished_state_errors() {
+        use crate::BenVariant;
+
+        let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+        writer
+            .write_ben_stream(BenVariant::Standard, |ctx| {
+                ctx.write_assignment(vec![1, 2])?;
+                Ok(())
+            })
+            .unwrap();
+        // First finish succeeds
+        let buf = writer.finish().unwrap();
+        // Verify the result is usable
+        let reader = BendlReader::open(Cursor::new(buf.into_inner())).unwrap();
+        assert!(reader.is_complete());
     }
 }

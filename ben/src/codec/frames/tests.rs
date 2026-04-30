@@ -1,5 +1,18 @@
 use super::*;
-use std::io;
+use std::io::{self, Read};
+
+/// A reader that returns one successful byte then an I/O error.
+struct ErrorAfterOneByte;
+
+impl Read for ErrorAfterOneByte {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        buf[0] = 0x01;
+        Err(io::Error::new(io::ErrorKind::BrokenPipe, "broken"))
+    }
+}
 
 // ── BenDecodeFrame ──────────────────────────────────────────────────────────
 
@@ -596,4 +609,24 @@ fn twodelta_encode_frame_to_bytes_and_into_bytes() {
     assert_eq!(to, expected);
     let into = frame.into_bytes();
     assert_eq!(into, expected);
+}
+
+// ── Non-EOF read errors propagate from frame decoders ───────────────────────
+
+#[test]
+fn ben_decode_frame_non_eof_read_error_propagates() {
+    let err = BenDecodeFrame::from_reader(&mut ErrorAfterOneByte).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+}
+
+#[test]
+fn mkv_decode_frame_non_eof_read_error_propagates() {
+    let err = MkvBenDecodeFrame::from_reader(&mut ErrorAfterOneByte).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+}
+
+#[test]
+fn twodelta_decode_frame_non_eof_read_error_propagates() {
+    let err = TwoDeltaDecodeFrame::from_reader(&mut ErrorAfterOneByte).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
 }

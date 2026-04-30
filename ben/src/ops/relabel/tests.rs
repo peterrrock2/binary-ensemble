@@ -9,6 +9,20 @@ use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Uniform};
 use std::collections::HashMap;
 use std::io;
+use std::io::Read;
+
+/// A reader that returns one byte successfully then an I/O error.
+struct ErrorAfterOneByte;
+
+impl Read for ErrorAfterOneByte {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        buf[0] = 0x01;
+        Err(io::Error::new(io::ErrorKind::BrokenPipe, "broken"))
+    }
+}
 
 fn shuffle_with_mapping<T>(vec: &mut Vec<T>) -> HashMap<usize, usize>
 where
@@ -955,4 +969,94 @@ fn test_canonicalize_assignment() {
     assert_eq!(canonicalize_assignment(&[5, 3, 5, 7]), vec![1, 2, 1, 3]);
     assert_eq!(canonicalize_assignment(&[]), Vec::<u16>::new());
     assert_eq!(canonicalize_assignment(&[42]), vec![1]);
+}
+
+// ── relabel_ben_lines_with_map: LengthMismatch ─────────────────────
+
+#[test]
+fn test_relabel_ben_length_mismatch() {
+    // Build a BEN stream with assignment length 3 ([1,2,3]),
+    // then supply a permutation of length 5 — triggers LengthMismatch.
+    let jsonl = r#"{"assignment":[1,2,3],"sample":1}
+"#;
+    let mut ben = Vec::new();
+    encode_jsonl_to_ben(jsonl.as_bytes(), &mut ben, BenVariant::Standard).unwrap();
+    let body = &ben[17..]; // strip banner
+
+    // Permutation of length 5 (identity, doesn't matter — length check comes first)
+    let map: HashMap<usize, usize> = (0..5).map(|i| (i, i)).collect();
+
+    let mut output = Vec::new();
+    let err =
+        relabel_ben_lines_with_map(body, &mut output, map, BenVariant::Standard).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    assert!(
+        err.to_string().contains("length") || err.to_string().contains("mismatch"),
+        "got: {}",
+        err
+    );
+}
+
+#[test]
+fn test_relabel_ben_lines_non_eof_read_error_propagates() {
+    // relabel_ben_lines_impl returns a non-EOF I/O error when the reader fails.
+    let mut output = Vec::new();
+    let err = relabel_ben_lines(ErrorAfterOneByte, &mut output, BenVariant::Standard).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+}
+
+#[test]
+fn test_relabel_ben_file_with_map_non_eof_read_error_propagates() {
+    // relabel_ben_file_impl returns a non-EOF I/O error when the reader fails.
+    let map: HashMap<usize, usize> = (0..4).map(|i| (i, i)).collect();
+    let mut output = Vec::new();
+    let err =
+        relabel_ben_lines_with_map(ErrorAfterOneByte, &mut output, map, BenVariant::Standard)
+            .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+}
+
+#[test]
+fn test_relabel_ben_file_twodelta_malformed_frame_error_propagates() {
+    // relabel_ben_file_via_decoder propagates decode errors for TwoDelta streams.
+    // Build a valid 2-sample TwoDelta BEN file, then corrupt the delta frame.
+    let mut ben: Vec<u8> = Vec::new();
+    {
+        let mut writer = crate::io::writer::AssignmentWriter::new(&mut ben, BenVariant::TwoDelta)
+            .unwrap();
+        writer.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
+        writer.write_assignment(vec![2u16, 1, 2, 1]).unwrap();
+    }
+    // Locate the delta frame start: banner(17) + max_val_bits(1) + max_len_bits(1) +
+    // n_bytes(4 BE) + payload(n_bytes) + count(2) = anchor_end.
+    let banner_len = 17usize;
+    let n_bytes = u32::from_be_bytes(ben[banner_len+2..banner_len+6].try_into().unwrap()) as usize;
+    let anchor_end = banner_len + 6 + n_bytes + 2;
+    // Set delta frame's max_len_bits (5th byte) to 0 to trigger InvalidData.
+    ben[anchor_end + 4] = 0;
+
+    let mut output = Vec::new();
+    let err = relabel_ben_file(ben.as_slice(), &mut output).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn test_relabel_ben_file_with_map_twodelta_malformed_frame_error_propagates() {
+    let mut ben: Vec<u8> = Vec::new();
+    {
+        let mut writer = crate::io::writer::AssignmentWriter::new(&mut ben, BenVariant::TwoDelta)
+            .unwrap();
+        writer.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
+        writer.write_assignment(vec![2u16, 1, 2, 1]).unwrap();
+    }
+    let banner_len = 17usize;
+    let n_bytes = u32::from_be_bytes(ben[banner_len+2..banner_len+6].try_into().unwrap()) as usize;
+    let anchor_end = banner_len + 6 + n_bytes + 2;
+    ben[anchor_end + 4] = 0;
+
+    let map: HashMap<usize, usize> = (0..4).map(|i| (i, i)).collect();
+    let mut output = Vec::new();
+    let err = relabel_ben_file_with_map(ben.as_slice(), &mut output, map)
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 }

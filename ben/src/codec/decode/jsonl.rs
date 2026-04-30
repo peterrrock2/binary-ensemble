@@ -95,28 +95,25 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
 
         let mut last_valid_assignment = 0;
 
-        match variant {
-            BenVariant::Standard => {
-                for i in (3..overflow.len()).step_by(4) {
-                    if overflow[i - 3..=i] == [0, 0, 0, 0] {
-                        last_valid_assignment = i + 1;
-                        line_count += 1;
-                        progress!("Decoding sample: {}\r", line_count);
-                    }
+        // TwoDelta was dispatched before this loop and returned early.
+        if variant == BenVariant::Standard {
+            for i in (3..overflow.len()).step_by(4) {
+                if overflow[i - 3..=i] == [0, 0, 0, 0] {
+                    last_valid_assignment = i + 1;
+                    line_count += 1;
+                    progress!("Decoding sample: {}\r", line_count);
                 }
             }
-            BenVariant::MkvChain => {
-                for i in (last_valid_assignment + 3..overflow.len().saturating_sub(2)).step_by(2) {
-                    if overflow[i - 3..=i] == [0, 0, 0, 0] {
-                        last_valid_assignment = i + 3;
-                        let lines = &overflow[i + 1..i + 3];
-                        let n_lines = u16::from_be_bytes([lines[0], lines[1]]);
-                        line_count += n_lines as usize;
-                        progress!("Decoding sample: {}\r", line_count);
-                    }
+        } else {
+            for i in (last_valid_assignment + 3..overflow.len().saturating_sub(2)).step_by(2) {
+                if overflow[i - 3..=i] == [0, 0, 0, 0] {
+                    last_valid_assignment = i + 3;
+                    let lines = &overflow[i + 1..i + 3];
+                    let n_lines = u16::from_be_bytes([lines[0], lines[1]]);
+                    line_count += n_lines as usize;
+                    progress!("Decoding sample: {}\r", line_count);
                 }
             }
-            BenVariant::TwoDelta => unreachable!("handled before ben32 decoding"),
         }
 
         if last_valid_assignment == 0 {

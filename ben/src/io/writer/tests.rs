@@ -1,5 +1,5 @@
 use crate::io::reader::XZAssignmentReader;
-use crate::io::writer::XZAssignmentWriter;
+use crate::io::writer::{AssignmentWriter, XZAssignmentWriter};
 use crate::BenVariant;
 use std::io::Cursor;
 use xz2::write::XzEncoder;
@@ -450,6 +450,21 @@ fn writer_translate_ben_twodelta_chunk_flush() {
     let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
     assert_eq!(results, assignments);
+}
+
+// ── TwoDelta encoding error propagation ─────────────────────────────
+
+#[test]
+fn xz_writer_twodelta_too_many_ids_propagates_on_write() {
+    // Writing a third assignment that changes 3 distinct IDs errors at line 228.
+    let anchor = vec![1u16, 1, 2, 2];
+    let invalid = vec![2u16, 3, 1, 3]; // 3 distinct changing ids
+    let mut xben = Vec::new();
+    let encoder = XzEncoder::new(&mut xben, 1);
+    let mut writer = XZAssignmentWriter::new(encoder, BenVariant::TwoDelta).unwrap();
+    writer.write_assignment(anchor).unwrap();
+    let err = writer.write_assignment(invalid).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
 }
 
 // ── MkvChain u16::MAX overflow ───────────────────────────────────────

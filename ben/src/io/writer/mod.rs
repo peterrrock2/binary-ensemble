@@ -1,5 +1,6 @@
 pub mod assignment_writer;
 pub(crate) mod frames;
+#[cfg(test)]
 pub(crate) mod tests;
 pub(crate) mod twodelta;
 pub(crate) mod utils;

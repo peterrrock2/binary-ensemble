@@ -20,6 +20,9 @@
 //! - `reben`: A tool for relabeling BEN files to improve compression ratios.
 //!
 
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!("binary-ensemble requires a 64-bit target");
+
 /// Command-line entrypoints shared by the thin binaries in `src/bin`.
 pub mod cli;
 /// Encoding, decoding, and format-to-format translation helpers.

@@ -333,6 +333,27 @@ mod tests {
     }
 
     #[test]
+    fn resolved_output_path_returns_none_when_both_paths_absent() {
+        // When neither output_file nor input_file is given, stdout mode: Ok(None).
+        let result = resolved_output_path(Mode::BenToPc, None, None, false).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn assignment_decode_ben_propagates_read_error() {
+        // assignment_decode_ben propagates I/O errors from the BEN reader.
+        struct AlwaysErrors;
+        impl io::Read for AlwaysErrors {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::Error::new(io::ErrorKind::BrokenPipe, "broken"))
+            }
+        }
+        let mut out = Vec::new();
+        let err = assignment_decode_ben(AlwaysErrors, &mut out).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+    }
+
+    #[test]
     fn assignment_encode_xben_offsets_values_and_writes_xben() {
         let input = b"[0,1,1]\n[2,2,0]\n";
 

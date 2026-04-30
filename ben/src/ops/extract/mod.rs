@@ -106,10 +106,11 @@ pub fn extract_assignment_xben<R: Read>(
     for frame in frame_iterator {
         let frame = frame.map_err(SampleError::new_io_error)?;
         if current_sample == sample_number || current_sample + frame.1 as usize > sample_number {
-            match decode_ben32_line(Cursor::new(&frame.0), variant) {
-                Ok((assignment, _)) => return Ok(assignment),
-                Err(e) => return Err(SampleError::new_io_error(e)),
-            };
+            // XZAssignmentFrameReader guarantees complete zero-sentinel
+            // frames, so decode_ben32_line always succeeds here.
+            let (assignment, _) = decode_ben32_line(Cursor::new(&frame.0), variant)
+                .expect("complete frame from XZAssignmentFrameReader");
+            return Ok(assignment);
         }
         current_sample += frame.1 as usize;
     }

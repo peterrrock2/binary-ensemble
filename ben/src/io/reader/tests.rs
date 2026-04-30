@@ -1,9 +1,10 @@
 use crate::codec::encode::encode_jsonl_to_xben;
 use crate::io::reader::errors::DecoderInitError;
+use crate::io::reader::subsample::{DecodeFrame, Selection, SubsampleFrameDecoder};
 use crate::io::reader::{XZAssignmentFrameReader, XZAssignmentReader};
 use crate::io::writer::XZAssignmentWriter;
 use crate::BenVariant;
-use std::io::{Cursor, Write};
+use std::io::{self, Cursor, Write};
 use xz2::write::XzEncoder;
 
 /// Build a minimal XBEN stream from JSONL input for testing.
@@ -1512,4 +1513,153 @@ fn xz_reader_standard_corrupt_frame_errors() {
     // An empty frame (no RLE pairs before terminator) yields an empty assignment
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].as_ref().unwrap().0, Vec::<u16>::new());
+}
+
+// ── SubsampleFrameDecoder: zero-count frame error ───────────────────
+
+#[test]
+fn subsample_decoder_zero_count_frame_errors() {
+    // A frame iterator that yields a frame with count=0 should produce an
+    // InvalidData error from SubsampleFrameDecoder::next().
+    let frame = DecodeFrame::XBen(
+        vec![0, 1, 0, 2, 0, 0, 0, 0], // valid ben32: [1,2] + zero terminator
+        BenVariant::Standard,
+    );
+    let items: Vec<io::Result<(DecodeFrame, u16)>> = vec![Ok((frame, 0))];
+    let mut decoder = SubsampleFrameDecoder::new(
+        items.into_iter(),
+        Selection::Range { start: 1, end: 10 },
+    );
+    let err = decoder.next().unwrap().unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("zero"), "got: {}", err);
+}
+
+// ── XZAssignmentFrameReader: TwoDelta into_frames ───────────────────
+
+#[test]
+fn xz_frame_reader_twodelta_into_frames() {
+    // Verify that into_frames() works for TwoDelta streams. The frame reader
+    // takes the TwoDelta short-circuit path (re-encoding decoded assignments
+    // back to ben32).
+    let jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
+{"assignment":[2,1,2,2],"sample":2}
+"#;
+    let xben = make_xben(jsonl, BenVariant::TwoDelta);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let frames: Vec<_> = reader.into_frames().map(|r| r.unwrap()).collect();
+    assert_eq!(frames.len(), 2);
+    // Each frame is (ben32_bytes, count); counts should be 1
+    assert_eq!(frames[0].1, 1);
+    assert_eq!(frames[1].1, 1);
+}
+
+// ── XZAssignmentReader: count_samples helper ────────────────────────
+
+#[test]
+fn xz_reader_count_samples() {
+    let jsonl = r#"{"assignment":[1,2,3],"sample":1}
+{"assignment":[4,5,6],"sample":2}
+{"assignment":[7,8,9],"sample":3}
+"#;
+    let xben = make_xben(jsonl, BenVariant::Standard);
+    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    assert_eq!(reader.count_samples().unwrap(), 3);
+}
+
+// ── XZAssignmentReader: write_all_jsonl ─────────────────────────────
+
+#[test]
+fn xz_reader_write_all_jsonl_standard_roundtrip() {
+    let jsonl_in = r#"{"assignment":[1,2,3],"sample":1}
+{"assignment":[4,5,6],"sample":2}
+"#;
+    let xben = make_xben(jsonl_in, BenVariant::Standard);
+    let mut reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let mut output = Vec::new();
+    reader.write_all_jsonl(&mut output).unwrap();
+    let text = String::from_utf8(output).unwrap();
+    assert_eq!(text.lines().count(), 2);
+    assert!(text.contains("\"assignment\":[1,2,3]"));
+    assert!(text.contains("\"assignment\":[4,5,6]"));
+}
+
+// ── AssignmentReader: TwoDelta error propagation in RawBenFrameIter ──────────
+
+#[test]
+fn raw_frame_iter_propagates_twodelta_decode_error() {
+    use crate::io::reader::AssignmentReader;
+    use crate::io::writer::AssignmentWriter;
+
+    // Build a minimal TwoDelta BEN file with two samples.
+    let mut ben: Vec<u8> = Vec::new();
+    {
+        let mut writer = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
+        writer.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
+        writer.write_assignment(vec![2u16, 1, 2, 1]).unwrap();
+    }
+
+    // Locate the TwoDelta delta frame start by parsing the anchor (MkvChain)
+    // frame header: banner(17) + max_val_bits(1) + max_len_bits(1) +
+    // n_bytes(4 BE) + payload(n_bytes) + count(2) = anchor_end.
+    let banner_len = 17usize;
+    let n_bytes = u32::from_be_bytes(ben[banner_len+2..banner_len+6].try_into().unwrap()) as usize;
+    let anchor_end = banner_len + 6 + n_bytes + 2;
+
+    // The TwoDelta delta frame: pair_a(2) + pair_b(2) + max_len_bits(1) + ...
+    // Set max_len_bits to 0, which triggers InvalidData during decoding.
+    ben[anchor_end + 4] = 0;
+
+    let reader = AssignmentReader::new(Cursor::new(ben)).unwrap();
+    let mut iter = reader.into_frames();
+    iter.next().unwrap().unwrap(); // anchor frame OK
+    let err = iter.next().unwrap().unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+// ── AssignmentReader: zero-count frame errors ────────────────────────────────
+
+/// Build a minimal MkvChain BEN stream whose first frame has count == 0.
+fn make_mkvchain_zero_count_frame() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"MKVCHAIN BEN FILE"); // 17-byte banner
+    bytes.push(1u8); // max_val_bit_count
+    bytes.push(1u8); // max_len_bit_count
+    bytes.extend_from_slice(&1u32.to_be_bytes()); // n_bytes = 1
+    bytes.push(0xFFu8); // 1 payload byte
+    bytes.extend_from_slice(&0u16.to_be_bytes()); // count = 0
+    bytes
+}
+
+#[test]
+fn assignment_reader_count_samples_rejects_zero_count_frame() {
+    use crate::io::reader::AssignmentReader;
+    let data = make_mkvchain_zero_count_frame();
+    let reader = AssignmentReader::new(Cursor::new(data)).unwrap();
+    let err = reader.count_samples().unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn assignment_reader_for_each_rejects_zero_count_frame() {
+    use crate::io::reader::AssignmentReader;
+    let data = make_mkvchain_zero_count_frame();
+    let mut reader = AssignmentReader::new(Cursor::new(data)).unwrap();
+    let err = reader
+        .for_each_assignment(|_, _| Ok(true))
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn raw_frame_iter_rejects_zero_count_mkv_frame() {
+    use crate::io::reader::AssignmentReader;
+    let data = make_mkvchain_zero_count_frame();
+    let reader = AssignmentReader::new(Cursor::new(data)).unwrap();
+    let err = reader
+        .into_frames()
+        .next()
+        .expect("should yield one item")
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 }

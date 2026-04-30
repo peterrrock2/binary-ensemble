@@ -40,24 +40,19 @@ impl<W: Write> XZAssignmentWriter<W> {
             None => return Ok(()),
         };
 
-        match self.variant {
-            BenVariant::Standard => {
-                let encoded = encode_ben32_assignments(&pending)?;
-                self.encoder.write_all(&encoded)?;
+        // Standard writes each assignment immediately; MkvChain and TwoDelta buffer.
+        if self.variant == BenVariant::MkvChain {
+            let encoded = encode_ben32_assignments(&pending)?;
+            self.encoder.write_all(&encoded)?;
+            self.encoder.write_all(&self.count.to_be_bytes())?;
+        } else {
+            // TwoDelta
+            for (idx, &val) in pending.iter().enumerate() {
+                self.previous_masks.entry(val).or_default().push(idx);
             }
-            BenVariant::MkvChain => {
-                let encoded = encode_ben32_assignments(&pending)?;
-                self.encoder.write_all(&encoded)?;
-                self.encoder.write_all(&self.count.to_be_bytes())?;
-            }
-            BenVariant::TwoDelta => {
-                for (idx, &val) in pending.iter().enumerate() {
-                    self.previous_masks.entry(val).or_default().push(idx);
-                }
-                let encoded = encode_xben_twodelta_full_frame(&pending);
-                self.encoder.write_all(&encoded)?;
-                self.encoder.write_all(&self.count.to_be_bytes())?;
-            }
+            let encoded = encode_xben_twodelta_full_frame(&pending);
+            self.encoder.write_all(&encoded)?;
+            self.encoder.write_all(&self.count.to_be_bytes())?;
         }
 
         self.previous_assignment = pending;
@@ -423,5 +418,48 @@ impl<W: Write> Drop for XZAssignmentWriter<W> {
     /// Flush any buffered XBEN state during drop.
     fn drop(&mut self) {
         let _ = self.finish();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{self, Read};
+    use xz2::write::XzEncoder;
+
+    #[test]
+    fn twodelta_repeat_buffered_frame_run_exceeds_u16_max_errors() {
+        let assign = vec![1u16; 65536];
+        let result = twodelta_repeat_buffered_frame(&assign, 1);
+        let err = result.err().expect("expected error");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        assert!(err.to_string().contains("u16::MAX"));
+    }
+
+    #[test]
+    fn translate_twodelta_non_eof_read_error_propagates() {
+        // write_ben_file in TwoDelta mode calls translate_ben_twodelta_to_xben.
+        // After reading the anchor frame it loops reading delta frames; a
+        // non-EOF error on pair_a (first u16 read in the loop) must propagate.
+        let mut xben = Vec::new();
+        let encoder = XzEncoder::new(&mut xben, 1);
+        let mut writer = XZAssignmentWriter::new(encoder, BenVariant::TwoDelta).unwrap();
+
+        // Banner (17 bytes) + minimal anchor frame:
+        //   max_val_bits=1, max_len_bits=1, n_bytes=0 (no payload), count=1
+        let mut input: Vec<u8> = b"TWODELTA BEN FILE".to_vec();
+        input.extend_from_slice(&[0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]);
+
+        // Append an error source after the anchor frame bytes.
+        struct ErrorAfterEof;
+        impl Read for ErrorAfterEof {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::Error::new(io::ErrorKind::BrokenPipe, "broken"))
+            }
+        }
+
+        let reader = std::io::BufReader::new(input.as_slice().chain(ErrorAfterEof));
+        let err = writer.write_ben_file(reader).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
     }
 }

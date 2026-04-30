@@ -1106,4 +1106,213 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "derived");
         fs::remove_file(path).unwrap();
     }
+
+    #[test]
+    fn resolve_variant_standard_arm() {
+        assert_eq!(
+            resolve_variant(Some(CliVariant::Standard), false),
+            BenVariant::Standard
+        );
+    }
+
+    #[test]
+    fn count_jsonl_lines_counts_nonempty_lines() {
+        let path = unique_path("count.jsonl");
+        fs::write(&path, b"{\"a\":1}\n\n{\"b\":2}\n").unwrap();
+        let count = count_jsonl_lines(&path).unwrap();
+        assert_eq!(count, 2);
+        fs::remove_file(path).unwrap();
+    }
+
+    /// Write a two-sample Standard BEN JSONL file to a temp path.
+    fn write_temp_jsonl(name: &str) -> std::path::PathBuf {
+        let path = unique_path(name);
+        fs::write(
+            &path,
+            b"{\"assignment\":[1,2,3],\"sample\":1}\n{\"assignment\":[2,1,3],\"sample\":2}\n",
+        )
+        .unwrap();
+        path
+    }
+
+    /// Write a minimal graph JSON file to a temp path.
+    fn write_temp_graph(name: &str) -> std::path::PathBuf {
+        let path = unique_path(name);
+        fs::write(&path, b"{\"nodes\":[0,1,2],\"adj\":[[1],[0,2],[1]]}").unwrap();
+        path
+    }
+
+    #[test]
+    fn append_graph_asset_adds_graph_to_bundle() {
+        use crate::io::bundle::{AddAssetOptions, BendlReader, BendlWriter};
+        use crate::io::bundle::format::{AssignmentFormat, ASSET_TYPE_GRAPH};
+        use std::io::Cursor;
+
+        // Build a minimal finalized .bendl in memory, write to temp file.
+        let mut buf: Vec<u8> = Vec::new();
+        {
+            let mut writer = BendlWriter::new(Cursor::new(&mut buf), AssignmentFormat::Ben).unwrap();
+            writer.write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1).unwrap();
+            writer.finish().unwrap();
+        }
+        let bendl_path = unique_path("append_graph.bendl");
+        fs::write(&bendl_path, &buf).unwrap();
+
+        let graph_path = write_temp_graph("append_graph.json");
+
+        append_graph_asset(bendl_path.to_str().unwrap(), &graph_path).unwrap();
+
+        // Verify the graph asset was added.
+        let file = fs::File::open(&bendl_path).unwrap();
+        let reader = BendlReader::open(std::io::BufReader::new(file)).unwrap();
+        assert!(reader.find_asset_by_name("graph.json").is_some());
+
+        fs::remove_file(&bendl_path).unwrap();
+        fs::remove_file(&graph_path).unwrap();
+    }
+
+    #[test]
+    fn run_encode_bundle_with_graph_creates_bendl() {
+        use crate::io::bundle::BendlReader;
+
+        let jsonl = write_temp_jsonl("enc_graph_input.jsonl");
+        let graph = write_temp_graph("enc_graph.json");
+        let out = unique_path("enc_graph_output.bendl");
+
+        run_encode_bundle_with_graph(&jsonl, out.to_str().unwrap(), BenVariant::Standard, &graph)
+            .unwrap();
+
+        let file = fs::File::open(&out).unwrap();
+        let reader = BendlReader::open(std::io::BufReader::new(file)).unwrap();
+        assert!(reader.is_complete());
+        assert!(reader.find_asset_by_name("graph.json").is_some());
+        assert_eq!(reader.sample_count(), Some(2));
+
+        fs::remove_file(&jsonl).unwrap();
+        fs::remove_file(&graph).unwrap();
+        fs::remove_file(&out).unwrap();
+    }
+
+    #[test]
+    fn run_xencode_bundle_with_graph_from_jsonl_creates_bendl() {
+        use crate::io::bundle::BendlReader;
+
+        let jsonl = write_temp_jsonl("xencode_graph_input.jsonl");
+        let graph = write_temp_graph("xencode_graph.json");
+        let out = unique_path("xencode_graph_output.bendl");
+
+        run_xencode_bundle_with_graph(
+            &jsonl,
+            out.to_str().unwrap(),
+            BenVariant::Standard,
+            false,
+            None,
+            None,
+            None,
+            &graph,
+        )
+        .unwrap();
+
+        let file = fs::File::open(&out).unwrap();
+        let reader = BendlReader::open(std::io::BufReader::new(file)).unwrap();
+        assert!(reader.is_complete());
+        assert!(reader.find_asset_by_name("graph.json").is_some());
+
+        fs::remove_file(&jsonl).unwrap();
+        fs::remove_file(&graph).unwrap();
+        fs::remove_file(&out).unwrap();
+    }
+
+    #[test]
+    fn run_xencode_bundle_with_graph_from_ben_creates_bendl() {
+        use crate::codec::encode::encode_jsonl_to_ben;
+        use crate::io::bundle::BendlReader;
+        use std::io::Cursor;
+
+        // First create a BEN file from JSONL.
+        let jsonl = b"{\"assignment\":[1,2],\"sample\":1}\n{\"assignment\":[2,1],\"sample\":2}\n";
+        let mut ben_bytes = Vec::new();
+        encode_jsonl_to_ben(Cursor::new(jsonl), &mut ben_bytes, BenVariant::Standard).unwrap();
+        let ben_path = unique_path("xencode_from_ben_input.ben");
+        fs::write(&ben_path, &ben_bytes).unwrap();
+
+        let graph = write_temp_graph("xencode_from_ben_graph.json");
+        let out = unique_path("xencode_from_ben_output.bendl");
+
+        run_xencode_bundle_with_graph(
+            &ben_path,
+            out.to_str().unwrap(),
+            BenVariant::Standard,
+            true,
+            None,
+            None,
+            None,
+            &graph,
+        )
+        .unwrap();
+
+        let file = fs::File::open(&out).unwrap();
+        let reader = BendlReader::open(std::io::BufReader::new(file)).unwrap();
+        assert!(reader.is_complete());
+        assert!(reader.find_asset_by_name("graph.json").is_some());
+
+        fs::remove_file(&ben_path).unwrap();
+        fs::remove_file(&graph).unwrap();
+        fs::remove_file(&out).unwrap();
+    }
+
+    #[test]
+    fn append_graph_asset_errors_on_missing_graph_file() {
+        use crate::io::bundle::{BendlWriter};
+        use crate::io::bundle::format::AssignmentFormat;
+        use std::io::Cursor;
+
+        let mut buf: Vec<u8> = Vec::new();
+        {
+            let mut writer = BendlWriter::new(Cursor::new(&mut buf), AssignmentFormat::Ben).unwrap();
+            writer.write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1).unwrap();
+            writer.finish().unwrap();
+        }
+        let bendl_path = unique_path("err_graph.bendl");
+        fs::write(&bendl_path, &buf).unwrap();
+
+        let nonexistent = unique_path("nonexistent.json");
+        let err = append_graph_asset(bendl_path.to_str().unwrap(), &nonexistent).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::Other);
+        assert!(err.to_string().contains("failed to read graph"));
+        let _ = fs::remove_file(&bendl_path);
+    }
+
+    #[test]
+    fn run_encode_bundle_with_graph_errors_on_missing_graph() {
+        let jsonl = write_temp_jsonl("err_enc_input.jsonl");
+        let out = unique_path("err_enc_output.bendl");
+        let nonexistent = unique_path("nonexistent.json");
+
+        let err = run_encode_bundle_with_graph(
+            &jsonl, out.to_str().unwrap(), BenVariant::Standard, &nonexistent,
+        )
+        .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::Other);
+        assert!(err.to_string().contains("failed to stat graph"));
+        let _ = fs::remove_file(&jsonl);
+        let _ = fs::remove_file(&out);
+    }
+
+    #[test]
+    fn run_xencode_bundle_with_graph_errors_on_missing_graph() {
+        let jsonl = write_temp_jsonl("err_xenc_input.jsonl");
+        let out = unique_path("err_xenc_output.bendl");
+        let nonexistent = unique_path("nonexistent.json");
+
+        let err = run_xencode_bundle_with_graph(
+            &jsonl, out.to_str().unwrap(), BenVariant::Standard, false,
+            None, None, None, &nonexistent,
+        )
+        .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::Other);
+        assert!(err.to_string().contains("failed to stat graph"));
+        let _ = fs::remove_file(&jsonl);
+        let _ = fs::remove_file(&out);
+    }
 }

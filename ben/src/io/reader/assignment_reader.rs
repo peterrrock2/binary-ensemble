@@ -300,15 +300,18 @@ impl<R: Read> Iterator for AssignmentFrameReader<R> {
     /// For TwoDelta streams, materializes each assignment and re-encodes it.
     fn next(&mut self) -> Option<Self::Item> {
         match self.inner.variant {
-            BenVariant::Standard | BenVariant::MkvChain => {
-                match self.inner.pop_frame_from_reader() {
-                    Some(Ok(StoredBenFrame::Standard(frame))) => Some(Ok((frame, 1))),
-                    Some(Ok(StoredBenFrame::MkvChain(frame))) => {
+            BenVariant::Standard => BenDecodeFrame::from_reader(&mut self.inner.reader)
+                .transpose()
+                .map(|r| r.map(|frame| (frame, 1))),
+            BenVariant::MkvChain => {
+                MkvBenDecodeFrame::from_reader(&mut self.inner.reader)
+                    .transpose()
+                    .map(|r| r.and_then(|frame| {
                         let count = frame.count;
                         if count == 0 {
-                            return Some(Err(zero_count_frame_error()));
+                            return Err(zero_count_frame_error());
                         }
-                        Some(Ok((
+                        Ok((
                             BenDecodeFrame {
                                 max_val_bit_count: frame.max_val_bit_count,
                                 max_len_bit_count: frame.max_len_bit_count,
@@ -316,16 +319,8 @@ impl<R: Read> Iterator for AssignmentFrameReader<R> {
                                 raw_bytes: frame.raw_bytes,
                             },
                             count,
-                        )))
-                    }
-                    Some(Ok(StoredBenFrame::TwoDelta(_))) => {
-                        Some(Err(io::Error::from(DecodeError::UnexpectedTwoDeltaFrame {
-                            variant: self.inner.variant,
-                        })))
-                    }
-                    Some(Err(err)) => Some(Err(err)),
-                    None => None,
-                }
+                        ))
+                    }))
             }
             BenVariant::TwoDelta => match self.inner.next() {
                 Some(Ok((assignment, count))) => {
