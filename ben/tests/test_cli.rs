@@ -906,7 +906,7 @@ fn reben_cli_json_and_ben_modes_work() {
     )
     .unwrap();
     let relabeled_text = String::from_utf8(relabeled_jsonl).unwrap();
-    assert!(relabeled_text.contains(r#""assignment":[9,4,9]"#));
+    assert!(relabeled_text.contains(r#""assignment":[9,9,4]"#));
 }
 
 #[test]
@@ -1079,7 +1079,7 @@ fn reben_cli_can_limit_ben_relabeling_to_first_n_items() {
     .unwrap();
     assert_eq!(
         String::from_utf8(relabeled_jsonl).unwrap(),
-        "{\"assignment\":[9,4,9],\"sample\":1}\n"
+        "{\"assignment\":[9,9,4],\"sample\":1}\n"
     );
 }
 
@@ -1171,7 +1171,7 @@ fn reben_cli_supports_twodelta_ben_mode() {
     .unwrap();
     assert!(String::from_utf8(relabeled_jsonl)
         .unwrap()
-        .contains(r#""assignment":[1,2,1]"#));
+        .contains(r#""assignment":[2,1,1]"#));
 }
 
 #[test]

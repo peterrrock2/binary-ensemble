@@ -55,9 +55,9 @@ fn get_sort_attr<'a>(node: &'a PetxNode, key: &str) -> Option<&'a Value> {
 
 /// Compare two optional attribute values for sorting.
 ///
-/// Values are compared numerically when both can be interpreted as `u64`.
-/// Otherwise they are compared as strings. `None` is treated as the string
-/// `"null"`.
+/// Values are compared numerically when both can be interpreted as `f64`
+/// (covers integers, floats, and numeric strings). Otherwise they are
+/// compared as strings. `None` is treated as the string `"null"`.
 ///
 /// # Arguments
 ///
@@ -68,17 +68,17 @@ fn get_sort_attr<'a>(node: &'a PetxNode, key: &str) -> Option<&'a Value> {
 ///
 /// An [`Ordering`] suitable for use in a sort comparator.
 fn compare_attr_values(a: Option<&Value>, b: Option<&Value>) -> Ordering {
-    let extract = |val: Option<&Value>| -> Result<u64, String> {
+    let extract = |val: Option<&Value>| -> Result<f64, String> {
         match val {
-            Some(Value::String(s)) => s.parse::<u64>().map_err(|_| s.clone()),
-            Some(Value::Number(n)) => n.as_u64().ok_or_else(|| n.to_string()),
+            Some(Value::String(s)) => s.parse::<f64>().map_err(|_| s.clone()),
+            Some(Value::Number(n)) => n.as_f64().ok_or_else(|| n.to_string()),
             Some(v) => Err(v.to_string()),
             None => Err("null".to_string()),
         }
     };
 
     match (extract(a), extract(b)) {
-        (Ok(a_num), Ok(b_num)) => a_num.cmp(&b_num),
+        (Ok(a_num), Ok(b_num)) => a_num.partial_cmp(&b_num).unwrap_or(Ordering::Equal),
         (Err(a_str), Err(b_str)) => a_str.cmp(&b_str),
         (Err(a_str), Ok(b_num)) => a_str.cmp(&b_num.to_string()),
         (Ok(a_num), Err(b_str)) => a_num.to_string().cmp(&b_str),

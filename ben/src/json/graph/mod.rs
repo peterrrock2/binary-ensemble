@@ -47,7 +47,6 @@ pub fn sort_json_file_by_key<R: Read, W: Write>(
 ) -> Result<HashMap<usize, usize>> {
     tracing::trace!("Loading JSON file...");
     let nx_graph: NxGraphAdjFormat = serde_json::from_reader(reader)?;
-    let original_ids = extract_usize_ids(&nx_graph)?;
 
     tracing::trace!("Sorting JSON file by key: {}", key);
     let (result, order) = if nx_graph.directed {
@@ -63,7 +62,7 @@ pub fn sort_json_file_by_key<R: Read, W: Write>(
     };
 
     write_nx_graph(writer, &result)?;
-    Ok(build_id_mapping(&original_ids, &order))
+    Ok(build_id_mapping(&order))
 }
 
 /// Reorder a JSON-formatted NetworkX graph file using a topology-based method.
@@ -88,7 +87,6 @@ pub fn sort_json_file_by_ordering<R: Read, W: Write>(
 ) -> Result<HashMap<usize, usize>> {
     tracing::trace!("Loading JSON file...");
     let nx_graph: NxGraphAdjFormat = serde_json::from_reader(reader)?;
-    let original_ids = extract_usize_ids(&nx_graph)?;
 
     tracing::trace!("Sorting JSON file by ordering method: {:?}", method);
     let (result, order) = if nx_graph.directed {
@@ -104,7 +102,7 @@ pub fn sort_json_file_by_ordering<R: Read, W: Write>(
     };
 
     write_nx_graph(writer, &result)?;
-    Ok(build_id_mapping(&original_ids, &order))
+    Ok(build_id_mapping(&order))
 }
 
 /// Dispatch to the appropriate ordering algorithm.
@@ -128,50 +126,20 @@ fn run_ordering_method<Ty: petgraph::EdgeType>(
     }
 }
 
-/// Extract the integer node ids from an [`NxGraphAdjFormat`] in order.
+/// Build a mapping from original node positions to new positions after reordering.
 ///
 /// # Arguments
 ///
-/// * `nx_graph` - The parsed NetworkX graph whose node ids are extracted.
-///
-/// # Returns
-///
-/// A vector of `usize` ids in the same order as `nx_graph.nodes`.
-///
-/// # Errors
-///
-/// Returns an error if any node id is not a non-negative integer.
-fn extract_usize_ids(nx_graph: &NxGraphAdjFormat) -> io::Result<Vec<usize>> {
-    nx_graph
-        .nodes
-        .iter()
-        .map(|n| {
-            n.id.as_u64().map(|v| v as usize).ok_or_else(|| {
-                Error::new(
-                    ErrorKind::InvalidData,
-                    format!("Node id is not an unsigned integer: {}", n.id),
-                )
-            })
-        })
-        .collect()
-}
-
-/// Build a mapping from original node ids to new positional ids.
-///
-/// # Arguments
-///
-/// * `original_ids` - The node ids before reordering, indexed by the old
-///   node position.
 /// * `order` - The permutation that was applied: `order[new_index]` is the
 ///   old `NodeIndex`.
 ///
 /// # Returns
 ///
-/// A map where `mapping[original_id] == new_positional_id`.
-fn build_id_mapping(original_ids: &[usize], order: &[NodeIndex]) -> HashMap<usize, usize> {
+/// A map where `mapping[old_position] == new_position`.
+fn build_id_mapping(order: &[NodeIndex]) -> HashMap<usize, usize> {
     let mut mapping = HashMap::with_capacity(order.len());
     for (new_idx, &old_node_idx) in order.iter().enumerate() {
-        mapping.insert(original_ids[old_node_idx.index()], new_idx);
+        mapping.insert(old_node_idx.index(), new_idx);
     }
     mapping
 }

@@ -324,57 +324,6 @@ fn test_sort_json_file_by_multi_level_cluster() {
     assert_eq!(output_json["nodes"].as_array().unwrap().len(), 4);
 }
 
-#[test]
-fn test_extract_usize_ids_rejects_non_integer_node_id() {
-    let input = r#"{
-        "nodes": [
-            {"id": 0},
-            {"id": "not-a-number"},
-            {"id": 2}
-        ],
-        "adjacency": [
-            [{"id": 2}],
-            [{"id": 0}],
-            [{"id": 0}]
-        ]
-    }"#;
-    let mut output = Vec::new();
-    let err = sort_json_file_by_key(input.as_bytes(), &mut output, "id").unwrap_err();
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
-    assert!(err.to_string().contains("not an unsigned integer"));
-}
-
-#[test]
-fn test_extract_usize_ids_rejects_negative_node_id() {
-    let input = r#"{
-        "nodes": [
-            {"id": -1},
-            {"id": 1}
-        ],
-        "adjacency": [
-            [{"id": 1}],
-            [{"id": -1}]
-        ]
-    }"#;
-    let mut output = Vec::new();
-    let err = sort_json_file_by_key(input.as_bytes(), &mut output, "id").unwrap_err();
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
-}
-
-#[test]
-fn test_extract_usize_ids_rejects_float_node_id() {
-    let input = r#"{
-        "nodes": [
-            {"id": 1.5}
-        ],
-        "adjacency": [
-            []
-        ]
-    }"#;
-    let mut output = Vec::new();
-    let err = sort_json_file_by_key(input.as_bytes(), &mut output, "id").unwrap_err();
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
-}
 
 #[test]
 fn test_sort_by_ordering_directed_rcm() {
@@ -468,9 +417,10 @@ fn test_sort_json_file_by_key_id() {
     assert_eq!(output_json["nodes"][0]["id"], 0);
     assert_eq!(output_json["nodes"][1]["id"], 1);
     assert_eq!(output_json["nodes"][2]["id"], 2);
-    assert_eq!(mapping[&0], 0);
-    assert_eq!(mapping[&1], 1);
-    assert_eq!(mapping[&2], 2);
+    // Map keys are original positions (0=id2, 1=id0, 2=id1), values are new positions.
+    assert_eq!(mapping[&0], 2); // pos 0 (id=2) → new pos 2
+    assert_eq!(mapping[&1], 0); // pos 1 (id=0) → new pos 0
+    assert_eq!(mapping[&2], 1); // pos 2 (id=1) → new pos 1
 }
 
 #[test]
@@ -560,4 +510,68 @@ fn test_mlc_with_isolated_node() {
     let mut positions: Vec<usize> = mapping.values().copied().collect();
     positions.sort();
     assert_eq!(positions, vec![0, 1, 2, 3]);
+}
+
+#[test]
+fn test_sort_json_file_by_key_fips_string_ids() {
+    // Node IDs are FIPS codes stored as JSON strings ("360191010003" etc.).
+    // The mapping must use original positions (0-indexed) as keys, not the
+    // raw FIPS values, so that downstream BEN relabeling can index correctly.
+    let input = r#"{
+        "nodes": [
+            {"id": "360191010003", "rank": 30},
+            {"id": "360191010001", "rank": 10},
+            {"id": "360191010002", "rank": 20}
+        ],
+        "adjacency": [
+            [{"id": "360191010001"}],
+            [{"id": "360191010002"}],
+            [{"id": "360191010003"}]
+        ]
+    }"#;
+
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_key(input.as_bytes(), &mut output, "rank").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    // After sorting by rank: pos1(rank=10) → 0, pos2(rank=20) → 1, pos0(rank=30) → 2.
+    assert_eq!(output_json["nodes"][0]["rank"], 10);
+    assert_eq!(output_json["nodes"][1]["rank"], 20);
+    assert_eq!(output_json["nodes"][2]["rank"], 30);
+    // Map keys are original positions (not FIPS codes).
+    assert_eq!(mapping[&0], 2); // pos 0 (rank=30) → new pos 2
+    assert_eq!(mapping[&1], 0); // pos 1 (rank=10) → new pos 0
+    assert_eq!(mapping[&2], 1); // pos 2 (rank=20) → new pos 1
+    // All new positions 0..N-1 are valid BEN array indices.
+    let mut new_positions: Vec<usize> = mapping.values().copied().collect();
+    new_positions.sort();
+    assert_eq!(new_positions, vec![0, 1, 2]);
+}
+
+#[test]
+fn test_sort_json_file_by_key_float_sort_values() {
+    // Sort key values are JSON floats; they should sort numerically, not as strings
+    // (e.g. 1.5 < 10.0, not "1.5" < "10.0" would also hold, but 2.5 < 10.0 would break
+    // lexicographically as "10.0" < "2.5").
+    let input = r#"{
+        "nodes": [
+            {"id": 0, "score": 10.0},
+            {"id": 1, "score": 2.5},
+            {"id": 2, "score": 1.5}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 2}],
+            [{"id": 0}]
+        ]
+    }"#;
+
+    let mut output = Vec::new();
+    sort_json_file_by_key(input.as_bytes(), &mut output, "score").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    // Numeric order: 1.5 < 2.5 < 10.0 (lexicographic "10.0" < "2.5" would be wrong).
+    assert_eq!(output_json["nodes"][0]["score"], 1.5);
+    assert_eq!(output_json["nodes"][1]["score"], 2.5);
+    assert_eq!(output_json["nodes"][2]["score"], 10.0);
 }

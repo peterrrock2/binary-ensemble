@@ -129,23 +129,20 @@ where
 
     for (source_idx_orig, neighbors) in adjacency.into_iter().enumerate() {
         let source_idx = NodeIndex::new(source_idx_orig);
-        let source_node = graph.node_weight(source_idx).ok_or_else(|| {
-            NxPetgraphError::Other(format!(
-                "invalid adjacency: source index {} out of bounds for nodes list",
-                source_idx.index()
-            ))
-        })?;
+        // Adjacency length was validated against nodes length above.
+        let source_node = graph
+            .node_weight(source_idx)
+            .expect("adjacency length validated against nodes length");
 
-        let source_id = source_node.attrs.get("__networkx_id__").ok_or_else(|| {
-            NxPetgraphError::Other("missing __networkx_id__ on source node".to_string())
-        })?;
+        // __networkx_id__ is always inserted by nx_node_to_petx_node.
+        let source_id = source_node
+            .attrs
+            .get("__networkx_id__")
+            .expect("__networkx_id__ always set by nx_node_to_petx_node");
 
-        let source_key = serde_json::to_string(source_id).map_err(|e| {
-            NxPetgraphError::Other(format!(
-                "failed to serialize source node id to string: {}",
-                e
-            ))
-        })?;
+        // serde_json::Value is always serializable.
+        let source_key = serde_json::to_string(source_id)
+            .expect("serde_json::Value always serializes");
 
         for edge in neighbors {
             let target_id = &edge.id;
@@ -156,12 +153,9 @@ where
             if is_directed {
                 graph.add_edge(source_idx, *target_idx, edge);
             } else {
-                let target_key = serde_json::to_string(target_id).map_err(|e| {
-                    NxPetgraphError::Other(format!(
-                        "failed to serialize target node id to string: {}",
-                        e
-                    ))
-                })?;
+                // serde_json::Value is always serializable.
+                let target_key = serde_json::to_string(target_id)
+                    .expect("serde_json::Value always serializes");
 
                 let edge_key_str = edge
                     .key
