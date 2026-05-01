@@ -23,30 +23,10 @@ use std::io::{BufReader, Cursor, Write};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod common;
+use common::{expand_rle, jsonl_from_assignments};
+
 // ---------- Helpers ----------
-
-/// Expand an RLE sequence into a flat assignment Vec<u16>.
-fn expand_rle(rle: &[(u16, u16)], cap: usize) -> Vec<u16> {
-    let mut v = Vec::with_capacity(cap);
-    for &(val, len) in rle {
-        let take = (len as usize).min(cap.saturating_sub(v.len()));
-        v.extend(std::iter::repeat(val).take(take));
-        if v.len() >= cap {
-            break;
-        }
-    }
-    v
-}
-
-/// Generate a JSONL buffer from a sequence of assignment vectors.
-fn jsonl_from_assignments(assignments: &[Vec<u16>]) -> Vec<u8> {
-    let mut buf = Vec::new();
-    for (i, a) in assignments.iter().enumerate() {
-        let line = json!({ "assignment": a, "sample": i + 1 }).to_string();
-        writeln!(&mut buf, "{line}").unwrap();
-    }
-    buf
-}
 
 /// From a decoded `(assignment, count)` stream, reconstitute JSONL.
 fn jsonl_from_records(records: &[(Vec<u16>, u16)], start_at: usize) -> Vec<u8> {

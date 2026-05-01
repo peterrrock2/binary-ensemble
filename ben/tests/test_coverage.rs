@@ -32,20 +32,14 @@ use binary_ensemble::BenVariant;
 
 use serde_json::json;
 use std::collections::HashMap;
-use std::io::{self, BufReader, Cursor, Write};
+use std::io::{self, BufReader, Cursor};
+
+mod common;
+use common::jsonl_from_assignments;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────────────────────────────────────
-
-/// Build a minimal JSONL payload for the given list of assignment vectors.
-fn jsonl_from_assignments(assignments: &[Vec<u16>]) -> Vec<u8> {
-    let mut buf = Vec::new();
-    for (i, a) in assignments.iter().enumerate() {
-        writeln!(&mut buf, "{}", json!({"assignment": a, "sample": i + 1})).unwrap();
-    }
-    buf
-}
 
 /// Encode assignments as a Standard BEN byte vector (including the 17-byte banner).
 fn encode_standard_ben(assignments: &[Vec<u16>]) -> Vec<u8> {

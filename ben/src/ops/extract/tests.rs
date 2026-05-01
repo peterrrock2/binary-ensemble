@@ -187,3 +187,29 @@ fn test_sample_error_new_io_error() {
     assert!(matches!(sample_err, SampleError::IoError(_)));
     assert_eq!(sample_err.to_string(), "IO Error: file gone");
 }
+
+#[test]
+fn extract_assignment_ben_path_returns_assignment() {
+    use crate::test_utils::{jsonl_from_assignments, sample_ben_bytes, unique_path};
+
+    let ben_bytes = sample_ben_bytes(
+        &jsonl_from_assignments(&[vec![1, 2, 3], vec![3, 2, 1]]),
+        BenVariant::Standard,
+    );
+    let path = unique_path("extract-path.ben");
+    std::fs::write(&path, &ben_bytes).unwrap();
+
+    assert_eq!(extract_assignment_ben_path(&path, 1).unwrap(), vec![1, 2, 3]);
+    assert_eq!(extract_assignment_ben_path(&path, 2).unwrap(), vec![3, 2, 1]);
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn extract_assignment_ben_path_propagates_missing_file() {
+    use crate::test_utils::unique_path;
+
+    let missing = unique_path("nonexistent.ben");
+    let err = extract_assignment_ben_path(&missing, 1).unwrap_err();
+    assert!(matches!(err, SampleError::IoError(_)));
+}

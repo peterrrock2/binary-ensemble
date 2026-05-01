@@ -479,7 +479,7 @@ fn ben_cli_reports_expected_error_paths() {
         &["--mode", "x-encode", bogus_txt.to_str().unwrap()],
         temp.path(),
     );
-    assert_success(&xencode);
+    assert_failure(&xencode);
     assert!(String::from_utf8_lossy(&xencode.stderr)
         .contains("Unsupported file type(s) for xencode mode"));
 
@@ -488,7 +488,7 @@ fn ben_cli_reports_expected_error_paths() {
         &["--mode", "decode", bogus_jsonl.to_str().unwrap()],
         temp.path(),
     );
-    assert_success(&decode);
+    assert_failure(&decode);
     assert!(
         String::from_utf8_lossy(&decode.stderr).contains("Unsupported file type for decode mode")
     );
@@ -498,7 +498,7 @@ fn ben_cli_reports_expected_error_paths() {
         &["--mode", "read", bogus_jsonl.to_str().unwrap()],
         temp.path(),
     );
-    assert_success(&read);
+    assert_failure(&read);
     assert!(
         String::from_utf8_lossy(&read.stderr).contains("Sample number is required in read mode")
     );
@@ -508,12 +508,12 @@ fn ben_cli_reports_expected_error_paths() {
         &["--mode", "xz-decompress", bogus_xz.to_str().unwrap()],
         temp.path(),
     );
-    assert_success(&xz);
+    assert_failure(&xz);
     assert!(String::from_utf8_lossy(&xz.stderr)
         .contains("Unsupported file type for xz decompress mode"));
 
     let bad_xben = run_stdin_stdout("ben", &["--mode", "x-decode"], temp.path(), b"not-an-xben");
-    assert_success(&bad_xben);
+    assert_failure(&bad_xben);
     assert!(String::from_utf8_lossy(&bad_xben.stderr).contains("Error:"));
 
     let bad_decode_ben = run_stdin_stdout(
@@ -522,7 +522,7 @@ fn ben_cli_reports_expected_error_paths() {
         temp.path(),
         b"not-a-ben",
     );
-    assert_success(&bad_decode_ben);
+    assert_failure(&bad_decode_ben);
     assert!(String::from_utf8_lossy(&bad_decode_ben.stderr).contains("Error:"));
 
     let bad_decode_xben = run_stdin_stdout(
@@ -531,7 +531,7 @@ fn ben_cli_reports_expected_error_paths() {
         temp.path(),
         b"not-an-xben",
     );
-    assert_success(&bad_decode_xben);
+    assert_failure(&bad_decode_xben);
     assert!(String::from_utf8_lossy(&bad_decode_xben.stderr).contains("Error:"));
 }
 
@@ -712,8 +712,8 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
             b"n\n",
         ),
     ] {
-        assert_success(&output);
-        assert!(String::from_utf8_lossy(&output.stderr).contains("AlreadyExists"));
+        assert_failure(&output);
+        assert!(String::from_utf8_lossy(&output.stderr).contains("already"));
     }
 
     let invalid_ben_to_xben = run(
@@ -728,11 +728,11 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
         ],
         temp.path(),
     );
-    assert_success(&invalid_ben_to_xben);
+    assert_failure(&invalid_ben_to_xben);
     assert!(String::from_utf8_lossy(&invalid_ben_to_xben.stderr).contains("Error:"));
 
     let unsupported_decode = run_stdin_stdout("ben", &["--mode", "decode"], temp.path(), b"");
-    assert_success(&unsupported_decode);
+    assert_failure(&unsupported_decode);
     assert!(String::from_utf8_lossy(&unsupported_decode.stderr)
         .contains("Unsupported file type(s) for decode mode"));
 
@@ -748,7 +748,7 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
         ],
         temp.path(),
     );
-    assert_success(&read_too_large);
+    assert_failure(&read_too_large);
     assert!(String::from_utf8_lossy(&read_too_large.stderr).contains("Error:"));
 
     let invalid_decode_ben = run(
@@ -763,7 +763,7 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
         ],
         temp.path(),
     );
-    assert_success(&invalid_decode_ben);
+    assert_failure(&invalid_decode_ben);
     assert!(String::from_utf8_lossy(&invalid_decode_ben.stderr).contains("Error:"));
 
     let invalid_decode_xben = run(
@@ -778,7 +778,7 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
         ],
         temp.path(),
     );
-    assert_success(&invalid_decode_xben);
+    assert_failure(&invalid_decode_xben);
     assert!(String::from_utf8_lossy(&invalid_decode_xben.stderr).contains("Error:"));
 
     let invalid_xdecode = run(
@@ -793,7 +793,7 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
         ],
         temp.path(),
     );
-    assert_success(&invalid_xdecode);
+    assert_failure(&invalid_xdecode);
     assert!(String::from_utf8_lossy(&invalid_xdecode.stderr).contains("Error:"));
 
     let invalid_xz_decompress = run(
@@ -808,7 +808,7 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
         ],
         temp.path(),
     );
-    assert_success(&invalid_xz_decompress);
+    assert_failure(&invalid_xz_decompress);
 }
 
 #[test]

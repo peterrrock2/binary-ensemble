@@ -26,23 +26,19 @@ use create::run_create;
 use extract::run_extract;
 use inspect::run_inspect;
 
-use crate::cli::common::set_verbose;
+use crate::cli::common::{set_verbose, CliError, CliResult};
 use clap::Parser;
 
 /// Parse CLI arguments and execute the selected subcommand.
-pub fn run() {
+pub fn run() -> CliResult {
     let args = Args::parse();
     set_verbose(args.verbose);
 
-    let result = match args.command {
+    match args.command {
         Command::Create(a) => run_create(a),
         Command::Inspect(a) => run_inspect(a),
         Command::Extract(a) => run_extract(a),
         Command::Append(a) => run_append(a),
-    };
-
-    if let Err(err) = result {
-        eprintln!("Error: {err}");
-        std::process::exit(1);
     }
+    .map_err(CliError::from)
 }

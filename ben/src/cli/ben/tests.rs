@@ -6,19 +6,11 @@ use super::bundle::{
 use super::paths::{
     count_jsonl_lines, decode_setup, encode_setup, open_derived_writer, open_reader, open_writer,
 };
+use crate::test_utils::unique_path;
 use crate::BenVariant;
 use clap::{CommandFactory, Parser};
 use std::fs;
 use std::io::{self, Write};
-use std::time::{SystemTime, UNIX_EPOCH};
-
-fn unique_path(name: &str) -> std::path::PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    std::env::temp_dir().join(format!("ben-cli-ben-{name}-{nonce}"))
-}
 
 #[test]
 fn clap_metadata_uses_package_version() {

@@ -1,4 +1,4 @@
-use crate::cli::common::{check_overwrite, set_verbose};
+use crate::cli::common::{check_overwrite, set_verbose, CliError, CliResult};
 use crate::io::reader::AssignmentReader;
 use crate::io::writer::{AssignmentWriter, XZAssignmentWriter};
 use crate::BenVariant;
@@ -7,7 +7,7 @@ use pipe::pipe;
 use serde_json::json;
 use std::{
     fs::File,
-    io::{self, BufRead, BufReader, BufWriter, Read, Result, Write},
+    io::{self, BufRead, BufReader, BufWriter, Read, Write},
 };
 use xz2::write::XzEncoder;
 
@@ -52,7 +52,7 @@ struct Args {
 }
 
 /// Parse CLI arguments and execute the selected `pben` conversion.
-pub fn run() -> Result<()> {
+pub fn run() -> CliResult {
     let args = Args::parse();
     set_verbose(args.verbose);
 
@@ -61,7 +61,7 @@ pub fn run() -> Result<()> {
             tracing::trace!("Converting BEN to PCOMPRESS");
 
             let ben_reader: Box<dyn Read + Send> = match args.input_file.as_ref() {
-                Some(file) => Box::new(BufReader::new(File::open(file).unwrap())),
+                Some(file) => Box::new(BufReader::new(File::open(file)?)),
                 None => Box::new(io::stdin()),
             };
 
@@ -71,7 +71,7 @@ pub fn run() -> Result<()> {
                 args.output_file.as_deref(),
                 args.overwrite,
             )? {
-                Some(file) => BufWriter::new(Box::new(File::create(file).unwrap())),
+                Some(file) => BufWriter::new(Box::new(File::create(file)?)),
                 None => BufWriter::new(Box::new(io::stdout())),
             };
 
@@ -92,7 +92,7 @@ pub fn run() -> Result<()> {
                 .input_file
                 .as_ref()
             {
-                Some(file) => BufReader::new(Box::new(BufReader::new(File::open(file).unwrap()))),
+                Some(file) => BufReader::new(Box::new(BufReader::new(File::open(file)?))),
                 None => BufReader::new(Box::new(io::stdin())),
             };
 
@@ -102,7 +102,7 @@ pub fn run() -> Result<()> {
                 args.output_file.as_deref(),
                 args.overwrite,
             )? {
-                Some(file) => BufWriter::new(Box::new(File::create(file).unwrap())),
+                Some(file) => BufWriter::new(Box::new(File::create(file)?)),
                 None => BufWriter::new(Box::new(io::stdout())),
             };
 
@@ -114,7 +114,7 @@ pub fn run() -> Result<()> {
             });
 
             let mut buf_pipe_reader = BufReader::new(pipe_reader);
-            assignment_encode_ben(&mut buf_pipe_reader, &mut ben_writer)
+            assignment_encode_ben(&mut buf_pipe_reader, &mut ben_writer).map_err(CliError::from)
         }
         Mode::PcToXben => {
             tracing::trace!("Converting PCOMPRESS to XBEN");
@@ -123,7 +123,7 @@ pub fn run() -> Result<()> {
                 .input_file
                 .as_ref()
             {
-                Some(file) => BufReader::new(Box::new(BufReader::new(File::open(file).unwrap()))),
+                Some(file) => BufReader::new(Box::new(BufReader::new(File::open(file)?))),
                 None => BufReader::new(Box::new(io::stdin())),
             };
 
@@ -133,7 +133,7 @@ pub fn run() -> Result<()> {
                 args.output_file.as_deref(),
                 args.overwrite,
             )? {
-                Some(file) => BufWriter::new(Box::new(File::create(file).unwrap())),
+                Some(file) => BufWriter::new(Box::new(File::create(file)?)),
                 None => BufWriter::new(Box::new(io::stdout())),
             };
 
@@ -145,7 +145,7 @@ pub fn run() -> Result<()> {
             });
 
             let mut buf_pipe_reader = BufReader::new(pipe_reader);
-            assignment_encode_xben(&mut buf_pipe_reader, &mut ben_writer)
+            assignment_encode_xben(&mut buf_pipe_reader, &mut ben_writer).map_err(CliError::from)
         }
     }
 }

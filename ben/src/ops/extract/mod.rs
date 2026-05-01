@@ -3,8 +3,10 @@
 use crate::codec::decode::decode_ben32_line;
 use crate::io::reader::{AssignmentReader, XZAssignmentReader};
 use serde_json::Error as SerdeError;
+use std::fs::File;
 use std::io::Cursor;
-use std::io::{self, Read};
+use std::io::{self, BufReader, Read};
+use std::path::Path;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -118,6 +120,24 @@ pub fn extract_assignment_xben<R: Read>(
     Err(SampleError::SampleNotFound {
         sample_number: current_sample,
     })
+}
+
+/// Extract a single 1-based sample from a BEN file at `input`.
+pub fn extract_assignment_ben_path(
+    input: &Path,
+    sample_number: usize,
+) -> Result<Vec<u16>, SampleError> {
+    let reader = BufReader::new(File::open(input).map_err(SampleError::new_io_error)?);
+    extract_assignment_ben(reader, sample_number)
+}
+
+/// Extract a single 1-based sample from an XBEN file at `input`.
+pub fn extract_assignment_xben_path(
+    input: &Path,
+    sample_number: usize,
+) -> Result<Vec<u16>, SampleError> {
+    let reader = BufReader::new(File::open(input).map_err(SampleError::new_io_error)?);
+    extract_assignment_xben(reader, sample_number)
 }
 
 #[cfg(test)]

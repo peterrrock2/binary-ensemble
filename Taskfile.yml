@@ -7,7 +7,7 @@ vars:
   LOCAL_BIN: '{{.HOME}}/.local/bin'
   LLVM_BIN: '{{.HOME}}/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/bin'
   COV_TARGET_DIR: '{{.ROOT_DIR}}/target/llvm-cov-target'
-  PYBEN_TEST_PATHS: 'tests/test_python_pipelines.py'
+  PYBEN_TEST_PATHS: 'tests/'
 
 tasks:
   default:
@@ -101,8 +101,8 @@ tasks:
     cmds:
       - uv run maturin build --release
 
-  test-rust:
-    desc: Run Rust tests for the workspace
+  test-rust-fast:
+    desc: Run the default Rust test suite (excludes #[ignore] tests)
     silent: true
     deps:
       - ensure-toolchain
@@ -110,6 +110,23 @@ tasks:
       PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
     cmds:
       - cargo test
+
+  test-rust-slow:
+    desc: Run only the `#[ignore]`-gated slow / stress Rust tests
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cargo test -- --ignored
+
+  test-rust:
+    desc: Run Rust tests for the workspace (fast suite plus #[ignore]-gated stress tests)
+    silent: true
+    cmds:
+      - task: test-rust-fast
+      - task: test-rust-slow
 
   test-python:
     desc: Run the pyben Python tests
@@ -137,7 +154,7 @@ tasks:
     env:
       PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
     cmds:
-      - cargo llvm-cov --package binary-ensemble --summary-only --ignore-filename-regex '(^|/)(bin|cli)/'
+      - cargo llvm-cov --package binary-ensemble --summary-only --ignore-filename-regex '(^|/)bin/'
 
   coverage-pyben:
     desc: Run Python-driven Rust coverage for pyben
@@ -208,7 +225,7 @@ tasks:
         ben_report_file=/tmp/ben-coverage-report.txt;
         pyben_report_file=/tmp/pyben-coverage-report.txt;
 
-        cargo llvm-cov --color always --package binary-ensemble --summary-only --ignore-filename-regex '"'"'(^|/)(bin|cli)/'"'"' > "$ben_report_file";
+        cargo llvm-cov --color always --package binary-ensemble --summary-only --ignore-filename-regex '"'"'(^|/)bin/'"'"' > "$ben_report_file";
         ben_total="$(awk '"'"'$1=="TOTAL"{print $10}'"'"' "$ben_report_file")";
 
         cargo llvm-cov clean --workspace >/dev/null;

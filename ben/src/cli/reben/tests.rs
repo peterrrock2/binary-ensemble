@@ -5,28 +5,16 @@ use super::helpers::{
 };
 use super::json_mode::run_json_mode;
 use crate::codec::encode::encode_jsonl_to_ben;
+use crate::test_utils::{sample_ben_bytes, unique_path};
 use crate::BenVariant;
 use clap::{CommandFactory, Parser};
-use std::{
-    fs,
-    io::Cursor,
-    time::{SystemTime, UNIX_EPOCH},
-};
-
-fn unique_path(name: &str) -> std::path::PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    std::env::temp_dir().join(format!("reben-{name}-{nonce}"))
-}
+use std::{fs, io::Cursor};
 
 /// Write a minimal Standard BEN file to a temp path and return the path.
 fn write_temp_ben(name: &str) -> std::path::PathBuf {
     let path = unique_path(name);
     let jsonl = b"{\"assignment\":[1,2,3],\"sample\":1}\n{\"assignment\":[2,1,3],\"sample\":2}\n";
-    let mut ben = Vec::new();
-    encode_jsonl_to_ben(Cursor::new(jsonl), &mut ben, BenVariant::Standard).unwrap();
+    let ben = sample_ben_bytes(jsonl, BenVariant::Standard);
     fs::write(&path, &ben).unwrap();
     path
 }

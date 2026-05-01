@@ -7,27 +7,16 @@ use super::inspect::run_inspect;
 use crate::codec::encode::encode_jsonl_to_ben;
 use crate::io::bundle::format::AssignmentFormat;
 use crate::io::bundle::{BendlReader, BendlWriter};
+use crate::test_utils::{sample_bendl_bytes, unique_path};
 use clap::Parser;
 use std::io::{BufReader, Cursor};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn unique_path(name: &str) -> PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    std::env::temp_dir().join(format!("bendl-cli-{name}-{nonce}"))
-}
-
 /// Write a minimal finalized .bendl file and return its path.
 fn write_temp_bendl(name: &str, format: AssignmentFormat) -> PathBuf {
     let path = unique_path(name);
-    let stream = b"STANDARD BEN FILE\x00fake";
-    let mut buf: Vec<u8> = Vec::new();
-    let mut writer = BendlWriter::new(Cursor::new(&mut buf), format).unwrap();
-    writer.write_stream_bytes(stream, 1).unwrap();
-    writer.finish().unwrap();
+    let buf = sample_bendl_bytes(b"STANDARD BEN FILE\x00fake", format);
     std::fs::write(&path, &buf).unwrap();
     path
 }

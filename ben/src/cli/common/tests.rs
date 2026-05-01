@@ -1,19 +1,11 @@
 use super::*;
+use crate::test_utils::unique_path;
 use std::fs;
 use std::sync::{Mutex, OnceLock};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 fn env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
-}
-
-fn unique_path(name: &str) -> std::path::PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    std::env::temp_dir().join(format!("ben-cli-common-{name}-{nonce}"))
 }
 
 #[test]
@@ -54,4 +46,31 @@ fn check_overwrite_allows_existing_file_when_forced() {
     fs::write(&path, "hello").unwrap();
     check_overwrite(path.to_str().unwrap(), true).unwrap();
     fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn check_overwrite_pure_passes_when_file_missing() {
+    assert!(check_overwrite_pure(false, false, None));
+    assert!(check_overwrite_pure(false, true, None));
+}
+
+#[test]
+fn check_overwrite_pure_passes_when_overwrite_flag_set() {
+    assert!(check_overwrite_pure(true, true, None));
+}
+
+#[test]
+fn check_overwrite_pure_accepts_y_and_yes_responses() {
+    assert!(check_overwrite_pure(true, false, Some("y\n")));
+    assert!(check_overwrite_pure(true, false, Some("Y\n")));
+    assert!(check_overwrite_pure(true, false, Some("yes\n")));
+    assert!(check_overwrite_pure(true, false, Some("  YES  ")));
+}
+
+#[test]
+fn check_overwrite_pure_rejects_other_responses() {
+    assert!(!check_overwrite_pure(true, false, Some("n\n")));
+    assert!(!check_overwrite_pure(true, false, Some("\n")));
+    assert!(!check_overwrite_pure(true, false, Some("maybe\n")));
+    assert!(!check_overwrite_pure(true, false, None));
 }

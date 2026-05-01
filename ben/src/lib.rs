@@ -40,6 +40,9 @@ pub mod ops;
 /// Miscellaneous utilities that do not fit into the other modules.
 pub mod util;
 
+#[doc(hidden)]
+pub mod test_utils;
+
 /// Print an in-place progress update when trace logging is enabled.
 ///
 /// This is intentionally separate from normal structured logging because many

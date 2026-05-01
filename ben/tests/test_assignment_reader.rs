@@ -12,20 +12,14 @@ use binary_ensemble::io::writer::AssignmentWriter;
 use binary_ensemble::util::rle::rle_to_vec;
 use binary_ensemble::BenVariant;
 
-use serde_json::json;
-use std::io::{self, Cursor, Write};
+use std::io::{self, Cursor};
+
+mod common;
+use common::jsonl_from_assignments;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Shared helpers
 // ──────────────────────────────────────────────────────────────────────────────
-
-fn jsonl_from_assignments(assignments: &[Vec<u16>]) -> Vec<u8> {
-    let mut buf = Vec::new();
-    for (i, a) in assignments.iter().enumerate() {
-        writeln!(&mut buf, "{}", json!({"assignment": a, "sample": i + 1})).unwrap();
-    }
-    buf
-}
 
 fn encode_ben(assignments: &[Vec<u16>], variant: BenVariant) -> Vec<u8> {
     let jsonl = jsonl_from_assignments(assignments);
