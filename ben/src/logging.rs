@@ -1,5 +1,4 @@
 use std::sync::Once;
-use tracing::Level;
 use tracing_subscriber::EnvFilter;
 
 static INIT_LOGGER: Once = Once::new();
@@ -48,7 +47,5 @@ pub fn init_logging() {
 ///
 /// This function does not return a value.
 pub fn trace_progress(args: std::fmt::Arguments<'_>) {
-    if tracing::enabled!(Level::TRACE) {
-        eprint!("{args}");
-    }
+    tracing::trace!("{args}");
 }

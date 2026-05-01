@@ -376,9 +376,11 @@ fn run_extract(args: ExtractArgs) -> Result<(), String> {
             .assignment_stream_reader()
             .map_err(|e| format!("failed to open stream region: {e}"))?;
         io::copy(&mut stream, &mut out).map_err(|e| format!("failed to copy stream bytes: {e}"))?;
-    } else if let Some(name) = args.asset.as_deref() {
+    } else {
+        // asset is Some — validated by the early return above.
+        let name = args.asset.unwrap();
         let entry = reader
-            .find_asset_by_name(name)
+            .find_asset_by_name(&name)
             .cloned()
             .ok_or_else(|| format!("no asset named {name:?} in bundle"))?;
         let mut asset = reader
@@ -749,5 +751,184 @@ mod tests {
         .unwrap();
         let err = run_extract(args).unwrap_err();
         assert!(err.contains("either --stream or --asset"));
+    }
+
+    #[test]
+    fn run_create_errors_on_missing_metadata_file() {
+        let ben = {
+            let p = std::env::temp_dir().join(format!(
+                "bendl-err-meta-{}.ben",
+                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            ));
+            let jsonl = b"{\"assignment\":[1],\"sample\":1}\n";
+            let mut b = Vec::new();
+            encode_jsonl_to_ben(Cursor::new(jsonl), &mut b, crate::BenVariant::Standard).unwrap();
+            std::fs::write(&p, &b).unwrap();
+            p
+        };
+        let out = unique_path("err_meta.bendl");
+        let args = CreateArgs {
+            input: ben.clone(),
+            output: out.clone(),
+            graph: None,
+            metadata: Some(unique_path("nonexistent_meta.json")),
+            relabel_map: None,
+            assets: vec![],
+            overwrite: false,
+            graph_raw: false,
+        };
+        let err = run_create(args).unwrap_err();
+        assert!(err.contains("failed to read"));
+        let _ = std::fs::remove_file(&ben);
+        let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn run_create_errors_on_missing_relabel_map_file() {
+        let ben = {
+            let p = std::env::temp_dir().join(format!(
+                "bendl-err-relabel-{}.ben",
+                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            ));
+            let mut b = Vec::new();
+            encode_jsonl_to_ben(
+                Cursor::new(b"{\"assignment\":[1],\"sample\":1}\n"),
+                &mut b,
+                crate::BenVariant::Standard,
+            ).unwrap();
+            std::fs::write(&p, &b).unwrap();
+            p
+        };
+        let out = unique_path("err_relabel.bendl");
+        let args = CreateArgs {
+            input: ben.clone(),
+            output: out.clone(),
+            graph: None,
+            metadata: None,
+            relabel_map: Some(unique_path("nonexistent_relabel.json")),
+            assets: vec![],
+            overwrite: false,
+            graph_raw: false,
+        };
+        let err = run_create(args).unwrap_err();
+        assert!(err.contains("failed to read"));
+        let _ = std::fs::remove_file(&ben);
+        let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn run_create_errors_on_missing_custom_asset_file() {
+        let ben = {
+            let p = std::env::temp_dir().join(format!(
+                "bendl-err-custom-{}.ben",
+                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            ));
+            let mut b = Vec::new();
+            encode_jsonl_to_ben(
+                Cursor::new(b"{\"assignment\":[1],\"sample\":1}\n"),
+                &mut b,
+                crate::BenVariant::Standard,
+            ).unwrap();
+            std::fs::write(&p, &b).unwrap();
+            p
+        };
+        let out = unique_path("err_custom.bendl");
+        let nonexistent: PathBuf = unique_path("nonexistent.bin");
+        let asset_str = format!("myasset={}", nonexistent.display());
+        let args = CreateArgs {
+            input: ben.clone(),
+            output: out.clone(),
+            graph: None,
+            metadata: None,
+            relabel_map: None,
+            assets: vec![asset_str.parse().unwrap()],
+            overwrite: false,
+            graph_raw: false,
+        };
+        let err = run_create(args).unwrap_err();
+        assert!(err.contains("failed to read"));
+        let _ = std::fs::remove_file(&ben);
+        let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn run_extract_asset_by_name() {
+        use crate::io::bundle::AddAssetOptions;
+        use crate::io::bundle::format::ASSET_TYPE_CUSTOM;
+
+        // Build a bundle with a named asset then extract it.
+        let mut buf: Vec<u8> = Vec::new();
+        let mut writer = BendlWriter::new(Cursor::new(&mut buf), AssignmentFormat::Ben).unwrap();
+        writer
+            .add_asset(ASSET_TYPE_CUSTOM, "hello.txt", b"world", AddAssetOptions::defaults())
+            .unwrap();
+        writer.write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1).unwrap();
+        writer.finish().unwrap();
+        let bendl = unique_path("extract_asset.bendl");
+        std::fs::write(&bendl, &buf).unwrap();
+
+        let out = unique_path("extract_asset_out.txt");
+        let args = ExtractArgs::try_parse_from([
+            "extract",
+            "--asset", "hello.txt",
+            "--output", out.to_str().unwrap(),
+            bendl.to_str().unwrap(),
+        ])
+        .unwrap();
+        run_extract(args).unwrap();
+        assert_eq!(std::fs::read(&out).unwrap(), b"world");
+
+        let _ = std::fs::remove_file(&bendl);
+        let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn run_append_errors_on_missing_metadata_file() {
+        let bendl = write_temp_bendl("append_err_meta.bendl", AssignmentFormat::Ben);
+        let args = AppendArgs {
+            input: bendl.clone(),
+            graph: None,
+            metadata: Some(unique_path("nonexistent_meta.json")),
+            relabel_map: None,
+            assets: vec![],
+            graph_raw: false,
+        };
+        let err = run_append(args).unwrap_err();
+        assert!(err.contains("failed to read"));
+        let _ = std::fs::remove_file(&bendl);
+    }
+
+    #[test]
+    fn run_append_errors_on_missing_relabel_map_file() {
+        let bendl = write_temp_bendl("append_err_relabel.bendl", AssignmentFormat::Ben);
+        let args = AppendArgs {
+            input: bendl.clone(),
+            graph: None,
+            metadata: None,
+            relabel_map: Some(unique_path("nonexistent_relabel.json")),
+            assets: vec![],
+            graph_raw: false,
+        };
+        let err = run_append(args).unwrap_err();
+        assert!(err.contains("failed to read"));
+        let _ = std::fs::remove_file(&bendl);
+    }
+
+    #[test]
+    fn run_append_errors_on_missing_custom_asset_file() {
+        let bendl = write_temp_bendl("append_err_custom.bendl", AssignmentFormat::Ben);
+        let nonexistent = unique_path("nonexistent_custom.bin");
+        let asset_str = format!("myasset={}", nonexistent.display());
+        let args = AppendArgs {
+            input: bendl.clone(),
+            graph: None,
+            metadata: None,
+            relabel_map: None,
+            assets: vec![asset_str.parse().unwrap()],
+            graph_raw: false,
+        };
+        let err = run_append(args).unwrap_err();
+        assert!(err.contains("failed to read"));
+        let _ = std::fs::remove_file(&bendl);
     }
 }

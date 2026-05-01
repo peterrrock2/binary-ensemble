@@ -367,4 +367,35 @@ mod tests {
         assert!(rendered.contains(r#""assignment":[1,2,2]"#));
         assert!(rendered.contains(r#""assignment":[3,3,1]"#));
     }
+
+    #[test]
+    fn assignment_decode_ben_iterator_error_propagates() {
+        // Provides a valid BEN banner so AssignmentReader::new succeeds,
+        // then returns a non-EOF error on the next read so the iterator
+        // fires the Err(e) => return Err(e) arm (line 204).
+        use std::io::Read;
+        use crate::format::banners::STANDARD_BEN_BANNER;
+
+        struct BannerThenError {
+            banner: &'static [u8],
+            pos: usize,
+        }
+        impl Read for BannerThenError {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                if self.pos < self.banner.len() {
+                    let n = buf.len().min(self.banner.len() - self.pos);
+                    buf[..n].copy_from_slice(&self.banner[self.pos..self.pos + n]);
+                    self.pos += n;
+                    Ok(n)
+                } else {
+                    Err(io::Error::new(io::ErrorKind::BrokenPipe, "broken"))
+                }
+            }
+        }
+
+        let reader = BannerThenError { banner: STANDARD_BEN_BANNER, pos: 0 };
+        let mut out = Vec::new();
+        let err = assignment_decode_ben(reader, &mut out).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+    }
 }

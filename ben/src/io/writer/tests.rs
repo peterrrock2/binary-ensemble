@@ -1,5 +1,5 @@
 use crate::io::reader::XZAssignmentReader;
-use crate::io::writer::{AssignmentWriter, XZAssignmentWriter};
+use crate::io::writer::XZAssignmentWriter;
 use crate::BenVariant;
 use std::io::Cursor;
 use xz2::write::XzEncoder;

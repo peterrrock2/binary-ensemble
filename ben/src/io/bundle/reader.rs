@@ -700,14 +700,10 @@ mod tests {
         // asset bytes must surface an error eventually (short read vs
         // declared length). xz would also trip on this, but this is the
         // raw-asset path.
-        match reader.asset_bytes(&entry) {
-            Ok(bytes) => {
-                // At the very least the returned bytes should not pretend
-                // to fill u64::MAX — saturate at what the file actually had.
-                assert!(bytes.len() < u64::MAX as usize);
-            }
-            Err(_) => {}
-        }
+        // Either returns an error or a slice shorter than u64::MAX.
+        reader.asset_bytes(&entry)
+              .map(|b| assert!(b.len() < u64::MAX as usize))
+              .ok();
     }
 
     #[test]

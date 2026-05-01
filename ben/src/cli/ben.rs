@@ -1144,8 +1144,8 @@ mod tests {
 
     #[test]
     fn append_graph_asset_adds_graph_to_bundle() {
-        use crate::io::bundle::{AddAssetOptions, BendlReader, BendlWriter};
-        use crate::io::bundle::format::{AssignmentFormat, ASSET_TYPE_GRAPH};
+        use crate::io::bundle::{BendlReader, BendlWriter};
+        use crate::io::bundle::format::AssignmentFormat;
         use std::io::Cursor;
 
         // Build a minimal finalized .bendl in memory, write to temp file.
@@ -1313,6 +1313,76 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::Other);
         assert!(err.to_string().contains("failed to stat graph"));
         let _ = fs::remove_file(&jsonl);
+        let _ = fs::remove_file(&out);
+    }
+
+    #[test]
+    fn append_graph_asset_errors_when_bundle_already_has_graph() {
+        use crate::io::bundle::{AddAssetOptions, BendlWriter};
+        use crate::io::bundle::format::{AssignmentFormat, ASSET_TYPE_GRAPH};
+        use std::io::Cursor;
+
+        // Build a .bendl that already contains graph.json.
+        let mut buf: Vec<u8> = Vec::new();
+        {
+            let mut writer = BendlWriter::new(Cursor::new(&mut buf), AssignmentFormat::Ben).unwrap();
+            writer
+                .add_asset(ASSET_TYPE_GRAPH, "graph.json", b"{}", AddAssetOptions::defaults().json())
+                .unwrap();
+            writer.write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1).unwrap();
+            writer.finish().unwrap();
+        }
+        let bendl_path = unique_path("dup_graph.bendl");
+        fs::write(&bendl_path, &buf).unwrap();
+
+        // graph.json already exists — add_asset must fail with duplicate name.
+        let graph_path = write_temp_graph("dup_graph.json");
+        let err = append_graph_asset(bendl_path.to_str().unwrap(), &graph_path).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::Other);
+        assert!(err.to_string().contains("failed to add graph asset"));
+
+        let _ = fs::remove_file(&bendl_path);
+        let _ = fs::remove_file(&graph_path);
+    }
+
+    #[test]
+    fn run_xencode_bundle_with_graph_errors_on_invalid_jsonl() {
+        // from_ben=false path: encode_jsonl_to_xben fails on invalid JSONL.
+        let bad_jsonl = unique_path("bad.jsonl");
+        fs::write(&bad_jsonl, b"not valid json\n").unwrap();
+        let graph = write_temp_graph("xenc_bad_jsonl_graph.json");
+        let out = unique_path("xenc_bad_jsonl.bendl");
+
+        let err = run_xencode_bundle_with_graph(
+            &bad_jsonl, out.to_str().unwrap(), BenVariant::Standard, false,
+            None, None, None, &graph,
+        )
+        .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+
+        let _ = fs::remove_file(&bad_jsonl);
+        let _ = fs::remove_file(&graph);
+        let _ = fs::remove_file(&out);
+    }
+
+    #[test]
+    fn run_xencode_bundle_with_graph_errors_on_invalid_ben() {
+        // from_ben=true path: encode_ben_to_xben fails on a file with no BEN banner.
+        let bad_ben = unique_path("bad.ben");
+        fs::write(&bad_ben, b"this is not a ben file").unwrap();
+        let graph = write_temp_graph("xenc_bad_ben_graph.json");
+        let out = unique_path("xenc_bad_ben.bendl");
+
+        let err = run_xencode_bundle_with_graph(
+            &bad_ben, out.to_str().unwrap(), BenVariant::Standard, true,
+            None, None, None, &graph,
+        )
+        .unwrap_err();
+        // encode_ben_to_xben fails when it can't read a valid banner.
+        assert!(err.kind() != io::ErrorKind::NotFound);
+
+        let _ = fs::remove_file(&bad_ben);
+        let _ = fs::remove_file(&graph);
         let _ = fs::remove_file(&out);
     }
 }
