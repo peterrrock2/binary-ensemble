@@ -6,5 +6,6 @@ dist/
 __pycache__
 *.pyc
 *.so
+*.profraw
 
 docs/_build
