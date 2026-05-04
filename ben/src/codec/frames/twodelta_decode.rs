@@ -47,7 +47,8 @@ impl BenDecode for TwoDeltaDecodeFrame {
 
         let count = reader.read_u16::<BigEndian>()?;
 
-        let encode_frame = TwoDeltaEncodeFrame::from_parts((pair_a, pair_b), max_len_bits, payload);
+        let encode_frame =
+            TwoDeltaEncodeFrame::from_parts((pair_a, pair_b), max_len_bits, payload, count);
 
         Ok(Some(TwoDeltaDecodeFrame {
             pair: encode_frame.pair,

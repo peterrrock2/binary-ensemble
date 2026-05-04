@@ -540,9 +540,34 @@ fn twodelta_from_run_lengths_then_from_parts_roundtrip() {
         encoded.pair,
         encoded.max_len_bit_count,
         encoded.payload().to_vec(),
+        encoded.count,
     );
     assert_eq!(reconstructed.run_length_vector, run_lengths);
     assert_eq!(reconstructed.pair, (10, 20));
+    assert_eq!(reconstructed.count, encoded.count);
+    assert_eq!(reconstructed.raw_bytes, encoded.raw_bytes);
+}
+
+#[test]
+fn twodelta_from_parts_preserves_nontrivial_count() {
+    use crate::codec::frames::twodelta_encode::TwoDeltaEncodeFrame;
+    // Regression: from_parts previously hardcoded count = 1 in raw_bytes,
+    // so reconstructed frames silently emitted the wrong trailing count
+    // bytes. Verify count > 1 now round-trips through from_parts.
+    let run_lengths = vec![5u16, 3, 7, 1, 2];
+    let encoded = TwoDeltaEncodeFrame::from_run_lengths((10, 20), run_lengths.clone(), Some(42));
+
+    let reconstructed = TwoDeltaEncodeFrame::from_parts(
+        encoded.pair,
+        encoded.max_len_bit_count,
+        encoded.payload().to_vec(),
+        42,
+    );
+
+    assert_eq!(reconstructed.count, 42);
+    let trailing = &reconstructed.raw_bytes[reconstructed.raw_bytes.len() - 2..];
+    assert_eq!(trailing, &42u16.to_be_bytes());
+    assert_eq!(reconstructed.raw_bytes, encoded.raw_bytes);
 }
 
 #[test]

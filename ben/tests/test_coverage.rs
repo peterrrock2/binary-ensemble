@@ -1590,11 +1590,13 @@ fn twodelta_frame_from_parts_round_trip() {
         pair,
         original.max_len_bit_count,
         original.payload().to_vec(),
+        original.count,
     );
     assert_eq!(original.as_slice(), reconstructed.as_slice());
     assert_eq!(original.pair, reconstructed.pair);
     assert_eq!(original.max_len_bit_count, reconstructed.max_len_bit_count);
     assert_eq!(original.n_bytes, reconstructed.n_bytes);
+    assert_eq!(original.count, reconstructed.count);
 }
 
 #[test]

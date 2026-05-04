@@ -320,8 +320,12 @@ impl<W: Write> XZAssignmentWriter<W> {
             let count = reader.read_u16::<BigEndian>()?;
 
             // Unpack bitpacked run lengths.
-            let frame =
-                TwoDeltaEncodeFrame::from_parts((pair_a, pair_b), delta_max_len_bits, payload);
+            let frame = TwoDeltaEncodeFrame::from_parts(
+                (pair_a, pair_b),
+                delta_max_len_bits,
+                payload,
+                count,
+            );
             let run_lengths = frame.run_length_vector;
 
             self.chunk_buffer.push(BufferedDeltaFrame {

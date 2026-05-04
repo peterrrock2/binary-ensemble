@@ -15,8 +15,10 @@ pub struct TwoDeltaEncodeFrame {
     pub n_bytes: u32,
     // The run-length vector that was encoded into this frame, stored here for reference.
     pub run_length_vector: Vec<u16>,
-    // The full serialized TwoDelta frame bytes, including the header and payload.
+    // The full serialized TwoDelta frame bytes, including the header, payload, and count.
     pub raw_bytes: Vec<u8>,
+    // The number of times this frame is repeated. Mirrors the trailing u16 in `raw_bytes`.
+    pub count: u16,
 }
 
 impl TwoDeltaEncodeFrame {
@@ -115,6 +117,7 @@ impl TwoDeltaEncodeFrame {
             n_bytes,
             run_length_vector,
             raw_bytes,
+            count,
         }
     }
 
@@ -133,20 +136,27 @@ impl TwoDeltaEncodeFrame {
     /// * `max_len_bit_count` - The bit width of each packed run length, as read from the
     ///   frame header.
     /// * `payload` - The raw packed payload bytes, not including the 9-byte header.
+    /// * `count` - The repetition count for the frame, as read from the trailing `u16`
+    ///   in the wire format.
     ///
     /// # Returns
     ///
-    /// A `TwoDeltaEncodeFrame` with both `raw_bytes` (header + payload) and the decoded
-    /// `run_length_vector` populated.
-    pub fn from_parts(pair: (u16, u16), max_len_bit_count: u8, payload: Vec<u8>) -> Self {
+    /// A `TwoDeltaEncodeFrame` with `raw_bytes` (header + payload + count), the decoded
+    /// `run_length_vector`, and `count` populated.
+    pub fn from_parts(
+        pair: (u16, u16),
+        max_len_bit_count: u8,
+        payload: Vec<u8>,
+        count: u16,
+    ) -> Self {
         let n_bytes = payload.len() as u32;
-        let mut raw_bytes = Vec::with_capacity(9 + payload.len());
+        let mut raw_bytes = Vec::with_capacity(9 + payload.len() + 2);
         raw_bytes.extend_from_slice(&pair.0.to_be_bytes());
         raw_bytes.extend_from_slice(&pair.1.to_be_bytes());
         raw_bytes.push(max_len_bit_count);
         raw_bytes.extend_from_slice(&n_bytes.to_be_bytes());
         raw_bytes.extend_from_slice(&payload);
-        raw_bytes.extend_from_slice(&1u16.to_be_bytes());
+        raw_bytes.extend_from_slice(&count.to_be_bytes());
 
         let mut run_length_vector = Vec::new();
         let mut buffer: u32 = 0;
@@ -172,6 +182,7 @@ impl TwoDeltaEncodeFrame {
             n_bytes,
             run_length_vector,
             raw_bytes,
+            count,
         }
     }
 }
