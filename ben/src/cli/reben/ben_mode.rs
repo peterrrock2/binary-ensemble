@@ -44,7 +44,7 @@ pub(super) fn run_ben_mode(args: Args) -> Result<(), String> {
                         + format!("_{}.ben", ben_variant_name(variant)).as_str()
                 } else {
                     args.input_file.trim_end_matches(".jsonl.ben").to_owned()
-                        + "_canonicalized_assignments.jsonl.ben"
+                        + "_first_seen_relabeled.jsonl.ben"
                 }
             }
         };

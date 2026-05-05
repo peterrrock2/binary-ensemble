@@ -39,8 +39,8 @@ pub(super) enum Mode {
     Decode,
     /// Fully decode XBEN into JSONL.
     XDecode,
-    /// Read a single sample from a BEN file.
-    Read,
+    /// Look up a single sample from a BEN file (random-access decode).
+    Lookup,
     /// Compress an arbitrary stream with XZ.
     XzCompress,
     /// Decompress an `.xz` file.

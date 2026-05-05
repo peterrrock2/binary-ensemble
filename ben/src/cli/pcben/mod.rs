@@ -51,7 +51,7 @@ struct Args {
     verbose: bool,
 }
 
-/// Parse CLI arguments and execute the selected `pben` conversion.
+/// Parse CLI arguments and execute the selected `pcben` conversion.
 pub fn run() -> CliResult {
     let args = Args::parse();
     set_verbose(args.verbose);
@@ -150,7 +150,7 @@ pub fn run() -> CliResult {
     }
 }
 
-/// Resolve the output file path for a `pben` mode.
+/// Resolve the output file path for a `pcben` mode.
 fn resolved_output_path(
     mode: Mode,
     input_file: Option<&str>,
@@ -168,7 +168,7 @@ fn resolved_output_path(
     Ok(Some(path))
 }
 
-/// Derive the default output file name for a `pben` conversion mode.
+/// Derive the default output file name for a `pcben` conversion mode.
 fn derive_output_path(mode: Mode, input_file: &str) -> String {
     match mode {
         Mode::BenToPc => input_file

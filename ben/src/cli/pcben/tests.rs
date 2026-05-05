@@ -17,7 +17,7 @@ fn clap_metadata_uses_package_version() {
 #[test]
 fn parse_pc_to_xben_args() {
     let args = Args::try_parse_from([
-        "pben",
+        "pcben",
         "--mode",
         "pc-to-xben",
         "--input-file",

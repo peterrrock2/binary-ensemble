@@ -37,7 +37,7 @@ impl Drop for TempDir {
 fn bin_path(name: &str) -> &'static str {
     match name {
         "ben" => env!("CARGO_BIN_EXE_ben"),
-        "pben" => env!("CARGO_BIN_EXE_pben"),
+        "pcben" => env!("CARGO_BIN_EXE_pcben"),
         "reben" => env!("CARGO_BIN_EXE_reben"),
         "bendl" => env!("CARGO_BIN_EXE_bendl"),
         _ => panic!("unknown binary {name}"),
@@ -115,7 +115,7 @@ fn sample_graph() -> &'static str {
 
 #[test]
 fn all_clis_report_help_and_package_version() {
-    for bin in ["ben", "pben", "reben", "bendl"] {
+    for bin in ["ben", "pcben", "reben", "bendl"] {
         let help = run(bin, &["--help"], Path::new("."));
         assert_success(&help);
         let help_text = String::from_utf8_lossy(&help.stdout);
@@ -173,7 +173,7 @@ fn ben_cli_encode_decode_read_and_x_modes_roundtrip() {
         "ben",
         &[
             "--mode",
-            "read",
+            "lookup",
             ben_path.to_str().unwrap(),
             "--sample-number",
             "2",
@@ -495,12 +495,12 @@ fn ben_cli_reports_expected_error_paths() {
 
     let read = run(
         "ben",
-        &["--mode", "read", bogus_jsonl.to_str().unwrap()],
+        &["--mode", "lookup", bogus_jsonl.to_str().unwrap()],
         temp.path(),
     );
     assert_failure(&read);
     assert!(
-        String::from_utf8_lossy(&read.stderr).contains("Sample number is required in read mode")
+        String::from_utf8_lossy(&read.stderr).contains("Sample number is required in lookup mode")
     );
 
     let xz = run(
@@ -677,7 +677,7 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
             "ben",
             &[
                 "--mode",
-                "read",
+                "lookup",
                 ben_path.to_str().unwrap(),
                 "--sample-number",
                 "1",
@@ -740,7 +740,7 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
         "ben",
         &[
             "--mode",
-            "read",
+            "lookup",
             ben_path.to_str().unwrap(),
             "--sample-number",
             "99",
@@ -1499,7 +1499,7 @@ fn reben_cli_supports_multi_level_cluster_ordering() {
 
 #[test]
 fn pben_cli_converts_between_formats() {
-    let temp = TempDir::new("pben");
+    let temp = TempDir::new("pcben");
     let jsonl_path = temp.path().join("samples.jsonl");
     let ben_path = temp.path().join("samples.ben");
     let pc_path = temp.path().join("samples.pc");
@@ -1517,7 +1517,7 @@ fn pben_cli_converts_between_formats() {
     fs::write(&ben_path, ben_bytes).unwrap();
 
     let ben_to_pc = run(
-        "pben",
+        "pcben",
         &[
             "--mode",
             "ben-to-pc",
@@ -1532,7 +1532,7 @@ fn pben_cli_converts_between_formats() {
     assert!(pc_path.exists());
 
     let pc_to_ben = run(
-        "pben",
+        "pcben",
         &[
             "--mode",
             "pc-to-ben",
@@ -1546,7 +1546,7 @@ fn pben_cli_converts_between_formats() {
     assert_success(&pc_to_ben);
 
     let pc_to_xben = run(
-        "pben",
+        "pcben",
         &[
             "--mode",
             "pc-to-xben",

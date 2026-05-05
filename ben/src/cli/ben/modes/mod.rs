@@ -6,7 +6,7 @@
 
 pub(super) mod decode;
 pub(super) mod encode;
-pub(super) mod read;
+pub(super) mod lookup;
 pub(super) mod xdecode;
 pub(super) mod xencode;
 pub(super) mod xz_compress;

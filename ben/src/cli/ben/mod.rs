@@ -30,7 +30,7 @@ pub fn run() -> CliResult {
         Mode::XEncode => modes::xencode::run(args),
         Mode::Decode => modes::decode::run(args),
         Mode::XDecode => modes::xdecode::run(args),
-        Mode::Read => modes::read::run(args),
+        Mode::Lookup => modes::lookup::run(args),
         Mode::XzCompress => modes::xz_compress::run(args),
         Mode::XzDecompress => modes::xz_decompress::run(args),
     }

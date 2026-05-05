@@ -522,7 +522,7 @@ fn run_ben_mode_canonicalize_derives_output_name() {
         .unwrap()
         .trim_end_matches(".jsonl.ben")
         .to_owned()
-        + "_canonicalized_assignments.jsonl.ben";
+        + "_first_seen_relabeled.jsonl.ben";
     let _ = fs::remove_file(&derived);
     fs::remove_file(&input).unwrap();
     result.unwrap();

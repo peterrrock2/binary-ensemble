@@ -8,18 +8,18 @@ use crate::ops::extract::extract_assignment_ben;
 use std::fs::File;
 use std::io::{BufReader, Write};
 
-/// Execute the `read` sub-mode.
+/// Execute the `lookup` sub-mode.
 pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
-    tracing::trace!("Running in read mode");
+    tracing::trace!("Running in lookup mode");
 
     let in_file = args
         .input_file
-        .ok_or_else(|| CliError::other("Must provide input file for read mode."))?;
+        .ok_or_else(|| CliError::other("Must provide input file for lookup mode."))?;
     let reader = BufReader::new(File::open(&in_file)?);
 
     let sample_number = args
         .sample_number
-        .ok_or_else(|| CliError::other("Sample number is required in read mode"))?;
+        .ok_or_else(|| CliError::other("Sample number is required in lookup mode"))?;
 
     let mut writer = open_writer(args.output_file.as_deref(), args.print, false)?;
     let vec = extract_assignment_ben(reader, sample_number)
