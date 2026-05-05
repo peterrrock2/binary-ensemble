@@ -13,7 +13,7 @@ use std::io::{Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-#[pyclass(unsendable)]
+#[pyclass(name = "BenEncoder", unsendable)]
 pub struct PyBenEncoder {
     file: Option<SharedFileSlot>,
     encoder: Option<AssignmentWriter<SharedFileWriter>>,

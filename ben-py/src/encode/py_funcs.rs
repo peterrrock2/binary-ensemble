@@ -1,5 +1,9 @@
 use crate::common::{open_input, open_output, parse_variant, validate_input_output_paths};
-use binary_ensemble::codec::encode::{encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben};
+use binary_ensemble::codec::encode::{
+    encode_ben_to_xben as core_encode_ben_to_xben,
+    encode_jsonl_to_ben as core_encode_jsonl_to_ben,
+    encode_jsonl_to_xben as core_encode_jsonl_to_xben,
+};
 use pyo3::exceptions::PyIOError;
 use pyo3::prelude::*;
 use std::path::PathBuf;
@@ -9,7 +13,7 @@ use std::path::PathBuf;
 #[pyo3(
     text_signature = "(in_file, out_file, overwrite=false, n_threads=None, compression_level=None)"
 )]
-pub fn compress_ben_to_xben(
+pub fn encode_ben_to_xben(
     in_file: PathBuf,
     out_file: PathBuf,
     overwrite: bool,
@@ -20,7 +24,7 @@ pub fn compress_ben_to_xben(
     let reader = open_input(&in_file)?;
     let writer = open_output(&out_file, overwrite)?;
 
-    encode_ben_to_xben(reader, writer, n_threads, compression_level, None).map_err(|e| {
+    core_encode_ben_to_xben(reader, writer, n_threads, compression_level, None).map_err(|e| {
         PyIOError::new_err(format!(
             "Failed to convert BEN to XBEN from {} to {}: {e}",
             in_file.display(),
@@ -34,7 +38,7 @@ pub fn compress_ben_to_xben(
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false, variant="mkv_chain"))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=false, variant='mkv_chain')")]
-pub fn compress_jsonl_to_ben(
+pub fn encode_jsonl_to_ben(
     in_file: PathBuf,
     out_file: PathBuf,
     overwrite: bool,
@@ -45,7 +49,7 @@ pub fn compress_jsonl_to_ben(
     let reader = open_input(&in_file)?;
     let writer = open_output(&out_file, overwrite)?;
 
-    encode_jsonl_to_ben(reader, writer, ben_var).map_err(|e| {
+    core_encode_jsonl_to_ben(reader, writer, ben_var).map_err(|e| {
         PyIOError::new_err(format!(
             "Failed to convert JSONL to BEN from {} to {}: {e}",
             in_file.display(),
@@ -60,7 +64,7 @@ pub fn compress_jsonl_to_ben(
 #[pyo3(
     text_signature = "(in_file, out_file, overwrite=false, variant='mkv_chain', n_threads=None, compression_level=None)"
 )]
-pub fn compress_jsonl_to_xben(
+pub fn encode_jsonl_to_xben(
     in_file: PathBuf,
     out_file: PathBuf,
     overwrite: bool,
@@ -73,14 +77,13 @@ pub fn compress_jsonl_to_xben(
     let reader = open_input(&in_file)?;
     let writer = open_output(&out_file, overwrite)?;
 
-    encode_jsonl_to_xben(reader, writer, ben_var, n_threads, compression_level, None).map_err(
-        |e| {
+    core_encode_jsonl_to_xben(reader, writer, ben_var, n_threads, compression_level, None)
+        .map_err(|e| {
             PyIOError::new_err(format!(
                 "Failed to convert JSONL to XBEN from {} to {}: {e}",
                 in_file.display(),
                 out_file.display()
             ))
-        },
-    )?;
+        })?;
     Ok(())
 }

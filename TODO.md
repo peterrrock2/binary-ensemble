@@ -39,6 +39,6 @@
 
 - [ ] Add a compression mechanism on CutEdges similar to NBEC from Todd Proebsting
 
-- [ ] Maybe change around the MkvChain mode to canonicalize the assignments and then have a header
-  that keeps track of the relabeling.
+- [ ] Maybe change around the MkvChain mode to first-seen relabel the assignments and then have a
+  header that keeps track of the district relabeling.
 

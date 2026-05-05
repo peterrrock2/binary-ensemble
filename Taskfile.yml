@@ -68,36 +68,36 @@ tasks:
       - ensure-rust-{{OS}}
       - ensure-uv-{{OS}}
 
-  pyben-sync:
-    desc: Sync the pyben development environment
+  ben-py-sync:
+    desc: Sync the ben-py development environment
     silent: true
     deps:
       - ensure-toolchain
     env:
       PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
-    dir: pyben
+    dir: ben-py
     cmds:
       - uv sync --all-groups
 
-  pyben-develop:
-    desc: Build the editable pyben extension
+  ben-py-develop:
+    desc: Build the editable ben-py extension
     silent: true
     deps:
-      - pyben-sync
+      - ben-py-sync
     env:
       PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
-    dir: pyben
+    dir: ben-py
     cmds:
       - uv run maturin develop
 
   release:
-    desc: Build a release wheel for pyben
+    desc: Build a release wheel for ben-py
     silent: true
     deps:
-      - pyben-sync
+      - ben-py-sync
     env:
       PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
-    dir: pyben
+    dir: ben-py
     cmds:
       - uv run maturin build --release
 
@@ -129,13 +129,13 @@ tasks:
       - task: test-rust-slow
 
   test-python:
-    desc: Run the pyben Python tests
+    desc: Run the ben-py Python tests
     silent: true
     deps:
-      - pyben-develop
+      - ben-py-develop
     env:
       PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
-    dir: pyben
+    dir: ben-py
     cmds:
       - uv run pytest {{.CLI_ARGS | default .PYBEN_TEST_PATHS}}
 
@@ -156,8 +156,8 @@ tasks:
     cmds:
       - cargo llvm-cov --package binary-ensemble --summary-only --ignore-filename-regex '(^|/)bin/'
 
-  coverage-pyben:
-    desc: Run Python-driven Rust coverage for pyben
+  coverage-ben-py:
+    desc: Run Python-driven Rust coverage for ben-py
     silent: true
     deps:
       - ensure-toolchain
@@ -165,26 +165,26 @@ tasks:
       PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
     cmds:
       - cargo llvm-cov clean --workspace
-      - cargo llvm-cov -p pyben --no-report
+      - cargo llvm-cov -p ben-py --no-report
       - >-
         bash -lc 'eval "$(cargo llvm-cov show-env --sh)";
         export CARGO_TARGET_DIR="{{.COV_TARGET_DIR}}";
-        cd "{{.ROOT_DIR}}/pyben";
+        cd "{{.ROOT_DIR}}/ben-py";
         uv run maturin develop --target-dir "{{.COV_TARGET_DIR}}";
         uv run pytest {{.CLI_ARGS | default .PYBEN_TEST_PATHS}}'
       - >-
         {{.LLVM_BIN}}/llvm-profdata merge -sparse
         {{.ROOT_DIR}}/target/*.profraw
         {{.COV_TARGET_DIR}}/*.profraw
-        -o /tmp/pyben.profdata
+        -o /tmp/ben-py.profdata
       - >-
         {{.LLVM_BIN}}/llvm-cov report
         {{.COV_TARGET_DIR}}/debug/libpyben_core.so
-        -instr-profile=/tmp/pyben.profdata
+        -instr-profile=/tmp/ben-py.profdata
         --ignore-filename-regex='/.cargo/registry|/rustc/|^/mnt/.*/ben/src/'
 
-  coverage-pyben-html:
-    desc: Generate an HTML Rust coverage report for pyben at /tmp/pyben-coverage.html
+  coverage-ben-py-html:
+    desc: Generate an HTML Rust coverage report for ben-py at /tmp/ben-py-coverage.html
     silent: true
     deps:
       - ensure-toolchain
@@ -192,26 +192,26 @@ tasks:
       PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
     cmds:
       - cargo llvm-cov clean --workspace
-      - cargo llvm-cov -p pyben --no-report
+      - cargo llvm-cov -p ben-py --no-report
       - >-
         bash -lc 'eval "$(cargo llvm-cov show-env --sh)";
         export CARGO_TARGET_DIR="{{.COV_TARGET_DIR}}";
-        cd "{{.ROOT_DIR}}/pyben";
+        cd "{{.ROOT_DIR}}/ben-py";
         uv run maturin develop --target-dir "{{.COV_TARGET_DIR}}";
         uv run pytest {{.CLI_ARGS | default .PYBEN_TEST_PATHS}}'
       - >-
         {{.LLVM_BIN}}/llvm-profdata merge -sparse
         {{.ROOT_DIR}}/target/*.profraw
         {{.COV_TARGET_DIR}}/*.profraw
-        -o /tmp/pyben.profdata
+        -o /tmp/ben-py.profdata
       - >-
         bash -lc '{{.LLVM_BIN}}/llvm-cov show {{.COV_TARGET_DIR}}/debug/libpyben_core.so
-        -instr-profile=/tmp/pyben.profdata
+        -instr-profile=/tmp/ben-py.profdata
         --ignore-filename-regex='\"'\"'/.cargo/registry|/rustc/|^/mnt/.*/ben/src/'\"'\"'
-        --format=html > /tmp/pyben-coverage.html'
+        --format=html > /tmp/ben-py-coverage.html'
 
   coverage-summary:
-    desc: Run ben and pyben coverage and print both reports plus a combined summary table
+    desc: Run ben and ben-py coverage and print both reports plus a combined summary table
     silent: true
     deps:
       - ensure-toolchain
@@ -223,30 +223,30 @@ tasks:
       - >-
         bash -lc '
         ben_report_file=/tmp/ben-coverage-report.txt;
-        pyben_report_file=/tmp/pyben-coverage-report.txt;
+        ben_py_report_file=/tmp/ben-py-coverage-report.txt;
 
         cargo llvm-cov --color always --package binary-ensemble --summary-only --ignore-filename-regex '"'"'(^|/)bin/'"'"' > "$ben_report_file";
         ben_total="$(awk '"'"'$1=="TOTAL"{print $10}'"'"' "$ben_report_file")";
 
         cargo llvm-cov clean --workspace >/dev/null;
-        cargo llvm-cov -p pyben --no-report >/dev/null;
+        cargo llvm-cov -p ben-py --no-report >/dev/null;
         eval "$(cargo llvm-cov show-env --sh)";
         export CARGO_TARGET_DIR="{{.COV_TARGET_DIR}}";
-        cd "{{.ROOT_DIR}}/pyben";
+        cd "{{.ROOT_DIR}}/ben-py";
         uv run maturin develop --target-dir "{{.COV_TARGET_DIR}}" >/dev/null;
         uv run pytest {{.CLI_ARGS | default .PYBEN_TEST_PATHS}} >/dev/null;
         cd "{{.ROOT_DIR}}";
-        {{.LLVM_BIN}}/llvm-profdata merge -sparse target/*.profraw {{.COV_TARGET_DIR}}/*.profraw -o /tmp/pyben.profdata >/dev/null;
-        {{.LLVM_BIN}}/llvm-cov report {{.COV_TARGET_DIR}}/debug/libpyben_core.so -instr-profile=/tmp/pyben.profdata --ignore-filename-regex='"'"'/.cargo/registry|/rustc/|^/mnt/.*/ben/src/'"'"' > "$pyben_report_file";
-        pyben_total="$(awk '"'"'$1=="TOTAL"{print $10}'"'"' "$pyben_report_file")";
+        {{.LLVM_BIN}}/llvm-profdata merge -sparse target/*.profraw {{.COV_TARGET_DIR}}/*.profraw -o /tmp/ben-py.profdata >/dev/null;
+        {{.LLVM_BIN}}/llvm-cov report {{.COV_TARGET_DIR}}/debug/libpyben_core.so -instr-profile=/tmp/ben-py.profdata --ignore-filename-regex='"'"'/.cargo/registry|/rustc/|^/mnt/.*/ben/src/'"'"' > "$ben_py_report_file";
+        ben_py_total="$(awk '"'"'$1=="TOTAL"{print $10}'"'"' "$ben_py_report_file")";
 
         printf "\n%s\n\n" "BEN COVERAGE";
         cat "$ben_report_file";
         printf "\n%s\n\n" "PYBEN COVERAGE";
-        cat "$pyben_report_file";
+        cat "$ben_py_report_file";
         printf "\n%-10s %-10s\n" "Target" "Lines";
         printf "%-10s %-10s\n" "ben" "${ben_total:-n/a}";
-        printf "%-10s %-10s\n" "pyben" "${pyben_total:-n/a}";
+        printf "%-10s %-10s\n" "ben-py" "${ben_py_total:-n/a}";
         '
 
   clean-linux: &clean-unix
@@ -255,9 +255,9 @@ tasks:
     silent: true
     cmds:
       - cargo clean
-      - rm -rf pyben/target pyben/dist pyben/pyben.egg-info pyben/src/pyben.c
-      - rm -rf pyben/pyben/*abi3.so pyben/pyben/pyben.*.pyd
-      - rm -rf pyben/.venv
+      - rm -rf ben-py/target ben-py/dist ben-py/binary_ensemble.egg-info ben-py/src/ben-py.c
+      - rm -rf ben-py/binary_ensemble/*abi3.so ben-py/binary_ensemble/*.pyd
+      - rm -rf ben-py/.venv
       - find . -type d -name "__pycache__" -exec rm -rf {} +
       - rm -rf docs/_build docs/user/example_data
 
@@ -269,10 +269,10 @@ tasks:
     silent: true
     cmds:
       - cargo clean
-      - cmd /c "if exist pyben\\target rmdir /s /q pyben\\target"
-      - cmd /c "if exist pyben\\dist rmdir /s /q pyben\\dist"
-      - cmd /c "if exist pyben\\pyben.egg-info rmdir /s /q pyben\\pyben.egg-info"
-      - cmd /c "if exist pyben\\.venv rmdir /s /q pyben\\.venv"
+      - cmd /c "if exist ben-py\\target rmdir /s /q ben-py\\target"
+      - cmd /c "if exist ben-py\\dist rmdir /s /q ben-py\\dist"
+      - cmd /c "if exist ben-py\\binary_ensemble.egg-info rmdir /s /q ben-py\\binary_ensemble.egg-info"
+      - cmd /c "if exist ben-py\\.venv rmdir /s /q ben-py\\.venv"
       - powershell -NoProfile -Command "Get-ChildItem -Path . -Directory -Filter __pycache__ -Recurse | Remove-Item -Recurse -Force"
       - cmd /c "if exist docs\\_build rmdir /s /q docs\\_build"
       - cmd /c "if exist docs\\user\\example_data rmdir /s /q docs\\user\\example_data"

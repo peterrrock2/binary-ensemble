@@ -165,7 +165,7 @@ run things through `reben` before compressing into an XBEN format. In our runnin
 then compress this file back down to an XBEN format using
 
 ```
-ben -m x-encode 100k_CO_chain_canonicalized_assignments.jsonl.ben
+ben -m x-encode 100k_CO_chain_first_seen_relabeled.jsonl.ben
 ```
 
 DON'T ACTUALLY DO THIS, IT WILL TAKE OVER AN HOUR!!!
@@ -194,12 +194,12 @@ In our example, the CO_small.json file has the GEOID20 key that we would like to
 the command
 
 ```
-reben -m ben -s CO_small.json -k GEOID20 100k_CO_chain_canonicalized_assignments.jsonl.ben
+reben -m ben -s CO_small.json -k GEOID20 100k_CO_chain_first_seen_relabeled.jsonl.ben
 ```
 
 This will produce the files
 
-- 100k_CO_chain_canonicalized_assignments_sorted_by_GEOID20.jsonl.ben (~550Mb)
+- 100k_CO_chain_first_seen_relabeled_sorted_by_GEOID20.jsonl.ben (~550Mb)
 - CO_small_sorted_by_GEOID20_map.json (a map file containing the new data)
 - CO_small_sorted_by_GEOID20.json (a dual-graph file with the nodes shifted around)
 
@@ -207,11 +207,11 @@ Notice, our BEN file has now shrunk from ~7Gb to around 0.5Gb, which is pretty g
 further compress this file using the `x-encode` mode of the `ben` CLI
 
 ```
-ben -m x-encode 100k_CO_chain_canonicalized_assignments_sorted_by_GEOID20.jsonl.ben
+ben -m x-encode 100k_CO_chain_first_seen_relabeled_sorted_by_GEOID20.jsonl.ben
 ```
 
 And this will produce the file
-`100k_CO_chain_canonicalized_assignments_sorted_by_GEOID20.jsonl.xben` which will only be ~6Mb! That
+`100k_CO_chain_first_seen_relabeled_sorted_by_GEOID20.jsonl.xben` which will only be ~6Mb! That
 is over a 1000x improvement over the original BEN file, and over a 4500x improvement on the JSONL
 file!
 

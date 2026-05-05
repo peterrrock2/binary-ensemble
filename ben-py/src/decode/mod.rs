@@ -6,4 +6,4 @@ mod py_funcs;
 mod types;
 
 pub use decoder::PyBenDecoder;
-pub use py_funcs::{decompress_ben_to_jsonl, decompress_xben_to_ben, decompress_xben_to_jsonl};
+pub use py_funcs::{decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl};

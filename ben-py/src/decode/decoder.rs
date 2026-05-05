@@ -16,7 +16,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 
-#[pyclass(module = "binary_ensemble", unsendable)]
+#[pyclass(module = "binary_ensemble", name = "BenDecoder", unsendable)]
 pub struct PyBenDecoder {
     path: PathBuf,
     mode: DecoderMode,

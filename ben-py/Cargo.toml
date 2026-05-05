@@ -1,5 +1,5 @@
 [package]
-name = "pyben"
+name = "ben-py"
 version.workspace = true
 edition = "2021"
 authors = ["Peter Rock <peter.r.rock2@gmail.com>"]

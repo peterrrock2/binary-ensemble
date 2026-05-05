@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
   "ben",
-  "pyben",
+  "ben-py",
 ]
 
 exclude = [
