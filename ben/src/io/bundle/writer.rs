@@ -34,9 +34,9 @@ use thiserror::Error;
 use xz2::write::XzEncoder;
 
 use super::format::{
-    canonical_name_for, default_compresses_by_type, encode_directory, read_directory,
+    standardized_name_for, default_compresses_by_type, encode_directory, read_directory,
     AssignmentFormat, BendlDirectoryEntry, BendlFormatError, BendlHeader, ASSET_FLAG_JSON,
-    ASSET_FLAG_XZ, COMPLETE_YES, DEFAULT_XZ_PRESET, HEADER_SIZE,
+    ASSET_FLAG_XZ, FINALIZED_YES, DEFAULT_XZ_PRESET, HEADER_SIZE,
 };
 
 /// Ability to truncate an underlying seekable target to a given length.
@@ -178,7 +178,7 @@ impl<W: Write + Seek> BendlWriter<W> {
         }
 
         // Canonical-name rule for known singleton types.
-        if let Some(canonical) = canonical_name_for(asset_type) {
+        if let Some(canonical) = standardized_name_for(asset_type) {
             if name != canonical {
                 return Err(BendlWriteError::WrongCanonicalName {
                     asset_type,
@@ -196,7 +196,7 @@ impl<W: Write + Seek> BendlWriter<W> {
             // Roll back the singleton insertion before returning, so
             // the writer remains in a consistent state. (Only known
             // singleton types would have been inserted above.)
-            if canonical_name_for(asset_type).is_some() {
+            if standardized_name_for(asset_type).is_some() {
                 self.singleton_types.remove(&asset_type);
             }
             return Err(BendlWriteError::DuplicateName(name.to_string()));
@@ -408,7 +408,7 @@ impl<W: Write + Seek> BendlWriter<W> {
         self.header.directory_len = directory_len;
         self.header.stream_len = stream_len;
         self.header.sample_count = sample_count;
-        self.header.complete = COMPLETE_YES;
+        self.header.finalized = FINALIZED_YES;
         self.inner.seek(SeekFrom::Start(0))?;
         self.header.write_to(&mut self.inner)?;
 
@@ -532,12 +532,12 @@ pub enum BendlWriteError {
     #[error("duplicate singleton asset type: {0}")]
     DuplicateSingletonType(u16),
 
-    /// A singleton asset was added under the wrong canonical name.
-    #[error("asset type {asset_type} must use canonical name {expected:?}, got {found:?}")]
+    /// A singleton asset was added under the wrong standardized name.
+    #[error("asset type {asset_type} must use standardized name {expected:?}, got {found:?}")]
     WrongCanonicalName {
-        /// The asset type whose canonical name was violated.
+        /// The asset type whose standardized name was violated.
         asset_type: u16,
-        /// The canonical name the caller should have used.
+        /// The standardized name the caller should have used.
         expected: String,
         /// The name the caller actually provided.
         found: String,
@@ -623,7 +623,7 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
     pub fn open(mut inner: W) -> Result<Self, BendlWriteError> {
         inner.seek(SeekFrom::Start(0))?;
         let header = BendlHeader::read_from(&mut inner).map_err(BendlWriteError::Format)?;
-        if !header.is_complete() {
+        if !header.is_finalized() {
             return Err(BendlWriteError::BundleIncomplete);
         }
         if header.directory_offset == 0 || header.directory_len == 0 {
@@ -647,7 +647,7 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
         let mut existing_singleton_types = HashSet::new();
         for entry in &existing_entries {
             existing_names.insert(entry.name.clone());
-            if canonical_name_for(entry.asset_type).is_some() {
+            if standardized_name_for(entry.asset_type).is_some() {
                 existing_singleton_types.insert(entry.asset_type);
             }
         }
@@ -678,7 +678,7 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
         options: AddAssetOptions,
     ) -> Result<(), BendlWriteError> {
         // Canonical-name rule.
-        if let Some(canonical) = canonical_name_for(asset_type) {
+        if let Some(canonical) = standardized_name_for(asset_type) {
             if name != canonical {
                 return Err(BendlWriteError::WrongCanonicalName {
                     asset_type,
@@ -703,7 +703,7 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
             .unwrap_or_else(|| default_compresses_by_type(asset_type));
 
         self.pending_names.insert(name.to_string());
-        if canonical_name_for(asset_type).is_some() {
+        if standardized_name_for(asset_type).is_some() {
             self.pending_singleton_types.insert(asset_type);
         }
         self.pending.push(PendingAsset {

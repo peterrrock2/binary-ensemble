@@ -45,7 +45,7 @@ fn dense_permutation(new_to_old_node_map: &HashMap<usize, usize>) -> io::Result<
     Ok(permutation)
 }
 
-/// Canonicalize an assignment vector by remapping labels in first-seen order.
+/// Remap an assignment vector's district labels in first-seen order.
 ///
 /// # Arguments
 ///
@@ -55,7 +55,7 @@ fn dense_permutation(new_to_old_node_map: &HashMap<usize, usize>) -> io::Result<
 ///
 /// Returns a new vector with labels replaced by sequential integers starting at 1,
 /// assigned in the order they first appear.
-fn canonicalize_assignment(assignment: &[u16]) -> Vec<u16> {
+fn first_seen_relabel_assignment(assignment: &[u16]) -> Vec<u16> {
     let mut label_map = HashMap::new();
     let mut next_label = 0u16;
     let mut out = Vec::with_capacity(assignment.len());
@@ -451,7 +451,7 @@ fn relabel_ben_file_impl<R: Read, W: Write>(
                 &mut writer,
                 variant,
                 max_samples,
-                |assignment| Ok(canonicalize_assignment(assignment)),
+                |assignment| Ok(first_seen_relabel_assignment(assignment)),
             )?
         }
     }
@@ -735,7 +735,7 @@ pub fn relabel_ben_file_as_variant<R: Read, W: Write>(
 
     let chained = Cursor::new(check_buffer).chain(reader);
     relabel_ben_file_via_decoder(chained, writer, target_variant, None, |assignment| {
-        Ok(canonicalize_assignment(&assignment))
+        Ok(first_seen_relabel_assignment(&assignment))
     })
 }
 
@@ -767,7 +767,7 @@ pub fn relabel_ben_file_as_variant_limit<R: Read, W: Write>(
         writer,
         target_variant,
         Some(max_samples),
-        |assignment| Ok(canonicalize_assignment(assignment)),
+        |assignment| Ok(first_seen_relabel_assignment(assignment)),
     )
 }
 

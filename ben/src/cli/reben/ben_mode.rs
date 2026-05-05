@@ -1,6 +1,6 @@
 use super::args::Args;
 use super::helpers::{
-    ben_variant_name, ordering_method_name, read_relabel_map_file, relabeling_label,
+    ben_variant_name, ordering_method_name, read_node_permutation_map_file, relabeling_label,
     to_ben_variant, to_graph_ordering,
 };
 use crate::json::graph::{sort_json_file_by_key, sort_json_file_by_ordering};
@@ -125,7 +125,7 @@ pub(super) fn run_ben_mode(args: Args) -> Result<(), String> {
             "output_file": output_file_name,
             "key": args.key.as_ref(),
             "ordering_method": args.ordering.as_ref().map(ordering_method_name),
-            "relabeling_old_to_new_nodes_map": map
+            "node_permutation_old_to_new": map
         });
 
         map_writer
@@ -141,7 +141,7 @@ pub(super) fn run_ben_mode(args: Args) -> Result<(), String> {
             .to_owned();
     }
 
-    let (new_to_old_node_map, label) = read_relabel_map_file(&map_file_name)?;
+    let (new_to_old_node_map, label) = read_node_permutation_map_file(&map_file_name)?;
 
     let output_file_name = match args.output_file {
         Some(name) => name,

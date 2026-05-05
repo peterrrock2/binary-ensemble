@@ -9,7 +9,7 @@ use binary_ensemble::format::banners::{
 };
 use binary_ensemble::io::bundle::format::{
     encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlHeader, ASSET_TYPE_CUSTOM,
-    ASSET_TYPE_GRAPH, BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, COMPLETE_YES,
+    ASSET_TYPE_GRAPH, BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, FINALIZED_YES,
     HEADER_SIZE,
 };
 use binary_ensemble::io::bundle::writer::{
@@ -52,7 +52,7 @@ fn minimal_bendl_with_entries(
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
         minor_version: BENDL_MINOR_VERSION,
-        complete: COMPLETE_YES,
+        finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
         reserved_0: 0,
         flags: 0,

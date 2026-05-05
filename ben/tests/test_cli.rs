@@ -935,7 +935,7 @@ fn reben_cli_rejects_map_referencing_missing_assignment_index() {
 
     fs::write(
         &map_path,
-        r#"{"key":"map","relabeling_old_to_new_nodes_map":{"0":0,"2":1}}"#,
+        r#"{"key":"map","node_permutation_old_to_new":{"0":0,"2":1}}"#,
     )
     .unwrap();
 
@@ -980,7 +980,7 @@ fn reben_cli_rejects_map_referencing_missing_assignment_index() {
     let stderr = String::from_utf8_lossy(&malformed.stderr);
     assert!(
         stderr.contains("Error: Map file")
-            && stderr.contains("relabeling_old_to_new_nodes_map")
+            && stderr.contains("node_permutation_old_to_new")
             && !stderr.contains("panicked"),
         "stderr:\n{stderr}"
     );
@@ -1638,7 +1638,7 @@ fn bendl_cli_create_inspect_extract_append_roundtrip() {
     );
     assert_success(&inspect);
     let inspect_out = String::from_utf8_lossy(&inspect.stdout);
-    assert!(inspect_out.contains("complete:          true"));
+    assert!(inspect_out.contains("finalized:         true"));
     assert!(inspect_out.contains("assignment_format: ben"));
     assert!(inspect_out.contains("graph.json"));
     assert!(inspect_out.contains("metadata.json"));

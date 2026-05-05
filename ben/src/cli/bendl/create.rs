@@ -2,7 +2,7 @@ use super::args::{CreateArgs, NamedAsset};
 use super::helpers::{add_file_asset, format_from_path, mode_str};
 use crate::cli::common::check_overwrite;
 use crate::io::bundle::format::{
-    ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA, ASSET_TYPE_RELABEL_MAP,
+    ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA, ASSET_TYPE_NODE_PERMUTATION_MAP,
 };
 use crate::io::bundle::{AddAssetOptions, BendlWriter};
 use crate::io::reader::subsample::count_samples_from_file;
@@ -46,11 +46,11 @@ pub(super) fn run_create(args: CreateArgs) -> Result<(), String> {
         };
         add_file_asset(&mut writer, ASSET_TYPE_GRAPH, "graph.json", path, opts)?;
     }
-    if let Some(ref path) = args.relabel_map {
+    if let Some(ref path) = args.node_permutation_map {
         add_file_asset(
             &mut writer,
-            ASSET_TYPE_RELABEL_MAP,
-            "relabel_map.json",
+            ASSET_TYPE_NODE_PERMUTATION_MAP,
+            "node_permutation_map.json",
             path,
             AddAssetOptions::defaults().json(),
         )?;

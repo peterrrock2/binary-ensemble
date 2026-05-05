@@ -13,7 +13,7 @@ use std::io::{self, Read, Seek, SeekFrom, Take};
 use xz2::read::XzDecoder;
 
 use super::format::{
-    canonical_name_for, read_directory, AssignmentFormat, BendlDirectoryEntry, BendlFormatError,
+    standardized_name_for, read_directory, AssignmentFormat, BendlDirectoryEntry, BendlFormatError,
     BendlHeader, ASSET_FLAG_XZ,
 };
 
@@ -62,14 +62,14 @@ impl<R: Read + Seek> BendlReader<R> {
     }
 
     /// Whether the bundle was successfully finalized.
-    pub fn is_complete(&self) -> bool {
-        self.header.is_complete()
+    pub fn is_finalized(&self) -> bool {
+        self.header.is_finalized()
     }
 
     /// The sample count recorded in the header, or `None` if not
     /// authoritative (i.e. the bundle is still incomplete).
     pub fn sample_count(&self) -> Option<i64> {
-        if self.header.is_complete() {
+        if self.header.is_finalized() {
             Some(self.header.sample_count)
         } else {
             None
@@ -93,8 +93,8 @@ impl<R: Read + Seek> BendlReader<R> {
 
     /// Look up the unique directory entry with the given asset type, if
     /// any. Singleton types (`metadata.json`, `graph.json`,
-    /// `relabel_map.json`) use this to grab their payload without caring
-    /// about the canonical name.
+    /// `node_permutation_map.json`) use this to grab their payload without caring
+    /// about the standardized name.
     pub fn find_asset_by_type(&self, asset_type: u16) -> Option<&BendlDirectoryEntry> {
         self.directory.iter().find(|e| e.asset_type == asset_type)
     }
@@ -106,7 +106,7 @@ impl<R: Read + Seek> BendlReader<R> {
     /// stream is taken as EOF (or the directory start, if a provisional
     /// directory was written).
     pub fn assignment_stream_range(&mut self) -> io::Result<(u64, u64)> {
-        if self.header.is_complete() {
+        if self.header.is_finalized() {
             Ok((self.header.stream_offset, self.header.stream_len))
         } else {
             let end = if self.header.directory_offset != 0 {
@@ -214,7 +214,7 @@ pub(crate) fn validate_directory_entries(
         if !seen_names.insert(entry.name.as_str()) {
             return Err(BundleValidationError::DuplicateName(entry.name.clone()));
         }
-        if let Some(canonical) = canonical_name_for(entry.asset_type) {
+        if let Some(canonical) = standardized_name_for(entry.asset_type) {
             if entry.name != canonical {
                 return Err(BundleValidationError::WrongCanonicalName {
                     asset_type: entry.asset_type,
@@ -274,12 +274,12 @@ pub enum BundleValidationError {
     #[error("duplicate asset name: {0:?}")]
     DuplicateName(String),
 
-    /// An entry with a known singleton type is not using its canonical name.
-    #[error("asset type {asset_type} must use canonical name {expected:?}, found {found:?}")]
+    /// An entry with a known singleton type is not using its standardized name.
+    #[error("asset type {asset_type} must use standardized name {expected:?}, found {found:?}")]
     WrongCanonicalName {
-        /// The asset type whose canonical name was violated.
+        /// The asset type whose standardized name was violated.
         asset_type: u16,
-        /// The canonical name the writer should have used.
+        /// The standardized name the writer should have used.
         expected: String,
         /// The name that was actually written.
         found: String,

@@ -18,7 +18,7 @@ pub(super) fn run_inspect(args: InspectArgs) -> Result<(), String> {
         "version:           {}.{}",
         header.major_version, header.minor_version
     );
-    println!("complete:          {}", reader.is_complete());
+    println!("finalized:         {}", reader.is_finalized());
     println!(
         "assignment_format: {}",
         match reader.assignment_format() {

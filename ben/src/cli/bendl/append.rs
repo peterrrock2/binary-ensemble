@@ -1,7 +1,7 @@
 use super::args::{AppendArgs, NamedAsset};
 use super::helpers::append_file_asset;
 use crate::io::bundle::format::{
-    ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA, ASSET_TYPE_RELABEL_MAP,
+    ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA, ASSET_TYPE_NODE_PERMUTATION_MAP,
 };
 use crate::io::bundle::writer::BendlAppender;
 use crate::io::bundle::AddAssetOptions;
@@ -36,11 +36,11 @@ pub(super) fn run_append(args: AppendArgs) -> Result<(), String> {
         append_file_asset(&mut appender, ASSET_TYPE_GRAPH, "graph.json", path, opts)?;
         added += 1;
     }
-    if let Some(ref path) = args.relabel_map {
+    if let Some(ref path) = args.node_permutation_map {
         append_file_asset(
             &mut appender,
-            ASSET_TYPE_RELABEL_MAP,
-            "relabel_map.json",
+            ASSET_TYPE_NODE_PERMUTATION_MAP,
+            "node_permutation_map.json",
             path,
             AddAssetOptions::defaults().json(),
         )?;

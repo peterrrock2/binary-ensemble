@@ -11,7 +11,7 @@ use std::io::{self, Read};
 /// `pair`, `run_lengths`, and `count`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TwoDeltaDecodeFrame {
-    /// The ordered pair of assignment ids involved in the delta.
+    /// The ordered pair of district ids involved in the delta.
     pub pair: (u16, u16),
     /// The unpacked run-length vector over the positions occupied by the pair.
     pub run_lengths: Vec<u16>,

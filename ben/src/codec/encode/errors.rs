@@ -16,7 +16,7 @@ pub enum EncodeError {
     #[error("line {line}: value `{value}` cannot be represented as u16")]
     InvalidAssignmentValue { line: usize, value: u64 },
 
-    #[error("TwoDelta transition involves more than two distinct assignment ids")]
+    #[error("TwoDelta transition involves more than two distinct district ids")]
     TwoDeltaTooManyIds,
 
     #[error("TwoDelta received identical assignment to previous frame")]

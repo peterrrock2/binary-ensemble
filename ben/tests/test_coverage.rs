@@ -1513,7 +1513,7 @@ fn encode_twodelta_frame_more_than_two_values_errors() {
     let next = vec![3u16, 1, 2];
     let err = encode_twodelta_frame(&prev, &next, None).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-    assert!(err.to_string().contains("two distinct assignment ids"));
+    assert!(err.to_string().contains("two distinct district ids"));
 }
 
 #[test]

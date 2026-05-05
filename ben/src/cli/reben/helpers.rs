@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 
-pub(super) fn read_relabel_map_file(
+pub(super) fn read_node_permutation_map_file(
     map_file_name: &str,
 ) -> Result<(HashMap<usize, usize>, String), String> {
     let map_file = File::open(map_file_name)
@@ -17,12 +17,12 @@ pub(super) fn read_relabel_map_file(
         .map_err(|e| format!("Could not parse map file {map_file_name:?} as JSON: {e}"))?;
 
     let map_obj = data
-        .get("relabeling_old_to_new_nodes_map")
+        .get("node_permutation_old_to_new")
         .and_then(Value::as_object)
         .ok_or_else(|| {
             format!(
                 "Map file {map_file_name:?} must contain object field \
-                 relabeling_old_to_new_nodes_map"
+                 node_permutation_old_to_new"
             )
         })?;
 

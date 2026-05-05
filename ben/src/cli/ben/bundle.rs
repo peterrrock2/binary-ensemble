@@ -1,6 +1,6 @@
 use super::paths::count_jsonl_lines;
 use crate::codec::encode::{encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben};
-use crate::io::bundle::format::{AssignmentFormat, ASSET_TYPE_GRAPH, CANONICAL_NAME_GRAPH};
+use crate::io::bundle::format::{AssignmentFormat, ASSET_TYPE_GRAPH, STANDARDIZED_NAME_GRAPH};
 use crate::io::bundle::writer::BendlAppender;
 use crate::io::bundle::{AddAssetOptions, BendlWriter};
 use crate::io::reader::subsample::count_samples_from_file;
@@ -27,7 +27,7 @@ pub(super) fn append_graph_asset(out_path: &str, graph_path: &Path) -> Result<()
     appender
         .add_asset(
             ASSET_TYPE_GRAPH,
-            CANONICAL_NAME_GRAPH,
+            STANDARDIZED_NAME_GRAPH,
             &graph_bytes,
             AddAssetOptions::defaults().json(),
         )

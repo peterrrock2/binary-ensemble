@@ -3,7 +3,7 @@ use super::types::{OutputMode, SharedFileSlot, SharedFileWriter};
 use crate::common::{open_output, parse_variant};
 use binary_ensemble::io::bundle::format::{
     encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlHeader, ASSET_FLAG_JSON,
-    ASSET_FLAG_XZ, ASSET_TYPE_GRAPH, CANONICAL_NAME_GRAPH, COMPLETE_YES, HEADER_SIZE,
+    ASSET_FLAG_XZ, ASSET_TYPE_GRAPH, STANDARDIZED_NAME_GRAPH, FINALIZED_YES, HEADER_SIZE,
 };
 use binary_ensemble::io::writer::AssignmentWriter;
 use pyo3::exceptions::{PyException, PyIOError, PyValueError};
@@ -104,7 +104,7 @@ impl PyBenEncoder {
                     entries.push(BendlDirectoryEntry {
                         asset_type: ASSET_TYPE_GRAPH,
                         asset_flags: ASSET_FLAG_JSON | ASSET_FLAG_XZ,
-                        name: CANONICAL_NAME_GRAPH.to_string(),
+                        name: STANDARDIZED_NAME_GRAPH.to_string(),
                         payload_offset,
                         payload_len: compressed.len() as u64,
                         checksum: None,
@@ -204,7 +204,7 @@ impl PyBenEncoder {
                 header.directory_offset = directory_offset;
                 header.directory_len = directory_len;
                 header.sample_count = *sample_count;
-                header.complete = COMPLETE_YES;
+                header.finalized = FINALIZED_YES;
 
                 slot.seek(SeekFrom::Start(0))
                     .map_err(|e| PyIOError::new_err(format!("Failed to seek output: {e}")))?;

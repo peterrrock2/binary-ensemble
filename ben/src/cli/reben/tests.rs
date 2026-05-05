@@ -1,7 +1,7 @@
 use super::args::{Args, BenCliVariant, Mode, OrderingMethod};
 use super::ben_mode::run_ben_mode;
 use super::helpers::{
-    ben_variant_name, read_relabel_map_file, relabeling_label, to_ben_variant,
+    ben_variant_name, read_node_permutation_map_file, relabeling_label, to_ben_variant,
 };
 use super::json_mode::run_json_mode;
 use crate::codec::encode::encode_jsonl_to_ben;
@@ -243,7 +243,7 @@ fn run_ben_mode_with_map_file_and_n_items() {
     let map_path = unique_path("map_n_items_map.json");
     fs::write(
         &map_path,
-        b"{\"relabeling_old_to_new_nodes_map\":{\"0\":2,\"1\":0,\"2\":1}}",
+        b"{\"node_permutation_old_to_new\":{\"0\":2,\"1\":0,\"2\":1}}",
     )
     .unwrap();
 
@@ -279,7 +279,7 @@ fn run_ben_mode_with_map_file_no_limit() {
     let map_path = unique_path("map_nolimit_map.json");
     fs::write(
         &map_path,
-        b"{\"relabeling_old_to_new_nodes_map\":{\"0\":2,\"1\":0,\"2\":1}}",
+        b"{\"node_permutation_old_to_new\":{\"0\":2,\"1\":0,\"2\":1}}",
     )
     .unwrap();
 
@@ -382,7 +382,7 @@ fn run_ben_mode_with_map_file_and_output_variant_n_items() {
     let map_path = unique_path("map_var_n_map.json");
     fs::write(
         &map_path,
-        b"{\"relabeling_old_to_new_nodes_map\":{\"0\":2,\"1\":0,\"2\":1}}",
+        b"{\"node_permutation_old_to_new\":{\"0\":2,\"1\":0,\"2\":1}}",
     )
     .unwrap();
     let out = unique_path("map_var_n_output.jsonl.ben");
@@ -418,7 +418,7 @@ fn run_ben_mode_with_map_file_and_output_variant_no_limit() {
     let map_path = unique_path("map_var_nolim_map.json");
     fs::write(
         &map_path,
-        b"{\"relabeling_old_to_new_nodes_map\":{\"0\":2,\"1\":0,\"2\":1}}",
+        b"{\"node_permutation_old_to_new\":{\"0\":2,\"1\":0,\"2\":1}}",
     )
     .unwrap();
     let out = unique_path("map_var_nolim_output.jsonl.ben");
@@ -453,7 +453,7 @@ fn run_ben_mode_map_file_without_output_file_derives_name() {
     let map_path = unique_path("map_derive_map.json");
     fs::write(
         &map_path,
-        b"{\"relabeling_old_to_new_nodes_map\":{\"0\":2,\"1\":0,\"2\":1},\"key\":\"sort\"}",
+        b"{\"node_permutation_old_to_new\":{\"0\":2,\"1\":0,\"2\":1},\"key\":\"sort\"}",
     )
     .unwrap();
     let args = Args::try_parse_from([
@@ -481,27 +481,27 @@ fn run_ben_mode_map_file_without_output_file_derives_name() {
 }
 
 #[test]
-fn read_relabel_map_file_rejects_non_integer_index() {
+fn read_node_permutation_map_file_rejects_non_integer_index() {
     let map_path = unique_path("bad_index_map.json");
     fs::write(
         &map_path,
-        b"{\"relabeling_old_to_new_nodes_map\":{\"not_a_number\":0}}",
+        b"{\"node_permutation_old_to_new\":{\"not_a_number\":0}}",
     )
     .unwrap();
-    let err = read_relabel_map_file(map_path.to_str().unwrap()).unwrap_err();
+    let err = read_node_permutation_map_file(map_path.to_str().unwrap()).unwrap_err();
     assert!(err.contains("invalid old node index"));
     let _ = fs::remove_file(&map_path);
 }
 
 #[test]
-fn read_relabel_map_file_rejects_non_integer_value() {
+fn read_node_permutation_map_file_rejects_non_integer_value() {
     let map_path = unique_path("bad_value_map.json");
     fs::write(
         &map_path,
-        b"{\"relabeling_old_to_new_nodes_map\":{\"0\":\"not_a_number\"}}",
+        b"{\"node_permutation_old_to_new\":{\"0\":\"not_a_number\"}}",
     )
     .unwrap();
-    let err = read_relabel_map_file(map_path.to_str().unwrap()).unwrap_err();
+    let err = read_node_permutation_map_file(map_path.to_str().unwrap()).unwrap_err();
     assert!(err.contains("non-integer"));
     let _ = fs::remove_file(&map_path);
 }

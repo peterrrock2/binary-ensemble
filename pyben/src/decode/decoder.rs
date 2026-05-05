@@ -5,7 +5,7 @@ use super::helpers::{
 use super::types::{ActiveSelection, BundleState, DecoderBackend, DecoderMode, DynIter};
 use binary_ensemble::io::bundle::format::{
     ASSET_FLAG_CHECKSUM, ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA,
-    ASSET_TYPE_RELABEL_MAP,
+    ASSET_TYPE_NODE_PERMUTATION_MAP,
 };
 use binary_ensemble::io::bundle::BendlReader;
 use binary_ensemble::io::reader::{count_samples_from_file, Selection, SubsampleFrameDecoder};
@@ -334,7 +334,7 @@ impl PyBenDecoder {
     #[pyo3(text_signature = "(self)")]
     fn is_complete(&self) -> PyResult<bool> {
         let state = self.require_bundle("is_complete()")?;
-        Ok(state.reader.is_complete())
+        Ok(state.reader.is_finalized())
     }
 
     /// Names of every entry in the bundle's directory, in directory
@@ -440,21 +440,21 @@ impl PyBenDecoder {
         Ok(Some(self.read_json_asset(py, "metadata.json")?))
     }
 
-    /// Read the bundle's `relabel_map.json` asset as a parsed JSON
-    /// object, or `None` if absent. Errors on plain streams.
+    /// Read the bundle's `node_permutation_map.json` asset as a parsed
+    /// JSON object, or `None` if absent. Errors on plain streams.
     #[pyo3(text_signature = "(self)")]
     fn read_relabel_map<'py>(&mut self, py: Python<'py>) -> PyResult<Option<Py<PyAny>>> {
         {
             let state = self.require_bundle_mut("read_relabel_map()")?;
             if state
                 .reader
-                .find_asset_by_type(ASSET_TYPE_RELABEL_MAP)
+                .find_asset_by_type(ASSET_TYPE_NODE_PERMUTATION_MAP)
                 .is_none()
             {
                 return Ok(None);
             }
         }
-        Ok(Some(self.read_json_asset(py, "relabel_map.json")?))
+        Ok(Some(self.read_json_asset(py, "node_permutation_map.json")?))
     }
 
     /// Copy the embedded assignment stream region verbatim to

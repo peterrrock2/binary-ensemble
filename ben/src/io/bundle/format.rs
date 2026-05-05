@@ -27,10 +27,10 @@ pub const BENDL_MINOR_VERSION: u16 = 0;
 /// Size of the fixed header in bytes.
 pub const HEADER_SIZE: usize = 64;
 
-/// `complete` flag value for incomplete (unfinalized) bundles.
-pub const COMPLETE_NO: u8 = 0;
-/// `complete` flag value for finalized bundles.
-pub const COMPLETE_YES: u8 = 1;
+/// `finalized` flag value for incomplete (unfinalized) bundles.
+pub const FINALIZED_NO: u8 = 0;
+/// `finalized` flag value for finalized bundles.
+pub const FINALIZED_YES: u8 = 1;
 
 // ---------------------------------------------------------------------------
 // Assignment format identifiers
@@ -74,32 +74,32 @@ impl AssignmentFormat {
 }
 
 // ---------------------------------------------------------------------------
-// Asset types, flags, canonical names
+// Asset types, flags, standardized names
 // ---------------------------------------------------------------------------
 
 /// Asset type id for `metadata.json`.
 pub const ASSET_TYPE_METADATA: u16 = 1;
 /// Asset type id for `graph.json`.
 pub const ASSET_TYPE_GRAPH: u16 = 2;
-/// Asset type id for `relabel_map.json`.
-pub const ASSET_TYPE_RELABEL_MAP: u16 = 3;
+/// Asset type id for `node_permutation_map.json`.
+pub const ASSET_TYPE_NODE_PERMUTATION_MAP: u16 = 3;
 /// Asset type id for a custom user asset (name chosen by writer).
 pub const ASSET_TYPE_CUSTOM: u16 = 4;
 
-/// Canonical name for the `metadata.json` asset.
-pub const CANONICAL_NAME_METADATA: &str = "metadata.json";
-/// Canonical name for the `graph.json` asset.
-pub const CANONICAL_NAME_GRAPH: &str = "graph.json";
-/// Canonical name for the `relabel_map.json` asset.
-pub const CANONICAL_NAME_RELABEL_MAP: &str = "relabel_map.json";
+/// Standardized name for the `metadata.json` asset.
+pub const STANDARDIZED_NAME_METADATA: &str = "metadata.json";
+/// Standardized name for the `graph.json` asset.
+pub const STANDARDIZED_NAME_GRAPH: &str = "graph.json";
+/// Standardized name for the `node_permutation_map.json` asset.
+pub const STANDARDIZED_NAME_NODE_PERMUTATION_MAP: &str = "node_permutation_map.json";
 
-/// Return the canonical name reserved for a known singleton asset type,
+/// Return the standardized name reserved for a known singleton asset type,
 /// or `None` for custom or unknown types.
-pub fn canonical_name_for(asset_type: u16) -> Option<&'static str> {
+pub fn standardized_name_for(asset_type: u16) -> Option<&'static str> {
     match asset_type {
-        ASSET_TYPE_METADATA => Some(CANONICAL_NAME_METADATA),
-        ASSET_TYPE_GRAPH => Some(CANONICAL_NAME_GRAPH),
-        ASSET_TYPE_RELABEL_MAP => Some(CANONICAL_NAME_RELABEL_MAP),
+        ASSET_TYPE_METADATA => Some(STANDARDIZED_NAME_METADATA),
+        ASSET_TYPE_GRAPH => Some(STANDARDIZED_NAME_GRAPH),
+        ASSET_TYPE_NODE_PERMUTATION_MAP => Some(STANDARDIZED_NAME_NODE_PERMUTATION_MAP),
         _ => None,
     }
 }
@@ -138,7 +138,7 @@ pub struct BendlHeader {
     /// Additive backward-compatible version.
     pub minor_version: u16,
     /// `1` if the bundle was successfully finalized, else `0`.
-    pub complete: u8,
+    pub finalized: u8,
     /// Container format of the embedded assignment stream.
     pub assignment_format: u8,
     /// Padding after `assignment_format`; writers set to zero, readers ignore.
@@ -167,7 +167,7 @@ impl BendlHeader {
             magic: BENDL_MAGIC,
             major_version: BENDL_MAJOR_VERSION,
             minor_version: BENDL_MINOR_VERSION,
-            complete: COMPLETE_NO,
+            finalized: FINALIZED_NO,
             assignment_format: assignment_format.to_u8(),
             reserved_0: 0,
             flags: 0,
@@ -180,8 +180,8 @@ impl BendlHeader {
     }
 
     /// Whether the bundle has been finalized.
-    pub fn is_complete(&self) -> bool {
-        self.complete == COMPLETE_YES
+    pub fn is_finalized(&self) -> bool {
+        self.finalized == FINALIZED_YES
     }
 
     /// Typed view of the embedded assignment format.
@@ -195,7 +195,7 @@ impl BendlHeader {
         out[0..8].copy_from_slice(&self.magic);
         out[8..10].copy_from_slice(&self.major_version.to_le_bytes());
         out[10..12].copy_from_slice(&self.minor_version.to_le_bytes());
-        out[12] = self.complete;
+        out[12] = self.finalized;
         out[13] = self.assignment_format;
         out[14..16].copy_from_slice(&self.reserved_0.to_le_bytes());
         out[16..24].copy_from_slice(&self.flags.to_le_bytes());
@@ -228,7 +228,7 @@ impl BendlHeader {
             magic,
             major_version,
             minor_version,
-            complete: bytes[12],
+            finalized: bytes[12],
             assignment_format: bytes[13],
             reserved_0: u16::from_le_bytes(bytes[14..16].try_into().unwrap()),
             flags: u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
@@ -268,7 +268,7 @@ pub struct BendlDirectoryEntry {
     pub asset_type: u16,
     /// Encoding/compression flags for this asset.
     pub asset_flags: u16,
-    /// UTF-8 asset name. Must match the canonical name for singleton types.
+    /// UTF-8 asset name. Must match the standardized name for singleton types.
     pub name: String,
     /// Absolute file offset of the asset payload.
     pub payload_offset: u64,

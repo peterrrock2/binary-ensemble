@@ -5,8 +5,8 @@ use xz2::write::XzEncoder;
 use crate::io::bundle::format::{
     encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlFormatError, BendlHeader,
     ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA,
-    ASSET_TYPE_RELABEL_MAP, BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, COMPLETE_NO,
-    COMPLETE_YES, HEADER_SIZE,
+    ASSET_TYPE_NODE_PERMUTATION_MAP, BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, FINALIZED_NO,
+    FINALIZED_YES, HEADER_SIZE,
 };
 use crate::io::bundle::reader::{
     validate_directory_entries, BendlReader, BundleAssignmentReaderError, BundleValidationError,
@@ -75,7 +75,7 @@ fn build_finalized_bundle() -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
         minor_version: BENDL_MINOR_VERSION,
-        complete: COMPLETE_YES,
+        finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
         reserved_0: 0,
         flags: 0,
@@ -94,7 +94,7 @@ fn build_finalized_bundle() -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
 fn open_finalized_bundle_and_read_metadata() {
     let (bytes, _, _, _) = build_finalized_bundle();
     let reader = BendlReader::open(Cursor::new(bytes)).unwrap();
-    assert!(reader.is_complete());
+    assert!(reader.is_finalized());
     assert_eq!(reader.sample_count(), Some(42));
     assert_eq!(reader.assignment_format(), Some(AssignmentFormat::Ben));
     assert_eq!(reader.assets().len(), 2);
@@ -151,7 +151,7 @@ fn incomplete_bundle_reports_no_directory_and_stream_runs_to_eof() {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
         minor_version: BENDL_MINOR_VERSION,
-        complete: COMPLETE_NO,
+        finalized: FINALIZED_NO,
         assignment_format: AssignmentFormat::Ben.to_u8(),
         reserved_0: 0,
         flags: 0,
@@ -165,7 +165,7 @@ fn incomplete_bundle_reports_no_directory_and_stream_runs_to_eof() {
     bytes.extend_from_slice(&fake_stream);
 
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
-    assert!(!reader.is_complete());
+    assert!(!reader.is_finalized());
     assert_eq!(reader.sample_count(), None);
     assert!(reader.assets().is_empty());
 
@@ -275,7 +275,7 @@ fn build_basic_finalized_bundle() -> Vec<u8> {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
         minor_version: BENDL_MINOR_VERSION,
-        complete: COMPLETE_YES,
+        finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
         reserved_0: 0,
         flags: 0,
@@ -415,7 +415,7 @@ fn incomplete_bundle_sample_count_is_none_even_if_header_value_is_nonzero() {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
         minor_version: BENDL_MINOR_VERSION,
-        complete: COMPLETE_NO,
+        finalized: FINALIZED_NO,
         assignment_format: AssignmentFormat::Ben.to_u8(),
         reserved_0: 0,
         flags: 0,
@@ -428,7 +428,7 @@ fn incomplete_bundle_sample_count_is_none_even_if_header_value_is_nonzero() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&header.to_bytes());
     let reader = BendlReader::open(Cursor::new(bytes)).unwrap();
-    assert!(!reader.is_complete());
+    assert!(!reader.is_finalized());
     assert_eq!(reader.sample_count(), None);
 }
 
@@ -464,7 +464,7 @@ fn incomplete_bundle_stream_range_runs_to_eof_without_directory() {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
         minor_version: BENDL_MINOR_VERSION,
-        complete: COMPLETE_NO,
+        finalized: FINALIZED_NO,
         assignment_format: AssignmentFormat::Ben.to_u8(),
         reserved_0: 0,
         flags: 0,
@@ -490,7 +490,7 @@ fn validate_directory_catches_duplicate_singleton_types() {
     // Two entries of type METADATA. The second one uses a non-canonical
     // name to confirm the canonical-name check fires (it lands first
     // here, and is the path we cover; the singleton check is exercised
-    // elsewhere via duplicate canonical names).
+    // elsewhere via duplicate standardized names).
     let entries = vec![
         BendlDirectoryEntry {
             asset_type: ASSET_TYPE_METADATA,
@@ -542,9 +542,9 @@ fn validate_directory_accepts_well_formed_multi_singleton_bundle() {
             checksum: None,
         },
         BendlDirectoryEntry {
-            asset_type: ASSET_TYPE_RELABEL_MAP,
+            asset_type: ASSET_TYPE_NODE_PERMUTATION_MAP,
             asset_flags: ASSET_FLAG_JSON,
-            name: "relabel_map.json".to_string(),
+            name: "node_permutation_map.json".to_string(),
             payload_offset: 72,
             payload_len: 4,
             checksum: None,
@@ -610,7 +610,7 @@ fn stress_thousand_custom_assets_round_trip() {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
         minor_version: BENDL_MINOR_VERSION,
-        complete: COMPLETE_YES,
+        finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
         reserved_0: 0,
         flags: 0,
@@ -663,7 +663,7 @@ fn xz_flagged_asset_with_corrupt_payload_surfaces_io_error() {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
         minor_version: BENDL_MINOR_VERSION,
-        complete: COMPLETE_YES,
+        finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
         reserved_0: 0,
         flags: 0,
@@ -698,7 +698,7 @@ fn reader_scales_to_very_wide_stream_offset_field() {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
         minor_version: BENDL_MINOR_VERSION,
-        complete: COMPLETE_YES,
+        finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
         reserved_0: 0,
         flags: 0,
@@ -743,7 +743,7 @@ fn incomplete_bundle_with_nonzero_directory_offset_uses_it_as_stream_end() {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
         minor_version: BENDL_MINOR_VERSION,
-        complete: COMPLETE_NO,
+        finalized: FINALIZED_NO,
         assignment_format: AssignmentFormat::Ben.to_u8(),
         reserved_0: 0,
         flags: 0,
@@ -759,7 +759,7 @@ fn incomplete_bundle_with_nonzero_directory_offset_uses_it_as_stream_end() {
     bytes.extend_from_slice(fake_dir);
 
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
-    assert!(!reader.is_complete());
+    assert!(!reader.is_finalized());
 
     let (offset, len) = reader.assignment_stream_range().unwrap();
     assert_eq!(offset, stream_start);

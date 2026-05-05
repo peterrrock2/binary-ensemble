@@ -363,7 +363,7 @@ fn run_encode_bundle_with_graph_creates_bendl() {
 
     let file = fs::File::open(&out).unwrap();
     let reader = BendlReader::open(std::io::BufReader::new(file)).unwrap();
-    assert!(reader.is_complete());
+    assert!(reader.is_finalized());
     assert!(reader.find_asset_by_name("graph.json").is_some());
     assert_eq!(reader.sample_count(), Some(2));
 
@@ -394,7 +394,7 @@ fn run_xencode_bundle_with_graph_from_jsonl_creates_bendl() {
 
     let file = fs::File::open(&out).unwrap();
     let reader = BendlReader::open(std::io::BufReader::new(file)).unwrap();
-    assert!(reader.is_complete());
+    assert!(reader.is_finalized());
     assert!(reader.find_asset_by_name("graph.json").is_some());
 
     fs::remove_file(&jsonl).unwrap();
@@ -432,7 +432,7 @@ fn run_xencode_bundle_with_graph_from_ben_creates_bendl() {
 
     let file = fs::File::open(&out).unwrap();
     let reader = BendlReader::open(std::io::BufReader::new(file)).unwrap();
-    assert!(reader.is_complete());
+    assert!(reader.is_finalized());
     assert!(reader.find_asset_by_name("graph.json").is_some());
 
     fs::remove_file(&ben_path).unwrap();

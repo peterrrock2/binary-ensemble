@@ -1,11 +1,11 @@
 /// Canonical representation of a TwoDelta frame.
 ///
-/// A TwoDelta frame stores the two assignment ids that may change relative to
+/// A TwoDelta frame stores the two district ids that may change relative to
 /// the previous sample and then encodes the lengths of alternating runs over
 /// just those two ids. The first run always corresponds to `pair.0`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TwoDeltaEncodeFrame {
-    // The pair of assignment ids that are encoded in this frame, stored here for reference.
+    // The pair of district ids that are encoded in this frame, stored here for reference.
     // Canonically, `pair.0` is the id for the first run in the run-length vector and `pair.1`
     // is the id for the second run.
     pub pair: (u16, u16),
@@ -57,7 +57,7 @@ impl TwoDeltaEncodeFrame {
     ///
     /// # Arguments
     ///
-    /// * `pair` - The ordered pair of assignment ids. `pair.0` corresponds to the first run.
+    /// * `pair` - The ordered pair of district ids. `pair.0` corresponds to the first run.
     /// * `run_length_vector` - The lengths of alternating runs of `pair.0` and `pair.1`
     ///   over the positions occupied by the pair, in position order.
     ///
@@ -132,7 +132,7 @@ impl TwoDeltaEncodeFrame {
     ///
     /// # Arguments
     ///
-    /// * `pair` - The ordered pair of assignment ids as read from the frame header.
+    /// * `pair` - The ordered pair of district ids as read from the frame header.
     /// * `max_len_bit_count` - The bit width of each packed run length, as read from the
     ///   frame header.
     /// * `payload` - The raw packed payload bytes, not including the 9-byte header.

@@ -62,15 +62,15 @@ pub(super) struct CreateArgs {
     #[arg(short = 'o', long)]
     pub output: PathBuf,
     /// Optional `graph.json` asset path. Will be stored under the
-    /// canonical name `graph.json` and xz-compressed by default.
+    /// standardized name `graph.json` and xz-compressed by default.
     #[arg(long)]
     pub graph: Option<PathBuf>,
-    /// Optional `metadata.json` asset path. Stored under canonical name.
+    /// Optional `metadata.json` asset path. Stored under standardized name.
     #[arg(long)]
     pub metadata: Option<PathBuf>,
-    /// Optional `relabel_map.json` asset path. Stored under canonical name.
+    /// Optional `node_permutation_map.json` asset path. Stored under standardized name.
     #[arg(long)]
-    pub relabel_map: Option<PathBuf>,
+    pub node_permutation_map: Option<PathBuf>,
     /// Additional custom assets, specified as `NAME=PATH`. May be repeated.
     #[arg(long = "asset")]
     pub assets: Vec<NamedAsset>,
@@ -118,9 +118,9 @@ pub(super) struct AppendArgs {
     /// Optional `metadata.json` asset path to add.
     #[arg(long)]
     pub metadata: Option<PathBuf>,
-    /// Optional `relabel_map.json` asset path to add.
+    /// Optional `node_permutation_map.json` asset path to add.
     #[arg(long)]
-    pub relabel_map: Option<PathBuf>,
+    pub node_permutation_map: Option<PathBuf>,
     /// Additional custom assets, specified as `NAME=PATH`. May be repeated.
     #[arg(long = "asset")]
     pub assets: Vec<NamedAsset>,

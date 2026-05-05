@@ -49,7 +49,7 @@ ASSIGNMENT_FORMAT_XBEN = 2
 
 ASSET_TYPE_METADATA = 1
 ASSET_TYPE_GRAPH = 2
-ASSET_TYPE_RELABEL_MAP = 3
+ASSET_TYPE_NODE_PERMUTATION_MAP = 3
 ASSET_TYPE_CUSTOM = 4
 
 ASSET_FLAG_JSON = 1 << 0
@@ -311,8 +311,8 @@ def test_bundle_reader_round_trip_ben_with_assets(tmp_path: Path) -> None:
                 compress=True,
             ),
             _Asset(
-                asset_type=ASSET_TYPE_RELABEL_MAP,
-                name="relabel_map.json",
+                asset_type=ASSET_TYPE_NODE_PERMUTATION_MAP,
+                name="node_permutation_map.json",
                 payload=relabel_json,
                 is_json=True,
                 compress=False,
@@ -336,7 +336,7 @@ def test_bundle_reader_round_trip_ben_with_assets(tmp_path: Path) -> None:
     assert reader.assignment_format() == "ben"
 
     names = reader.asset_names()
-    assert names == ["metadata.json", "graph.json", "relabel_map.json", "notes.bin"]
+    assert names == ["metadata.json", "graph.json", "node_permutation_map.json", "notes.bin"]
 
     assets = reader.list_assets()
     assert [a["name"] for a in assets] == names
@@ -355,7 +355,7 @@ def test_bundle_reader_round_trip_ben_with_assets(tmp_path: Path) -> None:
     # Raw byte access (decompresses xz transparently).
     assert reader.read_asset_bytes("metadata.json") == metadata_json
     assert reader.read_asset_bytes("graph.json") == graph_json
-    assert reader.read_asset_bytes("relabel_map.json") == relabel_json
+    assert reader.read_asset_bytes("node_permutation_map.json") == relabel_json
     assert reader.read_asset_bytes("notes.bin") == custom_blob
 
     # Typed JSON helpers.
@@ -1500,8 +1500,8 @@ def test_pybendecoder_bundle_toc_and_assets(tmp_path: Path) -> None:
                 compress=True,
             ),
             _Asset(
-                asset_type=ASSET_TYPE_RELABEL_MAP,
-                name="relabel_map.json",
+                asset_type=ASSET_TYPE_NODE_PERMUTATION_MAP,
+                name="node_permutation_map.json",
                 payload=relabel_json,
                 is_json=True,
             ),
@@ -1520,7 +1520,7 @@ def test_pybendecoder_bundle_toc_and_assets(tmp_path: Path) -> None:
     assert dec.asset_names() == [
         "metadata.json",
         "graph.json",
-        "relabel_map.json",
+        "node_permutation_map.json",
         "notes.bin",
     ]
     assets = dec.list_assets()

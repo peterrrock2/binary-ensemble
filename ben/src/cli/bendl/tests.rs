@@ -26,7 +26,7 @@ fn write_temp_bendl_xben_variant_works() {
     // Exercises the Xben branch of write_temp_bendl.
     let path = write_temp_bendl("xben_helper_check.bendl", AssignmentFormat::Xben);
     let reader = BendlReader::open(BufReader::new(std::fs::File::open(&path).unwrap())).unwrap();
-    assert!(reader.is_complete());
+    assert!(reader.is_finalized());
     let _ = std::fs::remove_file(&path);
 }
 
@@ -79,7 +79,7 @@ fn run_create_with_relabel_map_and_custom_asset() {
         output: out.clone(),
         graph: None,
         metadata: None,
-        relabel_map: Some(relabel.clone()),
+        node_permutation_map: Some(relabel.clone()),
         assets: vec![asset_str.parse().unwrap()],
         overwrite: false,
         graph_raw: false,
@@ -87,7 +87,7 @@ fn run_create_with_relabel_map_and_custom_asset() {
     run_create(args).unwrap();
 
     let reader = BendlReader::open(BufReader::new(std::fs::File::open(&out).unwrap())).unwrap();
-    assert!(reader.find_asset_by_name("relabel_map.json").is_some());
+    assert!(reader.find_asset_by_name("node_permutation_map.json").is_some());
     assert!(reader.find_asset_by_name("myblob").is_some());
 
     for p in [&ben, &relabel, &custom, &out] {
@@ -134,7 +134,7 @@ fn run_append_no_assets_is_noop() {
         input: bendl.clone(),
         graph: None,
         metadata: None,
-        relabel_map: None,
+        node_permutation_map: None,
         assets: vec![],
         graph_raw: false,
     };
@@ -142,7 +142,7 @@ fn run_append_no_assets_is_noop() {
     // File should be unchanged (bundle is still valid).
     let reader =
         BendlReader::open(BufReader::new(std::fs::File::open(&bendl).unwrap())).unwrap();
-    assert!(reader.is_complete());
+    assert!(reader.is_finalized());
     let _ = std::fs::remove_file(&bendl);
 }
 
@@ -158,7 +158,7 @@ fn run_append_with_metadata_and_relabel_map() {
         input: bendl.clone(),
         graph: None,
         metadata: Some(meta.clone()),
-        relabel_map: Some(relabel.clone()),
+        node_permutation_map: Some(relabel.clone()),
         assets: vec![],
         graph_raw: false,
     };
@@ -167,7 +167,7 @@ fn run_append_with_metadata_and_relabel_map() {
     let reader =
         BendlReader::open(BufReader::new(std::fs::File::open(&bendl).unwrap())).unwrap();
     assert!(reader.find_asset_by_name("metadata.json").is_some());
-    assert!(reader.find_asset_by_name("relabel_map.json").is_some());
+    assert!(reader.find_asset_by_name("node_permutation_map.json").is_some());
 
     for p in [&bendl, &meta, &relabel] {
         let _ = std::fs::remove_file(p);
@@ -196,7 +196,7 @@ fn run_create_with_graph_raw_flag() {
         output: out.clone(),
         graph: Some(graph.clone()),
         metadata: None,
-        relabel_map: None,
+        node_permutation_map: None,
         assets: vec![],
         overwrite: false,
         graph_raw: true,
@@ -214,16 +214,16 @@ fn run_create_with_graph_raw_flag() {
 #[test]
 fn run_inspect_unknown_format_and_no_sample_count() {
     use crate::io::bundle::format::{
-        BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, COMPLETE_NO, HEADER_SIZE,
+        BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, FINALIZED_NO, HEADER_SIZE,
     };
 
     // Build a header with an unknown assignment format byte and
-    // complete=0 so sample_count() returns None.
+    // finalized=0 so sample_count() returns None.
     let mut header = [0u8; HEADER_SIZE];
     header[0..8].copy_from_slice(&BENDL_MAGIC);
     header[8..10].copy_from_slice(&BENDL_MAJOR_VERSION.to_le_bytes());
     header[10..12].copy_from_slice(&BENDL_MINOR_VERSION.to_le_bytes());
-    header[12] = COMPLETE_NO;
+    header[12] = FINALIZED_NO;
     header[13] = 0xFF; // unknown format byte
     // stream_offset = HEADER_SIZE, stream_len = 0, sample_count = -1
     let stream_offset = HEADER_SIZE as u64;
@@ -250,7 +250,7 @@ fn run_append_with_graph_raw_and_graph_asset() {
         input: bendl.clone(),
         graph: Some(graph.clone()),
         metadata: None,
-        relabel_map: None,
+        node_permutation_map: None,
         assets: vec![],
         graph_raw: true,
     };
@@ -297,7 +297,7 @@ fn run_create_errors_on_missing_metadata_file() {
         output: out.clone(),
         graph: None,
         metadata: Some(unique_path("nonexistent_meta.json")),
-        relabel_map: None,
+        node_permutation_map: None,
         assets: vec![],
         overwrite: false,
         graph_raw: false,
@@ -331,7 +331,7 @@ fn run_create_errors_on_missing_relabel_map_file() {
         output: out.clone(),
         graph: None,
         metadata: None,
-        relabel_map: Some(unique_path("nonexistent_relabel.json")),
+        node_permutation_map: Some(unique_path("nonexistent_relabel.json")),
         assets: vec![],
         overwrite: false,
         graph_raw: false,
@@ -367,7 +367,7 @@ fn run_create_errors_on_missing_custom_asset_file() {
         output: out.clone(),
         graph: None,
         metadata: None,
-        relabel_map: None,
+        node_permutation_map: None,
         assets: vec![asset_str.parse().unwrap()],
         overwrite: false,
         graph_raw: false,
@@ -423,7 +423,7 @@ fn run_append_errors_on_missing_metadata_file() {
         input: bendl.clone(),
         graph: None,
         metadata: Some(unique_path("nonexistent_meta.json")),
-        relabel_map: None,
+        node_permutation_map: None,
         assets: vec![],
         graph_raw: false,
     };
@@ -439,7 +439,7 @@ fn run_append_errors_on_missing_relabel_map_file() {
         input: bendl.clone(),
         graph: None,
         metadata: None,
-        relabel_map: Some(unique_path("nonexistent_relabel.json")),
+        node_permutation_map: Some(unique_path("nonexistent_relabel.json")),
         assets: vec![],
         graph_raw: false,
     };
@@ -457,7 +457,7 @@ fn run_append_errors_on_missing_custom_asset_file() {
         input: bendl.clone(),
         graph: None,
         metadata: None,
-        relabel_map: None,
+        node_permutation_map: None,
         assets: vec![asset_str.parse().unwrap()],
         graph_raw: false,
     };

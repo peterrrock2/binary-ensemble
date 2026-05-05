@@ -50,7 +50,7 @@ pub(super) fn run_json_mode(args: Args) -> Result<(), String> {
         "output_file": output_file_name,
         "key": args.key.as_ref(),
         "ordering_method": args.ordering.as_ref().map(ordering_method_name),
-        "relabeling_old_to_new_nodes_map": map
+        "node_permutation_old_to_new": map
     });
 
     map_writer

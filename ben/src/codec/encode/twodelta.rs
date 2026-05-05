@@ -12,7 +12,7 @@ use std::io::{Error, ErrorKind, Result};
 /// * `new_assignment` - The full assignment vector for the sample being encoded.
 /// * `delta_pair` - An optional hint asserting which pair of ids is involved in the
 ///   transition. Must be provided together with `previous_masks`, and the two ids must be distinct.
-/// * `previous_masks` - An optional mutable map from assignment id to the sorted list of positions
+/// * `previous_masks` - An optional mutable map from district id to the sorted list of positions
 ///   it occupies in `previous_assignment`. When provided, the map is updated in-place to
 ///   reflect `new_assignment` before returning.
 ///
@@ -24,7 +24,7 @@ use std::io::{Error, ErrorKind, Result};
 /// # TwoDelta encoding
 ///
 /// A TwoDelta frame is valid only when every position that changes between
-/// `previous_assignment` and `new_assignment` involves exactly two assignment ids
+/// `previous_assignment` and `new_assignment` involves exactly two district ids
 /// (call them A and B), and no position outside that pair changes. The frame stores
 /// the pair and the lengths of alternating runs of A and B over the positions
 /// occupied by the pair, ordered by position. The first run always corresponds to
@@ -38,7 +38,7 @@ use std::io::{Error, ErrorKind, Result};
 ///   the transition. Must be provided together with `previous_masks`. The pair must have two
 ///   distinct ids — passing `(x, x)` is an error.
 ///
-/// - `previous_masks`: A mutable map from assignment id to the sorted list of positions it
+/// - `previous_masks`: A mutable map from district id to the sorted list of positions it
 ///   occupies in `previous_assignment`. When provided, the function reads positions
 ///   directly from the map instead of scanning the assignment vector, and updates
 ///   the map in-place to reflect `new_assignment` before returning. The previous_masks must
@@ -119,7 +119,7 @@ pub(crate) fn encode_twodelta_frame_with_hint(
 ///
 /// # Arguments
 ///
-/// * `pair` - The two assignment ids to validate and order.
+/// * `pair` - The two district ids to validate and order.
 /// * `previous_masks` - The position mask map to look up entries in.
 ///
 /// # Returns
@@ -421,7 +421,7 @@ fn construct_twodelta_frame_from_scratch(
 /// the scan entirely.
 ///
 /// The transition is valid only when all changed positions involve exactly two
-/// assignment ids and positions outside that pair remain unchanged.
+/// district ids and positions outside that pair remain unchanged.
 ///
 /// # Arguments
 ///

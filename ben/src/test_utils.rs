@@ -124,6 +124,6 @@ mod tests {
 
         let bytes = sample_bendl_bytes(b"STANDARD BEN FILE\x00fake", AssignmentFormat::Ben);
         let reader = BendlReader::open(BufReader::new(Cursor::new(bytes))).unwrap();
-        assert!(reader.is_complete());
+        assert!(reader.is_finalized());
     }
 }

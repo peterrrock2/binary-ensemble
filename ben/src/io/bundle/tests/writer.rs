@@ -3,7 +3,7 @@ use std::io::{self, Cursor, Read, Write};
 use crate::io::bundle::format::{
     AssignmentFormat, BendlFormatError, BendlHeader, ASSET_FLAG_CHECKSUM, ASSET_FLAG_XZ,
     ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA, BENDL_MAGIC, BENDL_MAJOR_VERSION,
-    BENDL_MINOR_VERSION, COMPLETE_NO, COMPLETE_YES, HEADER_SIZE,
+    BENDL_MINOR_VERSION, FINALIZED_NO, FINALIZED_YES, HEADER_SIZE,
 };
 use crate::io::bundle::reader::{BendlReader, BundleAssignmentReader};
 use crate::io::bundle::writer::{
@@ -25,7 +25,7 @@ fn minimal_bundle_round_trip_through_reader() {
     let buf = writer.finish().unwrap().into_inner();
 
     let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
-    assert!(reader.is_complete());
+    assert!(reader.is_finalized());
     assert_eq!(reader.sample_count(), Some(7));
     assert_eq!(reader.assignment_format(), Some(AssignmentFormat::Ben));
     assert_eq!(reader.assets().len(), 1);
@@ -114,7 +114,7 @@ fn writer_rejects_second_graph() {
 }
 
 #[test]
-fn writer_rejects_wrong_canonical_name_for_singleton() {
+fn writer_rejects_wrong_standardized_name_for_singleton() {
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     let err = writer
         .add_json_asset(ASSET_TYPE_GRAPH, "graph_but_wrong_name.json", b"{}")
@@ -173,7 +173,7 @@ fn asset_only_bundle_finalizes_with_empty_stream() {
     let buf = writer.finish().unwrap().into_inner();
 
     let reader = BendlReader::open(Cursor::new(buf)).unwrap();
-    assert!(reader.is_complete());
+    assert!(reader.is_finalized());
     assert_eq!(reader.sample_count(), Some(0));
     assert_eq!(reader.header().stream_len, 0);
 }
@@ -236,7 +236,7 @@ fn append_adds_new_asset_and_preserves_old_entries() {
     assert!(reader.find_asset_by_name("metadata.json").is_some());
     assert!(reader.find_asset_by_name("graph.json").is_some());
     // Finalized bundle invariants still hold.
-    assert!(reader.is_complete());
+    assert!(reader.is_finalized());
     assert_eq!(reader.sample_count(), Some(3));
 }
 
@@ -376,7 +376,7 @@ fn append_rejects_incomplete_bundle() {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
         minor_version: BENDL_MINOR_VERSION,
-        complete: COMPLETE_NO,
+        finalized: FINALIZED_NO,
         assignment_format: AssignmentFormat::Ben.to_u8(),
         reserved_0: 0,
         flags: 0,
@@ -405,7 +405,7 @@ fn append_rejects_complete_bundle_with_zero_directory() {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
         minor_version: BENDL_MINOR_VERSION,
-        complete: COMPLETE_YES,
+        finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
         reserved_0: 0,
         flags: 0,
@@ -516,7 +516,7 @@ fn write_ben_stream_round_trips_through_assignment_reader() {
     let buf = writer.finish().unwrap().into_inner();
 
     let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
-    assert!(reader.is_complete());
+    assert!(reader.is_finalized());
     // Four write_assignment calls → sample_count == 4.
     assert_eq!(reader.sample_count(), Some(samples.len() as i64));
     assert_eq!(reader.assignment_format(), Some(AssignmentFormat::Ben));
@@ -559,7 +559,7 @@ fn write_xben_stream_round_trips_through_assignment_reader() {
     let buf = writer.finish().unwrap().into_inner();
 
     let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
-    assert!(reader.is_complete());
+    assert!(reader.is_finalized());
     assert_eq!(reader.sample_count(), Some(samples.len() as i64));
     assert_eq!(reader.assignment_format(), Some(AssignmentFormat::Xben));
 
@@ -656,7 +656,7 @@ fn fully_empty_bundle_finalizes_and_round_trips() {
     let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     let buf = writer.finish().unwrap().into_inner();
     let reader = BendlReader::open(Cursor::new(buf)).unwrap();
-    assert!(reader.is_complete());
+    assert!(reader.is_finalized());
     assert_eq!(reader.sample_count(), Some(0));
     assert_eq!(reader.header().stream_len, 0);
     assert_eq!(reader.assets().len(), 0);
@@ -899,7 +899,7 @@ fn finished_writer_rejects_further_operations() {
     let buf = writer.finish().unwrap().into_inner();
     // The resulting buffer is a valid finalized bundle.
     let reader = BendlReader::open(Cursor::new(buf)).unwrap();
-    assert!(reader.is_complete());
+    assert!(reader.is_finalized());
 }
 
 #[test]
@@ -948,10 +948,10 @@ fn writer_rejects_add_json_asset_with_wrong_canonical_metadata_name() {
 #[test]
 fn writer_rejected_add_leaves_singleton_slot_usable() {
     // A rejected singleton add must not consume the singleton slot —
-    // otherwise a future valid add with the correct canonical name
+    // otherwise a future valid add with the correct standardized name
     // would spuriously fail with DuplicateSingletonType.
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    // First try with wrong canonical name — rejected.
+    // First try with wrong standardized name — rejected.
     let _ = writer
         .add_json_asset(ASSET_TYPE_GRAPH, "not_graph.json", b"{}")
         .unwrap_err();
@@ -1064,7 +1064,7 @@ fn randomized_round_trip_many_custom_assets() {
         let buf = writer.finish().unwrap().into_inner();
 
         let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
-        assert!(reader.is_complete(), "seed {seed}: not finalized");
+        assert!(reader.is_finalized(), "seed {seed}: not finalized");
         assert_eq!(reader.sample_count(), Some(sample_count));
         reader
             .validate_directory()
@@ -1128,7 +1128,7 @@ fn five_successive_appends_preserve_everything() {
         // Re-open and verify the full set is intact and sample_count
         // still matches the baseline (append must not touch it).
         let mut reader = BendlReader::open(Cursor::new(buf.clone())).unwrap();
-        assert!(reader.is_complete(), "round {round}");
+        assert!(reader.is_finalized(), "round {round}");
         assert_eq!(
             reader.sample_count(),
             baseline_samples,
@@ -1324,5 +1324,5 @@ fn finish_from_finished_state_errors() {
     let buf = writer.finish().unwrap();
     // Verify the result is usable
     let reader = BendlReader::open(Cursor::new(buf.into_inner())).unwrap();
-    assert!(reader.is_complete());
+    assert!(reader.is_finalized());
 }

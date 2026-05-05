@@ -9,25 +9,25 @@ fn magic_is_eight_bytes_and_matches_spec() {
 }
 
 #[test]
-fn canonical_name_lookup() {
+fn standardized_name_lookup() {
     assert_eq!(
-        canonical_name_for(ASSET_TYPE_METADATA),
+        standardized_name_for(ASSET_TYPE_METADATA),
         Some("metadata.json")
     );
-    assert_eq!(canonical_name_for(ASSET_TYPE_GRAPH), Some("graph.json"));
+    assert_eq!(standardized_name_for(ASSET_TYPE_GRAPH), Some("graph.json"));
     assert_eq!(
-        canonical_name_for(ASSET_TYPE_RELABEL_MAP),
-        Some("relabel_map.json")
+        standardized_name_for(ASSET_TYPE_NODE_PERMUTATION_MAP),
+        Some("node_permutation_map.json")
     );
-    assert_eq!(canonical_name_for(ASSET_TYPE_CUSTOM), None);
-    assert_eq!(canonical_name_for(9999), None);
+    assert_eq!(standardized_name_for(ASSET_TYPE_CUSTOM), None);
+    assert_eq!(standardized_name_for(9999), None);
 }
 
 #[test]
 fn default_compression_policy() {
     assert!(default_compresses_by_type(ASSET_TYPE_GRAPH));
     assert!(!default_compresses_by_type(ASSET_TYPE_METADATA));
-    assert!(!default_compresses_by_type(ASSET_TYPE_RELABEL_MAP));
+    assert!(!default_compresses_by_type(ASSET_TYPE_NODE_PERMUTATION_MAP));
     assert!(!default_compresses_by_type(ASSET_TYPE_CUSTOM));
 }
 
@@ -52,7 +52,7 @@ fn header_round_trip_provisional() {
     let header = BendlHeader::provisional(AssignmentFormat::Xben, 64);
     let decoded = BendlHeader::from_bytes(&header.to_bytes()).unwrap();
     assert_eq!(header, decoded);
-    assert!(!decoded.is_complete());
+    assert!(!decoded.is_finalized());
     assert_eq!(
         decoded.assignment_format_typed(),
         Some(AssignmentFormat::Xben)
@@ -68,7 +68,7 @@ fn header_round_trip_finalized() {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
         minor_version: BENDL_MINOR_VERSION,
-        complete: COMPLETE_YES,
+        finalized: FINALIZED_YES,
         assignment_format: ASSIGNMENT_FORMAT_BEN,
         reserved_0: 0,
         flags: 0x0000_0000_0000_000F,
@@ -81,7 +81,7 @@ fn header_round_trip_finalized() {
     let bytes = header.to_bytes();
     let decoded = BendlHeader::from_bytes(&bytes).unwrap();
     assert_eq!(decoded, header);
-    assert!(decoded.is_complete());
+    assert!(decoded.is_finalized());
 }
 
 #[test]
@@ -108,7 +108,7 @@ fn directory_entry_round_trip_no_checksum() {
     let entry = BendlDirectoryEntry {
         asset_type: ASSET_TYPE_GRAPH,
         asset_flags: ASSET_FLAG_JSON | ASSET_FLAG_XZ,
-        name: CANONICAL_NAME_GRAPH.to_string(),
+        name: STANDARDIZED_NAME_GRAPH.to_string(),
         payload_offset: 128,
         payload_len: 4096,
         checksum: None,
@@ -146,7 +146,7 @@ fn directory_table_round_trip() {
         BendlDirectoryEntry {
             asset_type: ASSET_TYPE_GRAPH,
             asset_flags: ASSET_FLAG_JSON | ASSET_FLAG_XZ,
-            name: CANONICAL_NAME_GRAPH.to_string(),
+            name: STANDARDIZED_NAME_GRAPH.to_string(),
             payload_offset: 64,
             payload_len: 2048,
             checksum: None,
@@ -154,7 +154,7 @@ fn directory_table_round_trip() {
         BendlDirectoryEntry {
             asset_type: ASSET_TYPE_METADATA,
             asset_flags: ASSET_FLAG_JSON,
-            name: CANONICAL_NAME_METADATA.to_string(),
+            name: STANDARDIZED_NAME_METADATA.to_string(),
             payload_offset: 2112,
             payload_len: 128,
             checksum: None,

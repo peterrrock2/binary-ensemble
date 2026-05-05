@@ -962,13 +962,13 @@ fn test_permute_assignment_index_out_of_range() {
     assert!(err.to_string().contains("old index"));
 }
 
-// ── canonicalize_assignment ──────────────────────────────────────────
+// ── first_seen_relabel_assignment ──────────────────────────────────────────
 
 #[test]
-fn test_canonicalize_assignment() {
-    assert_eq!(canonicalize_assignment(&[5, 3, 5, 7]), vec![1, 2, 1, 3]);
-    assert_eq!(canonicalize_assignment(&[]), Vec::<u16>::new());
-    assert_eq!(canonicalize_assignment(&[42]), vec![1]);
+fn test_first_seen_relabel_assignment() {
+    assert_eq!(first_seen_relabel_assignment(&[5, 3, 5, 7]), vec![1, 2, 1, 3]);
+    assert_eq!(first_seen_relabel_assignment(&[]), Vec::<u16>::new());
+    assert_eq!(first_seen_relabel_assignment(&[42]), vec![1]);
 }
 
 // ── relabel_ben_lines_with_map: LengthMismatch ─────────────────────
