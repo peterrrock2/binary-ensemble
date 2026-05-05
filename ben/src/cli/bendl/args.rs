@@ -36,6 +36,10 @@ pub(super) struct Args {
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
+    /// Suppress in-place progress spinners. Trace logging is unaffected.
+    #[arg(short = 'q', long, global = true)]
+    pub quiet: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }

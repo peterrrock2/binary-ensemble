@@ -1,4 +1,4 @@
-use crate::cli::common::{check_overwrite, set_verbose, CliError, CliResult};
+use crate::cli::common::{check_overwrite, set_quiet, set_verbose, CliError, CliResult};
 use crate::io::reader::AssignmentReader;
 use crate::io::writer::{AssignmentWriter, XZAssignmentWriter};
 use crate::BenVariant;
@@ -49,12 +49,16 @@ struct Args {
     /// Enables verbose printing for the CLI. Optional.
     #[arg(short, long)]
     verbose: bool,
+    /// Suppress in-place progress spinners. Trace logging is unaffected.
+    #[arg(short = 'q', long)]
+    quiet: bool,
 }
 
 /// Parse CLI arguments and execute the selected `pcben` conversion.
 pub fn run() -> CliResult {
     let args = Args::parse();
     set_verbose(args.verbose);
+    set_quiet(args.quiet);
 
     match args.mode {
         Mode::BenToPc => {

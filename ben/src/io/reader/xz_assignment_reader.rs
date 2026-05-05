@@ -4,8 +4,9 @@ use super::twodelta::{XBEN_TWODELTA_CHUNK_TAG, XBEN_TWODELTA_FULL_TAG};
 use crate::codec::decode::{apply_twodelta_runs_to_assignment, decode_ben32_line, DecodeError};
 use crate::codec::encode::encode_ben32_assignments;
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
+use crate::progress::Spinner;
 use crate::util::rle::rle_to_vec;
-use crate::{progress, BenVariant};
+use crate::BenVariant;
 use serde_json::json;
 use std::io::{self, BufReader, Cursor, Read, Write};
 use xz2::read::XzDecoder;
@@ -321,12 +322,13 @@ impl<R: Read> XZAssignmentReader<R> {
         F: FnMut(&[u16], u16) -> io::Result<bool>,
     {
         let mut sample_count = 0usize;
+        let spinner = (!self.silent).then(|| Spinner::new("Decoding sample"));
         loop {
             match self.next() {
                 Some(Ok((assignment, count))) => {
                     sample_count += count as usize;
-                    if !self.silent {
-                        progress!("Decoding sample: {}\r", sample_count);
+                    if let Some(spinner) = &spinner {
+                        spinner.set_count(sample_count as u64);
                     }
                     let keep_going = f(&assignment, count)?;
                     if !keep_going {

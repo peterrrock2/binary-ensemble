@@ -15,7 +15,8 @@ use std::io::{self, Read, Write};
 
 use crate::codec::decode::decode_ben_line;
 use crate::codec::BenEncodeFrame;
-use crate::{progress, BenVariant};
+use crate::progress::Spinner;
+use crate::BenVariant;
 
 /// Convert a single ben32 frame into a BEN frame payload.
 ///
@@ -179,7 +180,8 @@ pub fn ben_to_ben32_lines<R: Read, W: Write>(
     mut writer: W,
     variant: BenVariant,
 ) -> io::Result<()> {
-    let mut sample_number = 1;
+    let mut sample_number = 1usize;
+    let spinner = Spinner::new("Encoding line");
     'outer: loop {
         let mut tmp_buffer = [0u8];
         let max_val_bits = match reader.read_exact(&mut tmp_buffer) {
@@ -195,7 +197,7 @@ pub fn ben_to_ben32_lines<R: Read, W: Write>(
         let max_len_bits = reader.read_u8()?;
         let n_bytes = reader.read_u32::<BigEndian>()?;
 
-        progress!("Encoding line: {}\r", sample_number);
+        spinner.set_count(sample_number as u64);
 
         match variant {
             BenVariant::Standard => {
@@ -219,8 +221,6 @@ pub fn ben_to_ben32_lines<R: Read, W: Write>(
         }
     }
 
-    tracing::trace!("");
-    tracing::trace!("Done!");
     Ok(())
 }
 

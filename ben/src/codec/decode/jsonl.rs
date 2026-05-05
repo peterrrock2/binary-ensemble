@@ -2,7 +2,8 @@ use crate::codec::decode::jsonl_decode_ben32;
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
 use crate::io::reader::{AssignmentReader, XZAssignmentReader};
-use crate::{progress, BenVariant};
+use crate::progress::Spinner;
+use crate::BenVariant;
 use serde_json::json;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use xz2::read::XzDecoder;
@@ -55,10 +56,11 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
                 BenVariant::TwoDelta,
             );
             let mut sample_number = 1usize;
+            let spinner = Spinner::new("Decoding sample");
             for record in &mut xben {
                 let (assignment, count) = record?;
                 for _ in 0..count {
-                    progress!("Decoding sample: {}\r", sample_number);
+                    spinner.set_count(sample_number as u64);
                     let line = json!({
                         "assignment": assignment,
                         "sample": sample_number,
@@ -69,8 +71,6 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
                     sample_number += 1;
                 }
             }
-            tracing::trace!("");
-            tracing::trace!("Done!");
             return Ok(());
         }
         None => {
@@ -85,6 +85,7 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
 
     let mut line_count: usize = 0;
     let mut starting_sample: usize = 0;
+    let spinner = Spinner::new("Decoding sample");
     loop {
         let count = decoder.read(&mut buffer)?;
         if count == 0 {
@@ -101,7 +102,7 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
                 if overflow[i - 3..=i] == [0, 0, 0, 0] {
                     last_valid_assignment = i + 1;
                     line_count += 1;
-                    progress!("Decoding sample: {}\r", line_count);
+                    spinner.set_count(line_count as u64);
                 }
             }
         } else {
@@ -111,7 +112,7 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
                     let lines = &overflow[i + 1..i + 3];
                     let n_lines = u16::from_be_bytes([lines[0], lines[1]]);
                     line_count += n_lines as usize;
-                    progress!("Decoding sample: {}\r", line_count);
+                    spinner.set_count(line_count as u64);
                 }
             }
         }
@@ -129,8 +130,6 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
         overflow.drain(..last_valid_assignment);
         starting_sample = line_count;
     }
-    tracing::trace!("");
-    tracing::trace!("Done!");
     Ok(())
 }
 

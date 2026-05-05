@@ -33,27 +33,17 @@ pub mod format;
 pub mod io;
 /// JSON graph utilities used by relabeling workflows.
 pub mod json;
-/// Logging and progress-output helpers used by the CLI and library.
+/// Logging helpers used by the CLI and library.
 pub mod logging;
 /// Higher-level operations such as extraction and relabeling.
 pub mod ops;
+/// In-place progress spinners for streaming operations.
+pub mod progress;
 /// Miscellaneous utilities that do not fit into the other modules.
 pub mod util;
 
 #[doc(hidden)]
 pub mod test_utils;
-
-/// Print an in-place progress update when trace logging is enabled.
-///
-/// This is intentionally separate from normal structured logging because many
-/// callsites want carriage-return based terminal updates instead of line-based
-/// log records.
-#[macro_export]
-macro_rules! progress {
-    ($($arg:tt)*) => {{
-        $crate::logging::trace_progress(format_args!($($arg)*));
-    }}
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// The BEN/XBEN variant used when encoding or decoding a stream.

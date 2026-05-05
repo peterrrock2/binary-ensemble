@@ -26,13 +26,14 @@ use create::run_create;
 use extract::run_extract;
 use inspect::run_inspect;
 
-use crate::cli::common::{set_verbose, CliError, CliResult};
+use crate::cli::common::{set_quiet, set_verbose, CliError, CliResult};
 use clap::Parser;
 
 /// Parse CLI arguments and execute the selected subcommand.
 pub fn run() -> CliResult {
     let args = Args::parse();
     set_verbose(args.verbose);
+    set_quiet(args.quiet);
 
     match args.command {
         Command::Create(a) => run_create(a),

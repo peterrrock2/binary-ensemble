@@ -4,8 +4,9 @@ use crate::codec::{
     BenConstruct, BenDecode, BenDecodeFrame, BenEncodeFrame, MkvBenDecodeFrame, TwoDeltaDecodeFrame,
 };
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
+use crate::progress::Spinner;
 use crate::util::rle::rle_to_vec;
-use crate::{progress, BenVariant};
+use crate::BenVariant;
 use serde_json::json;
 use std::io::{self, Cursor, Read, Write};
 
@@ -17,6 +18,7 @@ pub struct AssignmentReader<R: Read> {
     previous_assignment: Option<Vec<u16>>,
     twodelta_consumed_first_frame: bool,
     silent: bool,
+    spinner: Option<Spinner>,
 }
 
 /// Internal frame representation, one variant per BEN encoding type.
@@ -74,6 +76,7 @@ impl<R: Read> AssignmentReader<R> {
                 previous_assignment: None,
                 twodelta_consumed_first_frame: false,
                 silent: false,
+                spinner: None,
             }),
             None => Err(DecoderInitError::InvalidFileFormat(check_buffer.to_vec())),
         }
@@ -82,6 +85,9 @@ impl<R: Read> AssignmentReader<R> {
     /// Suppress progress output from this decoder's iterator.
     pub fn silent(mut self, silent: bool) -> Self {
         self.silent = silent;
+        if silent {
+            self.spinner = None;
+        }
         self
     }
 
@@ -201,7 +207,9 @@ impl<R: Read> AssignmentReader<R> {
             self.previous_assignment = Some(assignment);
             self.sample_count += count as usize;
             if !self.silent {
-                progress!("Decoding sample: {}\r", self.sample_count);
+                self.spinner
+                    .get_or_insert_with(|| Spinner::new("Decoding sample"))
+                    .set_count(self.sample_count as u64);
             }
             if !keep_going {
                 return Ok(());
@@ -270,7 +278,9 @@ impl<R: Read> Iterator for AssignmentReader<R> {
         self.previous_assignment = Some(assignment.clone());
         self.sample_count += count as usize;
         if !self.silent {
-            progress!("Decoding sample: {}\r", self.sample_count);
+            self.spinner
+                .get_or_insert_with(|| Spinner::new("Decoding sample"))
+                .set_count(self.sample_count as u64);
         }
         Some(Ok((assignment, count)))
     }

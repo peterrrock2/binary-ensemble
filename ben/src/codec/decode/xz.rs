@@ -3,7 +3,8 @@ use crate::format::banners::{banner_for_variant, variant_from_banner, BANNER_LEN
 use crate::format::FormatError;
 use crate::io::reader::XZAssignmentReader;
 use crate::io::writer::AssignmentWriter;
-use crate::{progress, BenVariant};
+use crate::progress::Spinner;
+use crate::BenVariant;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use xz2::read::XzDecoder;
 
@@ -64,6 +65,7 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
     let mut overflow: Vec<u8> = Vec::new();
 
     let mut line_count: usize = 0;
+    let spinner = Spinner::new("Decoding sample");
     loop {
         let count = decoder.read(&mut buffer)?;
         if count == 0 {
@@ -80,7 +82,7 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
                 if overflow[i - 3..=i] == [0, 0, 0, 0] {
                     last_valid_assignment = i + 1;
                     line_count += 1;
-                    progress!("Decoding sample: {}\r", line_count);
+                    spinner.set_count(line_count as u64);
                 }
             }
         } else {
@@ -90,7 +92,7 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
                     let lines = &overflow[i + 1..i + 3];
                     let n_lines = u16::from_be_bytes([lines[0], lines[1]]);
                     line_count += n_lines as usize;
-                    progress!("Decoding sample: {}\r", line_count);
+                    spinner.set_count(line_count as u64);
                 }
             }
         }
@@ -102,8 +104,6 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
         ben32_to_ben_lines(&overflow[0..last_valid_assignment], &mut writer, variant)?;
         overflow = overflow[last_valid_assignment..].to_vec();
     }
-    tracing::trace!("");
-    tracing::trace!("Done!");
     Ok(())
 }
 

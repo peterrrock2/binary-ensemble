@@ -9,8 +9,9 @@ use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
 use crate::io::reader::AssignmentReader;
 use crate::io::writer::AssignmentWriter;
+use crate::progress::Spinner;
 use crate::util::rle::{assign_slice_to_rle, rle_to_vec_in_place};
-use crate::{progress, BenVariant};
+use crate::BenVariant;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::collections::HashMap;
 use std::io::{self, Cursor, Read, Write};
@@ -134,6 +135,7 @@ where
     let mut decoder = AssignmentReader::new(reader)?.silent(true);
     let mut encoder = AssignmentWriter::new(writer, variant)?;
     let mut sample_number = 0usize;
+    let spinner = Spinner::new("Relabeling line");
 
     decoder.for_each_assignment(|assignment, count| {
         if max_samples.is_some_and(|limit| sample_number >= limit) {
@@ -151,12 +153,10 @@ where
         encoder.write_assignment(relabeled)?;
 
         sample_number += out_count;
-        progress!("Relabelling line: {}\r", sample_number);
+        spinner.set_count(sample_number as u64);
         Ok(true)
     })?;
 
-    tracing::trace!("");
-    tracing::trace!("Done!");
     encoder.finish()?;
     Ok(())
 }
@@ -319,6 +319,7 @@ fn relabel_ben_lines_impl<R: Read, W: Write>(
 ) -> io::Result<()> {
     let mut sample_number = 0;
     let mut label_map = HashMap::new();
+    let spinner = Spinner::new("Relabeling line");
     loop {
         if max_samples.is_some_and(|limit| sample_number >= limit) {
             break;
@@ -372,10 +373,8 @@ fn relabel_ben_lines_impl<R: Read, W: Write>(
 
         sample_number += count_occurrences as usize;
 
-        progress!("Relabeling line: {}\r", sample_number);
+        spinner.set_count(sample_number as u64);
     }
-    tracing::trace!("");
-    tracing::trace!("Done!");
 
     Ok(())
 }
@@ -545,6 +544,7 @@ fn relabel_ben_lines_with_map_impl<R: Read, W: Write>(
     let mut assignment_vec = Vec::new();
     let mut new_assignment_vec = vec![0u16; permutation.len()];
     let mut new_rle = Vec::new();
+    let spinner = Spinner::new("Relabeling line");
     loop {
         if max_samples.is_some_and(|limit| sample_number >= limit) {
             break;
@@ -602,10 +602,8 @@ fn relabel_ben_lines_with_map_impl<R: Read, W: Write>(
         }
 
         sample_number += count_occurrences as usize;
-        progress!("Relabeling line: {}\r", sample_number);
+        spinner.set_count(sample_number as u64);
     }
-    tracing::trace!("");
-    tracing::trace!("Done!");
 
     Ok(())
 }

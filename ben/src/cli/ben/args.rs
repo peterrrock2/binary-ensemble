@@ -114,6 +114,9 @@ pub(super) struct Args {
     /// Enables verbose printing for the CLI. Optional.
     #[arg(short, long)]
     pub verbose: bool,
+    /// Suppress in-place progress spinners. Trace logging is unaffected.
+    #[arg(short = 'q', long)]
+    pub quiet: bool,
     /// When running x-encoder, this flag will determine the number of cpus to use on the
     /// system. By default, all available cpus will be used.
     #[arg(short = 'c', long)]

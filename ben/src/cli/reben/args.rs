@@ -80,4 +80,7 @@ pub(super) struct Args {
     /// Verbosity level for the program.
     #[arg(short, long)]
     pub verbose: bool,
+    /// Suppress in-place progress spinners. Trace logging is unaffected.
+    #[arg(short = 'q', long)]
+    pub quiet: bool,
 }

@@ -32,20 +32,3 @@ pub fn init_logging() {
         let _ = tracing::subscriber::set_global_default(subscriber);
     });
 }
-
-/// Emit a progress update to stderr when trace logging is enabled.
-///
-/// This helper exists for progress-style output such as `"Encoding line: 42\r"`
-/// that should redraw the current terminal line instead of creating a normal
-/// structured log event.
-///
-/// # Arguments
-///
-/// * `args` - The formatted progress message to emit.
-///
-/// # Returns
-///
-/// This function does not return a value.
-pub fn trace_progress(args: std::fmt::Arguments<'_>) {
-    tracing::trace!("{args}");
-}

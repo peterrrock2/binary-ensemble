@@ -12,13 +12,14 @@ use args::{Args, Mode};
 use ben_mode::run_ben_mode;
 use json_mode::run_json_mode;
 
-use crate::cli::common::{set_verbose, CliError, CliResult};
+use crate::cli::common::{set_quiet, set_verbose, CliError, CliResult};
 use clap::Parser;
 
 /// Parse CLI arguments and execute the selected `reben` mode.
 pub fn run() -> CliResult {
     let args = Args::parse();
     set_verbose(args.verbose);
+    set_quiet(args.quiet);
     run_with_args(args).map_err(CliError::from)
 }
 

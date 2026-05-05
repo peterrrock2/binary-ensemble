@@ -1,6 +1,7 @@
 use crate::codec::encode::errors::EncodeError;
 use crate::io::writer::{AssignmentWriter, XZAssignmentWriter};
-use crate::{progress, BenVariant};
+use crate::progress::Spinner;
+use crate::BenVariant;
 use serde_json::Value;
 use std::io::{self, BufRead, Result, Write};
 use xz2::stream::MtStreamBuilder;
@@ -55,10 +56,11 @@ pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
         ben_encoder = ben_encoder.with_chunk_size(cs);
     }
 
-    let mut line_num = 1;
+    let mut line_num = 1u64;
+    let spinner = Spinner::new("Encoding line");
 
     for line_result in reader.lines() {
-        progress!("Encoding line: {}\r", line_num);
+        spinner.set_count(line_num);
         line_num += 1;
         let line = line_result?;
         let data: Value = serde_json::from_str(&line).map_err(|e| {
@@ -70,9 +72,6 @@ pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
 
         ben_encoder.write_json_value(data)?;
     }
-
-    tracing::trace!("");
-    tracing::trace!("Done!");
 
     Ok(())
 }
@@ -97,10 +96,11 @@ pub fn encode_jsonl_to_ben<R: BufRead, W: Write>(
     writer: W,
     variant: BenVariant,
 ) -> Result<()> {
-    let mut line_num = 1;
+    let mut line_num = 1u64;
+    let spinner = Spinner::new("Encoding line");
     let mut ben_encoder = AssignmentWriter::new(writer, variant)?;
     for line_result in reader.lines() {
-        progress!("Encoding line: {}\r", line_num);
+        spinner.set_count(line_num);
         line_num += 1;
         let line = line_result?;
         let data: Value = serde_json::from_str(&line).map_err(|e| {
@@ -112,7 +112,5 @@ pub fn encode_jsonl_to_ben<R: BufRead, W: Write>(
 
         ben_encoder.write_json_value(data)?;
     }
-    tracing::trace!("");
-    tracing::trace!("Done!");
     Ok(())
 }

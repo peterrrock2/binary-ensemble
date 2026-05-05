@@ -8,7 +8,8 @@ use crate::codec::encode::{encode_ben32_assignments, encode_twodelta_frame_with_
 use crate::codec::translate::ben_to_ben32_lines;
 use crate::codec::TwoDeltaEncodeFrame;
 use crate::format::banners::{banner_for_variant, has_known_banner_prefix, BANNER_LEN};
-use crate::{progress, BenVariant};
+use crate::progress::Spinner;
+use crate::BenVariant;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -302,7 +303,8 @@ impl<W: Write> XZAssignmentWriter<W> {
         self.encoder.write_all(&first_count.to_be_bytes())?;
 
         let mut sample_count = first_count as usize;
-        progress!("Encoding line: {}\r", sample_count);
+        let spinner = Spinner::new("Encoding line");
+        spinner.set_count(sample_count as u64);
 
         // Delta frames: unpack bitpacked run lengths and buffer into chunks.
         loop {
@@ -339,13 +341,11 @@ impl<W: Write> XZAssignmentWriter<W> {
             }
 
             sample_count += count as usize;
-            progress!("Encoding line: {}\r", sample_count);
+            spinner.set_count(sample_count as u64);
         }
 
         self.flush_chunk()?;
 
-        tracing::trace!("");
-        tracing::trace!("Done!");
         Ok(())
     }
 

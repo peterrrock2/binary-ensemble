@@ -3,6 +3,9 @@ pub use error::{CliError, CliResult};
 
 use std::io::{self, Result};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static QUIET: AtomicBool = AtomicBool::new(false);
 
 /// Configure tracing for CLI execution.
 ///
@@ -22,6 +25,31 @@ pub fn set_verbose(verbose: bool) {
         std::env::set_var("RUST_LOG", "trace");
     }
     crate::logging::init_logging();
+}
+
+/// Suppress in-place progress spinners for this process.
+///
+/// Independent of [`set_verbose`]: trace logging is gated by `RUST_LOG`,
+/// while spinners are gated by this flag plus stderr TTY detection.
+///
+/// # Arguments
+///
+/// * `quiet` - When `true`, [`crate::progress::Spinner`] becomes a no-op.
+///
+/// # Returns
+///
+/// This function does not return a value.
+pub fn set_quiet(quiet: bool) {
+    QUIET.store(quiet, Ordering::Relaxed);
+}
+
+/// Whether progress spinners have been globally suppressed.
+///
+/// # Returns
+///
+/// Returns `true` when [`set_quiet`] was last called with `true`.
+pub fn is_quiet() -> bool {
+    QUIET.load(Ordering::Relaxed)
 }
 
 /// Decide whether overwriting an output path should proceed, given the
