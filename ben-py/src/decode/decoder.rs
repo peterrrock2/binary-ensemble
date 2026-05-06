@@ -21,7 +21,10 @@ pub struct PyBenDecoder {
     path: PathBuf,
     mode: DecoderMode,
     backend: DecoderBackend,
-    iter: DynIter,
+    /// Lazily-constructed frame iterator. We defer construction so opening
+    /// a bundle whose stream is empty or truncated still succeeds — only
+    /// methods that actually walk the stream need a live iterator.
+    iter: Option<DynIter>,
     current_assignment: Option<Vec<u16>>,
     remaining_count: u16,
     base_len: Option<usize>,
@@ -89,12 +92,16 @@ impl PyBenDecoder {
                 warn_xben_startup(py)?;
             }
 
-            let iter = build_bundle_iter(&file_path, &state, derived_mode)?;
+            // Iter construction is deferred: opening a bundle with an
+            // empty or truncated stream is legal (incomplete or zero-sample
+            // finalized bundles), and metadata methods like
+            // `count_samples`, `asset_names`, and `extract_stream` don't
+            // need a live iterator. Iteration paths build it on demand.
             Ok(Self {
                 path: file_path,
                 mode: derived_mode,
                 backend: DecoderBackend::Bundle(state),
-                iter,
+                iter: None,
                 current_assignment: None,
                 remaining_count: 0,
                 base_len: None,
@@ -105,12 +112,16 @@ impl PyBenDecoder {
             if matches!(parsed_mode, DecoderMode::XBen) {
                 warn_xben_startup(py)?;
             }
+            // For plain streams, opening the file as a BEN/XBEN reader is
+            // the only way to learn the variant — keep eager construction
+            // so we surface a malformed-banner error at open time, matching
+            // the documented behaviour of `BenDecoder("…", mode="ben")`.
             let iter = build_plain_iter(&file_path, parsed_mode)?;
             Ok(Self {
                 path: file_path,
                 mode: parsed_mode,
                 backend: DecoderBackend::Plain,
-                iter,
+                iter: Some(iter),
                 current_assignment: None,
                 remaining_count: 0,
                 base_len: None,
@@ -148,7 +159,7 @@ impl PyBenDecoder {
             }
         };
 
-        slf.iter = new_iter;
+        slf.iter = Some(new_iter);
         Ok(slf.into())
     }
 
@@ -158,7 +169,25 @@ impl PyBenDecoder {
             let a = slf.current_assignment.as_ref().unwrap().clone();
             return Ok(Some(a));
         }
-        match slf.iter.next() {
+        // Build the iterator on first use (e.g. when iteration begins
+        // without an explicit `__iter__` call). For bundle backends with
+        // empty/truncated streams this is where the BEN-banner-required
+        // error surfaces, instead of at `BenDecoder(...)` construction.
+        if slf.iter.is_none() {
+            let path = slf.path.clone();
+            let mode = slf.mode;
+            let new_iter: DynIter = match &slf.backend {
+                DecoderBackend::Plain => build_plain_iter(&path, mode)?,
+                DecoderBackend::Bundle(state) => build_bundle_iter(&path, state, mode)?,
+            };
+            slf.iter = Some(new_iter);
+        }
+        let next = slf
+            .iter
+            .as_mut()
+            .expect("iter populated by the lazy-init branch above")
+            .next();
+        match next {
             Some(Ok((assignment, count))) => {
                 if count == 0 {
                     return Err(PyException::new_err(
@@ -533,7 +562,7 @@ fn reset_with_selection(
 ) -> PyResult<()> {
     let frames = build_frames_for_subsample(&decoder.path, decoder.mode, &decoder.backend)?;
     let frame_decoder = SubsampleFrameDecoder::new(frames, selection);
-    decoder.iter = Box::new(frame_decoder);
+    decoder.iter = Some(Box::new(frame_decoder));
     decoder.current_assignment = None;
     decoder.remaining_count = 0;
     decoder.len_hint = Some(len_hint);
