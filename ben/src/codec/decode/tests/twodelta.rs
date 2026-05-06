@@ -3,7 +3,7 @@ use crate::codec::decode::{
     decode_xben_to_jsonl,
 };
 use crate::codec::encode::{encode_ben_to_xben, encode_twodelta_frame};
-use crate::codec::frames::TwoDeltaEncodeFrame;
+use crate::codec::frames::BenEncodeFrame;
 use crate::io::writer::AssignmentWriter;
 use crate::util::rle::rle_to_vec;
 use crate::BenVariant;
@@ -83,7 +83,7 @@ fn apply_runs_alternating_single_positions() {
 
 #[test]
 fn decode_twodelta_frame_basic() {
-    let frame = TwoDeltaEncodeFrame::from_run_lengths((1, 2), vec![2, 2], None);
+    let frame = BenEncodeFrame::from_run_lengths((1, 2), vec![2, 2], None);
     let prev = vec![1u16, 2, 1, 2];
     let result = decode_twodelta_frame(prev, &frame).unwrap();
     assert_eq!(result, vec![1, 1, 2, 2]);
@@ -93,7 +93,7 @@ fn decode_twodelta_frame_basic() {
 fn decode_twodelta_frame_full_swap() {
     // pair=(2,1) means run starts with value 2; run_lengths=[2,2]
     // prev [1,2,1,2]: pair positions 0,1,2,3 → [2,2,1,1]
-    let frame = TwoDeltaEncodeFrame::from_run_lengths((2, 1), vec![2, 2], None);
+    let frame = BenEncodeFrame::from_run_lengths((2, 1), vec![2, 2], None);
     let prev = vec![1u16, 2, 1, 2];
     let result = decode_twodelta_frame(prev, &frame).unwrap();
     assert_eq!(result, vec![2, 2, 1, 1]);
@@ -103,8 +103,8 @@ fn decode_twodelta_frame_full_swap() {
 fn decode_twodelta_frame_chain_returns_to_original() {
     // Frame 1: (1,2) run=[2,2] applied to [1,2,1,2] → [1,1,2,2]
     // Frame 2: (1,2) run=[1,1,1,1] applied to [1,1,2,2] → [1,2,1,2]
-    let f1 = TwoDeltaEncodeFrame::from_run_lengths((1, 2), vec![2, 2], None);
-    let f2 = TwoDeltaEncodeFrame::from_run_lengths((1, 2), vec![1, 1, 1, 1], None);
+    let f1 = BenEncodeFrame::from_run_lengths((1, 2), vec![2, 2], None);
+    let f2 = BenEncodeFrame::from_run_lengths((1, 2), vec![1, 1, 1, 1], None);
     let initial = vec![1u16, 2, 1, 2];
     let after_f1 = decode_twodelta_frame(initial.clone(), &f1).unwrap();
     assert_eq!(after_f1, vec![1, 1, 2, 2]);

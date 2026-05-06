@@ -4,7 +4,7 @@ mod errors;
 use errors::RelabelError;
 
 use crate::codec::decode::decode_ben_line;
-use crate::codec::{BenConstruct, BenEncodeFrame};
+use crate::codec::BenEncodeFrame;
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
 use crate::io::reader::AssignmentReader;
@@ -365,11 +365,9 @@ fn relabel_ben_lines_impl<R: Read, W: Write>(
             1
         };
 
-        let relabeled = BenEncodeFrame::from_rle(ben_line, None);
+        let relabeled =
+            BenEncodeFrame::from_rle(ben_line, variant, Some(count_occurrences));
         writer.write_all(relabeled.as_slice())?;
-        if variant == BenVariant::MkvChain {
-            writer.write_all(&count_occurrences.to_be_bytes())?;
-        }
 
         sample_number += count_occurrences as usize;
 
@@ -595,11 +593,9 @@ fn relabel_ben_lines_with_map_impl<R: Read, W: Write>(
             1
         };
 
-        let relabeled = BenEncodeFrame::from_rle(new_rle.clone(), None);
+        let relabeled =
+            BenEncodeFrame::from_rle(new_rle.clone(), variant, Some(count_occurrences));
         writer.write_all(relabeled.as_slice())?;
-        if variant == BenVariant::MkvChain {
-            writer.write_all(&count_occurrences.to_be_bytes())?;
-        }
 
         sample_number += count_occurrences as usize;
         spinner.set_count(sample_number as u64);

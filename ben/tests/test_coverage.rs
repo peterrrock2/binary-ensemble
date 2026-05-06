@@ -9,7 +9,7 @@ use binary_ensemble::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben};
 use binary_ensemble::codec::encode::{
     encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben, encode_twodelta_frame,
 };
-use binary_ensemble::codec::{BenConstruct, BenEncodeFrame, TwoDeltaEncodeFrame};
+use binary_ensemble::codec::BenEncodeFrame;
 use binary_ensemble::format::banners::{
     banner_for_variant, has_known_banner_prefix, variant_from_banner, BANNER_LEN,
     MKVCHAIN_BEN_BANNER, STANDARD_BEN_BANNER, TWODELTA_BEN_BANNER,
@@ -700,7 +700,7 @@ fn ben_encoder_twodelta_base_frame_then_delta_round_trip() {
 #[test]
 fn encode_ben_vec_from_rle_empty_rle() {
     // Empty RLE produces a minimal frame with zero payload bytes.
-    let frame = BenEncodeFrame::from_rle(vec![], None);
+    let frame = BenEncodeFrame::from_rle(vec![], BenVariant::Standard, None);
     // 1 byte max_val_bits + 1 byte max_len_bits + 4 bytes n_bytes = 6 bytes
     assert_eq!(frame.as_slice().len(), 6);
 }
@@ -709,21 +709,21 @@ fn encode_ben_vec_from_rle_empty_rle() {
 fn encode_ben_vec_from_assign_and_rle_are_equivalent() {
     let assign = vec![3u16, 3, 3, 1, 2, 2];
     let rle = assign_to_rle(&assign);
-    let via_assign = BenEncodeFrame::from_assignment(&assign, None);
-    let via_rle = BenEncodeFrame::from_rle(rle, None);
+    let via_assign = BenEncodeFrame::from_assignment(&assign, BenVariant::Standard, None);
+    let via_rle = BenEncodeFrame::from_rle(rle, BenVariant::Standard, None);
     assert_eq!(via_assign.as_slice(), via_rle.as_slice());
 }
 
 #[test]
 fn encode_ben_vec_from_assign_single_element() {
-    let frame = BenEncodeFrame::from_assignment(&[42u16], None);
+    let frame = BenEncodeFrame::from_assignment(&[42u16], BenVariant::Standard, None);
     assert!(!frame.as_slice().is_empty());
 }
 
 #[test]
 fn encode_ben_vec_from_assign_all_same() {
     let assign = vec![7u16; 500];
-    let frame = BenEncodeFrame::from_assignment(&assign, None);
+    let frame = BenEncodeFrame::from_assignment(&assign, BenVariant::Standard, None);
     // Should encode efficiently — the payload compresses a single run.
     assert!(!frame.as_slice().is_empty());
 }
@@ -1522,7 +1522,7 @@ fn encode_twodelta_frame_valid_two_value_transition() {
     let next = vec![2u16, 2, 1, 1];
     let frame = encode_twodelta_frame(&prev, &next, Some(1)).unwrap();
     // All 4 positions belong to the pair, and all flip
-    assert_eq!(frame.n_bytes as usize, frame.payload().len());
+    assert_eq!(frame.n_bytes() as usize, frame.payload().len());
 }
 
 #[test]
@@ -1531,7 +1531,7 @@ fn encode_twodelta_frame_single_value_swap() {
     let prev = vec![1u16, 1, 1, 2];
     let next = vec![1u16, 1, 1, 1];
     let frame = encode_twodelta_frame(&prev, &next, Some(1)).unwrap();
-    assert_eq!(frame.pair, (1, 2));
+    assert_eq!(frame.pair().unwrap(), (1, 2));
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1542,8 +1542,8 @@ fn encode_twodelta_frame_single_value_swap() {
 fn twodelta_frame_pair_accessor() {
     let pair = (3u16, 7u16);
     let run_lengths = vec![2u16, 3, 1];
-    let frame = TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths, None);
-    assert_eq!(frame.pair, pair);
+    let frame = BenEncodeFrame::from_run_lengths(pair, run_lengths, None);
+    assert_eq!(frame.pair().unwrap(), pair);
 }
 
 #[test]
@@ -1551,23 +1551,23 @@ fn twodelta_frame_max_len_bits_accessor() {
     // max run length = 4 = 0b100 → 3 bits
     let pair = (1u16, 2u16);
     let run_lengths = vec![4u16, 4];
-    let frame = TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths, None);
-    assert_eq!(frame.max_len_bit_count, 3);
+    let frame = BenEncodeFrame::from_run_lengths(pair, run_lengths, None);
+    assert_eq!(frame.max_len_bit_count(), 3);
 }
 
 #[test]
 fn twodelta_frame_n_bytes_and_payload_consistent() {
     let pair = (5u16, 10u16);
     let run_lengths = vec![1u16, 2, 3];
-    let frame = TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths, None);
-    assert_eq!(frame.n_bytes as usize, frame.payload().len());
+    let frame = BenEncodeFrame::from_run_lengths(pair, run_lengths, None);
+    assert_eq!(frame.n_bytes() as usize, frame.payload().len());
 }
 
 #[test]
 fn twodelta_frame_to_bytes_and_as_slice_same() {
     let pair = (1u16, 2u16);
     let run_lengths = vec![3u16, 2];
-    let frame = TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths, None);
+    let frame = BenEncodeFrame::from_run_lengths(pair, run_lengths, None);
     assert_eq!(frame.to_bytes(), frame.as_slice());
 }
 
@@ -1575,7 +1575,7 @@ fn twodelta_frame_to_bytes_and_as_slice_same() {
 fn twodelta_frame_into_bytes_consumes() {
     let pair = (1u16, 2u16);
     let run_lengths = vec![3u16, 2];
-    let frame = TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths, None);
+    let frame = BenEncodeFrame::from_run_lengths(pair, run_lengths, None);
     let expected = frame.to_bytes();
     let actual = frame.into_bytes();
     assert_eq!(actual, expected);
@@ -1585,25 +1585,25 @@ fn twodelta_frame_into_bytes_consumes() {
 fn twodelta_frame_from_parts_round_trip() {
     let pair = (10u16, 20u16);
     let run_lengths = vec![2u16, 5, 1];
-    let original = TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths, None);
-    let reconstructed = TwoDeltaEncodeFrame::from_parts(
+    let original = BenEncodeFrame::from_run_lengths(pair, run_lengths, None);
+    let reconstructed = BenEncodeFrame::from_parts(
         pair,
-        original.max_len_bit_count,
+        original.max_len_bit_count(),
         original.payload().to_vec(),
-        original.count,
+        original.count(),
     );
     assert_eq!(original.as_slice(), reconstructed.as_slice());
-    assert_eq!(original.pair, reconstructed.pair);
-    assert_eq!(original.max_len_bit_count, reconstructed.max_len_bit_count);
-    assert_eq!(original.n_bytes, reconstructed.n_bytes);
-    assert_eq!(original.count, reconstructed.count);
+    assert_eq!(original.pair().unwrap(), reconstructed.pair().unwrap());
+    assert_eq!(original.max_len_bit_count(), reconstructed.max_len_bit_count());
+    assert_eq!(original.n_bytes(), reconstructed.n_bytes());
+    assert_eq!(original.count(), reconstructed.count());
 }
 
 #[test]
 fn twodelta_frame_asref_and_deref() {
     let pair = (1u16, 2u16);
     let run_lengths = vec![3u16];
-    let frame = TwoDeltaEncodeFrame::from_run_lengths(pair, run_lengths, None);
+    let frame = BenEncodeFrame::from_run_lengths(pair, run_lengths, None);
     let as_ref: &[u8] = frame.as_ref();
     let deref: &[u8] = &*frame;
     assert_eq!(as_ref, deref);
@@ -1617,45 +1617,45 @@ fn twodelta_frame_asref_and_deref() {
 #[test]
 fn encode_ben_frame_from_rle_runs_accessor() {
     let runs = vec![(3u16, 2u16), (5u16, 4u16)];
-    let frame = BenEncodeFrame::from_rle(runs.clone(), None);
-    assert_eq!(frame.runs.as_slice(), runs.as_slice());
+    let frame = BenEncodeFrame::from_rle(runs.clone(), BenVariant::Standard, None);
+    assert_eq!(frame.runs().unwrap().as_slice(), runs.as_slice());
 }
 
 #[test]
 fn encode_ben_frame_max_val_bits() {
     // max value = 5 = 0b101 → 3 bits
     let runs = vec![(1u16, 3u16), (5u16, 2u16)];
-    let frame = BenEncodeFrame::from_rle(runs, None);
-    assert_eq!(frame.max_val_bit_count, 3);
+    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
+    assert_eq!(frame.max_val_bit_count(), Some(3));
 }
 
 #[test]
 fn encode_ben_frame_max_len_bits() {
     // max run length = 7 = 0b111 → 3 bits
     let runs = vec![(1u16, 7u16), (2u16, 1u16)];
-    let frame = BenEncodeFrame::from_rle(runs, None);
-    assert_eq!(frame.max_len_bit_count, 3);
+    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
+    assert_eq!(frame.max_len_bit_count(), 3);
 }
 
 #[test]
 fn encode_ben_frame_n_bytes_consistent() {
     // Frame layout: 1 byte (max_val_bits) + 1 byte (max_len_bits) + 4 bytes (n_bytes header) + n_bytes payload
     let runs = vec![(1u16, 5u16), (2u16, 3u16)];
-    let frame = BenEncodeFrame::from_rle(runs, None);
-    assert_eq!(frame.n_bytes as usize + 6, frame.as_slice().len());
+    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
+    assert_eq!(frame.n_bytes() as usize + 6, frame.as_slice().len());
 }
 
 #[test]
 fn encode_ben_frame_to_bytes_and_as_slice_same() {
     let runs = vec![(1u16, 2u16), (3u16, 4u16)];
-    let frame = BenEncodeFrame::from_rle(runs, None);
+    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
     assert_eq!(frame.to_bytes(), frame.as_slice());
 }
 
 #[test]
 fn encode_ben_frame_into_bytes_consumes() {
     let runs = vec![(1u16, 2u16), (3u16, 4u16)];
-    let frame = BenEncodeFrame::from_rle(runs, None);
+    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
     let expected = frame.to_bytes();
     let actual = frame.into_bytes();
     assert_eq!(actual, expected);
@@ -1664,7 +1664,7 @@ fn encode_ben_frame_into_bytes_consumes() {
 #[test]
 fn encode_ben_frame_eq_with_vec_u8() {
     let runs = vec![(1u16, 2u16)];
-    let frame = BenEncodeFrame::from_rle(runs, None);
+    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
     let bytes = frame.to_bytes();
     assert!(frame == bytes);
     assert!(bytes == frame);
@@ -1673,7 +1673,7 @@ fn encode_ben_frame_eq_with_vec_u8() {
 #[test]
 fn encode_ben_frame_asref_and_deref() {
     let runs = vec![(1u16, 1u16)];
-    let frame = BenEncodeFrame::from_rle(runs, None);
+    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
     let as_ref: &[u8] = frame.as_ref();
     let deref: &[u8] = &*frame;
     assert_eq!(as_ref, deref);
@@ -1683,9 +1683,9 @@ fn encode_ben_frame_asref_and_deref() {
 #[test]
 fn encode_ben_frame_from_assignment() {
     let assignment = vec![1u16, 1, 2, 2, 3];
-    let frame = BenEncodeFrame::from_assignment(&assignment, None);
+    let frame = BenEncodeFrame::from_assignment(&assignment, BenVariant::Standard, None);
     // Frame from assignment should produce runs
-    let runs = &frame.runs[..];
+    let runs = &frame.runs().unwrap()[..];
     assert_eq!(runs, &[(1u16, 2u16), (2u16, 2u16), (3u16, 1u16)]);
 }
 

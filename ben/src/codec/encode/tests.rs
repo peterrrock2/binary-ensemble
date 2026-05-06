@@ -1,5 +1,5 @@
 use super::*;
-use crate::codec::frames::{BenConstruct, BenEncodeFrame};
+use crate::codec::frames::BenEncodeFrame;
 use crate::util::rle::rle_to_vec;
 use crate::BenVariant;
 use serde_json::json;
@@ -262,8 +262,13 @@ fn test_encode_jsonl_to_ben_len_65535() {
 #[test]
 fn test_encode_ben_vec_from_assign_matches_rle_entrypoint() {
     let assign_vec = vec![4u16, 4, 4, 1, 1, 3, 3, 3, 2];
-    let direct = BenEncodeFrame::from_assignment(assign_vec.clone(), None);
-    let via_rle = BenEncodeFrame::from_rle(crate::util::rle::assign_to_rle(assign_vec), None);
+    let direct =
+        BenEncodeFrame::from_assignment(assign_vec.clone(), BenVariant::Standard, None);
+    let via_rle = BenEncodeFrame::from_rle(
+        crate::util::rle::assign_to_rle(assign_vec),
+        BenVariant::Standard,
+        None,
+    );
     assert_eq!(direct, via_rle);
 }
 
@@ -802,8 +807,8 @@ fn twodelta_encode_with_pair_and_mask_hints() {
 
     let frame = encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
         .unwrap();
-    assert_eq!(frame.pair, (2, 1));
-    assert!(!frame.run_length_vector.is_empty());
+    assert_eq!(frame.pair().unwrap(), (2, 1));
+    assert!(!frame.run_length_vector().unwrap().is_empty());
     // Verify masks were updated
     assert_eq!(masks[&2], vec![0, 2]);
     assert_eq!(masks[&1], vec![1, 3]);
@@ -822,7 +827,7 @@ fn twodelta_encode_with_mask_hint_only() {
 
     let frame =
         encode_twodelta_frame_with_hint(&prev, &curr, None, Some(&mut masks), None).unwrap();
-    assert_eq!(frame.pair, (2, 1));
+    assert_eq!(frame.pair().unwrap(), (2, 1));
 }
 
 #[test]
@@ -986,8 +991,8 @@ fn twodelta_encode_with_count() {
     let prev = vec![1u16, 1, 2, 2];
     let next = vec![2u16, 1, 2, 1];
     let frame = encode_twodelta_frame(&prev, &next, Some(5)).unwrap();
-    // Verify the count is embedded in the raw_bytes tail
-    let raw = &frame.raw_bytes;
+    // Verify the count is embedded in the serialized frame's tail
+    let raw = frame.as_slice();
     let count = u16::from_be_bytes([raw[raw.len() - 2], raw[raw.len() - 1]]);
     assert_eq!(count, 5);
 }
@@ -1004,8 +1009,8 @@ fn twodelta_encode_run_lengths_correct() {
     let prev = vec![1u16, 1, 2, 2];
     let next = vec![2u16, 1, 2, 1];
     let frame = encode_twodelta_frame(&prev, &next, None).unwrap();
-    assert_eq!(frame.pair, (2, 1));
-    assert_eq!(frame.run_length_vector, vec![1, 1, 1, 1]);
+    assert_eq!(frame.pair().unwrap(), (2, 1));
+    assert_eq!(frame.run_length_vector().unwrap(), vec![1, 1, 1, 1]);
 }
 
 #[test]
@@ -1017,7 +1022,7 @@ fn twodelta_encode_run_lengths_with_non_pair_gaps() {
     let prev = vec![1u16, 3, 2, 3, 1];
     let next = vec![2u16, 3, 1, 3, 2];
     let frame = encode_twodelta_frame(&prev, &next, None).unwrap();
-    assert_eq!(frame.run_length_vector, vec![1, 1, 1]);
+    assert_eq!(frame.run_length_vector().unwrap(), vec![1, 1, 1]);
 }
 
 // ── TwoDelta encode→decode roundtrip ────────────────────────────────────────

@@ -1,6 +1,6 @@
 use super::utils::parse_json_assignment;
 use crate::codec::encode::encode_twodelta_frame_with_hint;
-use crate::codec::{BenConstruct, BenEncodeFrame, MkvBenEncodeFrame, TwoDeltaEncodeFrame};
+use crate::codec::BenEncodeFrame;
 use crate::format::banners::banner_for_variant;
 use crate::BenVariant;
 use serde_json::Value;
@@ -60,24 +60,30 @@ impl<W: Write> AssignmentWriter<W> {
 
         match self.variant {
             BenVariant::Standard => {
-                let frame = BenEncodeFrame::from_assignment(&pending_sample, None);
+                let frame =
+                    BenEncodeFrame::from_assignment(&pending_sample, BenVariant::Standard, None);
                 for _ in 0..self.sample_count {
                     self.writer.write_all(frame.as_slice())?;
                 }
             }
             BenVariant::MkvChain => {
-                let frame =
-                    MkvBenEncodeFrame::from_assignment(&pending_sample, Some(self.sample_count));
+                let frame = BenEncodeFrame::from_assignment(
+                    &pending_sample,
+                    BenVariant::MkvChain,
+                    Some(self.sample_count),
+                );
                 self.writer.write_all(frame.as_slice())?;
             }
             BenVariant::TwoDelta => {
                 if self.previous_sample.is_empty() {
-                    // First frame: encode as MkvBen and build the initial masks.
+                    // First frame: encode in MkvChain wire format and build
+                    // the initial position masks.
                     for (idx, &val) in pending_sample.iter().enumerate() {
                         self.previous_masks.entry(val).or_default().push(idx);
                     }
-                    let frame = MkvBenEncodeFrame::from_assignment(
+                    let frame = BenEncodeFrame::from_assignment(
                         &pending_sample,
+                        BenVariant::MkvChain,
                         Some(self.sample_count),
                     );
                     self.writer.write_all(frame.as_slice())?;
@@ -165,7 +171,7 @@ impl<W: Write> AssignmentWriter<W> {
 pub(super) fn twodelta_repeat_frame(
     assignment: &[u16],
     count: u16,
-) -> io::Result<TwoDeltaEncodeFrame> {
+) -> io::Result<BenEncodeFrame> {
     let first = assignment.first().copied().unwrap_or(0);
     let second = assignment
         .iter()
@@ -201,7 +207,7 @@ pub(super) fn twodelta_repeat_frame(
         run_lengths.push(run_len);
     }
 
-    Ok(TwoDeltaEncodeFrame::from_run_lengths(
+    Ok(BenEncodeFrame::from_run_lengths(
         (first, second),
         run_lengths,
         Some(count),

@@ -1,5 +1,5 @@
 use super::errors::EncodeError;
-use crate::codec::frames::TwoDeltaEncodeFrame;
+use crate::codec::BenEncodeFrame;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind, Result};
 
@@ -18,7 +18,7 @@ use std::io::{Error, ErrorKind, Result};
 ///
 /// # Returns
 ///
-/// A `TwoDeltaEncodeFrame` describing the transition from `previous_assignment` to
+/// A `BenEncodeFrame` describing the transition from `previous_assignment` to
 /// `new_assignment`.
 ///
 /// # TwoDelta encoding
@@ -67,7 +67,7 @@ pub(crate) fn encode_twodelta_frame_with_hint(
     delta_pair: Option<(u16, u16)>,
     previous_masks: Option<&mut HashMap<u16, Vec<usize>>>,
     count: Option<u16>,
-) -> Result<TwoDeltaEncodeFrame> {
+) -> Result<BenEncodeFrame> {
     let previous_assignment = previous_assignment.as_ref();
     let new_assignment = new_assignment.as_ref();
 
@@ -107,7 +107,7 @@ pub(crate) fn encode_twodelta_frame_with_hint(
         _ => construct_twodelta_frame_from_scratch(previous_assignment, new_assignment, count),
     }
 
-    // Ok(TwoDeltaEncodeFrame::from_run_lengths(ordered_pair, run_lengths))
+    // Ok(BenEncodeFrame::from_run_lengths(ordered_pair, run_lengths))
 }
 
 /// Validate that `previous_masks` contains non-empty entries for both ids in `pair` and return
@@ -181,7 +181,7 @@ fn validate_masks_and_order_pairs_for_twodelta(
 ///
 /// # Returns
 ///
-/// A `TwoDeltaEncodeFrame` for the transition, or `BenEncodeError::RepeatedSample` if no
+/// A `BenEncodeFrame` for the transition, or `BenEncodeError::RepeatedSample` if no
 /// position actually changed value (signalling the frame can be deduplicated), or
 /// another error if a mask entry is inconsistent with the assignment data.
 fn construct_twodelta_frame_from_pair_and_mask_hints(
@@ -190,7 +190,7 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
     delta_pair: (u16, u16),
     previous_masks: &mut HashMap<u16, Vec<usize>>,
     count: Option<u16>,
-) -> Result<TwoDeltaEncodeFrame> {
+) -> Result<BenEncodeFrame> {
     let pair =
         match validate_masks_and_order_pairs_for_twodelta(delta_pair, previous_masks, current) {
             Ok(pair) => pair,
@@ -289,7 +289,7 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
 
     previous_masks.insert(pair.0, new_mask_a);
     previous_masks.insert(pair.1, new_mask_b);
-    Ok(TwoDeltaEncodeFrame::from_run_lengths(
+    Ok(BenEncodeFrame::from_run_lengths(
         pair,
         run_lengths,
         count,
@@ -313,14 +313,14 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
 ///
 /// # Returns
 ///
-/// A `TwoDeltaEncodeFrame` for the transition, or `BenEncodeError::RepeatedSample` if the
+/// A `BenEncodeFrame` for the transition, or `BenEncodeError::RepeatedSample` if the
 /// two assignments are identical.
 fn construct_twodelta_frame_from_mask_hint(
     previous: &[u16],
     current: &[u16],
     previous_masks: &mut HashMap<u16, Vec<usize>>,
     count: Option<u16>,
-) -> Result<TwoDeltaEncodeFrame> {
+) -> Result<BenEncodeFrame> {
     for (&assign0, &assign1) in previous.iter().zip(current.iter()) {
         if assign0 != assign1 {
             return construct_twodelta_frame_from_pair_and_mask_hints(
@@ -352,13 +352,13 @@ fn construct_twodelta_frame_from_mask_hint(
 ///
 /// # Returns
 ///
-/// A `TwoDeltaEncodeFrame` for the transition, or an error if more than two distinct ids
+/// A `BenEncodeFrame` for the transition, or an error if more than two distinct ids
 /// appear across all changed positions.
 fn construct_twodelta_frame_from_scratch(
     previous: &[u16],
     current: &[u16],
     count: Option<u16>,
-) -> Result<TwoDeltaEncodeFrame> {
+) -> Result<BenEncodeFrame> {
     // Find the pair at the first changed position.
     let first_change = previous
         .iter()
@@ -406,7 +406,7 @@ fn construct_twodelta_frame_from_scratch(
     }
     run_lengths.push(run_count);
 
-    Ok(TwoDeltaEncodeFrame::from_run_lengths(
+    Ok(BenEncodeFrame::from_run_lengths(
         enc_pair,
         run_lengths,
         count,
@@ -436,6 +436,6 @@ pub fn encode_twodelta_frame(
     previous_assignment: impl AsRef<[u16]>,
     new_assignment: impl AsRef<[u16]>,
     count: Option<u16>,
-) -> Result<TwoDeltaEncodeFrame> {
+) -> Result<BenEncodeFrame> {
     encode_twodelta_frame_with_hint(previous_assignment, new_assignment, None, None, count)
 }

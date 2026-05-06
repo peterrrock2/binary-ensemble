@@ -1,5 +1,5 @@
 use super::errors::DecodeError;
-use crate::codec::TwoDeltaEncodeFrame;
+use crate::codec::BenEncodeFrame;
 use std::io;
 
 /// Apply decoded TwoDelta run lengths to produce a new assignment vector.
@@ -66,14 +66,29 @@ pub(crate) fn apply_twodelta_runs_to_assignment(
 /// # Arguments
 ///
 /// * `previous` - The assignment vector from the preceding frame.
-/// * `frame` - The TwoDelta frame containing the pair and run-length vector.
+/// * `frame` - A TwoDelta-arm [`BenEncodeFrame`] containing the pair and
+///   run-length vector.
 ///
 /// # Returns
 ///
-/// Returns the updated assignment vector.
+/// Returns the updated assignment vector, or an error if `frame` is not the
+/// `TwoDelta` arm.
 pub fn decode_twodelta_frame(
     previous: Vec<u16>,
-    frame: &TwoDeltaEncodeFrame,
+    frame: &BenEncodeFrame,
 ) -> io::Result<Vec<u16>> {
-    apply_twodelta_runs_to_assignment(previous, frame.pair, &frame.run_length_vector)
+    match frame {
+        BenEncodeFrame::TwoDelta {
+            pair,
+            run_length_vector,
+            ..
+        } => apply_twodelta_runs_to_assignment(previous, *pair, run_length_vector),
+        other => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "decode_twodelta_frame called with non-TwoDelta variant: {:?}",
+                other.variant()
+            ),
+        )),
+    }
 }

@@ -3,7 +3,8 @@ use binary_ensemble::codec::decode::{
     xz_decompress,
 };
 use binary_ensemble::codec::encode::{encode_jsonl_to_xben, xz_compress};
-use binary_ensemble::codec::{BenConstruct, MkvBenEncodeFrame, TwoDeltaEncodeFrame};
+use binary_ensemble::codec::BenEncodeFrame;
+use binary_ensemble::BenVariant;
 use binary_ensemble::format::banners::{
     MKVCHAIN_BEN_BANNER, STANDARD_BEN_BANNER, TWODELTA_BEN_BANNER,
 };
@@ -19,7 +20,6 @@ use binary_ensemble::io::bundle::BendlReader;
 use binary_ensemble::io::reader::{AssignmentReader, XZAssignmentReader};
 use binary_ensemble::io::writer::AssignmentWriter;
 use binary_ensemble::ops::relabel::relabel_ben_file_with_map;
-use binary_ensemble::BenVariant;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
@@ -316,7 +316,8 @@ fn malformed_ben_bit_widths_return_invalid_data() {
 
 #[test]
 fn malformed_twodelta_bit_width_and_extra_runs_return_errors() {
-    let anchor = MkvBenEncodeFrame::from_assignment(vec![1u16, 2], Some(1));
+    let anchor =
+        BenEncodeFrame::from_assignment(vec![1u16, 2], BenVariant::MkvChain, Some(1));
     let mut ben = TWODELTA_BEN_BANNER.to_vec();
     ben.extend_from_slice(anchor.as_slice());
     ben.extend_from_slice(&[0, 1, 0, 2, 0, 0, 0, 0, 0, 1]);
@@ -326,7 +327,7 @@ fn malformed_twodelta_bit_width_and_extra_runs_return_errors() {
     let err = reader.next().unwrap().unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
 
-    let frame = TwoDeltaEncodeFrame::from_run_lengths((1, 2), vec![1, 1], Some(1));
+    let frame = BenEncodeFrame::from_run_lengths((1, 2), vec![1, 1], Some(1));
     let err = decode_twodelta_frame(vec![1u16], &frame).unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
 }
@@ -466,7 +467,7 @@ fn xben_twodelta_huge_incomplete_chunk_errors_without_panicking() {
 
 #[test]
 fn zero_count_frames_are_rejected() {
-    let frame = MkvBenEncodeFrame::from_assignment(vec![1u16], Some(0));
+    let frame = BenEncodeFrame::from_assignment(vec![1u16], BenVariant::MkvChain, Some(0));
     let mut ben = MKVCHAIN_BEN_BANNER.to_vec();
     ben.extend_from_slice(frame.as_slice());
     let err = AssignmentReader::new(ben.as_slice())

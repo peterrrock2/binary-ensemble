@@ -280,7 +280,7 @@ fn test_ben_to_ben32_lines_non_eof_error_on_frame_boundary() {
 
 #[test]
 fn test_ben32_to_ben_line_rejects_invalid_length() {
-    let err = ben32_to_ben_line(vec![1, 2, 3]).unwrap_err();
+    let err = ben32_to_ben_line(vec![1, 2, 3], BenVariant::Standard, 0).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     assert_eq!(
         err.to_string(),
@@ -290,7 +290,7 @@ fn test_ben32_to_ben_line_rejects_invalid_length() {
 
 #[test]
 fn test_ben32_to_ben_line_rejects_missing_terminator() {
-    let err = ben32_to_ben_line(vec![0, 1, 0, 2, 0, 0, 0, 1]).unwrap_err();
+    let err = ben32_to_ben_line(vec![0, 1, 0, 2, 0, 0, 0, 1], BenVariant::Standard, 0).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     assert_eq!(
         err.to_string(),

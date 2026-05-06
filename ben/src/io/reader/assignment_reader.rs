@@ -1,14 +1,10 @@
 use super::errors::DecoderInitError;
-use crate::codec::decode::{apply_twodelta_runs_to_assignment, decode_ben_line, DecodeError};
-use crate::codec::{
-    BenConstruct, BenDecode, BenDecodeFrame, BenEncodeFrame, MkvBenDecodeFrame, TwoDeltaDecodeFrame,
-};
+use crate::codec::{BenDecodeFrame, BenEncodeFrame};
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::progress::Spinner;
-use crate::util::rle::rle_to_vec;
 use crate::BenVariant;
 use serde_json::json;
-use std::io::{self, Cursor, Read, Write};
+use std::io::{self, Read, Write};
 
 /// Iterator over decoded assignments in an uncompressed BEN stream.
 pub struct AssignmentReader<R: Read> {
@@ -19,26 +15,6 @@ pub struct AssignmentReader<R: Read> {
     twodelta_consumed_first_frame: bool,
     silent: bool,
     spinner: Option<Spinner>,
-}
-
-/// Internal frame representation, one variant per BEN encoding type.
-enum StoredBenFrame {
-    /// A Standard BEN frame (count is always 1).
-    Standard(BenDecodeFrame),
-    /// An MkvChain BEN frame carrying its repetition count.
-    MkvChain(MkvBenDecodeFrame),
-    /// A TwoDelta delta frame carrying its pair, run lengths, and count.
-    TwoDelta(TwoDeltaDecodeFrame),
-}
-
-impl StoredBenFrame {
-    fn count(&self) -> u16 {
-        match self {
-            Self::Standard(_) => 1,
-            Self::MkvChain(f) => f.count,
-            Self::TwoDelta(f) => f.count,
-        }
-    }
 }
 
 fn zero_count_frame_error() -> io::Error {
@@ -117,35 +93,25 @@ impl<R: Read> AssignmentReader<R> {
         })
     }
 
-    /// Read and return the next stored frame from the underlying BEN stream.
+    /// Read the next frame from the underlying BEN stream.
     ///
-    /// Delegates to the appropriate `BenDecode::from_reader` implementation
-    /// based on the variant and whether the first TwoDelta frame has been read.
+    /// In a `TwoDelta` stream the first frame is encoded in `MkvChain` wire
+    /// format; this method tracks that state so the frame module stays
+    /// variant-clean.
     ///
     /// Returns `Some(Ok(...))` for the next frame, `Some(Err(...))` for a read
     /// failure, or `None` at a clean end of stream.
-    fn pop_frame_from_reader(&mut self) -> Option<io::Result<StoredBenFrame>> {
-        match self.variant {
-            BenVariant::Standard => BenDecodeFrame::from_reader(&mut self.reader)
-                .transpose()
-                .map(|r| r.map(StoredBenFrame::Standard)),
-            BenVariant::MkvChain => MkvBenDecodeFrame::from_reader(&mut self.reader)
-                .transpose()
-                .map(|r| r.map(StoredBenFrame::MkvChain)),
-            BenVariant::TwoDelta => {
-                if !self.twodelta_consumed_first_frame {
-                    // First TwoDelta frame is encoded in MkvChain format.
-                    self.twodelta_consumed_first_frame = true;
-                    MkvBenDecodeFrame::from_reader(&mut self.reader)
-                        .transpose()
-                        .map(|r| r.map(StoredBenFrame::MkvChain))
-                } else {
-                    TwoDeltaDecodeFrame::from_reader(&mut self.reader)
-                        .transpose()
-                        .map(|r| r.map(StoredBenFrame::TwoDelta))
-                }
-            }
-        }
+    fn pop_frame_from_reader(&mut self) -> Option<io::Result<BenDecodeFrame>> {
+        let read_variant = if self.variant == BenVariant::TwoDelta
+            && !self.twodelta_consumed_first_frame
+        {
+            self.twodelta_consumed_first_frame = true;
+            BenVariant::MkvChain
+        } else {
+            self.variant
+        };
+
+        BenDecodeFrame::from_reader(&mut self.reader, read_variant).transpose()
     }
 
     /// Consume this decoder and iterate over raw BEN frames instead of
@@ -191,17 +157,7 @@ impl<R: Read> AssignmentReader<R> {
                 return Err(zero_count_frame_error());
             }
 
-            let assignment = match frame {
-                StoredBenFrame::Standard(f) => decode_ben_frame_to_assignment(&f)?,
-                StoredBenFrame::MkvChain(f) => decode_mkv_frame_to_assignment(&f)?,
-                StoredBenFrame::TwoDelta(f) => {
-                    let prev = self
-                        .previous_assignment
-                        .take()
-                        .ok_or_else(|| io::Error::from(DecodeError::TwoDeltaNoAnchorFrame))?;
-                    apply_twodelta_runs_to_assignment(prev, f.pair, &f.run_lengths)?
-                }
-            };
+            let assignment = frame.expand(self.previous_assignment.take())?;
 
             let keep_going = f(&assignment, count)?;
             self.previous_assignment = Some(assignment);
@@ -214,45 +170,6 @@ impl<R: Read> AssignmentReader<R> {
             if !keep_going {
                 return Ok(());
             }
-        }
-    }
-}
-
-/// Decode a raw Standard BEN frame into a full assignment vector.
-pub(super) fn decode_ben_frame_to_assignment(frame: &BenDecodeFrame) -> io::Result<Vec<u16>> {
-    decode_ben_line(
-        Cursor::new(&frame.raw_bytes),
-        frame.max_val_bit_count,
-        frame.max_len_bit_count,
-        frame.n_bytes,
-    )
-    .map(rle_to_vec)
-}
-
-/// Decode a raw MkvChain BEN frame into a full assignment vector.
-pub(super) fn decode_mkv_frame_to_assignment(frame: &MkvBenDecodeFrame) -> io::Result<Vec<u16>> {
-    decode_ben_line(
-        Cursor::new(&frame.raw_bytes),
-        frame.max_val_bit_count,
-        frame.max_len_bit_count,
-        frame.n_bytes,
-    )
-    .map(rle_to_vec)
-}
-
-/// Decode a stored BEN frame into a full assignment vector.
-fn decode_stored_frame_to_assignment(
-    previous_assignment: &mut Option<Vec<u16>>,
-    frame: &StoredBenFrame,
-) -> io::Result<Vec<u16>> {
-    match frame {
-        StoredBenFrame::Standard(f) => decode_ben_frame_to_assignment(f),
-        StoredBenFrame::MkvChain(f) => decode_mkv_frame_to_assignment(f),
-        StoredBenFrame::TwoDelta(f) => {
-            let prev = previous_assignment
-                .take()
-                .ok_or_else(|| io::Error::from(DecodeError::TwoDeltaNoAnchorFrame))?;
-            apply_twodelta_runs_to_assignment(prev, f.pair, &f.run_lengths)
         }
     }
 }
@@ -270,11 +187,10 @@ impl<R: Read> Iterator for AssignmentReader<R> {
         if count == 0 {
             return Some(Err(zero_count_frame_error()));
         }
-        let assignment =
-            match decode_stored_frame_to_assignment(&mut self.previous_assignment, &frame) {
-                Ok(assgn) => assgn,
-                Err(e) => return Some(Err(e)),
-            };
+        let assignment = match frame.expand(self.previous_assignment.take()) {
+            Ok(a) => a,
+            Err(e) => return Some(Err(e)),
+        };
         self.previous_assignment = Some(assignment.clone());
         self.sample_count += count as usize;
         if !self.silent {
@@ -303,44 +219,57 @@ impl<R: Read> AssignmentFrameReader<R> {
 impl<R: Read> Iterator for AssignmentFrameReader<R> {
     type Item = io::Result<(BenDecodeFrame, u16)>;
 
-    /// Return the next raw BEN frame from the input stream.
+    /// Return the next raw BEN frame from the input stream paired with its
+    /// repetition count.
     ///
-    /// For Standard and MkvChain streams, returns the raw decoded frame paired
-    /// with its repetition count.
-    /// For TwoDelta streams, materializes each assignment and re-encodes it.
+    /// For `Standard` and `MkvChain` streams, returns the frame as read off
+    /// the wire (with `count` taken from the frame for `MkvChain`, or `1`
+    /// for `Standard`).
+    ///
+    /// For `TwoDelta` streams, materializes each assignment via `expand`
+    /// and re-encodes it as a Standard-shaped decode frame so downstream
+    /// subsampling consumers always see self-contained frames.
     fn next(&mut self) -> Option<Self::Item> {
         match self.inner.variant {
-            BenVariant::Standard => BenDecodeFrame::from_reader(&mut self.inner.reader)
-                .transpose()
-                .map(|r| r.map(|frame| (frame, 1))),
-            BenVariant::MkvChain => {
-                MkvBenDecodeFrame::from_reader(&mut self.inner.reader)
-                    .transpose()
-                    .map(|r| r.and_then(|frame| {
-                        let count = frame.count;
+            BenVariant::Standard | BenVariant::MkvChain => {
+                match self.inner.pop_frame_from_reader() {
+                    Some(Ok(frame)) => {
+                        let count = frame.count();
                         if count == 0 {
-                            return Err(zero_count_frame_error());
+                            return Some(Err(zero_count_frame_error()));
                         }
-                        Ok((
-                            BenDecodeFrame {
-                                max_val_bit_count: frame.max_val_bit_count,
-                                max_len_bit_count: frame.max_len_bit_count,
-                                n_bytes: frame.n_bytes,
-                                raw_bytes: frame.raw_bytes,
-                            },
-                            count,
-                        ))
-                    }))
+                        Some(Ok((frame, count)))
+                    }
+                    Some(Err(e)) => Some(Err(e)),
+                    None => None,
+                }
             }
             BenVariant::TwoDelta => match self.inner.next() {
                 Some(Ok((assignment, count))) => {
-                    let encoded = BenEncodeFrame::from_assignment(&assignment, None);
+                    let encoded =
+                        BenEncodeFrame::from_assignment(&assignment, BenVariant::Standard, None);
+                    let (max_val_bit_count, max_len_bit_count, n_bytes, raw_bytes) = match encoded {
+                        BenEncodeFrame::Standard {
+                            max_val_bit_count,
+                            max_len_bit_count,
+                            n_bytes,
+                            raw_bytes,
+                            ..
+                        } => (max_val_bit_count, max_len_bit_count, n_bytes, raw_bytes),
+                        _ => unreachable!(
+                            "BenEncodeFrame::from_assignment(Standard) always returns Standard"
+                        ),
+                    };
+                    // Strip the 6-byte frame header so the emitted decode-side
+                    // frame's raw_bytes matches the historical payload-only
+                    // shape that BenDecodeFrame::Standard carries.
+                    let payload_only = raw_bytes[6..].to_vec();
                     Some(Ok((
-                        BenDecodeFrame {
-                            max_val_bit_count: encoded.max_val_bit_count,
-                            max_len_bit_count: encoded.max_len_bit_count,
-                            n_bytes: encoded.n_bytes,
-                            raw_bytes: encoded.raw_bytes[6..].to_vec(),
+                        BenDecodeFrame::Standard {
+                            max_val_bit_count,
+                            max_len_bit_count,
+                            n_bytes,
+                            raw_bytes: payload_only,
                         },
                         count,
                     )))

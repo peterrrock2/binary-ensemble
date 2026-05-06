@@ -4,12 +4,11 @@
 //! equivalent depth for the two more complex variants.  The helpers intentionally
 //! mirror those in `test_coverage.rs` so that the two suites are easy to compare.
 
-use binary_ensemble::codec::decode::{decode_ben_line, decode_ben_to_jsonl};
+use binary_ensemble::codec::decode::decode_ben_to_jsonl;
 use binary_ensemble::codec::encode::encode_jsonl_to_ben;
 use binary_ensemble::format::banners::{MKVCHAIN_BEN_BANNER, TWODELTA_BEN_BANNER};
 use binary_ensemble::io::reader::{AssignmentFrameReader, AssignmentReader};
 use binary_ensemble::io::writer::AssignmentWriter;
-use binary_ensemble::util::rle::rle_to_vec;
 use binary_ensemble::BenVariant;
 
 use std::io::{self, Cursor};
@@ -432,14 +431,7 @@ mod mkvchain {
             .unwrap()
             .unwrap();
 
-        let decoded = decode_ben_line(
-            Cursor::new(&frame.raw_bytes),
-            frame.max_val_bit_count,
-            frame.max_len_bit_count,
-            frame.n_bytes,
-        )
-        .map(rle_to_vec)
-        .unwrap();
+        let decoded = frame.expand(None).unwrap();
         assert_eq!(decoded, assignment);
     }
 
@@ -1027,14 +1019,7 @@ mod twodelta {
 
         assert_eq!(frames.len(), 3);
         for (i, (frame, _count)) in frames.iter().enumerate() {
-            let decoded = decode_ben_line(
-                Cursor::new(&frame.raw_bytes),
-                frame.max_val_bit_count,
-                frame.max_len_bit_count,
-                frame.n_bytes,
-            )
-            .map(rle_to_vec)
-            .unwrap();
+            let decoded = frame.expand(None).unwrap();
             assert_eq!(decoded, input[i], "frame {i} decoded incorrectly");
         }
     }

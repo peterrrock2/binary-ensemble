@@ -1,4 +1,3 @@
-use super::assignment_reader::decode_ben_frame_to_assignment;
 use super::assignment_reader::AssignmentFrameReader;
 use super::errors::DecoderInitError;
 use super::xz_assignment_reader::decode_xben_frame_to_assignment;
@@ -45,9 +44,13 @@ pub enum Selection {
 /// # Returns
 ///
 /// Returns the expanded assignment vector.
+///
+/// `AssignmentFrameReader` rewrites TwoDelta BEN frames into self-contained
+/// Standard frames before they reach this path, so `Ben(...)` is always a
+/// `Standard` or `MkvChain` arm and `expand(None)` is always sufficient here.
 pub(super) fn decode_frame_to_assignment(frame: &DecodeFrame) -> io::Result<Vec<u16>> {
     match frame {
-        DecodeFrame::Ben(f) => decode_ben_frame_to_assignment(f),
+        DecodeFrame::Ben(f) => f.expand(None),
         DecodeFrame::XBen(bytes, variant) => decode_xben_frame_to_assignment(bytes, *variant),
     }
 }

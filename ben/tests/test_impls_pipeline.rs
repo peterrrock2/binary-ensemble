@@ -6,7 +6,7 @@ use binary_ensemble::codec::decode::{
 use binary_ensemble::codec::encode::{
     encode_ben_to_xben, encode_jsonl_to_ben, encode_jsonl_to_xben, xz_compress,
 };
-use binary_ensemble::codec::{BenConstruct, BenEncodeFrame};
+use binary_ensemble::codec::BenEncodeFrame;
 use binary_ensemble::io::reader::{
     build_frame_iter, count_samples_from_file, AssignmentReader, DecodeFrame, DecoderInitError,
     SubsampleFrameDecoder, XZAssignmentReader,
@@ -764,7 +764,7 @@ fn xben_truncated_frame_reports_unexpected_eof() {
 fn encode_decode_ben32_odd_bit_packing_roundtrip() {
     // values up to 3 (2 bits), lengths big to make non-byte boundary
     let rle = vec![(1u16, 3u16), (2, 5), (3, 7)];
-    let ben_frame = BenEncodeFrame::from_rle(rle.clone(), None);
+    let ben_frame = BenEncodeFrame::from_rle(rle.clone(), BenVariant::Standard, None);
     let ben = ben_frame.as_slice();
     // ben layout: [max_val_bits, max_len_bits, n_bytes, payload...]
     let max_val_bits = ben[0];
@@ -1378,7 +1378,7 @@ fn twodelta_first_frame_carries_repeat_trailer() {
         encoder.finish().unwrap();
     }
 
-    let expected_first = BenEncodeFrame::from_assignment(&first, None);
+    let expected_first = BenEncodeFrame::from_assignment(&first, BenVariant::Standard, None);
     assert_eq!(&ben[..17], b"TWODELTA BEN FILE");
     assert_eq!(
         &ben[17..17 + expected_first.as_slice().len()],

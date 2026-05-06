@@ -1,43 +1,32 @@
-mod ben_decode;
-mod ben_encode;
-mod mkv_decode;
-mod mkv_encode;
-mod twodelta_decode;
-mod twodelta_encode;
+//! Frame-layer types — one sample's encoded bytes.
+//!
+//! See `docs/glossary.md` for the encoding-stack layering. This module owns
+//! layer 2 (frame). Each direction is a single enum whose arms mirror
+//! [`crate::BenVariant`]:
+//!
+//! - [`BenEncodeFrame`] is built **from** RLE runs (or a pair + run-length
+//!   vector for the `TwoDelta` arm) and carries the source representation
+//!   alongside the serialized bytes.
+//! - [`BenDecodeFrame`] is built **from** wire bytes and keeps the bit-packed
+//!   payload opaque on `Standard`/`MkvChain` arms so frame-level subsampling
+//!   stays cheap (no eager bit-unpacking).
+
+mod decode;
+mod encode;
 
 #[cfg(test)]
 mod tests;
 
-pub use ben_decode::BenDecodeFrame;
-pub use ben_encode::BenEncodeFrame;
-pub use mkv_decode::MkvBenDecodeFrame;
-pub use mkv_encode::MkvBenEncodeFrame;
-pub use twodelta_decode::TwoDeltaDecodeFrame;
-pub use twodelta_encode::TwoDeltaEncodeFrame;
+pub use decode::BenDecodeFrame;
+pub use encode::BenEncodeFrame;
 
-use crate::util::rle::assign_to_rle;
-use std::io;
-
-pub trait BenConstruct {
-    fn from_rle(runs: Vec<(u16, u16)>, count: Option<u16>) -> Self;
-
-    fn from_assignment(assignments: impl AsRef<[u16]>, count: Option<u16>) -> Self
-    where
-        Self: Sized,
-    {
-        Self::from_rle(assign_to_rle(assignments), count)
-    }
-}
-
-pub trait BenDecode: Sized {
-    /// Read the next frame from a byte stream.
-    ///
-    /// Returns `Ok(None)` on a clean EOF at a frame boundary, `Ok(Some(frame))`
-    /// on success, and `Err` on any IO or format error.
-    fn from_reader(reader: &mut impl io::Read) -> io::Result<Option<Self>>;
-}
-
-/// Compresses a run-length encoded vector into BEN payload bytes.
+/// Bit-pack an RLE run vector into a serialized BEN frame payload.
+///
+/// Output layout:
+///
+/// ```text
+/// [max_val_bit_count: u8][max_len_bit_count: u8][n_bytes: u32 BE][packed payload...]
+/// ```
 pub(super) fn compress_rle_to_ben_bytes(
     max_val_bit_count: u8,
     max_len_bit_count: u8,

@@ -1,8 +1,9 @@
 use super::*;
 use crate::codec::decode::decode_ben_to_jsonl;
 use crate::codec::encode::encode_jsonl_to_ben;
-use crate::codec::{BenConstruct, BenEncodeFrame};
+use crate::codec::BenEncodeFrame;
 use crate::util::rle::assign_to_rle;
+use crate::BenVariant;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -44,10 +45,10 @@ where
 fn test_relabel_ben_line_simple() {
     let in_rle = vec![(2, 2), (3, 2), (1, 2), (4, 2)];
 
-    let input = BenEncodeFrame::from_rle(in_rle, None);
+    let input = BenEncodeFrame::from_rle(in_rle, BenVariant::Standard, None);
 
     let out_rle = vec![(1, 2), (2, 2), (3, 2), (4, 2)];
-    let expected = BenEncodeFrame::from_rle(out_rle, None);
+    let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None);
 
     let mut buf = Vec::new();
     relabel_ben_lines(input.as_slice(), &mut buf, BenVariant::Standard).unwrap();
@@ -218,11 +219,11 @@ fn test_relabel_ben_line_with_map() {
     let in_assign = vec![2, 3, 1, 4, 5, 5, 3, 4, 2];
     let in_rle = assign_to_rle(in_assign);
 
-    let input = BenEncodeFrame::from_rle(in_rle, None);
+    let input = BenEncodeFrame::from_rle(in_rle, BenVariant::Standard, None);
 
     let out_assign = vec![1, 2, 2, 3, 3, 4, 4, 5, 5];
     let out_rle = assign_to_rle(out_assign);
-    let expected = BenEncodeFrame::from_rle(out_rle, None);
+    let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None);
 
     let mut new_to_old_map = HashMap::new();
     new_to_old_map.insert(0, 2);
@@ -253,11 +254,11 @@ fn test_relabel_ben_line_with_shuffle() {
     let mut out_assign = in_assign.clone();
 
     let in_rle = assign_to_rle(in_assign);
-    let input = BenEncodeFrame::from_rle(in_rle, None);
+    let input = BenEncodeFrame::from_rle(in_rle, BenVariant::Standard, None);
 
     let new_to_old_map = shuffle_with_mapping(&mut out_assign);
     let out_rle = assign_to_rle(out_assign);
-    let expected = BenEncodeFrame::from_rle(out_rle, None);
+    let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None);
 
     let mut buf = Vec::new();
     relabel_ben_lines_with_map(
@@ -284,11 +285,11 @@ fn test_relabel_ben_line_with_large_shuffle() {
     let mut out_assign = in_assign.clone();
 
     let in_rle = assign_to_rle(in_assign.to_vec());
-    let input = BenEncodeFrame::from_rle(in_rle, None);
+    let input = BenEncodeFrame::from_rle(in_rle, BenVariant::Standard, None);
 
     let new_to_old_map = shuffle_with_mapping(&mut out_assign);
     let out_rle = assign_to_rle(out_assign);
-    let expected = BenEncodeFrame::from_rle(out_rle, None);
+    let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None);
 
     let mut buf = Vec::new();
     relabel_ben_lines_with_map(

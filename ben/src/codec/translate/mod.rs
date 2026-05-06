@@ -9,7 +9,6 @@
 mod errors;
 use errors::TranslateError;
 
-use crate::codec::BenConstruct;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::io::{self, Read, Write};
 
@@ -23,11 +22,18 @@ use crate::BenVariant;
 /// # Arguments
 ///
 /// * `ben32_vec` - The ben32 frame bytes, including the four-byte terminator.
+/// * `variant` - The BEN variant. Determines whether the resulting BEN frame
+///   embeds a trailing repetition count.
+/// * `count` - The repetition count for `MkvChain`. Ignored for `Standard`.
 ///
 /// # Returns
 ///
 /// Returns the encoded BEN frame payload and header.
-fn ben32_to_ben_line(ben32_vec: Vec<u8>) -> io::Result<Vec<u8>> {
+fn ben32_to_ben_line(
+    ben32_vec: Vec<u8>,
+    variant: BenVariant,
+    count: u16,
+) -> io::Result<Vec<u8>> {
     let mut buffer = [0u8; 4];
     let mut ben32_rle: Vec<(u16, u16)> = Vec::new();
 
@@ -44,9 +50,9 @@ fn ben32_to_ben_line(ben32_vec: Vec<u8>) -> io::Result<Vec<u8>> {
         let encoded = u32::from_be_bytes(buffer);
 
         let value = (encoded >> 16) as u16;
-        let count = (encoded & 0xFFFF) as u16;
+        let len = (encoded & 0xFFFF) as u16;
 
-        ben32_rle.push((value, count));
+        ben32_rle.push((value, len));
     }
 
     let eol_offset = ben32_vec.len();
@@ -58,7 +64,7 @@ fn ben32_to_ben_line(ben32_vec: Vec<u8>) -> io::Result<Vec<u8>> {
         }));
     }
 
-    Ok(BenEncodeFrame::from_rle(ben32_rle, None).into_bytes())
+    Ok(BenEncodeFrame::from_rle(ben32_rle, variant, Some(count)).into_bytes())
 }
 
 /// Translate a stream of ben32 frames into BEN frames.
@@ -112,11 +118,8 @@ pub fn ben32_to_ben_lines<R: Read, W: Write>(
             }
         }
 
-        let ben_vec = ben32_to_ben_line(ben32_vec)?;
+        let ben_vec = ben32_to_ben_line(ben32_vec, variant, n_reps)?;
         writer.write_all(&ben_vec)?;
-        if variant == BenVariant::MkvChain {
-            writer.write_all(&n_reps.to_be_bytes())?;
-        }
     }
 
     Ok(())

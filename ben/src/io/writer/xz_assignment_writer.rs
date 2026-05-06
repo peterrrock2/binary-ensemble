@@ -6,7 +6,7 @@ use super::utils::{encode_xben_twodelta_full_frame, parse_json_assignment};
 use crate::codec::decode::decode_ben_line;
 use crate::codec::encode::{encode_ben32_assignments, encode_twodelta_frame_with_hint};
 use crate::codec::translate::ben_to_ben32_lines;
-use crate::codec::TwoDeltaEncodeFrame;
+use crate::codec::BenEncodeFrame;
 use crate::format::banners::{banner_for_variant, has_known_banner_prefix, BANNER_LEN};
 use crate::progress::Spinner;
 use crate::BenVariant;
@@ -227,9 +227,19 @@ impl<W: Write> XZAssignmentWriter<W> {
                     Some(&mut self.previous_masks),
                     None,
                 )?;
+                let (pair, run_lengths) = match frame {
+                    BenEncodeFrame::TwoDelta {
+                        pair,
+                        run_length_vector,
+                        ..
+                    } => (pair, run_length_vector),
+                    _ => unreachable!(
+                        "encode_twodelta_frame_with_hint always returns the TwoDelta arm"
+                    ),
+                };
                 self.chunk_buffer.push(BufferedDeltaFrame {
-                    pair: frame.pair,
-                    run_lengths: frame.run_length_vector,
+                    pair,
+                    run_lengths,
                     count: 1,
                 });
                 self.previous_assignment = assign_vec;
@@ -321,17 +331,24 @@ impl<W: Write> XZAssignmentWriter<W> {
             reader.read_exact(&mut payload)?;
             let count = reader.read_u16::<BigEndian>()?;
 
-            // Unpack bitpacked run lengths.
-            let frame = TwoDeltaEncodeFrame::from_parts(
+            // Unpack bitpacked run lengths via the frame layer's TwoDelta
+            // constructor, then peel out the fields we need for buffering.
+            let (pair, run_lengths) = match BenEncodeFrame::from_parts(
                 (pair_a, pair_b),
                 delta_max_len_bits,
                 payload,
                 count,
-            );
-            let run_lengths = frame.run_length_vector;
+            ) {
+                BenEncodeFrame::TwoDelta {
+                    pair,
+                    run_length_vector,
+                    ..
+                } => (pair, run_length_vector),
+                _ => unreachable!("BenEncodeFrame::from_parts always returns TwoDelta"),
+            };
 
             self.chunk_buffer.push(BufferedDeltaFrame {
-                pair: frame.pair,
+                pair,
                 run_lengths,
                 count,
             });
