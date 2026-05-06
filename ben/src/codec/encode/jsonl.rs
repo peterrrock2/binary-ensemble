@@ -19,8 +19,9 @@ use xz2::write::XzEncoder;
 /// * `reader` - A JSONL input stream with one assignment record per line.
 /// * `writer` - The destination for the compressed XBEN bytes.
 /// * `variant` - The BEN variant to use inside the XBEN payload.
-/// * `n_threads` - Optional XZ encoder thread count. When omitted, a safe
-///   default is chosen.
+/// * `n_threads` - Optional XZ encoder thread count. Defaults to `1`
+///   (single-threaded) when `None`. Values larger than the host's
+///   available parallelism are silently clamped down.
 /// * `compression_level` - Optional XZ compression level in the range `0..=9`.
 /// * `chunk_size` - Optional TwoDelta columnar chunk size; ignored for
 ///   Standard and MkvChain variants.

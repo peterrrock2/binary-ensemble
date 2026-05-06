@@ -1,6 +1,6 @@
 use crate::common::{open_input, open_output, parse_variant, validate_input_output_paths};
 use binary_ensemble::codec::encode::{
-    encode_ben_to_xben as core_encode_ben_to_xben,
+    cpus_from_signed, encode_ben_to_xben as core_encode_ben_to_xben,
     encode_jsonl_to_ben as core_encode_jsonl_to_ben,
     encode_jsonl_to_xben as core_encode_jsonl_to_xben,
 };
@@ -17,7 +17,7 @@ pub fn encode_ben_to_xben(
     in_file: PathBuf,
     out_file: PathBuf,
     overwrite: bool,
-    n_threads: Option<u32>,
+    n_threads: Option<i32>,
     compression_level: Option<u32>,
     xz_block_size: Option<u64>,
 ) -> PyResult<()> {
@@ -28,7 +28,7 @@ pub fn encode_ben_to_xben(
     core_encode_ben_to_xben(
         reader,
         writer,
-        n_threads,
+        n_threads.map(cpus_from_signed),
         compression_level,
         None,
         xz_block_size,
@@ -78,7 +78,7 @@ pub fn encode_jsonl_to_xben(
     out_file: PathBuf,
     overwrite: bool,
     variant: &str,
-    n_threads: Option<u32>,
+    n_threads: Option<i32>,
     compression_level: Option<u32>,
     xz_block_size: Option<u64>,
 ) -> PyResult<()> {
@@ -91,7 +91,7 @@ pub fn encode_jsonl_to_xben(
         reader,
         writer,
         ben_var,
-        n_threads,
+        n_threads.map(cpus_from_signed),
         compression_level,
         None,
         xz_block_size,

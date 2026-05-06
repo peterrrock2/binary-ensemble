@@ -5,7 +5,7 @@ use super::super::bundle::run_xencode_bundle_with_graph;
 use super::super::paths::{encode_setup, open_derived_writer, open_reader, open_writer};
 
 use crate::cli::common::{CliError, CliResult};
-use crate::codec::encode::{encode_ben_to_xben, encode_jsonl_to_xben};
+use crate::codec::encode::{cpus_from_signed, encode_ben_to_xben, encode_jsonl_to_xben};
 use std::path::Path;
 
 /// Execute the `x-encode` sub-mode.
@@ -48,7 +48,7 @@ pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
             &out_path,
             variant,
             ben_and_xben,
-            args.n_cpus,
+            args.n_cpus.map(cpus_from_signed),
             args.compression_level,
             args.chunk_size,
             args.xz_block_size,
@@ -76,7 +76,7 @@ pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
         encode_ben_to_xben(
             reader,
             writer,
-            args.n_cpus,
+            args.n_cpus.map(cpus_from_signed),
             args.compression_level,
             args.chunk_size,
             args.xz_block_size,
@@ -88,7 +88,7 @@ pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
             reader,
             writer,
             variant,
-            args.n_cpus,
+            args.n_cpus.map(cpus_from_signed),
             args.compression_level,
             args.chunk_size,
             args.xz_block_size,

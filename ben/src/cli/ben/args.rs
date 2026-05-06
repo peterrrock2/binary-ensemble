@@ -117,10 +117,15 @@ pub(super) struct Args {
     /// Suppress in-place progress spinners. Trace logging is unaffected.
     #[arg(short = 'q', long)]
     pub quiet: bool,
-    /// When running x-encoder, this flag will determine the number of cpus to use on the
-    /// system. By default, all available cpus will be used.
-    #[arg(short = 'c', long)]
-    pub n_cpus: Option<u32>,
+    /// Number of threads the XZ encoder may use during x-encode and
+    /// xz-compress. Defaults to 1 (single-threaded). Pass an explicit
+    /// value to fan compression out across worker threads; values larger
+    /// than the host's available parallelism are silently clamped down.
+    /// `-1` is a sentinel meaning "use every available core" (sklearn
+    /// convention). See also `--xz-block-size`, which controls how much
+    /// input each thread gets before it can start compressing.
+    #[arg(short = 'c', long, allow_hyphen_values = true)]
+    pub n_cpus: Option<i32>,
     /// When running x-encoder, this flag will deterimine the level of compression to use.
     /// By default, the highest level of compression will be used.
     /// Valid values are 0-9, where 0 is no compression and 9 is the highest level of compression.

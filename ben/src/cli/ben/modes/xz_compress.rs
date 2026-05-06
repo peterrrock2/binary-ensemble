@@ -3,7 +3,7 @@
 use super::super::args::Args;
 
 use crate::cli::common::{check_overwrite, CliError, CliResult};
-use crate::codec::encode::xz_compress;
+use crate::codec::encode::{cpus_from_signed, xz_compress};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 
@@ -27,7 +27,7 @@ pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
     xz_compress(
         reader,
         writer,
-        args.n_cpus,
+        args.n_cpus.map(cpus_from_signed),
         args.compression_level,
         args.xz_block_size,
     )?;

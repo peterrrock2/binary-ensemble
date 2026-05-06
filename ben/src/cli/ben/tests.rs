@@ -388,6 +388,7 @@ fn run_xencode_bundle_with_graph_from_jsonl_creates_bendl() {
         None,
         None,
         None,
+        None,
         &graph,
     )
     .unwrap();
@@ -423,6 +424,7 @@ fn run_xencode_bundle_with_graph_from_ben_creates_bendl() {
         out.to_str().unwrap(),
         BenVariant::Standard,
         true,
+        None,
         None,
         None,
         None,
@@ -495,6 +497,7 @@ fn run_xencode_bundle_with_graph_errors_on_missing_graph() {
         None,
         None,
         None,
+        None,
         &nonexistent,
     )
     .unwrap_err();
@@ -554,6 +557,7 @@ fn run_xencode_bundle_with_graph_errors_on_invalid_jsonl() {
         None,
         None,
         None,
+        None,
         &graph,
     )
     .unwrap_err();
@@ -577,6 +581,7 @@ fn run_xencode_bundle_with_graph_errors_on_invalid_ben() {
         out.to_str().unwrap(),
         BenVariant::Standard,
         true,
+        None,
         None,
         None,
         None,

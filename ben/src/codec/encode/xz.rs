@@ -20,12 +20,34 @@ pub const XZ_DEFAULT_MT_BLOCK_SIZE: u64 = 16 * 1024 * 1024;
 fn resolve_threads(n_threads: Option<u32>) -> u32 {
     n_threads
         .unwrap_or(1)
-        .min(
-            std::thread::available_parallelism()
-                .map(|n| n.get())
-                .unwrap_or(1) as u32,
-        )
+        .min(host_parallelism())
         .max(1)
+}
+
+/// Number of cores reported by `std::thread::available_parallelism`,
+/// or `1` if the platform cannot answer.
+fn host_parallelism() -> u32 {
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1) as u32
+}
+
+/// Convert a user-supplied signed thread count into the unsigned count
+/// the encoder expects.
+///
+/// CLI and Python users want sklearn-style sentinel semantics:
+///
+/// - `n < 0` (typically `-1`) means "use every available core".
+/// - `n == 0` is treated as `1` to avoid silently disabling work.
+/// - `n > 0` is the literal request, clamped to host parallelism.
+///
+/// Pass the result on to library APIs that take `Option<u32>`.
+pub fn cpus_from_signed(n: i32) -> u32 {
+    if n < 0 {
+        host_parallelism()
+    } else {
+        (n as u32).max(1).min(host_parallelism())
+    }
 }
 
 /// Build a multithreaded XZ encoder stream with the project's default
@@ -63,8 +85,9 @@ fn build_mt_stream(
 ///
 /// * `reader` - The input byte stream to compress.
 /// * `writer` - The destination for the compressed XZ bytes.
-/// * `n_threads` - Optional XZ encoder thread count. When omitted, a safe
-///   default is chosen.
+/// * `n_threads` - Optional XZ encoder thread count. Defaults to `1`
+///   (single-threaded) when `None`. Values larger than the host's
+///   available parallelism are silently clamped down.
 /// * `compression_level` - Optional XZ compression level in the range `0..=9`.
 /// * `block_size` - Optional per-block size in bytes for the MT encoder.
 ///   `None` defaults to [`XZ_DEFAULT_MT_BLOCK_SIZE`] when threads > 1, or
@@ -109,8 +132,9 @@ pub fn xz_compress<R: BufRead, W: Write>(
 ///
 /// * `reader` - The input BEN stream, including its banner.
 /// * `writer` - The destination for the compressed XBEN bytes.
-/// * `n_threads` - Optional XZ encoder thread count. When omitted, a safe
-///   default is chosen.
+/// * `n_threads` - Optional XZ encoder thread count. Defaults to `1`
+///   (single-threaded) when `None`. Values larger than the host's
+///   available parallelism are silently clamped down.
 /// * `compression_level` - Optional XZ compression level in the range `0..=9`.
 /// * `chunk_size` - Optional TwoDelta columnar chunk size; ignored for
 ///   Standard and MkvChain variants.
@@ -151,4 +175,28 @@ pub fn encode_ben_to_xben<R: BufRead, W: Write>(
     ben_encoder.write_ben_file(Cursor::new(check_buffer).chain(reader))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cpus_from_signed_negative_means_all_cores() {
+        let host = host_parallelism();
+        assert_eq!(cpus_from_signed(-1), host);
+        assert_eq!(cpus_from_signed(-100), host);
+    }
+
+    #[test]
+    fn cpus_from_signed_zero_clamps_to_one() {
+        assert_eq!(cpus_from_signed(0), 1);
+    }
+
+    #[test]
+    fn cpus_from_signed_positive_clamps_to_host() {
+        let host = host_parallelism();
+        assert_eq!(cpus_from_signed(1), 1);
+        assert_eq!(cpus_from_signed(i32::MAX), host);
+    }
 }
