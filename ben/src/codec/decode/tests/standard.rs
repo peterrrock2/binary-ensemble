@@ -299,6 +299,7 @@ fn test_decode_xben_to_ben_rejects_invalid_inner_header() {
         &mut xz,
         Some(1),
         Some(0),
+            None,
     )
     .unwrap();
 
@@ -314,6 +315,7 @@ fn test_decode_xben_to_jsonl_rejects_invalid_inner_header() {
         &mut xz,
         Some(1),
         Some(0),
+            None,
     )
     .unwrap();
 
@@ -326,7 +328,7 @@ fn test_decode_xben_to_ben_handles_partial_overflow_without_frame() {
     let mut xz = Vec::new();
     let mut inner = b"STANDARD BEN FILE".to_vec();
     inner.extend_from_slice(&[1, 2, 3]);
-    xz_compress(BufReader::new(inner.as_slice()), &mut xz, Some(1), Some(0)).unwrap();
+    xz_compress(BufReader::new(inner.as_slice()), &mut xz, Some(1), Some(0), None).unwrap();
 
     let mut out = Vec::new();
     decode_xben_to_ben(BufReader::new(xz.as_slice()), &mut out).unwrap();
@@ -338,7 +340,7 @@ fn test_decode_xben_to_jsonl_handles_partial_overflow_without_frame() {
     let mut xz = Vec::new();
     let mut inner = b"STANDARD BEN FILE".to_vec();
     inner.extend_from_slice(&[1, 2, 3]);
-    xz_compress(BufReader::new(inner.as_slice()), &mut xz, Some(1), Some(0)).unwrap();
+    xz_compress(BufReader::new(inner.as_slice()), &mut xz, Some(1), Some(0), None).unwrap();
 
     let mut out = Vec::new();
     decode_xben_to_jsonl(BufReader::new(xz.as_slice()), &mut out).unwrap();

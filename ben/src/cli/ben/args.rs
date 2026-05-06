@@ -131,6 +131,14 @@ pub(super) struct Args {
     /// Default is 10,000.
     #[arg(long)]
     pub chunk_size: Option<usize>,
+    /// Per-block size in bytes for the multithreaded XZ encoder.
+    /// liblzma needs a non-zero block size to actually fan compression
+    /// out across worker threads; smaller blocks scale parallelism better
+    /// at a slight compression-ratio cost. Defaults to 16 MiB when
+    /// `--n-cpus > 1`, or 0 (liblzma auto, ~192 MiB at preset 9) for
+    /// single-thread runs.
+    #[arg(long)]
+    pub xz_block_size: Option<u64>,
     /// Embed a graph JSON asset alongside the assignment stream and emit
     /// the result as a `.bendl` bundle. The graph is added after the
     /// assignment stream has been fully written. Only applies to the

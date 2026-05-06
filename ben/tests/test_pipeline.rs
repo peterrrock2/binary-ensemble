@@ -266,6 +266,7 @@ fn test_xben_pipeline() {
         Some(1),
         Some(1),
         None,
+            None,
     )
     .unwrap();
     decode_xben_to_ben(&input_writer[..], &mut output_writer).unwrap();
@@ -336,6 +337,7 @@ fn test_xmkvben_pipeline() {
         Some(1),
         Some(1),
         None,
+            None,
     )
     .unwrap();
     decode_xben_to_ben(&input_writer[..], &mut output_writer).unwrap();
@@ -431,6 +433,7 @@ fn test_xtwodeltaben_pipeline() {
         Some(1),
         Some(1),
         None,
+            None,
     )
     .unwrap();
     decode_xben_to_ben(&input_writer[..], &mut output_writer).unwrap();

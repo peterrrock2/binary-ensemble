@@ -28,10 +28,19 @@ pub fn encode_jsonl_to_xben_path(
     n_threads: Option<u32>,
     compression_level: Option<u32>,
     chunk_size: Option<usize>,
+    block_size: Option<u64>,
 ) -> Result<()> {
     let reader = BufReader::new(File::open(input)?);
     let writer = BufWriter::new(File::create(output)?);
-    encode_jsonl_to_xben(reader, writer, variant, n_threads, compression_level, chunk_size)
+    encode_jsonl_to_xben(
+        reader,
+        writer,
+        variant,
+        n_threads,
+        compression_level,
+        chunk_size,
+        block_size,
+    )
 }
 
 /// Encode a BEN file at `input` into an XBEN file at `output`.
@@ -41,10 +50,18 @@ pub fn encode_ben_to_xben_path(
     n_threads: Option<u32>,
     compression_level: Option<u32>,
     chunk_size: Option<usize>,
+    block_size: Option<u64>,
 ) -> Result<()> {
     let reader = BufReader::new(File::open(input)?);
     let writer = BufWriter::new(File::create(output)?);
-    encode_ben_to_xben(reader, writer, n_threads, compression_level, chunk_size)
+    encode_ben_to_xben(
+        reader,
+        writer,
+        n_threads,
+        compression_level,
+        chunk_size,
+        block_size,
+    )
 }
 
 /// Compress an arbitrary file at `input` into an `.xz` file at `output`.
@@ -53,10 +70,11 @@ pub fn xz_compress_path(
     output: &Path,
     n_threads: Option<u32>,
     compression_level: Option<u32>,
+    block_size: Option<u64>,
 ) -> Result<()> {
     let reader = BufReader::new(File::open(input)?);
     let writer = BufWriter::new(File::create(output)?);
-    xz_compress(reader, writer, n_threads, compression_level)
+    xz_compress(reader, writer, n_threads, compression_level, block_size)
 }
 
 #[cfg(test)]
@@ -111,6 +129,7 @@ mod tests {
             Some(1),
             Some(1),
             None,
+            None,
         )
         .unwrap();
         decode_xben_to_jsonl_path(&xben_out, &jsonl_back).unwrap();
@@ -138,7 +157,7 @@ mod tests {
         )
         .unwrap();
         encode_jsonl_to_ben_path(&jsonl_in, &ben, BenVariant::Standard).unwrap();
-        encode_ben_to_xben_path(&ben, &xben, Some(1), Some(1), None).unwrap();
+        encode_ben_to_xben_path(&ben, &xben, Some(1), Some(1), None, None).unwrap();
         decode_xben_to_ben_path(&xben, &ben_back).unwrap();
 
         // Round trip: ben_back should be byte-equivalent to ben (same banner, same content).
@@ -158,7 +177,7 @@ mod tests {
         let plain_back = unique_path("path-xz-back.txt");
 
         std::fs::write(&plain, b"hello world\n").unwrap();
-        xz_compress_path(&plain, &xz_out, Some(1), Some(1)).unwrap();
+        xz_compress_path(&plain, &xz_out, Some(1), Some(1), None).unwrap();
         xz_decompress_path(&xz_out, &plain_back).unwrap();
 
         assert_eq!(std::fs::read(&plain_back).unwrap(), b"hello world\n");

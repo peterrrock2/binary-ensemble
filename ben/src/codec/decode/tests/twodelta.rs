@@ -493,6 +493,7 @@ fn decode_xben_to_jsonl_twodelta_anchor_only() {
         Some(1),
         Some(0),
         None,
+            None,
     )
     .unwrap();
 
@@ -517,6 +518,7 @@ fn decode_xben_to_jsonl_twodelta_chain_roundtrip() {
         Some(1),
         Some(0),
         None,
+            None,
     )
     .unwrap();
 
@@ -540,6 +542,7 @@ fn decode_xben_to_jsonl_twodelta_with_repetitions() {
         Some(1),
         Some(0),
         None,
+            None,
     )
     .unwrap();
 

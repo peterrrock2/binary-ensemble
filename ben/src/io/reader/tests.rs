@@ -10,7 +10,7 @@ use xz2::write::XzEncoder;
 /// Build a minimal XBEN stream from JSONL input for testing.
 fn make_xben(jsonl: &str, variant: BenVariant) -> Vec<u8> {
     let mut xben = Vec::new();
-    encode_jsonl_to_xben(jsonl.as_bytes(), &mut xben, variant, Some(1), Some(1), None).unwrap();
+    encode_jsonl_to_xben(jsonl.as_bytes(), &mut xben, variant, Some(1), Some(1), None, None).unwrap();
     xben
 }
 
@@ -843,7 +843,7 @@ fn translate_ben_twodelta_to_xben_roundtrip() {
     }
 
     let mut xben = Vec::new();
-    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None).unwrap();
+    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None, None).unwrap();
 
     let mut jsonl = Vec::new();
     decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut jsonl).unwrap();
@@ -889,7 +889,7 @@ fn translate_ben_twodelta_to_xben_with_repetitions() {
     }
 
     let mut xben = Vec::new();
-    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None).unwrap();
+    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None, None).unwrap();
 
     let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap()).collect();
@@ -918,7 +918,7 @@ fn translate_ben_twodelta_to_xben_many_deltas() {
     }
 
     let mut xben = Vec::new();
-    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None).unwrap();
+    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None, None).unwrap();
 
     let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();

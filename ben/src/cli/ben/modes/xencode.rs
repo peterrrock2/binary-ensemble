@@ -51,6 +51,7 @@ pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
             args.n_cpus,
             args.compression_level,
             args.chunk_size,
+            args.xz_block_size,
             graph_path,
         )?;
         return Ok(());
@@ -78,6 +79,7 @@ pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
             args.n_cpus,
             args.compression_level,
             args.chunk_size,
+            args.xz_block_size,
         )?;
         Ok(())
     } else if jsonl_and_xben {
@@ -89,6 +91,7 @@ pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
             args.n_cpus,
             args.compression_level,
             args.chunk_size,
+            args.xz_block_size,
         )?;
         Ok(())
     } else {

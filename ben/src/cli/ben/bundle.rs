@@ -93,6 +93,7 @@ pub(super) fn run_xencode_bundle_with_graph(
     n_threads: Option<u32>,
     compression_level: Option<u32>,
     chunk_size: Option<usize>,
+    block_size: Option<u64>,
     graph_path: &Path,
 ) -> Result<()> {
     std::fs::metadata(graph_path).map_err(|e| {
@@ -123,6 +124,7 @@ pub(super) fn run_xencode_bundle_with_graph(
                 n_threads,
                 compression_level,
                 chunk_size,
+                block_size,
             )?;
         } else {
             encode_jsonl_to_xben(
@@ -132,6 +134,7 @@ pub(super) fn run_xencode_bundle_with_graph(
                 n_threads,
                 compression_level,
                 chunk_size,
+                block_size,
             )?;
         }
         handle

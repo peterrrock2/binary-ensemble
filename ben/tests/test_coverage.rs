@@ -67,6 +67,7 @@ fn encode_xben(assignments: &[Vec<u16>], variant: BenVariant) -> Vec<u8> {
         Some(1),
         Some(1),
         None,
+            None,
     )
     .unwrap();
     xben
@@ -497,6 +498,7 @@ fn make_xben(assignments: &[Vec<u16>], variant: BenVariant) -> Vec<u8> {
         Some(1),
         Some(1),
         None,
+            None,
     )
     .unwrap();
     xben
@@ -738,7 +740,7 @@ fn encode_ben_to_xben_and_back_standard() {
     let ben = encode_standard_ben(&assignments);
 
     let mut xben = Vec::new();
-    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, None, None, None).unwrap();
+    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, None, None, None, None).unwrap();
 
     let mut ben2 = Vec::new();
     decode_xben_to_ben(BufReader::new(xben.as_slice()), &mut ben2).unwrap();
@@ -1247,6 +1249,7 @@ fn xben_round_trip_with_level_0_compression() {
         Some(1),
         Some(0), // compression level 0
         None,
+            None,
     )
     .unwrap();
 
@@ -1279,6 +1282,7 @@ fn xben_mkvchain_round_trip_preserves_all_samples() {
         Some(1),
         Some(1),
         None,
+            None,
     )
     .unwrap();
 

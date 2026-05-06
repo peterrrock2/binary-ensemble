@@ -736,6 +736,7 @@ fn encode_jsonl_to_xben_roundtrip() {
         Some(1),
         Some(1),
         None,
+            None,
     )
     .unwrap();
     assert!(!xben.is_empty());
@@ -754,6 +755,7 @@ fn encode_jsonl_to_xben_with_chunk_size() {
         Some(1),
         Some(1),
         Some(2),
+            None,
     )
     .unwrap();
     assert!(!xben.is_empty());
@@ -770,6 +772,7 @@ fn encode_jsonl_to_xben_invalid_json_errors() {
         Some(1),
         Some(1),
         None,
+            None,
     )
     .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
@@ -789,6 +792,7 @@ fn encode_jsonl_to_xben_mkv_variant() {
         Some(1),
         Some(1),
         None,
+            None,
     )
     .unwrap();
     assert!(!xben.is_empty());
@@ -934,6 +938,7 @@ fn encode_jsonl_to_xben_roundtrip_verifies_content() {
         Some(1),
         Some(1),
         None,
+            None,
     )
     .unwrap();
 
@@ -966,6 +971,7 @@ fn encode_jsonl_to_xben_mkv_verifies_content() {
         Some(1),
         Some(1),
         None,
+            None,
     )
     .unwrap();
 
@@ -1167,6 +1173,7 @@ fn encode_jsonl_to_xben_twodelta_roundtrip() {
         Some(1),
         Some(1),
         None,
+            None,
     )
     .unwrap();
 

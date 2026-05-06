@@ -144,6 +144,7 @@ fn test_extract_assignment_xben_roundtrip_and_errors() {
         Some(1),
         Some(0),
         None,
+            None,
     )
     .unwrap();
 

@@ -286,6 +286,7 @@ fn xben_mkvchain_splits_repetition_count_longer_than_u16_max() {
         Some(1),
         Some(0),
         None,
+            None,
     )
     .unwrap();
 
@@ -343,6 +344,7 @@ fn direct_xben_helpers_propagate_corrupt_xz_errors() {
         Some(1),
         Some(0),
         None,
+            None,
     )
     .unwrap();
     xben.truncate(xben.len() - 1);
@@ -367,7 +369,7 @@ fn xz_compress_propagates_input_reader_errors() {
         fn consume(&mut self, _amt: usize) {}
     }
 
-    let err = xz_compress(FailingReader, Vec::new(), Some(1), Some(0)).unwrap_err();
+    let err = xz_compress(FailingReader, Vec::new(), Some(1), Some(0), None).unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::Other);
 }
 
@@ -457,6 +459,7 @@ fn xben_twodelta_huge_incomplete_chunk_errors_without_panicking() {
         &mut xben,
         Some(1),
         Some(0),
+            None,
     )
     .unwrap();
 
@@ -487,6 +490,7 @@ fn zero_count_frames_are_rejected() {
         &mut xben,
         Some(1),
         Some(0),
+            None,
     )
     .unwrap();
     let err = XZAssignmentReader::new(xben.as_slice())
@@ -563,6 +567,7 @@ fn seeded_malformed_xben_bytes_do_not_panic() {
             Some(1),
             Some(0),
             Some(32),
+                    None,
         )
         .unwrap();
         seeds.push(xben);
@@ -588,6 +593,7 @@ fn seeded_malformed_xben_bytes_do_not_panic() {
         &mut unknown_tag_xben,
         Some(1),
         Some(0),
+            None,
     )
     .unwrap();
     assert_xben_bytes_do_not_panic(unknown_tag_xben);

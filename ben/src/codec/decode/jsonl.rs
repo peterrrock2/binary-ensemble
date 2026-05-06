@@ -146,7 +146,7 @@ mod tests {
         // Build a valid Standard XBEN stream.
         let jsonl = b"{\"assignment\":[1,2,3],\"sample\":1}\n";
         let mut xben = Vec::new();
-        encode_jsonl_to_xben(jsonl.as_slice(), &mut xben, BenVariant::Standard, Some(1), Some(1), None)
+        encode_jsonl_to_xben(jsonl.as_slice(), &mut xben, BenVariant::Standard, Some(1), Some(1), None, None)
             .unwrap();
 
         // Use a read-only File as the writer — writing to it fails with a

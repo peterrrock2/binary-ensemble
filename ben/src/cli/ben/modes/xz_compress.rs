@@ -24,7 +24,13 @@ pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
     check_overwrite(&out_file_name, args.overwrite)?;
     let writer = BufWriter::new(File::create(out_file_name)?);
 
-    xz_compress(reader, writer, args.n_cpus, args.compression_level)?;
+    xz_compress(
+        reader,
+        writer,
+        args.n_cpus,
+        args.compression_level,
+        args.xz_block_size,
+    )?;
     tracing::trace!("Done!");
     Ok(())
 }

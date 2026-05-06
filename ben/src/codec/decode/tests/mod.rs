@@ -40,6 +40,7 @@ fn decode_xben_to_ben_twodelta_roundtrip() {
         Some(1),
         Some(1),
         None,
+            None,
     )
     .unwrap();
 
@@ -82,6 +83,7 @@ fn decode_xben_to_jsonl_twodelta() {
         Some(1),
         Some(1),
         None,
+            None,
     )
     .unwrap();
 
@@ -105,7 +107,7 @@ fn decode_xben_to_jsonl_rejects_invalid_banner() {
     let mut bad_data = b"GARBAGE BANNER!!!".to_vec();
     bad_data.extend_from_slice(&[0u8; 20]);
     let mut xz = Vec::new();
-    xz_compress(bad_data.as_slice(), &mut xz, Some(1), Some(1)).unwrap();
+    xz_compress(bad_data.as_slice(), &mut xz, Some(1), Some(1), None).unwrap();
 
     let mut output = Vec::new();
     let err = decode_xben_to_jsonl(BufReader::new(xz.as_slice()), &mut output).unwrap_err();
@@ -128,7 +130,7 @@ fn encode_ben_to_xben_roundtrip() {
 
     // BEN → XBEN
     let mut xben = Vec::new();
-    encode_ben_to_xben(ben.as_slice(), &mut xben, Some(1), Some(1), None).unwrap();
+    encode_ben_to_xben(ben.as_slice(), &mut xben, Some(1), Some(1), None, None).unwrap();
 
     // XBEN → BEN
     let mut ben2 = Vec::new();
@@ -152,7 +154,7 @@ fn encode_ben_to_xben_with_chunk_size() {
     encode_jsonl_to_ben(jsonl.as_bytes(), &mut ben, BenVariant::Standard).unwrap();
 
     let mut xben = Vec::new();
-    encode_ben_to_xben(ben.as_slice(), &mut xben, Some(1), Some(1), Some(1)).unwrap();
+    encode_ben_to_xben(ben.as_slice(), &mut xben, Some(1), Some(1), Some(1), None).unwrap();
     assert!(!xben.is_empty());
 
     // Verify content roundtrips correctly
@@ -185,7 +187,7 @@ fn encode_ben_to_xben_mkvchain_roundtrip() {
     encode_jsonl_to_ben(jsonl.as_bytes(), &mut ben, BenVariant::MkvChain).unwrap();
 
     let mut xben = Vec::new();
-    encode_ben_to_xben(ben.as_slice(), &mut xben, Some(1), Some(1), None).unwrap();
+    encode_ben_to_xben(ben.as_slice(), &mut xben, Some(1), Some(1), None, None).unwrap();
 
     let mut ben2 = Vec::new();
     decode_xben_to_ben(BufReader::new(xben.as_slice()), &mut ben2).unwrap();
@@ -246,6 +248,7 @@ fn decode_xben_to_ben_twodelta_with_repeated_assignments() {
         Some(1),
         Some(1),
         None,
+            None,
     )
     .unwrap();
 
@@ -271,7 +274,7 @@ fn xz_decompress_roundtrip() {
 
     let original = b"hello world, this is a test of xz_decompress";
     let mut compressed = Vec::new();
-    xz_compress(original.as_slice(), &mut compressed, Some(1), Some(1)).unwrap();
+    xz_compress(original.as_slice(), &mut compressed, Some(1), Some(1), None).unwrap();
 
     let mut decompressed = Vec::new();
     xz_decompress(BufReader::new(compressed.as_slice()), &mut decompressed).unwrap();
@@ -284,7 +287,7 @@ fn xz_compress_direct_test() {
 
     let data = b"compress me please with xz";
     let mut out = Vec::new();
-    xz_compress(data.as_slice(), &mut out, None, None).unwrap();
+    xz_compress(data.as_slice(), &mut out, None, None, None).unwrap();
     assert!(!out.is_empty());
 
     let mut decompressed = Vec::new();
@@ -302,7 +305,7 @@ fn encode_ben_to_xben_rejects_invalid_banner() {
 
     let garbage = b"GARBAGE BANNER!!!extra_padding";
     let mut out = Vec::new();
-    let err = encode_ben_to_xben(garbage.as_slice(), &mut out, Some(1), Some(1), None).unwrap_err();
+    let err = encode_ben_to_xben(garbage.as_slice(), &mut out, Some(1), Some(1), None, None).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 }
 
@@ -315,7 +318,7 @@ fn decode_xben_to_ben_rejects_invalid_banner() {
     let mut bad_data = b"GARBAGE BANNER!!!".to_vec();
     bad_data.extend_from_slice(&[0u8; 20]);
     let mut xz = Vec::new();
-    xz_compress(bad_data.as_slice(), &mut xz, Some(1), Some(1)).unwrap();
+    xz_compress(bad_data.as_slice(), &mut xz, Some(1), Some(1), None).unwrap();
 
     let mut output = Vec::new();
     let err = decode_xben_to_ben(BufReader::new(xz.as_slice()), &mut output).unwrap_err();

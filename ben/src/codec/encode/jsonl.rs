@@ -1,4 +1,5 @@
-use crate::codec::encode::errors::EncodeError;
+use crate::codec::encode::xz::XZ_DEFAULT_MT_BLOCK_SIZE;
+use crate::codec::encode::EncodeError;
 use crate::io::writer::{AssignmentWriter, XZAssignmentWriter};
 use crate::progress::Spinner;
 use crate::BenVariant;
@@ -21,6 +22,11 @@ use xz2::write::XzEncoder;
 /// * `n_threads` - Optional XZ encoder thread count. When omitted, a safe
 ///   default is chosen.
 /// * `compression_level` - Optional XZ compression level in the range `0..=9`.
+/// * `chunk_size` - Optional TwoDelta columnar chunk size; ignored for
+///   Standard and MkvChain variants.
+/// * `block_size` - Optional per-block size in bytes for the MT encoder.
+///   `None` defaults to [`XZ_DEFAULT_MT_BLOCK_SIZE`] when threads > 1, or
+///   `0` (liblzma auto) for single-thread runs.
 ///
 /// # Returns
 ///
@@ -32,9 +38,10 @@ pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
     n_threads: Option<u32>,
     compression_level: Option<u32>,
     chunk_size: Option<usize>,
+    block_size: Option<u64>,
 ) -> Result<()> {
-    let mut n_cpus: u32 = n_threads.unwrap_or(1);
-    n_cpus = n_cpus
+    let n_cpus: u32 = n_threads
+        .unwrap_or(1)
         .min(
             std::thread::available_parallelism()
                 .map(|n| n.get())
@@ -44,10 +51,16 @@ pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
 
     let level = compression_level.unwrap_or(9).clamp(0, 9);
 
+    let resolved_block_size = match block_size {
+        Some(n) => n,
+        None if n_cpus > 1 => XZ_DEFAULT_MT_BLOCK_SIZE,
+        None => 0,
+    };
+
     let mt = MtStreamBuilder::new()
         .threads(n_cpus)
         .preset(level)
-        .block_size(0)
+        .block_size(resolved_block_size)
         .encoder()
         .map_err(|e| io::Error::from(EncodeError::XzInit(e)))?;
     let encoder = XzEncoder::new_stream(writer, mt);

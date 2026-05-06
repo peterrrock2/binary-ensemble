@@ -180,6 +180,7 @@ fn decode_xben_to_ben_mkvchain_roundtrip() {
         Some(1),
         Some(0),
         None,
+            None,
     )
     .unwrap();
 
@@ -205,6 +206,7 @@ fn decode_xben_to_jsonl_mkvchain_count_expands() {
         Some(1),
         Some(0),
         None,
+            None,
     )
     .unwrap();
 
@@ -236,7 +238,7 @@ fn decode_xben_to_jsonl_rejects_mkvchain_partial_overflow() {
     let mut xz = Vec::new();
     let mut inner = b"MKVCHAIN BEN FILE".to_vec();
     inner.extend_from_slice(&[1, 2, 3]);
-    xz_compress(BufReader::new(inner.as_slice()), &mut xz, Some(1), Some(0)).unwrap();
+    xz_compress(BufReader::new(inner.as_slice()), &mut xz, Some(1), Some(0), None).unwrap();
 
     let mut out = Vec::new();
     decode_xben_to_jsonl(BufReader::new(xz.as_slice()), &mut out).unwrap();

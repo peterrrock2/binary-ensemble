@@ -226,6 +226,7 @@ proptest! {
             Some(threads),
             Some(level),
             None,
+                    None,
         ).unwrap();
 
         // Decode XBEN -> BEN -> JSONL
@@ -252,6 +253,7 @@ proptest! {
             Some(threads),
             Some(level),
             None,
+                    None,
         ).unwrap();
 
         let mut ben = Vec::new();
@@ -277,6 +279,7 @@ proptest! {
             Some(threads),
             Some(level),
             None,
+                    None,
         ).unwrap();
 
         let mut ben = Vec::new();
@@ -302,6 +305,7 @@ proptest! {
             Some(threads),
             Some(level),
             None,
+                    None,
         ).unwrap();
 
         // Path A: direct to JSONL
@@ -331,6 +335,7 @@ proptest! {
             Some(threads),
             Some(level),
             None,
+                    None,
         ).unwrap();
 
         let mut dec = XZAssignmentReader::new(xben.as_slice()).unwrap();
@@ -359,6 +364,7 @@ proptest! {
             Some(threads),
             Some(level),
             None,
+                    None,
         ).unwrap();
 
         let mut dec = XZAssignmentReader::new(xben.as_slice()).unwrap();
@@ -417,6 +423,7 @@ proptest! {
             Some(threads),
             Some(level),
             None,
+                    None,
         ).unwrap();
 
         // Choose some indices to keep (1-based). We derive from seq length.
@@ -458,6 +465,7 @@ proptest! {
             Some(threads),
             Some(level),
             None,
+                    None,
         ).unwrap();
 
         let n = seq.len();
@@ -494,6 +502,7 @@ proptest! {
             Some(threads),
             Some(level),
             None,
+                    None,
         ).unwrap();
 
         let n = seq.len();
@@ -553,7 +562,7 @@ proptest! {
         let (threads, level) = params;
 
         let mut out = Vec::new();
-        xz_compress(BufReader::new(bytes.as_slice()), &mut out, Some(threads), Some(level)).unwrap();
+        xz_compress(BufReader::new(bytes.as_slice()), &mut out, Some(threads), Some(level), None).unwrap();
 
         let mut recovered = Vec::new();
         xz_decompress(BufReader::new(out.as_slice()), &mut recovered).unwrap();
@@ -586,7 +595,7 @@ fn xben_decoder_rejects_bad_banner() {
     let mut inner = Vec::new();
     inner.extend_from_slice(b"BAD BAD BAD BAD!!"); // 17 bytes
     let mut xz = Vec::new();
-    xz_compress(BufReader::new(inner.as_slice()), &mut xz, Some(1), Some(0)).unwrap();
+    xz_compress(BufReader::new(inner.as_slice()), &mut xz, Some(1), Some(0), None).unwrap();
 
     let err = XZAssignmentReader::new(xz.as_slice())
         .err()
@@ -610,6 +619,7 @@ fn subsample_every_respects_offset() {
         Some(1),
         Some(0),
         None,
+            None,
     )
     .unwrap();
 
@@ -669,6 +679,7 @@ fn xbenencoder_drop_flushes_tail_group() {
             Some(1),
             Some(0),
             None,
+                    None,
         )
         .unwrap();
         out
@@ -691,6 +702,7 @@ fn ben_new_invalid_header_detects_xz() {
         &mut xz,
         Some(1),
         Some(0),
+            None,
     )
     .unwrap();
 
@@ -718,6 +730,7 @@ fn xben_new_invalid_banner() {
         &mut wrong,
         Some(1),
         Some(0),
+            None,
     )
     .unwrap();
     let err = XZAssignmentReader::new(wrong.as_slice())
@@ -743,6 +756,7 @@ fn xben_truncated_frame_reports_unexpected_eof() {
         Some(1),
         Some(0),
         None,
+            None,
     )
     .unwrap();
 
@@ -830,6 +844,7 @@ fn subsample_by_indices_sorts_and_dedups() {
         Some(1),
         Some(0),
         None,
+            None,
     )
     .unwrap();
     let xb = XZAssignmentReader::new(xz.as_slice()).unwrap();
@@ -875,6 +890,7 @@ fn ben_encode_xben_respects_existing_ben_header() {
             Some(1),
             Some(0),
             None,
+                    None,
         )
         .expect("ben->xben failed");
 
@@ -899,6 +915,7 @@ fn xz_mt_params_are_capped_and_safe() {
         Some(10_000),
         Some(42),
         None,
+            None,
     )
     .unwrap();
     let mut ben = Vec::new();
@@ -970,6 +987,7 @@ fn xben_frame_decoder_new_and_truncated_iteration_paths() {
         Some(1),
         Some(0),
         None,
+            None,
     )
     .unwrap();
 
@@ -1151,6 +1169,7 @@ fn decoder_init_error_display_source_and_conversion_paths() {
             &mut buf,
             Some(1),
             Some(0),
+                    None,
         )
         .unwrap();
         buf
@@ -1199,6 +1218,7 @@ fn ben_decoder_and_xben_decoder_count_samples() {
         Some(1),
         Some(0),
         None,
+            None,
     )
     .unwrap();
     assert_eq!(
@@ -1221,6 +1241,7 @@ fn ben_decoder_and_xben_decoder_count_samples() {
         Some(1),
         Some(0),
         None,
+            None,
     )
     .unwrap();
     assert_eq!(
@@ -1257,6 +1278,7 @@ fn build_frame_iter_and_count_samples_from_file_cover_public_file_api() {
         Some(1),
         Some(0),
         None,
+            None,
     )
     .unwrap();
     let xben_path = unique_temp_path("sample.xben");
