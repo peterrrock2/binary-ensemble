@@ -1,3 +1,4 @@
+use super::twodelta::twodelta_repeat_runs;
 use super::utils::parse_json_assignment;
 use crate::codec::encode::encode_twodelta_frame_with_hint;
 use crate::codec::BenEncodeFrame;
@@ -172,46 +173,8 @@ pub(super) fn twodelta_repeat_frame(
     assignment: &[u16],
     count: u16,
 ) -> io::Result<BenEncodeFrame> {
-    let first = assignment.first().copied().unwrap_or(0);
-    let second = assignment
-        .iter()
-        .copied()
-        .find(|&value| value != first)
-        .unwrap_or_else(|| if first == u16::MAX { 0 } else { first + 1 });
-
-    let mut run_lengths = Vec::new();
-    let mut current = first;
-    let mut run_len = 0u16;
-
-    for &value in assignment {
-        if value != first && value != second {
-            continue;
-        }
-        if value == current {
-            if run_len == u16::MAX {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "TwoDelta repeat frame contains a run longer than u16::MAX",
-                ));
-            }
-            run_len += 1;
-        } else {
-            if run_len > 0 {
-                run_lengths.push(run_len);
-            }
-            current = value;
-            run_len = 1;
-        }
-    }
-    if run_len > 0 {
-        run_lengths.push(run_len);
-    }
-
-    Ok(BenEncodeFrame::from_run_lengths(
-        (first, second),
-        run_lengths,
-        Some(count),
-    ))
+    let (pair, run_lengths) = twodelta_repeat_runs(assignment)?;
+    Ok(BenEncodeFrame::from_run_lengths(pair, run_lengths, Some(count)))
 }
 
 impl<W: Write> Drop for AssignmentWriter<W> {

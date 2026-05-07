@@ -1,6 +1,7 @@
 use super::frames::BufferedDeltaFrame;
 use super::twodelta::{
-    DEFAULT_TWODELTA_CHUNK_SIZE, XBEN_TWODELTA_CHUNK_TAG, XBEN_TWODELTA_FULL_TAG,
+    twodelta_repeat_runs, DEFAULT_TWODELTA_CHUNK_SIZE, XBEN_TWODELTA_CHUNK_TAG,
+    XBEN_TWODELTA_FULL_TAG,
 };
 use super::utils::{encode_xben_twodelta_full_frame, parse_json_assignment};
 use crate::codec::decode::decode_ben_line;
@@ -393,43 +394,9 @@ pub(super) fn twodelta_repeat_buffered_frame(
     assignment: &[u16],
     count: u16,
 ) -> io::Result<BufferedDeltaFrame> {
-    let first = assignment.first().copied().unwrap_or(0);
-    let second = assignment
-        .iter()
-        .copied()
-        .find(|&value| value != first)
-        .unwrap_or_else(|| if first == u16::MAX { 0 } else { first + 1 });
-
-    let mut run_lengths = Vec::new();
-    let mut current = first;
-    let mut run_len = 0u16;
-
-    for &value in assignment {
-        if value != first && value != second {
-            continue;
-        }
-        if value == current {
-            if run_len == u16::MAX {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "TwoDelta repeat frame contains a run longer than u16::MAX",
-                ));
-            }
-            run_len += 1;
-        } else {
-            if run_len > 0 {
-                run_lengths.push(run_len);
-            }
-            current = value;
-            run_len = 1;
-        }
-    }
-    if run_len > 0 {
-        run_lengths.push(run_len);
-    }
-
+    let (pair, run_lengths) = twodelta_repeat_runs(assignment)?;
     Ok(BufferedDeltaFrame {
-        pair: (first, second),
+        pair,
         run_lengths,
         count,
     })
