@@ -21,9 +21,7 @@ pub mod writer;
 #[cfg(test)]
 mod tests;
 
-pub use reader::{
-    BendlReader, BundleAssignmentReader, BundleAssignmentReaderError, BundleValidationError,
-};
+pub use reader::{BendlReader, BundleAssignmentReaderError, BundleValidationError};
 pub use writer::{
     AddAssetOptions, BendlStreamHandle, BendlWriteError, BendlWriter, BundleAssignmentSink,
     BundleAssignmentStreamCtx,

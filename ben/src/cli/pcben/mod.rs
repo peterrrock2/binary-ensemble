@@ -1,5 +1,5 @@
 use crate::cli::common::{check_overwrite, set_quiet, set_verbose, CliError, CliResult};
-use crate::io::reader::AssignmentReader;
+use crate::io::reader::BenStreamReader;
 use crate::io::writer::{AssignmentWriter, XZAssignmentWriter};
 use crate::BenVariant;
 use clap::{Parser, ValueEnum};
@@ -194,7 +194,7 @@ fn derive_output_path(mode: Mode, input_file: &str) -> String {
 
 /// Decode BEN and emit one zero-based assignment vector per line for PCOMPRESS.
 fn assignment_decode_ben<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::Result<()> {
-    let ben_reader = AssignmentReader::new(&mut reader)?;
+    let ben_reader = BenStreamReader::from_ben(&mut reader)?;
     let mut line = String::new();
 
     for result in ben_reader {

@@ -15,7 +15,7 @@ pub enum TranslateError {
 
     #[error(
         "TwoDelta BEN streams cannot be translated to ben32; \
-         use XZAssignmentWriter/XZAssignmentReader for TwoDelta compressed I/O"
+         use XZAssignmentWriter/BenStreamReader for TwoDelta compressed I/O"
     )]
     TwoDeltaUnsupported,
 

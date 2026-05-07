@@ -5,7 +5,8 @@ use crate::io::bundle::format::{
     ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA, BENDL_MAGIC, BENDL_MAJOR_VERSION,
     BENDL_MINOR_VERSION, FINALIZED_NO, FINALIZED_YES, HEADER_SIZE,
 };
-use crate::io::bundle::reader::{BendlReader, BundleAssignmentReader};
+use crate::io::bundle::reader::BendlReader;
+use crate::io::reader::BenWireFormat;
 use crate::io::bundle::writer::{
     AddAssetOptions, BendlAppender, BendlWriteError, BendlWriter,
 };
@@ -522,11 +523,8 @@ fn write_ben_stream_round_trips_through_assignment_reader() {
     assert_eq!(reader.assignment_format(), Some(AssignmentFormat::Ben));
 
     let decoder = reader.open_assignment_reader().unwrap();
-    let inner = match decoder {
-        BundleAssignmentReader::Ben(r) => r,
-        BundleAssignmentReader::Xben(_) => panic!("expected Ben reader"),
-    };
-    let decoded: Vec<Vec<u16>> = inner
+    assert_eq!(decoder.wire_format(), BenWireFormat::Ben);
+    let decoded: Vec<Vec<u16>> = decoder
         .silent(true)
         .flat_map(|r| {
             let (assign, count) = r.unwrap();
@@ -564,11 +562,8 @@ fn write_xben_stream_round_trips_through_assignment_reader() {
     assert_eq!(reader.assignment_format(), Some(AssignmentFormat::Xben));
 
     let decoder = reader.open_assignment_reader().unwrap();
-    let inner = match decoder {
-        BundleAssignmentReader::Xben(r) => r,
-        BundleAssignmentReader::Ben(_) => panic!("expected Xben reader"),
-    };
-    let decoded: Vec<Vec<u16>> = inner
+    assert_eq!(decoder.wire_format(), BenWireFormat::XBen);
+    let decoded: Vec<Vec<u16>> = decoder
         .silent(true)
         .flat_map(|r| {
             let (assign, count) = r.unwrap();
@@ -613,11 +608,8 @@ fn write_ben_stream_alongside_front_loaded_asset() {
 
     // Assignment stream is still intact after pulling asset bytes.
     let decoder = reader.open_assignment_reader().unwrap();
-    let inner = match decoder {
-        BundleAssignmentReader::Ben(r) => r,
-        BundleAssignmentReader::Xben(_) => panic!("expected Ben reader"),
-    };
-    let decoded: Vec<Vec<u16>> = inner
+    assert_eq!(decoder.wire_format(), BenWireFormat::Ben);
+    let decoded: Vec<Vec<u16>> = decoder
         .silent(true)
         .flat_map(|r| {
             let (assign, count) = r.unwrap();
@@ -641,9 +633,8 @@ fn open_assignment_reader_rejects_mismatched_format() {
     let buf = writer.finish().unwrap().into_inner();
 
     let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
-    let decoder: BundleAssignmentReader<_> = reader.open_assignment_reader().unwrap();
-    assert!(decoder.is_ben());
-    assert!(!decoder.is_xben());
+    let decoder = reader.open_assignment_reader().unwrap();
+    assert_eq!(decoder.wire_format(), BenWireFormat::Ben);
 }
 
 // -----------------------------------------------------------------------
@@ -1221,11 +1212,8 @@ fn write_ben_stream_json_value_and_sample_count() {
     let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
     assert_eq!(reader.sample_count(), Some(2));
     let decoder = reader.open_assignment_reader().unwrap();
-    let inner = match decoder {
-        BundleAssignmentReader::Ben(r) => r,
-        BundleAssignmentReader::Xben(_) => panic!("expected Ben reader"),
-    };
-    let decoded: Vec<Vec<u16>> = inner.silent(true).map(|r| r.unwrap().0).collect();
+    assert_eq!(decoder.wire_format(), BenWireFormat::Ben);
+    let decoded: Vec<Vec<u16>> = decoder.silent(true).map(|r| r.unwrap().0).collect();
     assert_eq!(decoded, vec![vec![1, 2, 3], vec![4, 5, 6]]);
 }
 
@@ -1247,11 +1235,8 @@ fn write_xben_stream_json_value() {
     let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
     assert_eq!(reader.sample_count(), Some(2));
     let decoder = reader.open_assignment_reader().unwrap();
-    let inner = match decoder {
-        BundleAssignmentReader::Xben(r) => r,
-        BundleAssignmentReader::Ben(_) => panic!("expected Xben reader"),
-    };
-    let decoded: Vec<Vec<u16>> = inner.silent(true).map(|r| r.unwrap().0).collect();
+    assert_eq!(decoder.wire_format(), BenWireFormat::XBen);
+    let decoded: Vec<Vec<u16>> = decoder.silent(true).map(|r| r.unwrap().0).collect();
     assert_eq!(decoded, vec![vec![10, 20], vec![30, 40]]);
 }
 

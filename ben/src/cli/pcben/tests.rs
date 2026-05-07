@@ -113,7 +113,7 @@ fn assignment_encode_xben_offsets_values_and_writes_xben() {
 
 #[test]
 fn assignment_decode_ben_iterator_error_propagates() {
-    // Provides a valid BEN banner so AssignmentReader::new succeeds,
+    // Provides a valid BEN banner so BenStreamReader::from_ben succeeds,
     // then returns a non-EOF error on the next read so the iterator
     // fires the Err(e) => return Err(e) arm (line 204).
     use std::io::Read;

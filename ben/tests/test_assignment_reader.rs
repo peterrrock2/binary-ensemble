@@ -1,4 +1,4 @@
-//! Rigorous tests for `AssignmentReader` with the MkvChain and TwoDelta BEN variants.
+//! Rigorous tests for `BenStreamReader` with the MkvChain and TwoDelta BEN variants.
 //!
 //! Standard-variant tests already exist in `test_coverage.rs`.  This file adds
 //! equivalent depth for the two more complex variants.  The helpers intentionally
@@ -7,7 +7,7 @@
 use binary_ensemble::codec::decode::decode_ben_to_jsonl;
 use binary_ensemble::codec::encode::encode_jsonl_to_ben;
 use binary_ensemble::format::banners::{MKVCHAIN_BEN_BANNER, TWODELTA_BEN_BANNER};
-use binary_ensemble::io::reader::{AssignmentFrameReader, AssignmentReader};
+use binary_ensemble::io::reader::{BenStreamFrameReader, BenStreamReader};
 use binary_ensemble::io::writer::AssignmentWriter;
 use binary_ensemble::BenVariant;
 
@@ -29,7 +29,7 @@ fn encode_ben(assignments: &[Vec<u16>], variant: BenVariant) -> Vec<u8> {
 
 /// Expand all repetitions by calling `for_each_assignment`.
 fn expand_assignments(ben: &[u8]) -> Vec<Vec<u16>> {
-    let mut decoder = AssignmentReader::new(ben).unwrap().silent(true);
+    let mut decoder = BenStreamReader::from_ben(ben).unwrap().silent(true);
     let mut out = Vec::new();
     decoder
         .for_each_assignment(|a, count| {
@@ -60,14 +60,14 @@ mod mkvchain {
     #[test]
     fn variant_accessor_returns_mkvchain() {
         let ben = encode_ben(&[vec![1u16, 2]], BenVariant::MkvChain);
-        let decoder = AssignmentReader::new(ben.as_slice()).unwrap();
+        let decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap();
         assert_eq!(decoder.variant(), BenVariant::MkvChain);
     }
 
     #[test]
     fn empty_payload_yields_nothing() {
         let ben = MKVCHAIN_BEN_BANNER.to_vec();
-        let decoder = AssignmentReader::new(ben.as_slice()).unwrap().silent(true);
+        let decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
         let frames: Vec<_> = decoder.collect::<io::Result<Vec<_>>>().unwrap();
         assert!(frames.is_empty());
     }
@@ -79,7 +79,7 @@ mod mkvchain {
         let assignment = vec![3u16, 3, 1, 2, 2, 1];
         let ben = encode_ben(&[assignment.clone()], BenVariant::MkvChain);
 
-        let mut decoder = AssignmentReader::new(ben.as_slice()).unwrap().silent(true);
+        let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
         let (decoded, count) = decoder.next().unwrap().unwrap();
         assert_eq!(count, 1);
         assert_eq!(decoded, assignment);
@@ -91,7 +91,7 @@ mod mkvchain {
         let assignments = vec![vec![1u16, 2, 3], vec![3u16, 2, 1], vec![2u16, 1, 3]];
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
-        let mut decoder = AssignmentReader::new(ben.as_slice()).unwrap().silent(true);
+        let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
         for expected in &assignments {
             let (decoded, count) = decoder.next().unwrap().unwrap();
             assert_eq!(count, 1, "distinct assignment should have count=1");
@@ -107,7 +107,7 @@ mod mkvchain {
         let assignments = vec![assignment.clone(); 5];
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
-        let mut decoder = AssignmentReader::new(ben.as_slice()).unwrap().silent(true);
+        let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
         let (decoded, count) = decoder.next().unwrap().unwrap();
         assert_eq!(count, 5, "expected compressed count=5, got {count}");
         assert_eq!(decoded, assignment);
@@ -130,7 +130,7 @@ mod mkvchain {
         ];
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
-        let mut decoder = AssignmentReader::new(ben.as_slice()).unwrap().silent(true);
+        let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
 
         let (d1, c1) = decoder.next().unwrap().unwrap();
         assert_eq!(c1, 3);
@@ -157,7 +157,7 @@ mod mkvchain {
             .collect();
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
-        let records: Vec<_> = AssignmentReader::new(ben.as_slice())
+        let records: Vec<_> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .collect::<io::Result<Vec<_>>>()
@@ -173,7 +173,7 @@ mod mkvchain {
         let assignments: Vec<Vec<u16>> = (0u16..8).map(|i| vec![i, i + 1]).collect();
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
-        let decoded: Vec<Vec<u16>> = AssignmentReader::new(ben.as_slice())
+        let decoded: Vec<Vec<u16>> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .map(|r| r.unwrap().0)
@@ -188,7 +188,7 @@ mod mkvchain {
         let assignments = vec![vec![1u16, 2], vec![3u16, 4], vec![5u16, 6]];
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
         assert_eq!(
-            AssignmentReader::new(ben.as_slice())
+            BenStreamReader::from_ben(ben.as_slice())
                 .unwrap()
                 .count_samples()
                 .unwrap(),
@@ -207,7 +207,7 @@ mod mkvchain {
             .collect();
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
         assert_eq!(
-            AssignmentReader::new(ben.as_slice())
+            BenStreamReader::from_ben(ben.as_slice())
                 .unwrap()
                 .count_samples()
                 .unwrap(),
@@ -219,7 +219,7 @@ mod mkvchain {
     fn count_samples_empty_stream() {
         let ben = MKVCHAIN_BEN_BANNER.to_vec();
         assert_eq!(
-            AssignmentReader::new(ben.as_slice())
+            BenStreamReader::from_ben(ben.as_slice())
                 .unwrap()
                 .count_samples()
                 .unwrap(),
@@ -236,7 +236,7 @@ mod mkvchain {
         let ben = encode_ben(&vec![assignment.clone(); 3], BenVariant::MkvChain);
 
         let mut out = Vec::new();
-        AssignmentReader::new(ben.as_slice())
+        BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .write_all_jsonl(&mut out)
             .unwrap();
@@ -255,7 +255,7 @@ mod mkvchain {
         let ben = encode_ben(&vec![assignment; 3], BenVariant::MkvChain);
 
         let mut out = Vec::new();
-        AssignmentReader::new(ben.as_slice())
+        BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .write_all_jsonl(&mut out)
             .unwrap();
@@ -282,7 +282,7 @@ mod mkvchain {
         let ben = encode_ben(&[a.clone(), a.clone(), b.clone()], BenVariant::MkvChain);
 
         let mut out = Vec::new();
-        AssignmentReader::new(ben.as_slice())
+        BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .write_all_jsonl(&mut out)
             .unwrap();
@@ -305,7 +305,7 @@ mod mkvchain {
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
         let mut via_reader = Vec::new();
-        AssignmentReader::new(ben.as_slice())
+        BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .write_all_jsonl(&mut via_reader)
             .unwrap();
@@ -324,7 +324,7 @@ mod mkvchain {
         let ben = encode_ben(&vec![assignment.clone(); 4], BenVariant::MkvChain);
 
         let mut seen_count = 0u16;
-        AssignmentReader::new(ben.as_slice())
+        BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .for_each_assignment(|a, count| {
@@ -352,7 +352,7 @@ mod mkvchain {
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
         let mut frames: Vec<(Vec<u16>, u16)> = Vec::new();
-        AssignmentReader::new(ben.as_slice())
+        BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .for_each_assignment(|assignment, count| {
@@ -373,7 +373,7 @@ mod mkvchain {
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
         let mut seen = Vec::new();
-        AssignmentReader::new(ben.as_slice())
+        BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .for_each_assignment(|assignment, _count| {
@@ -384,7 +384,7 @@ mod mkvchain {
         assert_eq!(seen, vec![a]);
     }
 
-    // ─── into_frames (AssignmentFrameReader) ──────────────────────────────────
+    // ─── into_frames (BenStreamFrameReader) ──────────────────────────────────
 
     #[test]
     fn frame_reader_yields_count_in_tuple() {
@@ -392,7 +392,7 @@ mod mkvchain {
         let assignment = vec![5u16, 6, 7];
         let ben = encode_ben(&vec![assignment; 3], BenVariant::MkvChain);
 
-        let frames: Vec<_> = AssignmentFrameReader::new(Cursor::new(ben))
+        let frames: Vec<_> = BenStreamFrameReader::from_ben(Cursor::new(ben))
             .unwrap()
             .collect::<io::Result<Vec<_>>>()
             .unwrap();
@@ -407,7 +407,7 @@ mod mkvchain {
         // A×2, B×1 → 2 frames with counts [2, 1].
         let ben = encode_ben(&[a.clone(), a.clone(), b.clone()], BenVariant::MkvChain);
 
-        let frames: Vec<_> = AssignmentReader::new(ben.as_slice())
+        let frames: Vec<_> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .into_frames()
@@ -423,7 +423,7 @@ mod mkvchain {
         let assignment = vec![3u16, 3, 1, 2];
         let ben = encode_ben(&[assignment.clone()], BenVariant::MkvChain);
 
-        let (frame, _count) = AssignmentReader::new(ben.as_slice())
+        let (frame, _count) = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .into_frames()
@@ -431,7 +431,7 @@ mod mkvchain {
             .unwrap()
             .unwrap();
 
-        let decoded = frame.expand(None).unwrap();
+        let decoded = frame.expand_self_contained().unwrap();
         assert_eq!(decoded, assignment);
     }
 
@@ -452,7 +452,7 @@ mod mkvchain {
             .collect();
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
-        let selected: Vec<(Vec<u16>, u16)> = AssignmentReader::new(ben.as_slice())
+        let selected: Vec<(Vec<u16>, u16)> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .into_subsample_by_indices(vec![3usize, 6])
@@ -467,7 +467,7 @@ mod mkvchain {
         let a = vec![1u16; 4];
         let ben = encode_ben(&vec![a.clone(); 5], BenVariant::MkvChain);
 
-        let selected: Vec<(Vec<u16>, u16)> = AssignmentReader::new(ben.as_slice())
+        let selected: Vec<(Vec<u16>, u16)> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .into_subsample_by_indices(vec![2usize, 4])
@@ -493,7 +493,7 @@ mod mkvchain {
             .collect();
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
-        let selected: Vec<(Vec<u16>, u16)> = AssignmentReader::new(ben.as_slice())
+        let selected: Vec<(Vec<u16>, u16)> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .into_subsample_by_range(2, 5)
@@ -510,7 +510,7 @@ mod mkvchain {
         let a = vec![99u16; 2];
         let ben = encode_ben(&vec![a.clone(); 6], BenVariant::MkvChain);
 
-        let selected: Vec<(Vec<u16>, u16)> = AssignmentReader::new(ben.as_slice())
+        let selected: Vec<(Vec<u16>, u16)> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .into_subsample_every(2, 1)
@@ -536,7 +536,7 @@ mod mkvchain {
             .collect();
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
-        let selected: Vec<(Vec<u16>, u16)> = AssignmentReader::new(ben.as_slice())
+        let selected: Vec<(Vec<u16>, u16)> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .into_subsample_every(2, 2)
@@ -553,7 +553,7 @@ mod mkvchain {
         let assignment = vec![1u16, 1];
         let ben = encode_ben(&[assignment], BenVariant::MkvChain);
         let truncated = &ben[..ben.len() - 1];
-        let err = AssignmentReader::new(truncated)
+        let err = BenStreamReader::from_ben(truncated)
             .unwrap()
             .next()
             .unwrap()
@@ -566,7 +566,7 @@ mod mkvchain {
         let assignment = vec![1u16, 2, 3, 4, 5];
         let ben = encode_ben(&[assignment], BenVariant::MkvChain);
         let truncated = &ben[..ben.len() - 5];
-        let err = AssignmentReader::new(truncated)
+        let err = BenStreamReader::from_ben(truncated)
             .unwrap()
             .next()
             .unwrap()
@@ -579,7 +579,7 @@ mod mkvchain {
         let assignment = vec![1u16, 2];
         let ben = encode_ben(&[assignment], BenVariant::MkvChain);
         let truncated = &ben[..ben.len() - 1];
-        let err = AssignmentReader::new(truncated)
+        let err = BenStreamReader::from_ben(truncated)
             .unwrap()
             .count_samples()
             .unwrap_err();
@@ -591,7 +591,7 @@ mod mkvchain {
         let assignment = vec![1u16, 2];
         let ben = encode_ben(&[assignment], BenVariant::MkvChain);
         let truncated = &ben[..ben.len() - 1];
-        let err = AssignmentReader::new(truncated)
+        let err = BenStreamReader::from_ben(truncated)
             .unwrap()
             .write_all_jsonl(io::sink())
             .unwrap_err();
@@ -631,7 +631,7 @@ mod twodelta {
     fn variant_accessor_returns_twodelta() {
         let ben = encode_twodelta(&[vec![1u16, 2]]);
         assert_eq!(
-            AssignmentReader::new(ben.as_slice()).unwrap().variant(),
+            BenStreamReader::from_ben(ben.as_slice()).unwrap().variant(),
             BenVariant::TwoDelta
         );
     }
@@ -675,7 +675,7 @@ mod twodelta {
         let next = vec![2u16, 1, 2, 1, 2];
         let ben = encode_twodelta(&[anchor, next.clone()]);
 
-        let mut decoder = AssignmentReader::new(ben.as_slice()).unwrap().silent(true);
+        let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
         let _ = decoder.next().unwrap().unwrap(); // skip anchor
         let (decoded_next, _) = decoder.next().unwrap().unwrap();
         assert_eq!(decoded_next, next);
@@ -711,7 +711,7 @@ mod twodelta {
         let anchor = vec![1u16, 1, 2, 2];
         let ben = encode_twodelta(&vec![anchor.clone(); 3]);
 
-        let mut decoder = AssignmentReader::new(ben.as_slice()).unwrap().silent(true);
+        let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
         let (decoded, count) = decoder.next().unwrap().unwrap();
         assert_eq!(count, 3, "anchor count should be 3");
         assert_eq!(decoded, anchor);
@@ -728,7 +728,7 @@ mod twodelta {
             .collect();
         let ben = encode_twodelta(&assignments);
 
-        let mut decoder = AssignmentReader::new(ben.as_slice()).unwrap().silent(true);
+        let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
 
         let (d_anchor, c_anchor) = decoder.next().unwrap().unwrap();
         assert_eq!(c_anchor, 1, "anchor count");
@@ -778,7 +778,7 @@ mod twodelta {
     fn count_samples_single_anchor() {
         let ben = encode_twodelta(&[vec![1u16, 2, 3]]);
         assert_eq!(
-            AssignmentReader::new(ben.as_slice())
+            BenStreamReader::from_ben(ben.as_slice())
                 .unwrap()
                 .count_samples()
                 .unwrap(),
@@ -793,7 +793,7 @@ mod twodelta {
         let assignments = vec![a.clone(), b.clone(), a.clone()];
         let ben = encode_twodelta(&assignments);
         assert_eq!(
-            AssignmentReader::new(ben.as_slice())
+            BenStreamReader::from_ben(ben.as_slice())
                 .unwrap()
                 .count_samples()
                 .unwrap(),
@@ -812,7 +812,7 @@ mod twodelta {
             .collect();
         let ben = encode_twodelta(&assignments);
         assert_eq!(
-            AssignmentReader::new(ben.as_slice())
+            BenStreamReader::from_ben(ben.as_slice())
                 .unwrap()
                 .count_samples()
                 .unwrap(),
@@ -828,7 +828,7 @@ mod twodelta {
         let ben = encode_twodelta(&[assignment.clone()]);
 
         let mut out = Vec::new();
-        AssignmentReader::new(ben.as_slice())
+        BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .write_all_jsonl(&mut out)
             .unwrap();
@@ -850,7 +850,7 @@ mod twodelta {
         let ben = encode_twodelta(&assignments);
 
         let mut out = Vec::new();
-        AssignmentReader::new(ben.as_slice())
+        BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .write_all_jsonl(&mut out)
             .unwrap();
@@ -876,7 +876,7 @@ mod twodelta {
         let ben = encode_twodelta(&assignments);
 
         let mut out = Vec::new();
-        AssignmentReader::new(ben.as_slice())
+        BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .write_all_jsonl(&mut out)
             .unwrap();
@@ -898,7 +898,7 @@ mod twodelta {
         let ben = encode_twodelta(&[a.clone(), b.clone(), a.clone()]);
 
         let mut via_reader = Vec::new();
-        AssignmentReader::new(ben.as_slice())
+        BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .write_all_jsonl(&mut via_reader)
             .unwrap();
@@ -917,7 +917,7 @@ mod twodelta {
         let ben = encode_twodelta(&vec![anchor.clone(); 4]);
 
         let mut seen: Vec<(Vec<u16>, u16)> = Vec::new();
-        AssignmentReader::new(ben.as_slice())
+        BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .for_each_assignment(|a, count| {
@@ -941,7 +941,7 @@ mod twodelta {
         let ben = encode_twodelta(&assignments);
 
         let mut frames: Vec<(Vec<u16>, u16)> = Vec::new();
-        AssignmentReader::new(ben.as_slice())
+        BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .for_each_assignment(|assignment, count| {
@@ -962,7 +962,7 @@ mod twodelta {
         let ben = encode_twodelta(&[a.clone(), b.clone(), c.clone()]);
 
         let mut seen = Vec::new();
-        AssignmentReader::new(ben.as_slice())
+        BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .for_each_assignment(|assignment, _count| {
@@ -976,7 +976,7 @@ mod twodelta {
         assert_eq!(seen[1], b);
     }
 
-    // ─── into_frames (AssignmentFrameReader) ──────────────────────────────────
+    // ─── into_frames (BenStreamFrameReader) ──────────────────────────────────
 
     #[test]
     fn into_frames_count_is_preserved_through_re_encoding() {
@@ -989,7 +989,7 @@ mod twodelta {
             .collect();
         let ben = encode_twodelta(&assignments);
 
-        let frames: Vec<_> = AssignmentReader::new(ben.as_slice())
+        let frames: Vec<_> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .into_frames()
@@ -1010,7 +1010,7 @@ mod twodelta {
         let input = vec![a.clone(), b.clone(), c.clone()];
         let ben = encode_twodelta(&input);
 
-        let frames: Vec<_> = AssignmentReader::new(ben.as_slice())
+        let frames: Vec<_> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .into_frames()
@@ -1019,7 +1019,7 @@ mod twodelta {
 
         assert_eq!(frames.len(), 3);
         for (i, (frame, _count)) in frames.iter().enumerate() {
-            let decoded = frame.expand(None).unwrap();
+            let decoded = frame.expand_self_contained().unwrap();
             assert_eq!(decoded, input[i], "frame {i} decoded incorrectly");
         }
     }
@@ -1028,7 +1028,7 @@ mod twodelta {
     fn into_frames_from_anchor_only_has_single_frame_with_count_one() {
         let assignment = vec![1u16, 2, 3];
         let ben = encode_twodelta(&[assignment]);
-        let frames: Vec<_> = AssignmentReader::new(ben.as_slice())
+        let frames: Vec<_> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .into_frames()
@@ -1048,7 +1048,7 @@ mod twodelta {
             .collect();
         let ben = encode_twodelta(&input);
 
-        let frames: Vec<_> = AssignmentReader::new(ben.as_slice())
+        let frames: Vec<_> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .into_frames()
@@ -1068,7 +1068,7 @@ mod twodelta {
         let input = vec![a.clone(), b.clone(), c.clone(), a.clone(), b.clone()];
         let ben = encode_twodelta(&input);
 
-        let selected: Vec<Vec<u16>> = AssignmentReader::new(ben.as_slice())
+        let selected: Vec<Vec<u16>> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .into_subsample_by_indices(vec![1usize, 3, 5])
@@ -1087,7 +1087,7 @@ mod twodelta {
         let ben = encode_twodelta(&input);
 
         // Range [2, 4] → 3 assignments: b, c, a.
-        let selected: Vec<Vec<u16>> = AssignmentReader::new(ben.as_slice())
+        let selected: Vec<Vec<u16>> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .into_subsample_by_range(2, 4)
@@ -1113,7 +1113,7 @@ mod twodelta {
         ];
         let ben = encode_twodelta(&input);
 
-        let selected: Vec<Vec<u16>> = AssignmentReader::new(ben.as_slice())
+        let selected: Vec<Vec<u16>> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .into_subsample_every(3, 1)
@@ -1136,7 +1136,7 @@ mod twodelta {
             .collect();
         let ben = encode_twodelta(&assignments);
 
-        let selected: Vec<(Vec<u16>, u16)> = AssignmentReader::new(ben.as_slice())
+        let selected: Vec<(Vec<u16>, u16)> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
             .into_subsample_by_indices(vec![1usize, 3, 4])
@@ -1155,7 +1155,7 @@ mod twodelta {
         let assignment = vec![1u16, 2, 3];
         let ben = encode_twodelta(&[assignment]);
         let truncated = &ben[..ben.len() - 1];
-        let err = AssignmentReader::new(truncated)
+        let err = BenStreamReader::from_ben(truncated)
             .unwrap()
             .next()
             .unwrap()
@@ -1170,7 +1170,7 @@ mod twodelta {
         let ben = encode_twodelta(&[a.clone(), b.clone()]);
         let truncated = &ben[..ben.len() - 1];
 
-        let mut decoder = AssignmentReader::new(truncated).unwrap().silent(true);
+        let mut decoder = BenStreamReader::from_ben(truncated).unwrap().silent(true);
         let _ = decoder.next().unwrap().unwrap(); // anchor succeeds
         let err = decoder.next().unwrap().unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
@@ -1182,7 +1182,7 @@ mod twodelta {
         let b = vec![2u16, 2, 1, 1];
         let ben = encode_twodelta(&[a, b]);
         let truncated = &ben[..ben.len() - 1];
-        let err = AssignmentReader::new(truncated)
+        let err = BenStreamReader::from_ben(truncated)
             .unwrap()
             .count_samples()
             .unwrap_err();
@@ -1195,7 +1195,7 @@ mod twodelta {
         let b = vec![2u16, 2, 1, 1];
         let ben = encode_twodelta(&[a, b]);
         let truncated = &ben[..ben.len() - 1];
-        let err = AssignmentReader::new(truncated)
+        let err = BenStreamReader::from_ben(truncated)
             .unwrap()
             .write_all_jsonl(io::sink())
             .unwrap_err();

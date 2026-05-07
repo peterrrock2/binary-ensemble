@@ -1,11 +1,12 @@
 use super::args::{CreateArgs, NamedAsset};
-use super::helpers::{add_file_asset, format_from_path, mode_str};
+use super::helpers::{add_file_asset, format_from_path};
 use crate::cli::common::check_overwrite;
 use crate::io::bundle::format::{
     ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA, ASSET_TYPE_NODE_PERMUTATION_MAP,
 };
 use crate::io::bundle::{AddAssetOptions, BendlWriter};
 use crate::io::reader::subsample::count_samples_from_file;
+use crate::io::reader::BenWireFormat;
 use std::fs::File;
 use std::io::{self, BufReader};
 
@@ -19,7 +20,7 @@ pub(super) fn run_create(args: CreateArgs) -> Result<(), String> {
 
     // Count samples up front so we can patch the header at finalize time.
     // This pre-scan is O(stream size); the second pass streams bytes directly.
-    let sample_count: i64 = count_samples_from_file(&args.input, mode_str(format))
+    let sample_count: i64 = count_samples_from_file(&args.input, BenWireFormat::from(format))
         .map_err(|e| format!("failed to count samples in {:?}: {e}", args.input))?
         as i64;
 

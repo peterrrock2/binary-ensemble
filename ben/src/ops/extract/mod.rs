@@ -1,7 +1,7 @@
 //! Sample extraction helpers for BEN and XBEN streams.
 
 use crate::codec::decode::decode_ben32_line;
-use crate::io::reader::{AssignmentReader, XZAssignmentReader};
+use crate::io::reader::BenStreamReader;
 use serde_json::Error as SerdeError;
 use std::fs::File;
 use std::io::Cursor;
@@ -67,7 +67,7 @@ pub fn extract_assignment_ben<R: Read>(
     }
 
     let mut current_sample = 1;
-    let inner_decoder = AssignmentReader::new(&mut reader).map_err(io::Error::from)?;
+    let inner_decoder = BenStreamReader::from_ben(&mut reader).map_err(io::Error::from)?;
     for record in inner_decoder {
         let (assignment, count) = record.map_err(SampleError::new_io_error)?;
         if current_sample == sample_number || current_sample + count as usize > sample_number {
@@ -99,22 +99,28 @@ pub fn extract_assignment_xben<R: Read>(
         return Err(SampleError::InvalidSampleNumber);
     }
 
-    let inner_decoder = XZAssignmentReader::new(&mut reader)
+    let inner_decoder = BenStreamReader::from_xben(&mut reader)
         .map_err(|e| SampleError::new_io_error(io::Error::from(e)))?;
     let variant = inner_decoder.variant();
     let frame_iterator = inner_decoder.into_frames();
 
     let mut current_sample = 1;
     for frame in frame_iterator {
-        let frame = frame.map_err(SampleError::new_io_error)?;
-        if current_sample == sample_number || current_sample + frame.1 as usize > sample_number {
-            // XZAssignmentFrameReader guarantees complete zero-sentinel
-            // frames, so decode_ben32_line always succeeds here.
-            let (assignment, _) = decode_ben32_line(Cursor::new(&frame.0), variant)
-                .expect("complete frame from XZAssignmentFrameReader");
+        let (decode_frame, count) = frame.map_err(SampleError::new_io_error)?;
+        if current_sample == sample_number || current_sample + count as usize > sample_number {
+            // The frame iterator guarantees complete zero-sentinel ben32
+            // frames in the XBEN arm, so decode_ben32_line always succeeds.
+            let bytes = match &decode_frame {
+                crate::io::reader::DecodeFrame::XBen(b, _) => b,
+                crate::io::reader::DecodeFrame::Ben(_) => {
+                    unreachable!("XBEN reader yields XBen frames")
+                }
+            };
+            let (assignment, _) = decode_ben32_line(Cursor::new(bytes), variant)
+                .expect("complete frame from XBEN frame reader");
             return Ok(assignment);
         }
-        current_sample += frame.1 as usize;
+        current_sample += count as usize;
     }
 
     Err(SampleError::SampleNotFound {

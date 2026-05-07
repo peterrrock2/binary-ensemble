@@ -4,9 +4,9 @@
 //! trailing directory table. It does not read any asset payload bytes
 //! until the caller explicitly requests them via [`BendlReader::asset_bytes`]
 //! or [`BendlReader::asset_reader`]. The assignment stream region is
-//! likewise exposed as a byte range the caller can plumb into the
-//! existing `AssignmentReader` / `XZAssignmentReader` without this module
-//! reinterpreting any BEN/XBEN internals.
+//! likewise exposed as a byte range the caller can plumb into a
+//! [`BenStreamReader`] without this module reinterpreting any BEN/XBEN
+//! internals.
 
 use std::io::{self, Read, Seek, SeekFrom, Take};
 
@@ -16,6 +16,16 @@ use super::format::{
     standardized_name_for, read_directory, AssignmentFormat, BendlDirectoryEntry, BendlFormatError,
     BendlHeader, ASSET_FLAG_XZ,
 };
+use crate::io::reader::{BenStreamReader, BenWireFormat};
+
+impl From<AssignmentFormat> for BenWireFormat {
+    fn from(format: AssignmentFormat) -> Self {
+        match format {
+            AssignmentFormat::Ben => BenWireFormat::Ben,
+            AssignmentFormat::Xben => BenWireFormat::XBen,
+        }
+    }
+}
 
 /// Reader for a single `.bendl` file.
 pub struct BendlReader<R: Read + Seek> {
@@ -121,8 +131,9 @@ impl<R: Read + Seek> BendlReader<R> {
 
     /// Return a `Take` reader positioned at the start of the assignment
     /// stream and limited to its declared length. The caller is expected
-    /// to wrap the returned reader in an `AssignmentReader` or
-    /// `XZAssignmentReader` as appropriate for `assignment_format()`.
+    /// to wrap the returned reader in a [`BenStreamReader`] (via
+    /// [`BendlReader::open_assignment_reader`] or directly) as
+    /// appropriate for [`BendlReader::assignment_format`].
     pub fn assignment_stream_reader(&mut self) -> io::Result<Take<&mut R>> {
         let (offset, len) = self.assignment_stream_range()?;
         self.inner.seek(SeekFrom::Start(offset))?;
@@ -130,33 +141,24 @@ impl<R: Read + Seek> BendlReader<R> {
     }
 
     /// Construct the appropriate assignment decoder for the bundle's
-    /// declared `assignment_format` and return it as a
-    /// [`BundleAssignmentReader`] enum.
-    ///
-    /// - `AssignmentFormat::Ben` produces a
-    ///   [`crate::io::reader::AssignmentReader`] over a `Take<&mut R>`.
-    /// - `AssignmentFormat::Xben` produces a
-    ///   [`crate::io::reader::XZAssignmentReader`] over a `Take<&mut R>`.
+    /// declared `assignment_format` and return it as a [`BenStreamReader`]
+    /// over the bundle's bounded stream region.
     ///
     /// Returns an error if the header's `assignment_format` field is
     /// unrecognized or the embedded banner is malformed.
     pub fn open_assignment_reader(
         &mut self,
-    ) -> Result<BundleAssignmentReader<Take<&mut R>>, BundleAssignmentReaderError> {
+    ) -> Result<BenStreamReader<Take<&mut R>>, BundleAssignmentReaderError> {
         let format = self.assignment_format().ok_or(
             BundleAssignmentReaderError::UnknownAssignmentFormat(self.header.assignment_format),
         )?;
         let stream = self.assignment_stream_reader()?;
         match format {
             AssignmentFormat::Ben => {
-                let inner = crate::io::reader::AssignmentReader::new(stream)
-                    .map_err(BundleAssignmentReaderError::Decoder)?;
-                Ok(BundleAssignmentReader::Ben(inner))
+                BenStreamReader::from_ben(stream).map_err(BundleAssignmentReaderError::Decoder)
             }
             AssignmentFormat::Xben => {
-                let inner = crate::io::reader::XZAssignmentReader::new(stream)
-                    .map_err(BundleAssignmentReaderError::Decoder)?;
-                Ok(BundleAssignmentReader::Xben(inner))
+                BenStreamReader::from_xben(stream).map_err(BundleAssignmentReaderError::Decoder)
             }
         }
     }
@@ -225,31 +227,6 @@ pub(crate) fn validate_directory_entries(
         }
     }
     Ok(())
-}
-
-/// Either a BEN or an XBEN assignment decoder over a bundle's embedded
-/// stream region.
-///
-/// Both variants hold a `Take<&mut R>` reader limited to the stream
-/// window declared in the bundle header, so they cannot accidentally
-/// read into the trailing directory table.
-pub enum BundleAssignmentReader<R: std::io::Read> {
-    /// The bundle carries an uncompressed BEN stream.
-    Ben(crate::io::reader::AssignmentReader<R>),
-    /// The bundle carries an xz-compressed XBEN stream.
-    Xben(crate::io::reader::XZAssignmentReader<R>),
-}
-
-impl<R: std::io::Read> BundleAssignmentReader<R> {
-    /// True when the reader is backed by a BEN stream.
-    pub fn is_ben(&self) -> bool {
-        matches!(self, BundleAssignmentReader::Ben(_))
-    }
-
-    /// True when the reader is backed by an XBEN stream.
-    pub fn is_xben(&self) -> bool {
-        matches!(self, BundleAssignmentReader::Xben(_))
-    }
 }
 
 /// Errors raised by [`BendlReader::open_assignment_reader`].

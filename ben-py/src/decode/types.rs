@@ -1,6 +1,6 @@
 use binary_ensemble::io::bundle::format::AssignmentFormat;
 use binary_ensemble::io::bundle::BendlReader;
-use binary_ensemble::io::reader::{MkvRecord, Selection};
+use binary_ensemble::io::reader::{BenWireFormat, MkvRecord, Selection};
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use std::fs::File;
@@ -29,6 +29,13 @@ impl DecoderMode {
         match self {
             Self::Ben => "ben",
             Self::XBen => "xben",
+        }
+    }
+
+    pub(super) fn wire_format(&self) -> BenWireFormat {
+        match self {
+            Self::Ben => BenWireFormat::Ben,
+            Self::XBen => BenWireFormat::XBen,
         }
     }
 

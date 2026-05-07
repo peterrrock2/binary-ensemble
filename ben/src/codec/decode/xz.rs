@@ -1,7 +1,7 @@
 use crate::codec::translate::ben32_to_ben_lines;
 use crate::format::banners::{banner_for_variant, variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
-use crate::io::reader::XZAssignmentReader;
+use crate::io::reader::BenStreamReader;
 use crate::io::writer::AssignmentWriter;
 use crate::progress::Spinner;
 use crate::BenVariant;
@@ -40,7 +40,7 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
             BenVariant::MkvChain
         }
         Some(BenVariant::TwoDelta) => {
-            let mut xben = XZAssignmentReader::from_decompressed_stream(
+            let mut xben = BenStreamReader::from_xben_decompressed(
                 BufReader::new(decoder),
                 BenVariant::TwoDelta,
             );

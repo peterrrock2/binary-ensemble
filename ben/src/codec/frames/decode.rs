@@ -61,11 +61,11 @@ impl BenDecodeFrame {
     /// on success, and `Err` on any I/O or format error.
     ///
     /// Note: in a `TwoDelta` *stream*, the first frame is encoded in
-    /// `MkvChain` wire format. The caller (e.g. [`AssignmentReader`]) tracks
+    /// `MkvChain` wire format. The caller (e.g. [`BenStreamReader`]) tracks
     /// that state and passes [`BenVariant::MkvChain`] for the first frame and
     /// [`BenVariant::TwoDelta`] for the rest.
     ///
-    /// [`AssignmentReader`]: crate::io::reader::AssignmentReader
+    /// [`BenStreamReader`]: crate::io::reader::BenStreamReader
     pub fn from_reader(
         reader: &mut impl Read,
         variant: BenVariant,

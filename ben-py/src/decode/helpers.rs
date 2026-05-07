@@ -3,7 +3,7 @@ use crate::common::open_input;
 use binary_ensemble::io::bundle::format::BENDL_MAGIC;
 use binary_ensemble::io::reader::{
     build_frame_iter, build_frame_iter_from_reader, count_samples_from_frame_iter,
-    AssignmentReader, XZAssignmentReader,
+    BenStreamReader, BenWireFormat,
 };
 use pyo3::exceptions::{PyException, PyIOError, PyUserWarning};
 use pyo3::prelude::*;
@@ -40,21 +40,28 @@ pub(super) fn detect_is_bundle(path: &Path) -> io::Result<bool> {
     }
 }
 
-/// Build a plain-stream iterator from `path` using `mode`.
-pub(super) fn build_plain_iter(path: &Path, mode: DecoderMode) -> PyResult<DynIter> {
-    let reader = open_input(&path.to_path_buf())?;
-    match mode {
-        DecoderMode::Ben => {
-            let ben = AssignmentReader::new(reader)
+fn open_stream_reader<R>(reader: R, format: BenWireFormat) -> PyResult<DynIter>
+where
+    R: Read + Send + 'static,
+{
+    match format {
+        BenWireFormat::Ben => {
+            let ben = BenStreamReader::from_ben(reader)
                 .map_err(|e| PyException::new_err(format!("Failed to create BenDecoder: {e}")))?;
             Ok(Box::new(ben))
         }
-        DecoderMode::XBen => {
-            let xben = XZAssignmentReader::new(reader)
+        BenWireFormat::XBen => {
+            let xben = BenStreamReader::from_xben(reader)
                 .map_err(|e| PyException::new_err(format!("Failed to create XBenDecoder: {e}")))?;
             Ok(Box::new(xben))
         }
     }
+}
+
+/// Build a plain-stream iterator from `path` using `mode`.
+pub(super) fn build_plain_iter(path: &Path, mode: DecoderMode) -> PyResult<DynIter> {
+    let reader = open_input(&path.to_path_buf())?;
+    open_stream_reader(reader, mode.wire_format())
 }
 
 /// Open a second file handle on the bundle path, seek to the stream
@@ -66,18 +73,7 @@ pub(super) fn build_bundle_iter(
     mode: DecoderMode,
 ) -> PyResult<DynIter> {
     let reader = open_bundle_stream_reader(path, state)?;
-    match mode {
-        DecoderMode::Ben => {
-            let ben = AssignmentReader::new(reader)
-                .map_err(|e| PyException::new_err(format!("Failed to create BenDecoder: {e}")))?;
-            Ok(Box::new(ben))
-        }
-        DecoderMode::XBen => {
-            let xben = XZAssignmentReader::new(reader)
-                .map_err(|e| PyException::new_err(format!("Failed to create XBenDecoder: {e}")))?;
-            Ok(Box::new(xben))
-        }
-    }
+    open_stream_reader(reader, mode.wire_format())
 }
 
 /// Create a `Read`-only handle bounded to the bundle's assignment stream
@@ -99,16 +95,19 @@ pub(super) fn build_frames_for_subsample(
     mode: DecoderMode,
     backend: &DecoderBackend,
 ) -> PyResult<binary_ensemble::io::reader::FrameIter> {
+    let format = mode.wire_format();
     match backend {
-        DecoderBackend::Plain => build_frame_iter(&path.to_path_buf(), mode.as_str()).map_err(|e| {
-            PyException::new_err(format!(
-                "Failed to create frame iterator from {}: {e}",
-                path.display()
-            ))
-        }),
+        DecoderBackend::Plain => {
+            build_frame_iter(&path.to_path_buf(), format).map_err(|e| {
+                PyException::new_err(format!(
+                    "Failed to create frame iterator from {}: {e}",
+                    path.display()
+                ))
+            })
+        }
         DecoderBackend::Bundle(state) => {
             let reader = open_bundle_stream_reader(path, state)?;
-            build_frame_iter_from_reader(reader, mode.as_str()).map_err(|e| {
+            build_frame_iter_from_reader(reader, format).map_err(|e| {
                 PyException::new_err(format!(
                     "Failed to create frame iterator from bundle {}: {e}",
                     path.display()
@@ -124,7 +123,7 @@ pub(super) fn scan_bundle_samples(
     mode: DecoderMode,
 ) -> PyResult<usize> {
     let reader = open_bundle_stream_reader(path, state)?;
-    let iter = build_frame_iter_from_reader(reader, mode.as_str()).map_err(|e| {
+    let iter = build_frame_iter_from_reader(reader, mode.wire_format()).map_err(|e| {
         PyException::new_err(format!(
             "Failed to open bundle stream for sample count: {e}"
         ))

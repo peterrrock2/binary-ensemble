@@ -4,6 +4,7 @@ use crate::io::bundle::format::{AssignmentFormat, ASSET_TYPE_GRAPH, STANDARDIZED
 use crate::io::bundle::writer::BendlAppender;
 use crate::io::bundle::{AddAssetOptions, BendlWriter};
 use crate::io::reader::subsample::count_samples_from_file;
+use crate::io::reader::BenWireFormat;
 use crate::BenVariant;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, Result};
@@ -104,7 +105,7 @@ pub(super) fn run_xencode_bundle_with_graph(
     })?;
 
     let sample_count: i64 = if from_ben {
-        count_samples_from_file(input_path, "ben")? as i64
+        count_samples_from_file(input_path, BenWireFormat::Ben)? as i64
     } else {
         count_jsonl_lines(input_path)?
     };

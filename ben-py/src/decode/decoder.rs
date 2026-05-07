@@ -577,8 +577,8 @@ fn ensure_base_len(decoder: &mut PyBenDecoder, py: Python<'_>) -> PyResult<usize
     let base_len = match &decoder.backend {
         DecoderBackend::Plain => {
             let path = decoder.path.clone();
-            let mode = decoder.mode.as_str().to_string();
-            py.detach(|| count_samples_from_file(&path, &mode))
+            let format = decoder.mode.wire_format();
+            py.detach(|| count_samples_from_file(&path, format))
                 .map_err(|e| {
                     PyException::new_err(format!(
                         "Failed to count samples in {}: {e}",

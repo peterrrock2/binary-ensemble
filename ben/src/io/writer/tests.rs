@@ -1,4 +1,4 @@
-use crate::io::reader::XZAssignmentReader;
+use crate::io::reader::BenStreamReader;
 use crate::io::writer::XZAssignmentWriter;
 use crate::BenVariant;
 use std::io::Cursor;
@@ -13,7 +13,7 @@ fn roundtrip_xben(assignments: &[Vec<u16>], variant: BenVariant) -> Vec<Vec<u16>
             writer.write_assignment(a.clone()).unwrap();
         }
     }
-    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     reader.map(|r| r.unwrap().0).collect()
 }
 
@@ -26,7 +26,7 @@ fn roundtrip_xben_counts(assignments: &[Vec<u16>], variant: BenVariant) -> Vec<(
             writer.write_assignment(a.clone()).unwrap();
         }
     }
-    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     reader.map(|r| r.unwrap()).collect()
 }
 
@@ -129,7 +129,7 @@ fn writer_twodelta_chunk_size_1() {
             writer.write_assignment(a.clone()).unwrap();
         }
     }
-    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
     assert_eq!(results, assignments);
 }
@@ -150,7 +150,7 @@ fn writer_twodelta_chunk_size_larger_than_stream() {
             writer.write_assignment(a.clone()).unwrap();
         }
     }
-    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
     assert_eq!(results, assignments);
 }
@@ -185,7 +185,7 @@ fn writer_twodelta_u16_max_value_in_assignment() {
 
 #[test]
 fn ben_writer_twodelta_repeat_frame_via_u16max_overflow() {
-    use crate::io::reader::AssignmentReader;
+    use crate::io::reader::BenStreamReader;
     use crate::io::writer::AssignmentWriter;
 
     // Assignment with 3 distinct values exercises the `continue` skip path
@@ -201,7 +201,7 @@ fn ben_writer_twodelta_repeat_frame_via_u16max_overflow() {
         }
     }
 
-    let reader = AssignmentReader::new(ben.as_slice()).unwrap();
+    let reader = BenStreamReader::from_ben(ben.as_slice()).unwrap();
     let total: usize = reader.map(|r| r.unwrap().1 as usize).sum();
     assert_eq!(total, n);
 }
@@ -223,7 +223,7 @@ fn writer_twodelta_write_json_value() {
             .write_json_value(json!({"assignment": [2, 1, 2, 1]}))
             .unwrap();
     }
-    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
     assert_eq!(results, vec![vec![1u16, 2, 1, 2], vec![2, 1, 2, 1]]);
 }
@@ -240,7 +240,7 @@ fn writer_finish_is_idempotent() {
         writer.finish().unwrap();
         writer.finish().unwrap();
     }
-    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
     assert_eq!(results, vec![vec![1u16, 2, 3, 4]]);
 }
@@ -268,7 +268,7 @@ fn writer_write_ben_file_standard_roundtrip() {
         writer.finish().unwrap();
     }
 
-    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
     assert_eq!(results, vec![vec![1u16, 2, 3], vec![4, 5, 6]]);
 }
@@ -295,7 +295,7 @@ fn writer_write_ben_file_mkv_roundtrip() {
         writer.finish().unwrap();
     }
 
-    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap()).collect();
     let total: usize = results.iter().map(|(_, c)| *c as usize).sum();
     assert_eq!(total, 3);
@@ -326,7 +326,7 @@ fn writer_write_ben_file_twodelta_roundtrip() {
         writer.finish().unwrap();
     }
 
-    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
     assert_eq!(results, assignments);
 }
@@ -386,7 +386,7 @@ fn writer_twodelta_anchor_count_overflow_u16max() {
             writer.write_assignment(assign.clone()).unwrap();
         }
     }
-    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let total: usize = reader.map(|r| r.unwrap().1 as usize).sum();
     assert_eq!(total, n);
 }
@@ -408,7 +408,7 @@ fn writer_twodelta_delta_count_overflow_u16max() {
             writer.write_assignment(delta.clone()).unwrap();
         }
     }
-    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap()).collect();
     let total: usize = results.iter().map(|(_, c)| *c as usize).sum();
     assert_eq!(total, n_delta + 1);
@@ -447,7 +447,7 @@ fn writer_translate_ben_twodelta_chunk_flush() {
         writer.finish().unwrap();
     }
 
-    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
     assert_eq!(results, assignments);
 }
@@ -482,7 +482,7 @@ fn writer_mkv_count_overflow_u16max() {
             writer.write_assignment(assign.clone()).unwrap();
         }
     }
-    let reader = XZAssignmentReader::new(Cursor::new(xben)).unwrap();
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let total: usize = reader.map(|r| r.unwrap().1 as usize).sum();
     assert_eq!(total, n);
 }

@@ -3,7 +3,7 @@
 //! The ben32 intermediate format is used only by the Standard and MkvChain
 //! variants. TwoDelta streams use a separate columnar layout and bypass
 //! ben32 entirely — see [`XZAssignmentWriter`](crate::io::writer::XZAssignmentWriter)
-//! and [`XZAssignmentReader`](crate::io::reader::XZAssignmentReader) for the
+//! and [`BenStreamReader`](crate::io::reader::BenStreamReader) for the
 //! TwoDelta compressed-I/O path.
 
 mod errors;

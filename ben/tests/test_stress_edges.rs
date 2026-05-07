@@ -17,7 +17,7 @@ use binary_ensemble::io::bundle::writer::{
     AddAssetOptions, BendlAppender, BendlTruncate, BendlWriter,
 };
 use binary_ensemble::io::bundle::BendlReader;
-use binary_ensemble::io::reader::{AssignmentReader, XZAssignmentReader};
+use binary_ensemble::io::reader::BenStreamReader;
 use binary_ensemble::io::writer::AssignmentWriter;
 use binary_ensemble::ops::relabel::relabel_ben_file_with_map;
 use std::cell::RefCell;
@@ -26,7 +26,7 @@ use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
 use std::rc::Rc;
 
 fn expand_ben(bytes: &[u8]) -> Vec<Vec<u16>> {
-    AssignmentReader::new(bytes)
+    BenStreamReader::from_ben(bytes)
         .unwrap()
         .silent(true)
         .flat_map(|record| {
@@ -188,7 +188,7 @@ fn tiny_bendl_bundle() -> Vec<u8> {
 
 fn assert_ben_bytes_do_not_panic(bytes: Vec<u8>) {
     let outcome = std::panic::catch_unwind(|| {
-        if let Ok(reader) = AssignmentReader::new(bytes.as_slice()) {
+        if let Ok(reader) = BenStreamReader::from_ben(bytes.as_slice()) {
             for record in reader.silent(true).take(16) {
                 let _ = record;
             }
@@ -199,7 +199,7 @@ fn assert_ben_bytes_do_not_panic(bytes: Vec<u8>) {
 
 fn assert_xben_bytes_do_not_panic(bytes: Vec<u8>) {
     let outcome = std::panic::catch_unwind(|| {
-        if let Ok(reader) = XZAssignmentReader::new(bytes.as_slice()) {
+        if let Ok(reader) = BenStreamReader::from_xben(bytes.as_slice()) {
             for record in reader.silent(true).take(16) {
                 let _ = record;
             }
@@ -234,7 +234,7 @@ fn mkvchain_writer_splits_repetition_count_longer_than_u16_max() {
         writer.finish().unwrap();
     }
 
-    let mut reader = AssignmentReader::new(ben.as_slice()).unwrap().silent(true);
+    let mut reader = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
     let first = reader.next().unwrap().unwrap();
     let second = reader.next().unwrap().unwrap();
     assert!(reader.next().is_none());
@@ -256,7 +256,7 @@ fn twodelta_writer_splits_repetition_count_longer_than_u16_max() {
 
     let mut total = 0usize;
     let mut unique_frames = 0usize;
-    AssignmentReader::new(ben.as_slice())
+    BenStreamReader::from_ben(ben.as_slice())
         .unwrap()
         .silent(true)
         .for_each_assignment(|assignment, count| {
@@ -290,7 +290,7 @@ fn xben_mkvchain_splits_repetition_count_longer_than_u16_max() {
     )
     .unwrap();
 
-    let mut reader = XZAssignmentReader::new(xben.as_slice())
+    let mut reader = BenStreamReader::from_xben(xben.as_slice())
         .unwrap()
         .silent(true);
     assert_eq!(reader.next().unwrap().unwrap(), (vec![4, 4, 5], u16::MAX));
@@ -302,7 +302,7 @@ fn xben_mkvchain_splits_repetition_count_longer_than_u16_max() {
 fn malformed_ben_bit_widths_return_invalid_data() {
     let mut ben = STANDARD_BEN_BANNER.to_vec();
     ben.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
-    let err = AssignmentReader::new(ben.as_slice())
+    let err = BenStreamReader::from_ben(ben.as_slice())
         .unwrap()
         .next()
         .unwrap()
@@ -323,7 +323,7 @@ fn malformed_twodelta_bit_width_and_extra_runs_return_errors() {
     ben.extend_from_slice(anchor.as_slice());
     ben.extend_from_slice(&[0, 1, 0, 2, 0, 0, 0, 0, 0, 1]);
 
-    let mut reader = AssignmentReader::new(ben.as_slice()).unwrap().silent(true);
+    let mut reader = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
     assert_eq!(reader.next().unwrap().unwrap(), (vec![1, 2], 1));
     let err = reader.next().unwrap().unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
@@ -463,7 +463,7 @@ fn xben_twodelta_huge_incomplete_chunk_errors_without_panicking() {
     )
     .unwrap();
 
-    let mut reader = XZAssignmentReader::new(xben.as_slice()).unwrap();
+    let mut reader = BenStreamReader::from_xben(xben.as_slice()).unwrap();
     let err = reader.next().unwrap().unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
 }
@@ -473,7 +473,7 @@ fn zero_count_frames_are_rejected() {
     let frame = BenEncodeFrame::from_assignment(vec![1u16], BenVariant::MkvChain, Some(0));
     let mut ben = MKVCHAIN_BEN_BANNER.to_vec();
     ben.extend_from_slice(frame.as_slice());
-    let err = AssignmentReader::new(ben.as_slice())
+    let err = BenStreamReader::from_ben(ben.as_slice())
         .unwrap()
         .next()
         .unwrap()
@@ -493,7 +493,7 @@ fn zero_count_frames_are_rejected() {
             None,
     )
     .unwrap();
-    let err = XZAssignmentReader::new(xben.as_slice())
+    let err = BenStreamReader::from_xben(xben.as_slice())
         .unwrap()
         .next()
         .unwrap()

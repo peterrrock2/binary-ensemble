@@ -16,14 +16,6 @@ pub(super) fn format_from_path(path: &Path) -> Result<AssignmentFormat, String> 
     }
 }
 
-/// `mode` argument expected by `count_samples_from_file`.
-pub(super) fn mode_str(format: AssignmentFormat) -> &'static str {
-    match format {
-        AssignmentFormat::Ben => "ben",
-        AssignmentFormat::Xben => "xben",
-    }
-}
-
 pub(super) fn add_file_asset<W: Write + Seek>(
     writer: &mut BendlWriter<W>,
     asset_type: u16,

@@ -1,7 +1,7 @@
 use crate::codec::decode::jsonl_decode_ben32;
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
-use crate::io::reader::{AssignmentReader, XZAssignmentReader};
+use crate::io::reader::BenStreamReader;
 use crate::progress::Spinner;
 use crate::BenVariant;
 use serde_json::json;
@@ -23,7 +23,7 @@ use xz2::read::XzDecoder;
 ///
 /// Returns `Ok(())` after the stream has been fully decoded and written.
 pub fn decode_ben_to_jsonl<R: Read, W: Write>(reader: R, writer: W) -> io::Result<()> {
-    let mut ben_decoder = AssignmentReader::new(reader)?;
+    let mut ben_decoder = BenStreamReader::from_ben(reader)?;
     ben_decoder.write_all_jsonl(writer)
 }
 
@@ -51,7 +51,7 @@ pub fn decode_xben_to_jsonl<R: BufRead, W: Write>(reader: R, mut writer: W) -> i
         Some(BenVariant::Standard) => BenVariant::Standard,
         Some(BenVariant::MkvChain) => BenVariant::MkvChain,
         Some(BenVariant::TwoDelta) => {
-            let mut xben = XZAssignmentReader::from_decompressed_stream(
+            let mut xben = BenStreamReader::from_xben_decompressed(
                 BufReader::new(decoder),
                 BenVariant::TwoDelta,
             );

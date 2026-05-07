@@ -2,7 +2,7 @@ use super::append::run_append;
 use super::args::{AppendArgs, CreateArgs, ExtractArgs, InspectArgs, NamedAsset};
 use super::create::run_create;
 use super::extract::run_extract;
-use super::helpers::{format_from_path, mode_str};
+use super::helpers::format_from_path;
 use super::inspect::run_inspect;
 use crate::codec::encode::encode_jsonl_to_ben;
 use crate::io::bundle::format::AssignmentFormat;
@@ -46,11 +46,6 @@ fn format_from_path_detects_xben() {
 fn format_from_path_rejects_unknown_extension() {
     let err = format_from_path(std::path::Path::new("archive.tar")).unwrap_err();
     assert!(err.contains("expected .ben or .xben"));
-}
-
-#[test]
-fn mode_str_returns_xben_for_xben() {
-    assert_eq!(mode_str(AssignmentFormat::Xben), "xben");
 }
 
 #[test]

@@ -7,7 +7,7 @@ use crate::codec::decode::decode_ben_line;
 use crate::codec::BenEncodeFrame;
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
-use crate::io::reader::AssignmentReader;
+use crate::io::reader::BenStreamReader;
 use crate::io::writer::AssignmentWriter;
 use crate::progress::Spinner;
 use crate::util::rle::{assign_slice_to_rle, rle_to_vec_in_place};
@@ -132,7 +132,7 @@ fn relabel_ben_file_via_decoder<R: Read, W: Write, F>(
 where
     F: FnMut(&[u16]) -> io::Result<Vec<u16>>,
 {
-    let mut decoder = AssignmentReader::new(reader)?.silent(true);
+    let mut decoder = BenStreamReader::from_ben(reader)?.silent(true);
     let mut encoder = AssignmentWriter::new(writer, variant)?;
     let mut sample_number = 0usize;
     let spinner = Spinner::new("Relabeling line");
