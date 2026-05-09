@@ -50,15 +50,9 @@ pub fn sort_json_file_by_key<R: Read, W: Write>(
 
     tracing::trace!("Sorting JSON file by key: {}", key);
     let (result, order) = if nx_graph.directed {
-        let mut petx: PetxGraph<Directed> = nx_graph.try_into().map_err(nx_err)?;
-        let order = petxgraph::sort_by_key(&mut petx, key);
-        let result: NxGraphAdjFormat = (&petx).try_into().map_err(nx_err)?;
-        (result, order)
+        reorder_directed(nx_graph, |p| petxgraph::sort_by_key(p, key))?
     } else {
-        let mut petx: PetxGraph<Undirected> = nx_graph.try_into().map_err(nx_err)?;
-        let order = petxgraph::sort_by_key(&mut petx, key);
-        let result: NxGraphAdjFormat = (&petx).try_into().map_err(nx_err)?;
-        (result, order)
+        reorder_undirected(nx_graph, |p| petxgraph::sort_by_key(p, key))?
     };
 
     write_nx_graph(writer, &result)?;
@@ -90,15 +84,9 @@ pub fn sort_json_file_by_ordering<R: Read, W: Write>(
 
     tracing::trace!("Sorting JSON file by ordering method: {:?}", method);
     let (result, order) = if nx_graph.directed {
-        let mut petx: PetxGraph<Directed> = nx_graph.try_into().map_err(nx_err)?;
-        let order = run_ordering_method(&mut petx, method);
-        let result: NxGraphAdjFormat = (&petx).try_into().map_err(nx_err)?;
-        (result, order)
+        reorder_directed(nx_graph, |p| run_ordering_method(p, method))?
     } else {
-        let mut petx: PetxGraph<Undirected> = nx_graph.try_into().map_err(nx_err)?;
-        let order = run_ordering_method(&mut petx, method);
-        let result: NxGraphAdjFormat = (&petx).try_into().map_err(nx_err)?;
-        (result, order)
+        reorder_undirected(nx_graph, |p| run_ordering_method(p, method))?
     };
 
     write_nx_graph(writer, &result)?;
@@ -172,6 +160,36 @@ fn write_nx_graph<W: Write>(mut writer: W, nx_graph: &NxGraphAdjFormat) -> io::R
 /// An `io::Error` carrying `e` as its inner cause.
 fn nx_err(e: NxPetgraphError) -> Error {
     Error::new(ErrorKind::InvalidData, e)
+}
+
+/// Convert an [`NxGraphAdjFormat`] into a directed [`PetxGraph`], apply an
+/// in-place reordering operation, and convert back to JSON adjacency form.
+fn reorder_directed<F>(
+    nx_graph: NxGraphAdjFormat,
+    op: F,
+) -> Result<(NxGraphAdjFormat, Vec<NodeIndex>)>
+where
+    F: FnOnce(&mut PetxGraph<Directed>) -> Vec<NodeIndex>,
+{
+    let mut petx: PetxGraph<Directed> = nx_graph.try_into().map_err(nx_err)?;
+    let order = op(&mut petx);
+    let result: NxGraphAdjFormat = (&petx).try_into().map_err(nx_err)?;
+    Ok((result, order))
+}
+
+/// Convert an [`NxGraphAdjFormat`] into an undirected [`PetxGraph`], apply an
+/// in-place reordering operation, and convert back to JSON adjacency form.
+fn reorder_undirected<F>(
+    nx_graph: NxGraphAdjFormat,
+    op: F,
+) -> Result<(NxGraphAdjFormat, Vec<NodeIndex>)>
+where
+    F: FnOnce(&mut PetxGraph<Undirected>) -> Vec<NodeIndex>,
+{
+    let mut petx: PetxGraph<Undirected> = nx_graph.try_into().map_err(nx_err)?;
+    let order = op(&mut petx);
+    let result: NxGraphAdjFormat = (&petx).try_into().map_err(nx_err)?;
+    Ok((result, order))
 }
 
 #[cfg(test)]
