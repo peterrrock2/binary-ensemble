@@ -19,7 +19,7 @@ use binary_ensemble::io::bundle::writer::{
 use binary_ensemble::io::bundle::BendlReader;
 use binary_ensemble::io::reader::BenStreamReader;
 use binary_ensemble::io::writer::AssignmentWriter;
-use binary_ensemble::ops::relabel::relabel_ben_file_with_map;
+use binary_ensemble::ops::relabel::{relabel_ben_file, RelabelOptions};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
@@ -383,7 +383,12 @@ fn relabel_map_out_of_range_old_indices_error_cleanly() {
     }
 
     let out_of_range_old = HashMap::from([(0usize, 0usize), (1, 2)]);
-    let err = relabel_ben_file_with_map(ben.as_slice(), Vec::new(), out_of_range_old).unwrap_err();
+    let err = relabel_ben_file(
+        ben.as_slice(),
+        Vec::new(),
+        RelabelOptions::node_permutation(out_of_range_old),
+    )
+    .unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
 }
 

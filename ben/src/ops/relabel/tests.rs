@@ -2,6 +2,7 @@ use super::*;
 use crate::codec::decode::decode_ben_to_jsonl;
 use crate::codec::encode::encode_jsonl_to_ben;
 use crate::codec::BenEncodeFrame;
+use crate::format::banners::BANNER_LEN;
 use crate::util::rle::assign_to_rle;
 use crate::BenVariant;
 use rand::seq::SliceRandom;
@@ -41,6 +42,15 @@ where
     map
 }
 
+/// Wrap a banner-stripped frame payload back into a full BEN file by prepending
+/// the banner. Tests that previously fed banner-less buffers feed a full BEN
+/// file under the new API and call [`relabel_ben_file`] directly.
+fn with_banner(variant: BenVariant, payload: &[u8]) -> Vec<u8> {
+    let mut out = crate::format::banners::banner_for_variant(variant).to_vec();
+    out.extend_from_slice(payload);
+    out
+}
+
 #[test]
 fn test_relabel_ben_line_simple() {
     let in_rle = vec![(2, 2), (3, 2), (1, 2), (4, 2)];
@@ -50,10 +60,17 @@ fn test_relabel_ben_line_simple() {
     let out_rle = vec![(1, 2), (2, 2), (3, 2), (4, 2)];
     let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None);
 
+    let with_banner_in = with_banner(BenVariant::Standard, input.as_slice());
     let mut buf = Vec::new();
-    relabel_ben_lines(input.as_slice(), &mut buf, BenVariant::Standard).unwrap();
+    relabel_ben_file(
+        with_banner_in.as_slice(),
+        &mut buf,
+        RelabelOptions::first_seen(),
+    )
+    .unwrap();
 
-    assert_eq!(buf, expected);
+    assert_eq!(&buf[..BANNER_LEN], crate::format::banners::STANDARD_BEN_BANNER);
+    assert_eq!(&buf[BANNER_LEN..], expected.as_slice());
 }
 
 #[test]
@@ -78,7 +95,7 @@ fn test_relabel_simple_file() {
 
     let mut output2 = Vec::new();
     let writer2 = io::BufWriter::new(&mut output2);
-    relabel_ben_file(output.as_slice(), writer2).unwrap();
+    relabel_ben_file(output.as_slice(), writer2, RelabelOptions::first_seen()).unwrap();
 
     let mut output3 = Vec::new();
     let writer3 = io::BufWriter::new(&mut output3);
@@ -125,7 +142,7 @@ fn test_relabel_simple_file_mkv() {
 
     let mut output2 = Vec::new();
     let writer2 = io::BufWriter::new(&mut output2);
-    relabel_ben_file(output.as_slice(), writer2).unwrap();
+    relabel_ben_file(output.as_slice(), writer2, RelabelOptions::first_seen()).unwrap();
 
     let mut output3 = Vec::new();
     let writer3 = io::BufWriter::new(&mut output3);
@@ -168,7 +185,12 @@ fn test_relabel_simple_file_mkv_with_limit() {
     .unwrap();
 
     let mut relabeled = Vec::new();
-    relabel_ben_file_limit(encoded.as_slice(), io::BufWriter::new(&mut relabeled), 2).unwrap();
+    relabel_ben_file(
+        encoded.as_slice(),
+        io::BufWriter::new(&mut relabeled),
+        RelabelOptions::first_seen().with_max_samples(2),
+    )
+    .unwrap();
 
     let mut decoded = Vec::new();
     decode_ben_to_jsonl(relabeled.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
@@ -199,7 +221,12 @@ fn test_relabel_simple_file_twodelta() {
     .unwrap();
 
     let mut relabeled = Vec::new();
-    relabel_ben_file(encoded.as_slice(), io::BufWriter::new(&mut relabeled)).unwrap();
+    relabel_ben_file(
+        encoded.as_slice(),
+        io::BufWriter::new(&mut relabeled),
+        RelabelOptions::first_seen(),
+    )
+    .unwrap();
 
     let mut decoded = Vec::new();
     decode_ben_to_jsonl(relabeled.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
@@ -236,16 +263,17 @@ fn test_relabel_ben_line_with_map() {
     new_to_old_map.insert(7, 4);
     new_to_old_map.insert(8, 5);
 
+    let with_banner_in = with_banner(BenVariant::Standard, input.as_slice());
     let mut buf = Vec::new();
-    relabel_ben_lines_with_map(
-        input.as_slice(),
+    relabel_ben_file(
+        with_banner_in.as_slice(),
         &mut buf,
-        new_to_old_map,
-        BenVariant::Standard,
+        RelabelOptions::node_permutation(new_to_old_map),
     )
     .unwrap();
 
-    assert_eq!(buf, expected);
+    assert_eq!(&buf[..BANNER_LEN], crate::format::banners::STANDARD_BEN_BANNER);
+    assert_eq!(&buf[BANNER_LEN..], expected.as_slice());
 }
 
 #[test]
@@ -260,16 +288,16 @@ fn test_relabel_ben_line_with_shuffle() {
     let out_rle = assign_to_rle(out_assign);
     let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None);
 
+    let with_banner_in = with_banner(BenVariant::Standard, input.as_slice());
     let mut buf = Vec::new();
-    relabel_ben_lines_with_map(
-        input.as_slice(),
+    relabel_ben_file(
+        with_banner_in.as_slice(),
         &mut buf,
-        new_to_old_map,
-        BenVariant::Standard,
+        RelabelOptions::node_permutation(new_to_old_map),
     )
     .unwrap();
 
-    assert_eq!(buf, expected);
+    assert_eq!(&buf[BANNER_LEN..], expected.as_slice());
 }
 
 #[test]
@@ -291,16 +319,16 @@ fn test_relabel_ben_line_with_large_shuffle() {
     let out_rle = assign_to_rle(out_assign);
     let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None);
 
+    let with_banner_in = with_banner(BenVariant::Standard, input.as_slice());
     let mut buf = Vec::new();
-    relabel_ben_lines_with_map(
-        input.as_slice(),
+    relabel_ben_file(
+        with_banner_in.as_slice(),
         &mut buf,
-        new_to_old_map,
-        BenVariant::Standard,
+        RelabelOptions::node_permutation(new_to_old_map),
     )
     .unwrap();
 
-    assert_eq!(buf, expected);
+    assert_eq!(&buf[BANNER_LEN..], expected.as_slice());
 }
 
 #[test]
@@ -340,7 +368,12 @@ fn test_relabel_simple_file_with_map() {
 
     let mut output2 = Vec::new();
     let writer2 = io::BufWriter::new(&mut output2);
-    relabel_ben_file_with_map(output.as_slice(), writer2, new_to_old_map).unwrap();
+    relabel_ben_file(
+        output.as_slice(),
+        writer2,
+        RelabelOptions::node_permutation(new_to_old_map),
+    )
+    .unwrap();
 
     let mut output3 = Vec::new();
     let writer3 = io::BufWriter::new(&mut output3);
@@ -402,7 +435,12 @@ fn test_relabel_simple_file_with_map_mkv() {
 
     let mut output2 = Vec::new();
     let writer2 = io::BufWriter::new(&mut output2);
-    relabel_ben_file_with_map(output.as_slice(), writer2, new_to_old_map).unwrap();
+    relabel_ben_file(
+        output.as_slice(),
+        writer2,
+        RelabelOptions::node_permutation(new_to_old_map),
+    )
+    .unwrap();
 
     let mut output3 = Vec::new();
     let writer3 = io::BufWriter::new(&mut output3);
@@ -450,10 +488,10 @@ fn test_relabel_simple_file_with_map_twodelta() {
     .unwrap();
 
     let mut relabeled = Vec::new();
-    relabel_ben_file_with_map(
+    relabel_ben_file(
         encoded.as_slice(),
         io::BufWriter::new(&mut relabeled),
-        new_to_old_map,
+        RelabelOptions::node_permutation(new_to_old_map),
     )
     .unwrap();
 
@@ -490,11 +528,10 @@ fn test_relabel_simple_file_with_map_mkv_limit_truncates_counts() {
     .unwrap();
 
     let mut relabeled = Vec::new();
-    relabel_ben_file_with_map_limit(
+    relabel_ben_file(
         encoded.as_slice(),
         io::BufWriter::new(&mut relabeled),
-        new_to_old_map,
-        2,
+        RelabelOptions::node_permutation(new_to_old_map).with_max_samples(2),
     )
     .unwrap();
 
@@ -511,22 +548,33 @@ fn test_relabel_simple_file_with_map_mkv_limit_truncates_counts() {
 
 #[test]
 fn test_relabel_file_rejects_invalid_header() {
-    let err = relabel_ben_file(b"not a valid banner".as_slice(), Vec::new()).unwrap_err();
+    let err = relabel_ben_file(
+        b"not a valid banner".as_slice(),
+        Vec::new(),
+        RelabelOptions::first_seen(),
+    )
+    .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     assert_eq!(err.to_string(), "unrecognized BEN banner (got [110, 111, 116, 32, 97, 32, 118, 97, 108, 105, 100, 32, 98, 97, 110, 110, 101]; expected one of \"STANDARD BEN FILE\", \"MKVCHAIN BEN FILE\", or \"TWODELTA BEN FILE\")");
 }
 
 #[test]
 fn test_relabel_file_with_map_rejects_invalid_header() {
-    let err =
-        relabel_ben_file_with_map(b"not a valid banner".as_slice(), Vec::new(), HashMap::new())
-            .unwrap_err();
+    let err = relabel_ben_file(
+        b"not a valid banner".as_slice(),
+        Vec::new(),
+        RelabelOptions::node_permutation(HashMap::new()),
+    )
+    .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     assert_eq!(err.to_string(), "unrecognized BEN banner (got [110, 111, 116, 32, 97, 32, 118, 97, 108, 105, 100, 32, 98, 97, 110, 110, 101]; expected one of \"STANDARD BEN FILE\", \"MKVCHAIN BEN FILE\", or \"TWODELTA BEN FILE\")");
 }
 
 #[test]
 fn test_relabel_lines_propagate_non_eof_reader_error() {
+    // Reader returns a valid Standard banner via Cursor, then the BoomReader
+    // produces a non-EOF I/O error on the body. The byte-walk fast path
+    // returns this I/O error unchanged.
     struct BoomReader {
         returned_first: bool,
     }
@@ -542,14 +590,12 @@ fn test_relabel_lines_propagate_non_eof_reader_error() {
         }
     }
 
-    let err = relabel_ben_lines(
+    let chained = io::Cursor::new(crate::format::banners::STANDARD_BEN_BANNER.to_vec()).chain(
         BoomReader {
             returned_first: false,
         },
-        Vec::new(),
-        BenVariant::Standard,
-    )
-    .unwrap_err();
+    );
+    let err = relabel_ben_file(chained, Vec::new(), RelabelOptions::first_seen()).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::Other);
 }
 
@@ -570,13 +616,15 @@ fn test_relabel_lines_with_map_propagate_non_eof_reader_error() {
         }
     }
 
-    let err = relabel_ben_lines_with_map(
+    let chained = io::Cursor::new(crate::format::banners::STANDARD_BEN_BANNER.to_vec()).chain(
         BoomReader {
             returned_first: false,
         },
+    );
+    let err = relabel_ben_file(
+        chained,
         Vec::new(),
-        HashMap::new(),
-        BenVariant::Standard,
+        RelabelOptions::node_permutation(HashMap::new()),
     )
     .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::Other);
@@ -657,11 +705,10 @@ fn test_convert_ben_file_limit_truncates() {
     .unwrap();
 
     let mut converted = Vec::new();
-    convert_ben_file_limit(
+    relabel_ben_file(
         encoded.as_slice(),
         io::BufWriter::new(&mut converted),
-        BenVariant::Standard,
-        2,
+        RelabelOptions::convert_to(BenVariant::Standard).with_max_samples(2),
     )
     .unwrap();
 
@@ -693,17 +740,13 @@ fn test_relabel_ben_lines_limit_standard() {
     )
     .unwrap();
 
-    let mut relabeled = Vec::new();
-    relabel_ben_lines_limit(
-        &encoded[17..],
-        io::BufWriter::new(&mut relabeled),
-        BenVariant::Standard,
-        2,
+    let mut full_relabeled = Vec::new();
+    relabel_ben_file(
+        encoded.as_slice(),
+        io::BufWriter::new(&mut full_relabeled),
+        RelabelOptions::first_seen().with_max_samples(2),
     )
     .unwrap();
-
-    let mut full_relabeled = b"STANDARD BEN FILE".to_vec();
-    full_relabeled.extend_from_slice(&relabeled);
 
     let mut decoded = Vec::new();
     decode_ben_to_jsonl(full_relabeled.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
@@ -735,18 +778,13 @@ fn test_relabel_ben_lines_with_map_limit_standard() {
 
     let map: HashMap<usize, usize> = [(0, 2), (1, 0), (2, 1)].iter().cloned().collect();
 
-    let mut relabeled = Vec::new();
-    relabel_ben_lines_with_map_limit(
-        &encoded[17..],
-        io::BufWriter::new(&mut relabeled),
-        map,
-        BenVariant::Standard,
-        1,
+    let mut full_relabeled = Vec::new();
+    relabel_ben_file(
+        encoded.as_slice(),
+        io::BufWriter::new(&mut full_relabeled),
+        RelabelOptions::node_permutation(map).with_max_samples(1),
     )
     .unwrap();
-
-    let mut full_relabeled = b"STANDARD BEN FILE".to_vec();
-    full_relabeled.extend_from_slice(&relabeled);
 
     let mut decoded = Vec::new();
     decode_ben_to_jsonl(full_relabeled.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
@@ -772,10 +810,10 @@ fn test_relabel_ben_file_as_variant_standard_to_twodelta() {
     .unwrap();
 
     let mut converted = Vec::new();
-    relabel_ben_file_as_variant(
+    relabel_ben_file(
         encoded.as_slice(),
         io::BufWriter::new(&mut converted),
-        BenVariant::TwoDelta,
+        RelabelOptions::first_seen().with_target_variant(BenVariant::TwoDelta),
     )
     .unwrap();
 
@@ -806,11 +844,12 @@ fn test_relabel_ben_file_as_variant_limit() {
     .unwrap();
 
     let mut converted = Vec::new();
-    relabel_ben_file_as_variant_limit(
+    relabel_ben_file(
         encoded.as_slice(),
         io::BufWriter::new(&mut converted),
-        BenVariant::MkvChain,
-        2,
+        RelabelOptions::first_seen()
+            .with_target_variant(BenVariant::MkvChain)
+            .with_max_samples(2),
     )
     .unwrap();
 
@@ -844,11 +883,10 @@ fn test_relabel_ben_file_with_map_as_variant() {
     let map: HashMap<usize, usize> = [(0, 2), (1, 0), (2, 1)].iter().cloned().collect();
 
     let mut converted = Vec::new();
-    relabel_ben_file_with_map_as_variant(
+    relabel_ben_file(
         encoded.as_slice(),
         io::BufWriter::new(&mut converted),
-        map,
-        BenVariant::MkvChain,
+        RelabelOptions::node_permutation(map).with_target_variant(BenVariant::MkvChain),
     )
     .unwrap();
 
@@ -881,12 +919,12 @@ fn test_relabel_ben_file_with_map_as_variant_limit() {
     let map: HashMap<usize, usize> = [(0, 2), (1, 0), (2, 1)].iter().cloned().collect();
 
     let mut converted = Vec::new();
-    relabel_ben_file_with_map_as_variant_limit(
+    relabel_ben_file(
         encoded.as_slice(),
         io::BufWriter::new(&mut converted),
-        map,
-        BenVariant::Standard,
-        2,
+        RelabelOptions::node_permutation(map)
+            .with_target_variant(BenVariant::Standard)
+            .with_max_samples(2),
     )
     .unwrap();
 
@@ -917,79 +955,35 @@ fn test_convert_ben_file_rejects_invalid_banner() {
 
 #[test]
 fn test_relabel_ben_file_as_variant_rejects_invalid_banner() {
-    let err = relabel_ben_file_as_variant(
+    let err = relabel_ben_file(
         b"not a valid banner".as_slice(),
         Vec::new(),
-        BenVariant::Standard,
+        RelabelOptions::first_seen().with_target_variant(BenVariant::Standard),
     )
     .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-}
-
-// ── dense_permutation error paths ────────────────────────────────────
-
-#[test]
-fn test_dense_permutation_empty_map() {
-    let map = HashMap::new();
-    let perm = dense_permutation(&map).unwrap();
-    assert!(perm.is_empty());
-}
-
-#[test]
-fn test_dense_permutation_non_contiguous() {
-    let map: HashMap<usize, usize> = [(0, 0), (2, 1)].iter().cloned().collect();
-    let err = dense_permutation(&map).unwrap_err();
-    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
-    assert!(err.to_string().contains("contiguous"));
-}
-
-// ── permute_assignment error paths ───────────────────────────────────
-
-#[test]
-fn test_permute_assignment_length_mismatch() {
-    let assignment = vec![1u16, 2, 3];
-    let perm = vec![0, 1];
-    let err = permute_assignment(&assignment, &perm).unwrap_err();
-    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
-    assert!(err.to_string().contains("length"));
-}
-
-#[test]
-fn test_permute_assignment_index_out_of_range() {
-    let assignment = vec![1u16, 2, 3];
-    let perm = vec![0, 1, 99];
-    let err = permute_assignment(&assignment, &perm).unwrap_err();
-    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
-    assert!(err.to_string().contains("old index"));
-}
-
-// ── first_seen_relabel_assignment ──────────────────────────────────────────
-
-#[test]
-fn test_first_seen_relabel_assignment() {
-    assert_eq!(first_seen_relabel_assignment(&[5, 3, 5, 7]), vec![1, 2, 1, 3]);
-    assert_eq!(first_seen_relabel_assignment(&[]), Vec::<u16>::new());
-    assert_eq!(first_seen_relabel_assignment(&[42]), vec![1]);
 }
 
 // ── relabel_ben_lines_with_map: LengthMismatch ─────────────────────
 
 #[test]
 fn test_relabel_ben_length_mismatch() {
-    // Build a BEN stream with assignment length 3 ([1,2,3]),
-    // then supply a permutation of length 5 — triggers LengthMismatch.
+    // BEN stream with assignment length 3 ([1,2,3]); permutation of length 5
+    // — triggers LengthMismatch.
     let jsonl = r#"{"assignment":[1,2,3],"sample":1}
 "#;
     let mut ben = Vec::new();
     encode_jsonl_to_ben(jsonl.as_bytes(), &mut ben, BenVariant::Standard).unwrap();
-    let body = &ben[17..]; // strip banner
 
-    // Permutation of length 5 (identity, doesn't matter — length check comes first)
     let map: HashMap<usize, usize> = (0..5).map(|i| (i, i)).collect();
 
     let mut output = Vec::new();
-    let err =
-        relabel_ben_lines_with_map(body, &mut output, map, BenVariant::Standard).unwrap_err();
+    let err = relabel_ben_file(
+        ben.as_slice(),
+        &mut output,
+        RelabelOptions::node_permutation(map),
+    )
+    .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     assert!(
         err.to_string().contains("length") || err.to_string().contains("mismatch"),
@@ -1000,26 +994,32 @@ fn test_relabel_ben_length_mismatch() {
 
 #[test]
 fn test_relabel_ben_lines_non_eof_read_error_propagates() {
-    // relabel_ben_lines_impl returns a non-EOF I/O error when the reader fails.
+    // The byte-walk fast path returns a non-EOF I/O error when the reader fails.
+    let chained = io::Cursor::new(crate::format::banners::STANDARD_BEN_BANNER.to_vec())
+        .chain(ErrorAfterOneByte);
     let mut output = Vec::new();
-    let err = relabel_ben_lines(ErrorAfterOneByte, &mut output, BenVariant::Standard).unwrap_err();
+    let err =
+        relabel_ben_file(chained, &mut output, RelabelOptions::first_seen()).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
 }
 
 #[test]
 fn test_relabel_ben_file_with_map_non_eof_read_error_propagates() {
-    // relabel_ben_file_impl returns a non-EOF I/O error when the reader fails.
     let map: HashMap<usize, usize> = (0..4).map(|i| (i, i)).collect();
+    let chained = io::Cursor::new(crate::format::banners::STANDARD_BEN_BANNER.to_vec())
+        .chain(ErrorAfterOneByte);
     let mut output = Vec::new();
-    let err =
-        relabel_ben_lines_with_map(ErrorAfterOneByte, &mut output, map, BenVariant::Standard)
-            .unwrap_err();
+    let err = relabel_ben_file(
+        chained,
+        &mut output,
+        RelabelOptions::node_permutation(map),
+    )
+    .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
 }
 
 #[test]
 fn test_relabel_ben_file_twodelta_malformed_frame_error_propagates() {
-    // relabel_ben_file_via_decoder propagates decode errors for TwoDelta streams.
     // Build a valid 2-sample TwoDelta BEN file, then corrupt the delta frame.
     let mut ben: Vec<u8> = Vec::new();
     {
@@ -1028,16 +1028,14 @@ fn test_relabel_ben_file_twodelta_malformed_frame_error_propagates() {
         writer.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
         writer.write_assignment(vec![2u16, 1, 2, 1]).unwrap();
     }
-    // Locate the delta frame start: banner(17) + max_val_bits(1) + max_len_bits(1) +
-    // n_bytes(4 BE) + payload(n_bytes) + count(2) = anchor_end.
     let banner_len = 17usize;
     let n_bytes = u32::from_be_bytes(ben[banner_len+2..banner_len+6].try_into().unwrap()) as usize;
     let anchor_end = banner_len + 6 + n_bytes + 2;
-    // Set delta frame's max_len_bits (5th byte) to 0 to trigger InvalidData.
     ben[anchor_end + 4] = 0;
 
     let mut output = Vec::new();
-    let err = relabel_ben_file(ben.as_slice(), &mut output).unwrap_err();
+    let err = relabel_ben_file(ben.as_slice(), &mut output, RelabelOptions::first_seen())
+        .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 }
 
@@ -1057,7 +1055,292 @@ fn test_relabel_ben_file_with_map_twodelta_malformed_frame_error_propagates() {
 
     let map: HashMap<usize, usize> = (0..4).map(|i| (i, i)).collect();
     let mut output = Vec::new();
-    let err = relabel_ben_file_with_map(ben.as_slice(), &mut output, map)
-        .unwrap_err();
+    let err = relabel_ben_file(
+        ben.as_slice(),
+        &mut output,
+        RelabelOptions::node_permutation(map),
+    )
+    .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+}
+
+// ── Verification: predicate matrix + frame-preservation + cross-policy ──
+
+#[test]
+fn fast_path_predicate_matrix() {
+    use BenVariant::*;
+    use RunPolicy::*;
+    let transforms = [
+        ("Identity", RelabelTransform::Identity),
+        ("FirstSeen", RelabelTransform::FirstSeen),
+        (
+            "NodePermutation",
+            RelabelTransform::NodePermutation(HashMap::new()),
+        ),
+    ];
+    let inputs = [Standard, MkvChain, TwoDelta];
+    let target_states = [None, Some(Standard)];
+    let policies = [PreserveFrameBoundaries, CollapseAdjacentEqualAssignments];
+
+    let mut true_cases = 0;
+    for (tname, t) in &transforms {
+        for &input in &inputs {
+            for &target in &target_states {
+                for &policy in &policies {
+                    let result = can_use_first_seen_fast_path(t, target, input, policy);
+                    let expected = matches!(tname, &"FirstSeen")
+                        && target.is_none()
+                        && policy == PreserveFrameBoundaries
+                        && (input == Standard || input == MkvChain);
+                    assert_eq!(
+                        result, expected,
+                        "({}, target={:?}, input={:?}, policy={:?})",
+                        tname, target, input, policy
+                    );
+                    if result {
+                        true_cases += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(true_cases, 2, "expected exactly two true matrix entries");
+}
+
+/// Forced-slow vs. fast-path equivalence for first-seen relabeling on
+/// Standard input. Forcing the slow path uses `with_target_variant(input)`
+/// per decision #5 (`is_none()` semantics in the predicate).
+#[test]
+fn fast_path_matches_slow_path_standard() {
+    let file = concat!(
+        "{\"assignment\":[3,1,2],\"sample\":1}\n",
+        "{\"assignment\":[5,5,3],\"sample\":2}\n",
+        "{\"assignment\":[1,2,3],\"sample\":3}\n",
+    );
+    let mut encoded = Vec::new();
+    encode_jsonl_to_ben(
+        file.as_bytes(),
+        io::BufWriter::new(&mut encoded),
+        BenVariant::Standard,
+    )
+    .unwrap();
+
+    let mut fast_out = Vec::new();
+    relabel_ben_file(
+        encoded.as_slice(),
+        &mut fast_out,
+        RelabelOptions::first_seen(),
+    )
+    .unwrap();
+
+    let mut slow_out = Vec::new();
+    relabel_ben_file(
+        encoded.as_slice(),
+        &mut slow_out,
+        RelabelOptions::first_seen().with_target_variant(BenVariant::Standard),
+    )
+    .unwrap();
+
+    let mut fast_jsonl = Vec::new();
+    decode_ben_to_jsonl(fast_out.as_slice(), &mut fast_jsonl).unwrap();
+    let mut slow_jsonl = Vec::new();
+    decode_ben_to_jsonl(slow_out.as_slice(), &mut slow_jsonl).unwrap();
+    assert_eq!(fast_jsonl, slow_jsonl);
+}
+
+#[test]
+fn fast_path_matches_slow_path_mkvchain() {
+    let file = concat!(
+        "{\"assignment\":[3,1,2],\"sample\":1}\n",
+        "{\"assignment\":[3,1,2],\"sample\":2}\n",
+        "{\"assignment\":[5,4,2],\"sample\":3}\n",
+    );
+    let mut encoded = Vec::new();
+    encode_jsonl_to_ben(
+        file.as_bytes(),
+        io::BufWriter::new(&mut encoded),
+        BenVariant::MkvChain,
+    )
+    .unwrap();
+
+    let mut fast_out = Vec::new();
+    relabel_ben_file(
+        encoded.as_slice(),
+        &mut fast_out,
+        RelabelOptions::first_seen(),
+    )
+    .unwrap();
+
+    // Force the slow path by setting target_variant to the input variant.
+    let mut slow_out = Vec::new();
+    relabel_ben_file(
+        encoded.as_slice(),
+        &mut slow_out,
+        RelabelOptions::first_seen().with_target_variant(BenVariant::MkvChain),
+    )
+    .unwrap();
+
+    // Decoded equivalence is the load-bearing assertion. Byte-identity is also
+    // expected here (per plan verification step 4) — tighten if it holds.
+    let mut fast_jsonl = Vec::new();
+    decode_ben_to_jsonl(fast_out.as_slice(), &mut fast_jsonl).unwrap();
+    let mut slow_jsonl = Vec::new();
+    decode_ben_to_jsonl(slow_out.as_slice(), &mut slow_jsonl).unwrap();
+    assert_eq!(fast_jsonl, slow_jsonl);
+}
+
+#[test]
+fn collapse_policy_disables_fast_path() {
+    // With CollapseAdjacentEqualAssignments + first-seen on Standard input,
+    // the predicate must be false (fast path disabled). We verify behaviorally
+    // by running both: the merging path should produce the same decoded
+    // content but takes a different code path internally.
+    let file = concat!(
+        "{\"assignment\":[3,1,2],\"sample\":1}\n",
+        "{\"assignment\":[3,1,2],\"sample\":2}\n",
+    );
+    let mut encoded = Vec::new();
+    encode_jsonl_to_ben(
+        file.as_bytes(),
+        io::BufWriter::new(&mut encoded),
+        BenVariant::Standard,
+    )
+    .unwrap();
+
+    let mut out = Vec::new();
+    relabel_ben_file(
+        encoded.as_slice(),
+        &mut out,
+        RelabelOptions::first_seen()
+            .with_run_policy(RunPolicy::CollapseAdjacentEqualAssignments),
+    )
+    .unwrap();
+
+    let mut decoded = Vec::new();
+    decode_ben_to_jsonl(out.as_slice(), &mut decoded).unwrap();
+    let s = String::from_utf8(decoded).unwrap();
+    assert!(s.contains("\"assignment\":[1,2,3]"));
+}
+
+/// Decision #9: with `PreserveFrameBoundaries`, two adjacent input frames
+/// with the same assignment but distinct counts must remain distinct counted
+/// frames at MkvChain target — not merged into one frame with summed count.
+/// With `CollapseAdjacentEqualAssignments`, they are merged.
+#[test]
+fn run_policy_pins_frame_preservation_and_collapse() {
+    // Build an MkvChain BEN file with two adjacent equal-assignment frames of
+    // counts 5 and 7 (12 total samples).
+    let mut input = Vec::new();
+    {
+        let banner = crate::format::banners::MKVCHAIN_BEN_BANNER;
+        input.extend_from_slice(banner);
+        let frame_a =
+            BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(5));
+        let frame_b =
+            BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(7));
+        input.extend_from_slice(frame_a.as_slice());
+        input.extend_from_slice(frame_b.as_slice());
+    }
+
+    // Identity transform via convert_to(MkvChain), preserving frame boundaries.
+    let mut preserved = Vec::new();
+    relabel_ben_file(
+        input.as_slice(),
+        &mut preserved,
+        RelabelOptions::convert_to(BenVariant::MkvChain)
+            .with_run_policy(RunPolicy::PreserveFrameBoundaries),
+    )
+    .unwrap();
+
+    // Strip banner and count MkvChain frames by walking headers.
+    fn count_mkvchain_frames(ben: &[u8]) -> usize {
+        let mut i = BANNER_LEN;
+        let mut frames = 0;
+        while i < ben.len() {
+            // header: max_val_bits(1), max_len_bits(1), n_bytes(4), payload(n_bytes), count(2)
+            let n_bytes =
+                u32::from_be_bytes(ben[i + 2..i + 6].try_into().unwrap()) as usize;
+            i += 6 + n_bytes + 2;
+            frames += 1;
+        }
+        frames
+    }
+
+    assert_eq!(
+        count_mkvchain_frames(&preserved),
+        2,
+        "PreserveFrameBoundaries must keep both counted frames"
+    );
+
+    let mut collapsed = Vec::new();
+    relabel_ben_file(
+        input.as_slice(),
+        &mut collapsed,
+        RelabelOptions::convert_to(BenVariant::MkvChain)
+            .with_run_policy(RunPolicy::CollapseAdjacentEqualAssignments),
+    )
+    .unwrap();
+
+    assert_eq!(
+        count_mkvchain_frames(&collapsed),
+        1,
+        "CollapseAdjacentEqualAssignments must merge into one count=12 frame"
+    );
+
+    // Decoded sample count is invariant across policies for MkvChain target.
+    let mut a = Vec::new();
+    decode_ben_to_jsonl(preserved.as_slice(), &mut a).unwrap();
+    let mut b = Vec::new();
+    decode_ben_to_jsonl(collapsed.as_slice(), &mut b).unwrap();
+    assert_eq!(
+        a.iter().filter(|&&c| c == b'\n').count(),
+        12,
+        "preserved decodes 12 samples"
+    );
+    assert_eq!(
+        b.iter().filter(|&&c| c == b'\n').count(),
+        12,
+        "collapsed decodes 12 samples"
+    );
+}
+
+/// Cross-policy invariant for Standard targets: byte-identical output
+/// regardless of run policy, because Standard cannot encode counts.
+#[test]
+fn standard_target_cross_policy_byte_identity() {
+    // Build the same (5, 7) MkvChain fixture.
+    let mut input = Vec::new();
+    {
+        let banner = crate::format::banners::MKVCHAIN_BEN_BANNER;
+        input.extend_from_slice(banner);
+        let frame_a =
+            BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(5));
+        let frame_b =
+            BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(7));
+        input.extend_from_slice(frame_a.as_slice());
+        input.extend_from_slice(frame_b.as_slice());
+    }
+
+    let mut preserve_out = Vec::new();
+    relabel_ben_file(
+        input.as_slice(),
+        &mut preserve_out,
+        RelabelOptions::convert_to(BenVariant::Standard)
+            .with_run_policy(RunPolicy::PreserveFrameBoundaries),
+    )
+    .unwrap();
+
+    let mut collapse_out = Vec::new();
+    relabel_ben_file(
+        input.as_slice(),
+        &mut collapse_out,
+        RelabelOptions::convert_to(BenVariant::Standard)
+            .with_run_policy(RunPolicy::CollapseAdjacentEqualAssignments),
+    )
+    .unwrap();
+
+    assert_eq!(
+        preserve_out, collapse_out,
+        "Standard target must be byte-identical across run policies"
+    );
 }

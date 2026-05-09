@@ -21,11 +21,7 @@ use binary_ensemble::io::writer::AssignmentWriter;
 use binary_ensemble::json::graph::{
     sort_json_file_by_key, sort_json_file_by_ordering, GraphOrderingMethod,
 };
-use binary_ensemble::ops::relabel::{
-    convert_ben_file, convert_ben_file_limit, relabel_ben_file, relabel_ben_file_as_variant,
-    relabel_ben_file_as_variant_limit, relabel_ben_file_with_map_as_variant,
-    relabel_ben_file_with_map_as_variant_limit, relabel_ben_lines_limit,
-};
+use binary_ensemble::ops::relabel::{convert_ben_file, relabel_ben_file, RelabelOptions};
 use binary_ensemble::util::rle::{assign_to_rle, rle_to_vec};
 use binary_ensemble::BenVariant;
 
@@ -813,7 +809,12 @@ fn convert_ben_file_limit_truncates_to_max_samples() {
     let ben = encode_standard_ben(&assignments);
 
     let mut out = Vec::new();
-    convert_ben_file_limit(ben.as_slice(), &mut out, BenVariant::Standard, 4).unwrap();
+    relabel_ben_file(
+        ben.as_slice(),
+        &mut out,
+        RelabelOptions::convert_to(BenVariant::Standard).with_max_samples(4),
+    )
+    .unwrap();
 
     let mut decoded = Vec::new();
     decode_ben_to_jsonl(out.as_slice(), &mut decoded).unwrap();
@@ -826,7 +827,12 @@ fn convert_ben_file_limit_zero_produces_banner_only() {
     let ben = encode_standard_ben(&assignments);
 
     let mut out = Vec::new();
-    convert_ben_file_limit(ben.as_slice(), &mut out, BenVariant::Standard, 0).unwrap();
+    relabel_ben_file(
+        ben.as_slice(),
+        &mut out,
+        RelabelOptions::convert_to(BenVariant::Standard).with_max_samples(0),
+    )
+    .unwrap();
 
     // Banner must be present; no frames.
     assert!(out.starts_with(STANDARD_BEN_BANNER));
@@ -849,14 +855,13 @@ fn relabel_ben_lines_limit_truncates_standard() {
     ];
     let ben = encode_standard_ben(&assignments);
 
-    // Relabel only the payload (strip the 17-byte banner first).
-    let payload = &ben[BANNER_LEN..];
-    let mut relabeled_payload = Vec::new();
-    relabel_ben_lines_limit(payload, &mut relabeled_payload, BenVariant::Standard, 2).unwrap();
-
-    // Reconstruct a full BEN file so we can decode it.
-    let mut full = STANDARD_BEN_BANNER.to_vec();
-    full.extend_from_slice(&relabeled_payload);
+    let mut full = Vec::new();
+    relabel_ben_file(
+        ben.as_slice(),
+        &mut full,
+        RelabelOptions::first_seen().with_max_samples(2),
+    )
+    .unwrap();
 
     let mut decoded = Vec::new();
     decode_ben_to_jsonl(full.as_slice(), &mut decoded).unwrap();
@@ -877,7 +882,12 @@ fn relabel_ben_file_as_variant_standard_to_standard() {
     let ben = encode_standard_ben(&assignments);
 
     let mut out = Vec::new();
-    relabel_ben_file_as_variant(ben.as_slice(), &mut out, BenVariant::Standard).unwrap();
+    relabel_ben_file(
+        ben.as_slice(),
+        &mut out,
+        RelabelOptions::first_seen().with_target_variant(BenVariant::Standard),
+    )
+    .unwrap();
 
     assert!(out.starts_with(STANDARD_BEN_BANNER));
 
@@ -908,7 +918,12 @@ fn relabel_ben_file_as_variant_standard_to_mkvchain() {
     let ben = encode_standard_ben(&assignments);
 
     let mut out = Vec::new();
-    relabel_ben_file_as_variant(ben.as_slice(), &mut out, BenVariant::MkvChain).unwrap();
+    relabel_ben_file(
+        ben.as_slice(),
+        &mut out,
+        RelabelOptions::first_seen().with_target_variant(BenVariant::MkvChain),
+    )
+    .unwrap();
 
     assert!(out.starts_with(MKVCHAIN_BEN_BANNER));
 
@@ -919,10 +934,10 @@ fn relabel_ben_file_as_variant_standard_to_mkvchain() {
 
 #[test]
 fn relabel_ben_file_as_variant_rejects_invalid_header() {
-    let err = relabel_ben_file_as_variant(
+    let err = relabel_ben_file(
         b"TOTALLY WRONG!!!!!!".as_slice(),
         Vec::new(),
-        BenVariant::Standard,
+        RelabelOptions::first_seen().with_target_variant(BenVariant::Standard),
     )
     .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
@@ -934,7 +949,14 @@ fn relabel_ben_file_as_variant_limit_truncates_output() {
     let ben = encode_standard_ben(&assignments);
 
     let mut out = Vec::new();
-    relabel_ben_file_as_variant_limit(ben.as_slice(), &mut out, BenVariant::Standard, 3).unwrap();
+    relabel_ben_file(
+        ben.as_slice(),
+        &mut out,
+        RelabelOptions::first_seen()
+            .with_target_variant(BenVariant::Standard)
+            .with_max_samples(3),
+    )
+    .unwrap();
 
     let mut decoded = Vec::new();
     decode_ben_to_jsonl(out.as_slice(), &mut decoded).unwrap();
@@ -947,7 +969,14 @@ fn relabel_ben_file_as_variant_limit_zero_gives_empty() {
     let ben = encode_standard_ben(&assignments);
 
     let mut out = Vec::new();
-    relabel_ben_file_as_variant_limit(ben.as_slice(), &mut out, BenVariant::Standard, 0).unwrap();
+    relabel_ben_file(
+        ben.as_slice(),
+        &mut out,
+        RelabelOptions::first_seen()
+            .with_target_variant(BenVariant::Standard)
+            .with_max_samples(0),
+    )
+    .unwrap();
 
     let mut decoded = Vec::new();
     decode_ben_to_jsonl(out.as_slice(), &mut decoded).unwrap();
@@ -969,11 +998,11 @@ fn relabel_ben_file_with_map_as_variant_standard_to_standard() {
     let ben = encode_standard_ben(&assignments);
 
     let mut out = Vec::new();
-    relabel_ben_file_with_map_as_variant(
+    relabel_ben_file(
         ben.as_slice(),
         &mut out,
-        reverse_map_3(),
-        BenVariant::Standard,
+        RelabelOptions::node_permutation(reverse_map_3())
+            .with_target_variant(BenVariant::Standard),
     )
     .unwrap();
 
@@ -996,11 +1025,11 @@ fn relabel_ben_file_with_map_as_variant_standard_to_mkvchain() {
     let ben = encode_standard_ben(&assignments);
 
     let mut out = Vec::new();
-    relabel_ben_file_with_map_as_variant(
+    relabel_ben_file(
         ben.as_slice(),
         &mut out,
-        reverse_map_3(),
-        BenVariant::MkvChain,
+        RelabelOptions::node_permutation(reverse_map_3())
+            .with_target_variant(BenVariant::MkvChain),
     )
     .unwrap();
 
@@ -1013,11 +1042,11 @@ fn relabel_ben_file_with_map_as_variant_standard_to_mkvchain() {
 
 #[test]
 fn relabel_ben_file_with_map_as_variant_rejects_invalid_header() {
-    let err = relabel_ben_file_with_map_as_variant(
+    let err = relabel_ben_file(
         b"NOT A VALID BEN!!".as_slice(),
         Vec::new(),
-        reverse_map_3(),
-        BenVariant::Standard,
+        RelabelOptions::node_permutation(reverse_map_3())
+            .with_target_variant(BenVariant::Standard),
     )
     .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
@@ -1035,12 +1064,12 @@ fn relabel_ben_file_with_map_as_variant_limit_truncates() {
     let ben = encode_standard_ben(&assignments);
 
     let mut out = Vec::new();
-    relabel_ben_file_with_map_as_variant_limit(
+    relabel_ben_file(
         ben.as_slice(),
         &mut out,
-        reverse_map_3(),
-        BenVariant::Standard,
-        3,
+        RelabelOptions::node_permutation(reverse_map_3())
+            .with_target_variant(BenVariant::Standard)
+            .with_max_samples(3),
     )
     .unwrap();
 
@@ -1055,12 +1084,12 @@ fn relabel_ben_file_with_map_as_variant_limit_zero_gives_empty() {
     let ben = encode_standard_ben(&assignments);
 
     let mut out = Vec::new();
-    relabel_ben_file_with_map_as_variant_limit(
+    relabel_ben_file(
         ben.as_slice(),
         &mut out,
-        reverse_map_3(),
-        BenVariant::Standard,
-        0,
+        RelabelOptions::node_permutation(reverse_map_3())
+            .with_target_variant(BenVariant::Standard)
+            .with_max_samples(0),
     )
     .unwrap();
 
@@ -1082,8 +1111,12 @@ fn relabel_file_with_map_detects_gap_in_permutation() {
     // Map {0→0, 2→2} – index 1 is missing.
     let bad_map: HashMap<usize, usize> = [(0, 0), (2, 2)].iter().cloned().collect();
 
-    use binary_ensemble::ops::relabel::relabel_ben_file_with_map;
-    let err = relabel_ben_file_with_map(ben.as_slice(), Vec::new(), bad_map).unwrap_err();
+    let err = relabel_ben_file(
+        ben.as_slice(),
+        Vec::new(),
+        RelabelOptions::node_permutation(bad_map),
+    )
+    .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
 }
 
@@ -1112,7 +1145,12 @@ fn convert_ben_file_limit_with_mkvchain_repetitions() {
     encode_jsonl_to_ben(jsonl.as_bytes(), &mut ben, BenVariant::MkvChain).unwrap();
 
     let mut out = Vec::new();
-    convert_ben_file_limit(ben.as_slice(), &mut out, BenVariant::MkvChain, 3).unwrap();
+    relabel_ben_file(
+        ben.as_slice(),
+        &mut out,
+        RelabelOptions::convert_to(BenVariant::MkvChain).with_max_samples(3),
+    )
+    .unwrap();
 
     let mut decoded = Vec::new();
     decode_ben_to_jsonl(out.as_slice(), &mut decoded).unwrap();
@@ -1138,7 +1176,12 @@ fn relabel_ben_file_twodelta_canonicalizes_labels() {
     encode_jsonl_to_ben(file.as_bytes(), &mut ben, BenVariant::TwoDelta).unwrap();
 
     let mut relabeled = Vec::new();
-    relabel_ben_file(ben.as_slice(), &mut relabeled).unwrap();
+    relabel_ben_file(
+        ben.as_slice(),
+        &mut relabeled,
+        RelabelOptions::first_seen(),
+    )
+    .unwrap();
 
     let mut decoded = Vec::new();
     decode_ben_to_jsonl(relabeled.as_slice(), &mut decoded).unwrap();
@@ -1316,7 +1359,12 @@ fn relabel_ben_file_as_variant_mkvchain_to_standard() {
     encode_jsonl_to_ben(jsonl.as_bytes(), &mut mkv_ben, BenVariant::MkvChain).unwrap();
 
     let mut out = Vec::new();
-    relabel_ben_file_as_variant(mkv_ben.as_slice(), &mut out, BenVariant::Standard).unwrap();
+    relabel_ben_file(
+        mkv_ben.as_slice(),
+        &mut out,
+        RelabelOptions::first_seen().with_target_variant(BenVariant::Standard),
+    )
+    .unwrap();
 
     assert!(out.starts_with(STANDARD_BEN_BANNER));
 
@@ -1341,8 +1389,12 @@ fn relabel_ben_file_with_map_as_variant_permutes_correctly() {
     let map: HashMap<usize, usize> = [(0, 3), (1, 2), (2, 1), (3, 0)].iter().cloned().collect();
 
     let mut out = Vec::new();
-    relabel_ben_file_with_map_as_variant(ben.as_slice(), &mut out, map, BenVariant::Standard)
-        .unwrap();
+    relabel_ben_file(
+        ben.as_slice(),
+        &mut out,
+        RelabelOptions::node_permutation(map).with_target_variant(BenVariant::Standard),
+    )
+    .unwrap();
 
     let decoded_str = decode_ben_to_string(&out);
     assert!(
@@ -1387,11 +1439,21 @@ fn relabel_ben_file_standard_is_idempotent() {
 
     // First relabeling.
     let mut relabeled1 = Vec::new();
-    relabel_ben_file(ben.as_slice(), &mut relabeled1).unwrap();
+    relabel_ben_file(
+        ben.as_slice(),
+        &mut relabeled1,
+        RelabelOptions::first_seen(),
+    )
+    .unwrap();
 
     // Second relabeling on already-canonical output.
     let mut relabeled2 = Vec::new();
-    relabel_ben_file(relabeled1.as_slice(), &mut relabeled2).unwrap();
+    relabel_ben_file(
+        relabeled1.as_slice(),
+        &mut relabeled2,
+        RelabelOptions::first_seen(),
+    )
+    .unwrap();
 
     // The decoded output of both should be identical.
     let mut decoded1 = Vec::new();
@@ -1424,7 +1486,12 @@ fn single_unique_label_relabeled_to_one() {
     let ben = encode_standard_ben(&[assignment]);
 
     let mut relabeled = Vec::new();
-    relabel_ben_file(ben.as_slice(), &mut relabeled).unwrap();
+    relabel_ben_file(
+        ben.as_slice(),
+        &mut relabeled,
+        RelabelOptions::first_seen(),
+    )
+    .unwrap();
 
     let decoded_str = decode_ben_to_string(&relabeled);
     // All 99s should become 1s.

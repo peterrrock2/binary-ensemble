@@ -5,19 +5,22 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum RelabelError {
     #[error(
-        "relabel map must cover a contiguous range of new indices \
+        "node permutation map must cover a contiguous range of new indices \
          (max index: {max_key}, but {missing} entries are missing)"
     )]
     NonContiguousMap { max_key: usize, missing: usize },
 
-    #[error("relabel map length {map_len} does not match assignment length {assignment_len}")]
+    #[error(
+        "node permutation map length {map_len} does not match assignment length {assignment_len}"
+    )]
     LengthMismatch {
         map_len: usize,
         assignment_len: usize,
     },
 
     #[error(
-        "relabel map references old index {old_idx}, but assignment length is {assignment_len}"
+        "node permutation map references old index {old_idx}, \
+         but assignment length is {assignment_len}"
     )]
     OldIndexOutOfRange {
         old_idx: usize,

@@ -1,4 +1,5 @@
 pub mod assignment_writer;
+pub(crate) mod frame_writer;
 pub(crate) mod frames;
 #[cfg(test)]
 pub(crate) mod tests;

@@ -493,6 +493,50 @@ fn read_node_permutation_map_file_rejects_non_integer_index() {
     let _ = fs::remove_file(&map_path);
 }
 
+/// Pin today's behavior when a JSON map has two old indices targeting the
+/// same new index: `HashMap::insert` overwrites the prior `(new, old)` entry,
+/// shrinking the inverted map. The remaining slots no longer cover
+/// `0..=max_key` contiguously, so the relabel driver returns
+/// `NonContiguousMap` from `dense_permutation`. This is reachable from valid
+/// JSON because `serde_json` retains the last value when the input has
+/// duplicate JSON keys, and even with unique keys two distinct old indices
+/// can target the same new index.
+#[test]
+fn read_node_permutation_map_file_duplicate_new_index_creates_gap() {
+    use crate::ops::relabel::{relabel_ben_file, RelabelOptions};
+
+    let map_path = unique_path("dup_new_index_map.json");
+    // old→new: {0→1, 1→1, 2→2}. Inverted: {1: 1 (overwrites 0), 2: 2}.
+    // Slot 0 is missing in the inverted map, so dense_permutation rejects.
+    fs::write(
+        &map_path,
+        b"{\"node_permutation_old_to_new\":{\"0\":1,\"1\":1,\"2\":2}}",
+    )
+    .unwrap();
+    let (map, _label) = read_node_permutation_map_file(map_path.to_str().unwrap()).unwrap();
+    assert_eq!(map.len(), 2, "duplicate new index must overwrite, shrinking the map");
+
+    // Build a tiny BEN file to drive the relabel through dense_permutation.
+    let mut ben = Vec::new();
+    crate::codec::encode::encode_jsonl_to_ben(
+        b"{\"assignment\":[1,2,3],\"sample\":1}\n".as_slice(),
+        &mut ben,
+        crate::BenVariant::Standard,
+    )
+    .unwrap();
+
+    let err = relabel_ben_file(
+        ben.as_slice(),
+        Vec::new(),
+        RelabelOptions::node_permutation(map),
+    )
+    .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    assert!(err.to_string().contains("contiguous"));
+
+    let _ = fs::remove_file(&map_path);
+}
+
 #[test]
 fn read_node_permutation_map_file_rejects_non_integer_value() {
     let map_path = unique_path("bad_value_map.json");

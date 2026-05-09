@@ -4,12 +4,7 @@ use super::helpers::{
     to_ben_variant, to_graph_ordering,
 };
 use crate::json::graph::{sort_json_file_by_key, sort_json_file_by_ordering};
-use crate::ops::relabel::{
-    convert_ben_file, convert_ben_file_limit, relabel_ben_file, relabel_ben_file_as_variant,
-    relabel_ben_file_as_variant_limit, relabel_ben_file_limit, relabel_ben_file_with_map,
-    relabel_ben_file_with_map_as_variant, relabel_ben_file_with_map_as_variant_limit,
-    relabel_ben_file_with_map_limit,
-};
+use crate::ops::relabel::{relabel_ben_file, RelabelOptions};
 use serde_json::json;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
@@ -53,25 +48,19 @@ pub(super) fn run_ben_mode(args: Args) -> Result<(), String> {
             .map_err(|e| format!("Could not create output file {output_file_name:?}: {e}"))?;
         let writer = BufWriter::new(output_file);
 
-        if args.convert_only {
-            let variant = output_variant.expect("checked above");
-            if let Some(limit) = args.n_items {
-                convert_ben_file_limit(reader, writer, variant, limit)
-            } else {
-                convert_ben_file(reader, writer, variant)
-            }
-        } else if let Some(variant) = output_variant {
-            if let Some(limit) = args.n_items {
-                relabel_ben_file_as_variant_limit(reader, writer, variant, limit)
-            } else {
-                relabel_ben_file_as_variant(reader, writer, variant)
-            }
-        } else if let Some(limit) = args.n_items {
-            relabel_ben_file_limit(reader, writer, limit)
+        let options = if args.convert_only {
+            RelabelOptions::convert_to(output_variant.expect("checked above"))
         } else {
-            relabel_ben_file(reader, writer)
+            let base = RelabelOptions::first_seen();
+            if let Some(variant) = output_variant {
+                base.with_target_variant(variant)
+            } else {
+                base
+            }
         }
-        .map_err(|e| format!("BEN relabeling failed: {e}"))?;
+        .with_max_samples_opt(args.n_items);
+        relabel_ben_file(reader, writer, options)
+            .map_err(|e| format!("BEN relabeling failed: {e}"))?;
         return Ok(());
     }
 
@@ -159,23 +148,14 @@ pub(super) fn run_ben_mode(args: Args) -> Result<(), String> {
         map_file_name,
     );
 
-    if let Some(variant) = output_variant {
-        if let Some(limit) = args.n_items {
-            relabel_ben_file_with_map_as_variant_limit(
-                reader,
-                writer,
-                new_to_old_node_map,
-                variant,
-                limit,
-            )
-        } else {
-            relabel_ben_file_with_map_as_variant(reader, writer, new_to_old_node_map, variant)
-        }
-    } else if let Some(limit) = args.n_items {
-        relabel_ben_file_with_map_limit(reader, writer, new_to_old_node_map, limit)
+    let base = RelabelOptions::node_permutation(new_to_old_node_map);
+    let options = if let Some(variant) = output_variant {
+        base.with_target_variant(variant)
     } else {
-        relabel_ben_file_with_map(reader, writer, new_to_old_node_map)
+        base
     }
-    .map_err(|e| format!("BEN relabeling with map {map_file_name:?} failed: {e}"))?;
+    .with_max_samples_opt(args.n_items);
+    relabel_ben_file(reader, writer, options)
+        .map_err(|e| format!("BEN relabeling with map {map_file_name:?} failed: {e}"))?;
     Ok(())
 }
