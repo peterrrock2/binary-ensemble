@@ -1,8 +1,13 @@
-use super::*;
+use super::args::{Args, Mode};
+use super::paths::{derive_output_path, resolved_output_path};
+use super::translate::{
+    assignment_decode_ben, assignment_encode_ben, assignment_encode_xben,
+};
 use crate::codec::decode::{decode_ben_to_jsonl, decode_xben_to_jsonl};
 use crate::codec::encode::encode_jsonl_to_ben;
+use crate::BenVariant;
 use clap::{CommandFactory, Parser};
-use std::io::{BufReader, Cursor};
+use std::io::{self, BufReader, Cursor};
 
 #[test]
 fn clap_metadata_uses_package_version() {
