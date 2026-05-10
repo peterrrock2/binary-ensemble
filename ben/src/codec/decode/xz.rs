@@ -4,7 +4,7 @@ use crate::format::FormatError;
 use crate::io::reader::BenStreamReader;
 use crate::io::writer::BenStreamWriter;
 use crate::progress::Spinner;
-use crate::BenVariant;
+use crate::{BenVariant, XBenVariant};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use xz2::read::XzDecoder;
 
@@ -30,14 +30,14 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
         return Err(e);
     }
 
-    let variant = match variant_from_banner(&first_buffer) {
+    let variant: XBenVariant = match variant_from_banner(&first_buffer) {
         Some(BenVariant::Standard) => {
             writer.write_all(banner_for_variant(BenVariant::Standard))?;
-            BenVariant::Standard
+            XBenVariant::Standard
         }
         Some(BenVariant::MkvChain) => {
             writer.write_all(banner_for_variant(BenVariant::MkvChain))?;
-            BenVariant::MkvChain
+            XBenVariant::MkvChain
         }
         Some(BenVariant::TwoDelta) => {
             let mut xben = BenStreamReader::from_xben_decompressed(
@@ -78,7 +78,7 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
         let mut last_valid_assignment = 0;
 
         // TwoDelta was dispatched before this loop and returned early.
-        if variant == BenVariant::Standard {
+        if variant == XBenVariant::Standard {
             for i in (3..overflow.len()).step_by(4) {
                 if overflow[i - 3..=i] == [0, 0, 0, 0] {
                     last_valid_assignment = i + 1;

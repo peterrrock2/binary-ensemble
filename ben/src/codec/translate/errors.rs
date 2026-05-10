@@ -13,12 +13,6 @@ pub enum TranslateError {
     )]
     Ben32MissingTerminator { actual: [u8; 4], offset: usize },
 
-    #[error(
-        "TwoDelta BEN streams cannot be translated to ben32; \
-         use BenStreamWriter/BenStreamReader for TwoDelta compressed I/O"
-    )]
-    TwoDeltaUnsupported,
-
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
 }
@@ -27,9 +21,6 @@ impl From<TranslateError> for io::Error {
     fn from(e: TranslateError) -> Self {
         match e {
             TranslateError::Io(e) => e,
-            TranslateError::TwoDeltaUnsupported => {
-                io::Error::new(io::ErrorKind::Unsupported, e.to_string())
-            }
             other => io::Error::new(io::ErrorKind::InvalidData, other),
         }
     }

@@ -323,14 +323,17 @@ impl<W: Write> XBenInner<W> {
             reader.consume(BANNER_LEN);
         }
 
-        if variant == BenVariant::TwoDelta {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "TwoDelta XBEN translation requires a BEN stream with its banner",
-            ));
-        }
+        let xben_variant = match crate::XBenVariant::try_from(variant) {
+            Ok(v) => v,
+            Err(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "TwoDelta XBEN translation requires a BEN stream with its banner",
+                ));
+            }
+        };
 
-        ben_to_ben32_lines(&mut reader, &mut self.encoder, variant)
+        ben_to_ben32_lines(&mut reader, &mut self.encoder, xben_variant)
     }
 }
 

@@ -1,7 +1,7 @@
 use super::*;
 use crate::codec::encode::{encode_ben32_line, encode_jsonl_to_ben};
 use crate::util::rle::rle_to_vec;
-use crate::BenVariant;
+use crate::{BenVariant, XBenVariant};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Uniform};
@@ -31,7 +31,7 @@ fn translate_ben32_to_ben_file<R: Read, W: Write>(mut reader: R, mut writer: W) 
     }
 
     writer.write_all(b"STANDARD BEN FILE")?;
-    ben32_to_ben_lines(reader, writer, BenVariant::Standard)
+    ben32_to_ben_lines(reader, writer, XBenVariant::Standard)
 }
 
 fn translate_ben_to_ben32_file<R: Read, W: Write>(mut reader: R, mut writer: W) -> io::Result<()> {
@@ -46,7 +46,7 @@ fn translate_ben_to_ben32_file<R: Read, W: Write>(mut reader: R, mut writer: W) 
     }
 
     writer.write_all(b"STANDARD BEN FILE")?;
-    ben_to_ben32_lines(reader, writer, BenVariant::Standard)
+    ben_to_ben32_lines(reader, writer, XBenVariant::Standard)
 }
 
 #[test]
@@ -274,13 +274,13 @@ fn test_ben_to_ben32_lines_non_eof_error_on_frame_boundary() {
     };
 
     let mut output = Vec::new();
-    let err = ben_to_ben32_lines(reader, &mut output, BenVariant::Standard).unwrap_err();
+    let err = ben_to_ben32_lines(reader, &mut output, XBenVariant::Standard).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
 }
 
 #[test]
 fn test_ben32_to_ben_line_rejects_invalid_length() {
-    let err = ben32_to_ben_line(vec![1, 2, 3], BenVariant::Standard, 0).unwrap_err();
+    let err = ben32_to_ben_line(vec![1, 2, 3], XBenVariant::Standard, 0).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     assert_eq!(
         err.to_string(),
@@ -290,7 +290,7 @@ fn test_ben32_to_ben_line_rejects_invalid_length() {
 
 #[test]
 fn test_ben32_to_ben_line_rejects_missing_terminator() {
-    let err = ben32_to_ben_line(vec![0, 1, 0, 2, 0, 0, 0, 1], BenVariant::Standard, 0).unwrap_err();
+    let err = ben32_to_ben_line(vec![0, 1, 0, 2, 0, 0, 0, 1], XBenVariant::Standard, 0).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     assert_eq!(
         err.to_string(),
@@ -305,7 +305,7 @@ fn test_ben32_to_ben_lines_preserves_mkv_counts() {
     ];
 
     let mut output = Vec::new();
-    ben32_to_ben_lines(&input[..], &mut output, BenVariant::MkvChain).unwrap();
+    ben32_to_ben_lines(&input[..], &mut output, XBenVariant::MkvChain).unwrap();
 
     let count = u16::from_be_bytes([output[output.len() - 2], output[output.len() - 1]]);
     assert_eq!(count, 5);
@@ -337,7 +337,7 @@ fn test_ben_to_ben32_lines_propagates_non_eof_read_errors() {
             reads: 0,
         },
         &mut output,
-        BenVariant::Standard,
+        XBenVariant::Standard,
     )
     .unwrap_err();
 
@@ -355,7 +355,7 @@ fn test_ben32_to_ben_lines_propagates_non_eof_read_errors() {
         }
     }
 
-    let err = ben32_to_ben_lines(BoomReader, Vec::new(), BenVariant::Standard).unwrap_err();
+    let err = ben32_to_ben_lines(BoomReader, Vec::new(), XBenVariant::Standard).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::Other);
     assert_eq!(err.to_string(), "boom");
 }
@@ -371,22 +371,29 @@ fn test_ben_to_ben32_lines_mkv_roundtrip() {
     encode_jsonl_to_ben(jsonl.as_bytes(), &mut ben, BenVariant::MkvChain).unwrap();
 
     let mut ben32 = Vec::new();
-    ben_to_ben32_lines(&ben[17..], &mut ben32, BenVariant::MkvChain).unwrap();
+    ben_to_ben32_lines(&ben[17..], &mut ben32, XBenVariant::MkvChain).unwrap();
 
     let mut round = Vec::new();
-    ben32_to_ben_lines(ben32.as_slice(), &mut round, BenVariant::MkvChain).unwrap();
+    ben32_to_ben_lines(ben32.as_slice(), &mut round, XBenVariant::MkvChain).unwrap();
 
     assert_eq!(round, ben[17..]);
 }
 
 #[test]
-fn test_ben_to_ben32_lines_rejects_twodelta() {
-    let ben_data = vec![2, 3, 0, 0, 0, 2, 0xAB, 0xCD];
-    let mut output = Vec::new();
-    let err =
-        ben_to_ben32_lines(ben_data.as_slice(), &mut output, BenVariant::TwoDelta).unwrap_err();
-    assert_eq!(err.kind(), io::ErrorKind::Unsupported);
-    assert!(err.to_string().contains("TwoDelta"));
+fn test_xben_variant_try_from_rejects_twodelta() {
+    use crate::TwoDeltaNotXBenError;
+    assert_eq!(
+        XBenVariant::try_from(BenVariant::Standard).unwrap(),
+        XBenVariant::Standard
+    );
+    assert_eq!(
+        XBenVariant::try_from(BenVariant::MkvChain).unwrap(),
+        XBenVariant::MkvChain
+    );
+    assert_eq!(
+        XBenVariant::try_from(BenVariant::TwoDelta).unwrap_err(),
+        TwoDeltaNotXBenError
+    );
 }
 
 #[test]

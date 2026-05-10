@@ -55,3 +55,50 @@ pub enum BenVariant {
     /// Store delta-encoded frames for improved compression of correlated samples.
     TwoDelta,
 }
+
+/// The subset of [`BenVariant`] values that pass through the BEN32 intermediate
+/// wire format (see `docs/glossary.md`).
+///
+/// `TwoDelta` streams use a separate XBEN columnar layout and are intentionally
+/// excluded; functions parameterised by `XBenVariant` cannot be called for
+/// TwoDelta at compile time. Convert with `From<XBenVariant> for BenVariant`
+/// or `TryFrom<BenVariant> for XBenVariant`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XBenVariant {
+    Standard,
+    MkvChain,
+}
+
+impl From<XBenVariant> for BenVariant {
+    fn from(v: XBenVariant) -> Self {
+        match v {
+            XBenVariant::Standard => BenVariant::Standard,
+            XBenVariant::MkvChain => BenVariant::MkvChain,
+        }
+    }
+}
+
+/// Returned by `TryFrom<BenVariant> for XBenVariant` when the input is
+/// `TwoDelta`, which has no BEN32 representation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TwoDeltaNotXBenError;
+
+impl std::fmt::Display for TwoDeltaNotXBenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("TwoDelta has no BEN32 representation; use the XBEN columnar layout instead")
+    }
+}
+
+impl std::error::Error for TwoDeltaNotXBenError {}
+
+impl TryFrom<BenVariant> for XBenVariant {
+    type Error = TwoDeltaNotXBenError;
+
+    fn try_from(v: BenVariant) -> Result<Self, Self::Error> {
+        match v {
+            BenVariant::Standard => Ok(XBenVariant::Standard),
+            BenVariant::MkvChain => Ok(XBenVariant::MkvChain),
+            BenVariant::TwoDelta => Err(TwoDeltaNotXBenError),
+        }
+    }
+}

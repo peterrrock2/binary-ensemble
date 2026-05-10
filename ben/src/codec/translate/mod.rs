@@ -15,15 +15,15 @@ use std::io::{self, Read, Write};
 use crate::codec::decode::decode_ben_line;
 use crate::codec::BenEncodeFrame;
 use crate::progress::Spinner;
-use crate::BenVariant;
+use crate::{BenVariant, XBenVariant};
 
 /// Convert a single ben32 frame into a BEN frame payload.
 ///
 /// # Arguments
 ///
 /// * `ben32_vec` - The ben32 frame bytes, including the four-byte terminator.
-/// * `variant` - The BEN variant. Determines whether the resulting BEN frame
-///   embeds a trailing repetition count.
+/// * `variant` - The BEN32-supporting variant. Determines whether the resulting
+///   BEN frame embeds a trailing repetition count.
 /// * `count` - The repetition count for `MkvChain`. Ignored for `Standard`.
 ///
 /// # Returns
@@ -31,7 +31,7 @@ use crate::BenVariant;
 /// Returns the encoded BEN frame payload and header.
 fn ben32_to_ben_line(
     ben32_vec: Vec<u8>,
-    variant: BenVariant,
+    variant: XBenVariant,
     count: u16,
 ) -> io::Result<Vec<u8>> {
     let mut buffer = [0u8; 4];
@@ -64,25 +64,22 @@ fn ben32_to_ben_line(
         }));
     }
 
-    Ok(BenEncodeFrame::from_rle(ben32_rle, variant, Some(count)).into_bytes())
+    Ok(BenEncodeFrame::from_rle(ben32_rle, BenVariant::from(variant), Some(count)).into_bytes())
 }
 
 /// Translate a stream of ben32 frames into BEN frames.
 ///
 /// This is primarily used while decoding XBEN, where the compressed payload is
-/// stored in ben32 form.
-///
-/// Only the [`Standard`](BenVariant::Standard) and
-/// [`MkvChain`](BenVariant::MkvChain) variants are supported.
-/// TwoDelta streams use a different compressed layout and do not pass through
-/// ben32; see the module-level documentation for details.
+/// stored in ben32 form. Parameterised by [`XBenVariant`] so TwoDelta is
+/// excluded at compile time; TwoDelta streams use a different compressed
+/// layout and do not pass through ben32 (see the module-level documentation).
 ///
 /// # Arguments
 ///
 /// * `reader` - The ben32 input stream.
 /// * `writer` - The destination for the translated BEN frames.
-/// * `variant` - The BEN variant, used to determine whether repetition counts
-///   follow each ben32 frame.
+/// * `variant` - The BEN32-supporting variant, used to determine whether
+///   repetition counts follow each ben32 frame.
 ///
 /// # Returns
 ///
@@ -90,7 +87,7 @@ fn ben32_to_ben_line(
 pub fn ben32_to_ben_lines<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,
-    variant: BenVariant,
+    variant: XBenVariant,
 ) -> io::Result<()> {
     'outer: loop {
         let mut ben32_vec: Vec<u8> = Vec::new();
@@ -103,7 +100,7 @@ pub fn ben32_to_ben_lines<R: Read, W: Write>(
                 Ok(()) => {
                     ben32_vec.extend(ben32_read_buff);
                     if ben32_read_buff == [0u8; 4] {
-                        if variant == BenVariant::MkvChain {
+                        if variant == XBenVariant::MkvChain {
                             n_reps = reader.read_u16::<BigEndian>()?;
                         }
                         break 'inner;
@@ -160,20 +157,16 @@ fn ben_to_ben32_line<R: Read>(
 /// Translate a BEN stream into ben32 frames.
 ///
 /// This is the format used inside XBEN after the outer XZ compression layer is
-/// removed.
-///
-/// Only the [`Standard`](BenVariant::Standard) and
-/// [`MkvChain`](BenVariant::MkvChain) variants are supported.
-/// Passing [`TwoDelta`](BenVariant::TwoDelta) returns an error. TwoDelta
-/// streams use a separate columnar layout and bypass ben32 entirely; see
-/// the module-level documentation for details.
+/// removed. Parameterised by [`XBenVariant`] so TwoDelta is excluded at compile
+/// time; TwoDelta streams use a separate columnar layout and bypass ben32
+/// entirely (see the module-level documentation).
 ///
 /// # Arguments
 ///
 /// * `reader` - The BEN input stream without its 17-byte file banner.
 /// * `writer` - The destination for the translated ben32 frames.
-/// * `variant` - The BEN variant, used to determine whether repetition counts
-///   follow each translated frame.
+/// * `variant` - The BEN32-supporting variant, used to determine whether
+///   repetition counts follow each translated frame.
 ///
 /// # Returns
 ///
@@ -181,7 +174,7 @@ fn ben_to_ben32_line<R: Read>(
 pub fn ben_to_ben32_lines<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,
-    variant: BenVariant,
+    variant: XBenVariant,
 ) -> io::Result<()> {
     let mut sample_number = 1usize;
     let spinner = Spinner::new("Encoding line");
@@ -203,13 +196,13 @@ pub fn ben_to_ben32_lines<R: Read, W: Write>(
         spinner.set_count(sample_number as u64);
 
         match variant {
-            BenVariant::Standard => {
+            XBenVariant::Standard => {
                 sample_number += 1;
                 let ben32_vec =
                     ben_to_ben32_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
                 writer.write_all(&ben32_vec)?;
             }
-            BenVariant::MkvChain => {
+            XBenVariant::MkvChain => {
                 let ben32_vec =
                     ben_to_ben32_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
 
@@ -217,9 +210,6 @@ pub fn ben_to_ben32_lines<R: Read, W: Write>(
                 sample_number += n_reps as usize;
                 writer.write_all(&ben32_vec)?;
                 writer.write_all(&n_reps.to_be_bytes())?;
-            }
-            BenVariant::TwoDelta => {
-                return Err(io::Error::from(TranslateError::TwoDeltaUnsupported));
             }
         }
     }
