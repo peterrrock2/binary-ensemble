@@ -9,7 +9,7 @@ use crate::io::bundle::format::AssignmentFormat;
 use crate::io::bundle::{BendlReader, BendlWriter};
 use crate::test_utils::{sample_bendl_bytes, unique_path};
 use clap::Parser;
-use std::io::{BufReader, Cursor};
+use std::io::{BufReader, Cursor, Write};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -110,7 +110,9 @@ fn run_inspect_xben_format_and_checksum_flag() {
             },
         )
         .unwrap();
-    writer.write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1).unwrap();
+    let mut session = writer.into_stream_session().unwrap();
+    session.write_all(b"STANDARD BEN FILE\x00fake").unwrap();
+    let writer = session.finish_into_writer(1);
     writer.finish().unwrap();
     let path = unique_path("inspect_xben.bendl");
     std::fs::write(&path, &buf).unwrap();
@@ -389,7 +391,9 @@ fn run_extract_asset_by_name() {
             AddAssetOptions::defaults(),
         )
         .unwrap();
-    writer.write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1).unwrap();
+    let mut session = writer.into_stream_session().unwrap();
+    session.write_all(b"STANDARD BEN FILE\x00fake").unwrap();
+    let writer = session.finish_into_writer(1);
     writer.finish().unwrap();
     let bendl = unique_path("extract_asset.bendl");
     std::fs::write(&bendl, &buf).unwrap();

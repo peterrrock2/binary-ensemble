@@ -40,7 +40,11 @@ use xben::XBenInner;
 /// boundary per call. Calling `write_frame` on an XBEN writer returns
 /// `InvalidInput`.
 pub struct BenStreamWriter<W: Write> {
-    inner: BenStreamInner<W>,
+    /// Wrapped in `Option` so [`Self::finish_into_inner`] can `take()` it
+    /// without partial-moving out of a `Drop` type. All other access
+    /// sites unwrap with `.expect("inner present")` — only the consuming
+    /// `finish_into_inner` ever leaves it `None`.
+    inner: Option<BenStreamInner<W>>,
     state: WriterState,
     /// Tracks whether any sample-writing or direct-ingest operation has
     /// touched the writer. `ingest_ben_stream` requires this to be `false`.
@@ -69,7 +73,7 @@ impl<W: Write> BenStreamWriter<W> {
     pub fn for_ben(mut writer: W, variant: BenVariant) -> io::Result<Self> {
         writer.write_all(banner_for_variant(variant))?;
         Ok(Self {
-            inner: BenStreamInner::Ben(BenState::new(writer, variant)),
+            inner: Some(BenStreamInner::Ben(BenState::new(writer, variant))),
             state: WriterState::Open,
             body_started: false,
         })
@@ -103,7 +107,9 @@ impl<W: Write> BenStreamWriter<W> {
             .unwrap_or(super::twodelta::DEFAULT_TWODELTA_CHUNK_SIZE)
             .max(1);
         Ok(Self {
-            inner: BenStreamInner::XBen(Box::new(XBenInner::new(encoder, variant, chunk_size))),
+            inner: Some(BenStreamInner::XBen(Box::new(XBenInner::new(
+                encoder, variant, chunk_size,
+            )))),
             state: WriterState::Open,
             body_started: false,
         })
@@ -111,7 +117,7 @@ impl<W: Write> BenStreamWriter<W> {
 
     /// The BEN variant of this stream.
     pub fn variant(&self) -> BenVariant {
-        match &self.inner {
+        match self.inner.as_ref().expect("inner present") {
             BenStreamInner::Ben(b) => b.variant,
             BenStreamInner::XBen(x) => x.variant(),
         }
@@ -119,7 +125,7 @@ impl<W: Write> BenStreamWriter<W> {
 
     /// The wire format (BEN vs XBEN) of this stream.
     pub fn wire_format(&self) -> BenWireFormat {
-        match &self.inner {
+        match self.inner.as_ref().expect("inner present") {
             BenStreamInner::Ben(_) => BenWireFormat::Ben,
             BenStreamInner::XBen(_) => BenWireFormat::XBen,
         }
@@ -138,7 +144,7 @@ impl<W: Write> BenStreamWriter<W> {
         }
 
         self.body_started = true;
-        let result = match &mut self.inner {
+        let result = match self.inner.as_mut().expect("inner present") {
             BenStreamInner::Ben(b) => b.write_assignment(assign_vec),
             BenStreamInner::XBen(x) => x.write_assignment(assign_vec),
         };
@@ -161,7 +167,7 @@ impl<W: Write> BenStreamWriter<W> {
             }
             WriterState::Open => {}
         }
-        let ben = match &mut self.inner {
+        let ben = match self.inner.as_mut().expect("inner present") {
             BenStreamInner::Ben(b) => b,
             BenStreamInner::XBen(_) => {
                 return Err(invalid_input("write_frame is plain-BEN-only"));
@@ -191,7 +197,7 @@ impl<W: Write> BenStreamWriter<W> {
         let new_assign = parse_json_assignment(data)?;
         // From here on, we are in the stateful encode path.
         self.body_started = true;
-        let result = match &mut self.inner {
+        let result = match self.inner.as_mut().expect("inner present") {
             BenStreamInner::Ben(b) => b.write_assignment(new_assign),
             BenStreamInner::XBen(x) => x.write_assignment(new_assign),
         };
@@ -213,7 +219,7 @@ impl<W: Write> BenStreamWriter<W> {
             }
             WriterState::Open => {}
         }
-        let xben = match &mut self.inner {
+        let xben = match self.inner.as_mut().expect("inner present") {
             BenStreamInner::Ben(_) => {
                 return Err(invalid_input("ingest_ben_stream requires XBEN mode"));
             }
@@ -253,7 +259,7 @@ impl<W: Write> BenStreamWriter<W> {
             WriterState::Open | WriterState::BodyClosed => {}
         }
 
-        let result: io::Result<()> = match &mut self.inner {
+        let result: io::Result<()> = match self.inner.as_mut().expect("inner present") {
             BenStreamInner::Ben(b) => {
                 if self.state == WriterState::Open {
                     b.flush_pending_frame()
@@ -285,11 +291,48 @@ impl<W: Write> BenStreamWriter<W> {
             }
         }
     }
+
+    /// Consume the writer, flush any buffered state, finalize the
+    /// underlying compressed stream when present (XBEN), and return the
+    /// underlying `W`.
+    ///
+    /// Unlike `std::io::BufWriter::into_inner`, this method's name is
+    /// intentionally `finish_into_inner` because errors from the BEN
+    /// flush or the consuming `XzEncoder::finish()` can still lose
+    /// access to the inner writer. Returns `InvalidInput` if the writer
+    /// is in `Failed`. Accepted from `Open`, `BodyClosed`, and
+    /// `Complete`; the `Complete` path simply extracts the inner writer
+    /// after prior finalization.
+    pub fn finish_into_inner(mut self) -> io::Result<W> {
+        let state = self.state;
+        match state {
+            WriterState::Failed => return Err(invalid_input("writer was poisoned")),
+            WriterState::Open | WriterState::BodyClosed | WriterState::Complete => {}
+        }
+        let inner = self.inner.take().expect("inner present");
+        match inner {
+            BenStreamInner::Ben(mut b) => {
+                if state == WriterState::Open {
+                    b.flush_pending_frame()?;
+                }
+                Ok(b.writer)
+            }
+            BenStreamInner::XBen(boxed) => {
+                let mut x = *boxed;
+                if state == WriterState::Open {
+                    x.flush()?;
+                }
+                x.encoder.finish()
+            }
+        }
+    }
 }
 
 impl<W: Write> Drop for BenStreamWriter<W> {
     fn drop(&mut self) {
-        if matches!(self.state, WriterState::Open | WriterState::BodyClosed) {
+        if self.inner.is_some()
+            && matches!(self.state, WriterState::Open | WriterState::BodyClosed)
+        {
             let _ = self.finish();
         }
     }

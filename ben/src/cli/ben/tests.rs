@@ -330,8 +330,10 @@ fn append_graph_asset_adds_graph_to_bundle() {
     // Build a minimal finalized .bendl in memory, write to temp file.
     let mut buf: Vec<u8> = Vec::new();
     {
-        let mut writer = BendlWriter::new(Cursor::new(&mut buf), AssignmentFormat::Ben).unwrap();
-        writer.write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1).unwrap();
+        let writer = BendlWriter::new(Cursor::new(&mut buf), AssignmentFormat::Ben).unwrap();
+        let mut session = writer.into_stream_session().unwrap();
+        session.write_all(b"STANDARD BEN FILE\x00fake").unwrap();
+        let writer = session.finish_into_writer(1);
         writer.finish().unwrap();
     }
     let bendl_path = unique_path("append_graph.bendl");
@@ -450,8 +452,10 @@ fn append_graph_asset_errors_on_missing_graph_file() {
 
     let mut buf: Vec<u8> = Vec::new();
     {
-        let mut writer = BendlWriter::new(Cursor::new(&mut buf), AssignmentFormat::Ben).unwrap();
-        writer.write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1).unwrap();
+        let writer = BendlWriter::new(Cursor::new(&mut buf), AssignmentFormat::Ben).unwrap();
+        let mut session = writer.into_stream_session().unwrap();
+        session.write_all(b"STANDARD BEN FILE\x00fake").unwrap();
+        let writer = session.finish_into_writer(1);
         writer.finish().unwrap();
     }
     let bendl_path = unique_path("err_graph.bendl");
@@ -525,7 +529,9 @@ fn append_graph_asset_errors_when_bundle_already_has_graph() {
                 AddAssetOptions::defaults().json(),
             )
             .unwrap();
-        writer.write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1).unwrap();
+        let mut session = writer.into_stream_session().unwrap();
+        session.write_all(b"STANDARD BEN FILE\x00fake").unwrap();
+        let writer = session.finish_into_writer(1);
         writer.finish().unwrap();
     }
     let bendl_path = unique_path("dup_graph.bendl");

@@ -65,8 +65,10 @@ pub fn sample_ben_bytes(jsonl: &[u8], variant: BenVariant) -> Vec<u8> {
 pub fn sample_bendl_bytes(stream: &[u8], format: AssignmentFormat) -> Vec<u8> {
     let mut buf: Vec<u8> = Vec::new();
     {
-        let mut writer = BendlWriter::new(Cursor::new(&mut buf), format).unwrap();
-        writer.write_stream_bytes(stream, 1).unwrap();
+        let writer = BendlWriter::new(Cursor::new(&mut buf), format).unwrap();
+        let mut session = writer.into_stream_session().unwrap();
+        session.write_all(stream).unwrap();
+        let writer = session.finish_into_writer(1);
         writer.finish().unwrap();
     }
     buf

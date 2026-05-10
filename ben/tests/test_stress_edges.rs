@@ -180,9 +180,9 @@ fn tiny_bendl_bundle() -> Vec<u8> {
             AddAssetOptions::defaults().raw(),
         )
         .unwrap();
-    writer
-        .write_stream_bytes(b"STANDARD BEN FILE\x00\x01\x02", 1)
-        .unwrap();
+    let mut session = writer.into_stream_session().unwrap();
+    session.write_all(b"STANDARD BEN FILE\x00\x01\x02").unwrap();
+    let writer = session.finish_into_writer(1);
     writer.finish().unwrap().into_inner()
 }
 

@@ -6,17 +6,19 @@
 //! [header] [asset payloads] [assignment stream] [directory]
 //! ```
 //!
-//! The writer operates in three logical phases:
+//! The writer operates in three logical phases, expressed via owned
+//! typestate transitions:
 //!
 //! 1. **asset phase** — the caller invokes [`BendlWriter::add_asset`] zero
 //!    or more times. Each call writes the (optionally xz-compressed)
 //!    payload to the file and records its absolute offset and length in
 //!    an in-memory entry list.
-//! 2. **stream phase** — the caller invokes [`BendlWriter::begin_stream`]
-//!    to enter the stream region. The returned handle wraps the raw
-//!    underlying writer so the caller can plumb it into
-//!    [`crate::io::writer::BenStreamWriter`]. When the stream is complete
-//!    the caller records the sample count via [`BendlWriter::end_stream`].
+//! 2. **stream phase** — the caller invokes
+//!    [`BendlWriter::into_stream_session`] to consume the writer and
+//!    obtain a [`BendlStreamSession`] that owns the underlying writer
+//!    and implements `Write`. When the stream is complete the caller
+//!    calls [`BendlStreamSession::finish_into_writer`] to recover the
+//!    [`BendlWriter`] in the `StreamWritten` state.
 //! 3. **finalize phase** — [`BendlWriter::finish`] writes the trailing
 //!    directory and patches the header.
 //!
@@ -121,27 +123,25 @@ enum WriterState {
     /// No assets have been written yet, but the provisional header is
     /// already in place and the writer is positioned just after it.
     Assets,
-    /// `begin_stream` has been called; the caller is responsible for
-    /// writing the embedded BEN/XBEN payload before calling `end_stream`.
-    Streaming,
-    /// `end_stream` has completed; the writer is ready for `finish`.
+    /// A stream session has been finished and the writer is ready for
+    /// [`BendlWriter::finish`]. The streaming phase itself is expressed
+    /// in the type system via [`BendlStreamSession`] and is therefore
+    /// not observable in this enum.
     StreamWritten { stream_len: u64, sample_count: i64 },
-    /// `finish` has been called. No further operations are permitted.
-    Finished,
 }
 
 impl<W: Write + Seek> BendlWriter<W> {
     /// Create a new writer by writing a provisional header at offset 0.
     ///
     /// The assignment stream will begin immediately after the asset
-    /// payload region — [`BendlWriter::begin_stream`] computes the
-    /// exact offset at the moment it is called, so asset writes that
-    /// happen between `new` and `begin_stream` push the stream out as
-    /// expected.
+    /// payload region — [`BendlWriter::into_stream_session`] computes
+    /// the exact offset at the moment it is called, so asset writes
+    /// that happen between `new` and `into_stream_session` push the
+    /// stream out as expected.
     pub fn new(mut inner: W, assignment_format: AssignmentFormat) -> io::Result<Self> {
         inner.seek(SeekFrom::Start(0))?;
         // stream_offset in the provisional header is patched at
-        // begin_stream time; start it just after the header.
+        // into_stream_session time; start it just after the header.
         let header = BendlHeader::provisional(assignment_format, HEADER_SIZE as u64);
         header.write_to(&mut inner)?;
 
@@ -283,46 +283,48 @@ impl<W: Write + Seek> BendlWriter<W> {
         self.add_asset(ASSET_TYPE_CUSTOM, name, payload, options)
     }
 
-    /// Transition from the asset phase into the stream phase and return
-    /// a mutable reference to the inner writer so the caller can
-    /// directly write the embedded BEN/XBEN payload.
+    /// Consume the writer and transition into the stream phase.
     ///
-    /// Once this method has been called, no further assets may be added.
-    /// The caller is responsible for calling [`BendlWriter::end_stream`]
-    /// when the payload is complete.
-    pub fn begin_stream(&mut self) -> Result<BendlStreamHandle<'_, W>, BendlWriteError> {
-        if self.state != WriterState::Assets {
-            return Err(BendlWriteError::WrongState {
-                expected: "Assets",
-                found: if matches!(self.state, WriterState::Streaming) {
-                    "Streaming"
-                } else {
-                    "StreamWritten"
-                },
-            });
+    /// The returned [`BendlStreamSession`] owns the underlying writer
+    /// and implements `Write`, so it can be plumbed into a
+    /// [`crate::io::writer::BenStreamWriter`] (or written to directly).
+    /// When the stream is complete the caller calls
+    /// [`BendlStreamSession::finish_into_writer`] to recover ownership
+    /// of a [`BendlWriter`] in the `StreamWritten` state, ready for
+    /// [`BendlWriter::finish`].
+    ///
+    /// Returns [`BendlWriteError::WrongState`] when called on a writer
+    /// that has already produced a stream (e.g. via a prior
+    /// `finish_into_writer`); this guard prevents a second
+    /// `into_stream_session` from silently overwriting
+    /// `header.stream_offset` and corrupting the bundle.
+    pub fn into_stream_session(
+        mut self,
+    ) -> Result<BendlStreamSession<W>, BendlWriteError> {
+        match self.state {
+            WriterState::Assets => {}
+            WriterState::StreamWritten { .. } => {
+                return Err(BendlWriteError::WrongState {
+                    expected: "Assets",
+                    found: "StreamWritten",
+                });
+            }
         }
 
         let stream_offset = self.inner.seek(SeekFrom::Current(0))?;
         self.header.stream_offset = stream_offset;
-        self.state = WriterState::Streaming;
 
-        Ok(BendlStreamHandle {
-            parent: self,
+        Ok(BendlStreamSession {
+            inner: Some(self.inner),
+            parent: Some(ParentState {
+                header: self.header,
+                entries: self.entries,
+                names: self.names,
+                singleton_types: self.singleton_types,
+            }),
             start_offset: stream_offset,
+            bytes_written: 0,
         })
-    }
-
-    /// Directly write the whole stream region from an in-memory byte
-    /// slice. This is a convenience for tests and for tools that already
-    /// have the encoded stream bytes on hand.
-    pub fn write_stream_bytes(
-        &mut self,
-        bytes: &[u8],
-        sample_count: i64,
-    ) -> Result<(), BendlWriteError> {
-        let mut handle = self.begin_stream()?;
-        handle.write_all(bytes).map_err(BendlWriteError::Io)?;
-        handle.finish(sample_count)
     }
 
     /// Open a BEN assignment stream backed by a
@@ -333,19 +335,21 @@ impl<W: Write + Seek> BendlWriter<W> {
     /// calls the closure makes and records that count as the bundle's
     /// authoritative `sample_count` when the stream is finalized. The
     /// closure is free to short-circuit by returning an error, in which
-    /// case the stream phase is abandoned and the error is propagated.
+    /// case the stream phase is abandoned, the error is propagated, and
+    /// the partially-written bundle is unrecoverable through this API
+    /// (no continuation path on the closure-error branch).
     pub fn write_ben_stream<F>(
-        &mut self,
+        self,
         variant: crate::BenVariant,
         f: F,
-    ) -> Result<(), BendlWriteError>
+    ) -> Result<Self, BendlWriteError>
     where
         F: FnOnce(&mut BundleAssignmentStreamCtx<'_>) -> io::Result<()>,
     {
-        let mut handle = self.begin_stream()?;
+        let mut session = self.into_stream_session()?;
         let mut sample_count: i64 = 0;
         {
-            let writer_ref: &mut dyn Write = &mut handle;
+            let writer_ref: &mut dyn Write = &mut session;
             let mut ben =
                 crate::io::writer::BenStreamWriter::for_ben(writer_ref, variant)?;
             {
@@ -357,7 +361,7 @@ impl<W: Write + Seek> BendlWriter<W> {
             }
             ben.finish()?;
         }
-        handle.finish(sample_count)
+        Ok(session.finish_into_writer(sample_count))
     }
 
     /// Open an XBEN assignment stream backed by a
@@ -373,17 +377,17 @@ impl<W: Write + Seek> BendlWriter<W> {
     /// MT-stream defaults — bundle assignment streams are intentionally
     /// single-threaded with a milder preset.
     pub fn write_xben_stream<F>(
-        &mut self,
+        self,
         variant: crate::BenVariant,
         f: F,
-    ) -> Result<(), BendlWriteError>
+    ) -> Result<Self, BendlWriteError>
     where
         F: FnOnce(&mut BundleAssignmentStreamCtx<'_>) -> io::Result<()>,
     {
-        let mut handle = self.begin_stream()?;
+        let mut session = self.into_stream_session()?;
         let mut sample_count: i64 = 0;
         {
-            let writer_ref: &mut dyn Write = &mut handle;
+            let writer_ref: &mut dyn Write = &mut session;
             let encoder = xz2::write::XzEncoder::new(writer_ref, DEFAULT_XZ_PRESET);
             let mut xben = crate::io::writer::BenStreamWriter::for_xben_with_encoder(
                 encoder, variant, None,
@@ -397,27 +401,25 @@ impl<W: Write + Seek> BendlWriter<W> {
             }
             xben.finish()?;
         }
-        handle.finish(sample_count)
+        Ok(session.finish_into_writer(sample_count))
     }
 
     /// Write the trailing directory, patch the header, and return the
     /// underlying writer.
     pub fn finish(mut self) -> Result<W, BendlWriteError> {
-        if matches!(self.state, WriterState::Streaming) {
-            return Err(BendlWriteError::WrongState {
-                expected: "StreamWritten",
-                found: "Streaming",
-            });
-        }
-        let (stream_len, sample_count) =
-            if let WriterState::StreamWritten { stream_len, sample_count } = self.state {
-                (stream_len, sample_count)
-            } else {
-                // Assets state: no stream written; treat as empty stream.
+        let (stream_len, sample_count) = match self.state {
+            WriterState::StreamWritten {
+                stream_len,
+                sample_count,
+            } => (stream_len, sample_count),
+            WriterState::Assets => {
+                // No stream written; treat as empty stream located just
+                // after the asset region.
                 let stream_offset = self.inner.seek(SeekFrom::Current(0))?;
                 self.header.stream_offset = stream_offset;
                 (0, 0)
-            };
+            }
+        };
 
         // Position at end of stream (== start of directory).
         let directory_offset = self.header.stream_offset + stream_len;
@@ -442,44 +444,101 @@ impl<W: Write + Seek> BendlWriter<W> {
         // Flush explicitly; some writers (files) are not flushed on drop.
         self.inner.flush()?;
 
-        self.state = WriterState::Finished;
         Ok(self.inner)
     }
 
 }
 
-/// Mutable handle to the stream region held by a [`BendlWriter`].
-///
-/// The handle implements `Write` so it can be wrapped in
-/// `BenStreamWriter::for_ben(handle, variant)` or
-/// `BenStreamWriter::for_xben_with_encoder(encoder, variant, ...)` directly.
-pub struct BendlStreamHandle<'a, W: Write + Seek> {
-    parent: &'a mut BendlWriter<W>,
-    start_offset: u64,
+/// Internal state of a [`BendlWriter`] that has been temporarily moved
+/// into a [`BendlStreamSession`]. Stored as a single struct so
+/// `finish_into_writer` can rebuild the writer with one move.
+struct ParentState {
+    header: BendlHeader,
+    entries: Vec<BendlDirectoryEntry>,
+    names: HashSet<String>,
+    singleton_types: HashSet<u16>,
 }
 
-impl<'a, W: Write + Seek> BendlStreamHandle<'a, W> {
-    /// Record the sample count and transition the writer out of the
-    /// stream phase. Call this after the embedded BEN/XBEN payload has
-    /// been written.
-    pub fn finish(self, sample_count: i64) -> Result<(), BendlWriteError> {
-        let end = self.parent.inner.seek(SeekFrom::Current(0))?;
-        let stream_len = end.saturating_sub(self.start_offset);
-        self.parent.state = WriterState::StreamWritten {
-            stream_len,
-            sample_count,
-        };
-        Ok(())
+/// Owned stream-phase session. Holds the underlying writer and the
+/// parent [`BendlWriter`]'s in-memory state across the streaming phase,
+/// implements `Write` so it can be plumbed into a
+/// [`crate::io::writer::BenStreamWriter`], and exposes
+/// [`Self::finish_into_writer`] to hand ownership back as a
+/// [`BendlWriter`] in the `StreamWritten` state.
+///
+/// `inner` and `parent` are wrapped in `Option` so `finish_into_writer`
+/// can `take()` them without partial-moving out of a `Drop` type. The
+/// [`Drop`] impl emits a `tracing::warn!` if the session is dropped
+/// without `finish_into_writer`, since that leaves the bundle on disk
+/// unfinalized.
+pub struct BendlStreamSession<W: Write + Seek> {
+    inner: Option<W>,
+    parent: Option<ParentState>,
+    start_offset: u64,
+    bytes_written: u64,
+}
+
+impl<W: Write + Seek> BendlStreamSession<W> {
+    /// Number of bytes written into the stream region so far. Pure
+    /// counter — no I/O, no `&mut` required.
+    pub fn bytes_written(&self) -> u64 {
+        self.bytes_written
+    }
+
+    /// Offset (in the underlying writer) at which the stream region
+    /// began, recorded at session-construction time.
+    pub fn start_offset(&self) -> u64 {
+        self.start_offset
+    }
+
+    /// End the stream phase and return ownership of a [`BendlWriter`]
+    /// in the `StreamWritten` state, ready for [`BendlWriter::finish`].
+    ///
+    /// Infallible: the body is `take()` + arithmetic + struct
+    /// construction with no I/O. Once this method returns, the
+    /// session's [`Drop`] impl observes `inner.is_none()` and skips
+    /// the warn.
+    pub fn finish_into_writer(mut self, sample_count: i64) -> BendlWriter<W> {
+        let inner = self.inner.take().expect("session has not been finished");
+        let parent = self.parent.take().expect("session has not been finished");
+        BendlWriter {
+            inner,
+            header: parent.header,
+            entries: parent.entries,
+            names: parent.names,
+            singleton_types: parent.singleton_types,
+            state: WriterState::StreamWritten {
+                stream_len: self.bytes_written,
+                sample_count,
+            },
+        }
     }
 }
 
-impl<'a, W: Write + Seek> Write for BendlStreamHandle<'a, W> {
+impl<W: Write + Seek> Write for BendlStreamSession<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.parent.inner.write(buf)
+        let inner = self.inner.as_mut().expect("session has not been finished");
+        let n = inner.write(buf)?;
+        self.bytes_written += n as u64;
+        Ok(n)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.parent.inner.flush()
+        self.inner
+            .as_mut()
+            .expect("session has not been finished")
+            .flush()
+    }
+}
+
+impl<W: Write + Seek> Drop for BendlStreamSession<W> {
+    fn drop(&mut self) {
+        if self.inner.is_some() {
+            tracing::warn!(
+                "BendlStreamSession dropped without finish_into_writer; \
+                 bundle on disk is unfinalized"
+            );
+        }
     }
 }
 

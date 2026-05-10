@@ -64,18 +64,16 @@ pub(super) fn run_encode_bundle_with_graph(
     let sample_count = count_jsonl_lines(input_path)?;
 
     let out_file = File::create(out_path)?;
-    let mut bendl_writer = BendlWriter::new(out_file, AssignmentFormat::Ben)
+    let bendl_writer = BendlWriter::new(out_file, AssignmentFormat::Ben)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+    let mut session = bendl_writer
+        .into_stream_session()
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
     {
-        let mut handle = bendl_writer
-            .begin_stream()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
         let reader = BufReader::new(File::open(input_path)?);
-        encode_jsonl_to_ben(reader, &mut handle, variant)?;
-        handle
-            .finish(sample_count)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+        encode_jsonl_to_ben(reader, &mut session, variant)?;
     }
+    let bendl_writer = session.finish_into_writer(sample_count);
     bendl_writer
         .finish()
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
@@ -111,17 +109,17 @@ pub(super) fn run_xencode_bundle_with_graph(
     };
 
     let out_file = File::create(out_path)?;
-    let mut bendl_writer = BendlWriter::new(out_file, AssignmentFormat::Xben)
+    let bendl_writer = BendlWriter::new(out_file, AssignmentFormat::Xben)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+    let mut session = bendl_writer
+        .into_stream_session()
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
     {
-        let mut handle = bendl_writer
-            .begin_stream()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
         let reader = BufReader::new(File::open(input_path)?);
         if from_ben {
             encode_ben_to_xben(
                 reader,
-                &mut handle,
+                &mut session,
                 n_threads,
                 compression_level,
                 chunk_size,
@@ -130,7 +128,7 @@ pub(super) fn run_xencode_bundle_with_graph(
         } else {
             encode_jsonl_to_xben(
                 reader,
-                &mut handle,
+                &mut session,
                 variant,
                 n_threads,
                 compression_level,
@@ -138,10 +136,8 @@ pub(super) fn run_xencode_bundle_with_graph(
                 block_size,
             )?;
         }
-        handle
-            .finish(sample_count)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
     }
+    let bendl_writer = session.finish_into_writer(sample_count);
     bendl_writer
         .finish()
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;

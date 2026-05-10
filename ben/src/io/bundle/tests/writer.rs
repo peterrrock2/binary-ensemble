@@ -1,4 +1,4 @@
-use std::io::{self, Cursor, Read, Write};
+use std::io::{self, Cursor, Read, Seek, Write};
 
 use crate::io::bundle::format::{
     AssignmentFormat, BendlFormatError, BendlHeader, ASSET_FLAG_CHECKSUM, ASSET_FLAG_XZ,
@@ -15,6 +15,18 @@ fn make_buffer() -> Cursor<Vec<u8>> {
     Cursor::new(Vec::new())
 }
 
+/// Test helper: replicate the deleted `BendlWriter::write_stream_bytes`
+/// using the owned-session chain. Used purely to keep test bodies short.
+fn write_stream_bytes_via_session(
+    writer: BendlWriter<Cursor<Vec<u8>>>,
+    bytes: &[u8],
+    sample_count: i64,
+) -> BendlWriter<Cursor<Vec<u8>>> {
+    let mut session = writer.into_stream_session().unwrap();
+    session.write_all(bytes).unwrap();
+    session.finish_into_writer(sample_count)
+}
+
 #[test]
 fn minimal_bundle_round_trip_through_reader() {
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
@@ -22,7 +34,7 @@ fn minimal_bundle_round_trip_through_reader() {
         .add_json_asset(ASSET_TYPE_METADATA, "metadata.json", br#"{"note":"hello"}"#)
         .unwrap();
     let stream_bytes = b"STANDARD BEN FILE\x00\x01fake".to_vec();
-    writer.write_stream_bytes(&stream_bytes, 7).unwrap();
+    let writer = write_stream_bytes_via_session(writer, &stream_bytes, 7);
     let buf = writer.finish().unwrap().into_inner();
 
     let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
@@ -56,9 +68,7 @@ fn graph_asset_is_compressed_by_default() {
     writer
         .add_json_asset(ASSET_TYPE_GRAPH, "graph.json", graph)
         .unwrap();
-    writer
-        .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
-        .unwrap();
+    let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
     let buf = writer.finish().unwrap().into_inner();
 
     let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
@@ -89,9 +99,7 @@ fn graph_asset_can_be_forced_raw() {
             AddAssetOptions::defaults().json().raw(),
         )
         .unwrap();
-    writer
-        .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
-        .unwrap();
+    let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
     let buf = writer.finish().unwrap().into_inner();
 
     let reader = BendlReader::open(Cursor::new(buf)).unwrap();
@@ -153,12 +161,10 @@ fn writer_rejects_duplicate_custom_name() {
 
 #[test]
 fn writer_rejects_asset_added_after_stream_begins() {
-    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    {
-        let mut handle = writer.begin_stream().unwrap();
-        handle.write_all(b"STANDARD BEN FILE\x00fake").unwrap();
-        handle.finish(1).unwrap();
-    }
+    // After a session has been finished, the writer is in `StreamWritten`
+    // and `add_*_asset` rejects further additions with `AssetsAfterStream`.
+    let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    let mut writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
     let err = writer
         .add_json_asset(ASSET_TYPE_METADATA, "metadata.json", b"{}")
         .unwrap_err();
@@ -185,9 +191,7 @@ fn finalized_directory_lives_at_eof() {
     writer
         .add_json_asset(ASSET_TYPE_METADATA, "metadata.json", b"{}")
         .unwrap();
-    writer
-        .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
-        .unwrap();
+    let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
     let buf = writer.finish().unwrap().into_inner();
 
     let reader = BendlReader::open(Cursor::new(buf.clone())).unwrap();
@@ -214,7 +218,7 @@ fn build_base_bundle() -> (Vec<u8>, (u64, u64)) {
         .add_json_asset(ASSET_TYPE_METADATA, "metadata.json", b"{\"version\":1}")
         .unwrap();
     let stream = b"STANDARD BEN FILE\x00\x01\x02\x03\x04\x05stream bytes";
-    writer.write_stream_bytes(stream, 3).unwrap();
+    let writer = write_stream_bytes_via_session(writer, stream, 3);
     let buf = writer.finish().unwrap().into_inner();
 
     let reader = BendlReader::open(Cursor::new(buf.clone())).unwrap();
@@ -327,9 +331,7 @@ fn append_rejects_duplicate_custom_name_without_touching_file() {
             AddAssetOptions::defaults(),
         )
         .unwrap();
-    writer
-        .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
-        .unwrap();
+    let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
     let bundle = writer.finish().unwrap().into_inner();
     let bundle_before = bundle.clone();
 
@@ -505,8 +507,8 @@ fn write_ben_stream_round_trips_through_assignment_reader() {
         vec![1, 1, 1, 1, 2, 2],
     ];
 
-    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    writer
+    let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    let writer = writer
         .write_ben_stream(BenVariant::MkvChain, |ctx| {
             for s in &samples {
                 ctx.write_assignment(s.clone())?;
@@ -545,8 +547,8 @@ fn write_xben_stream_round_trips_through_assignment_reader() {
         vec![1, 1, 2, 3, 4, 4],
     ];
 
-    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Xben).unwrap();
-    writer
+    let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Xben).unwrap();
+    let writer = writer
         .write_xben_stream(BenVariant::MkvChain, |ctx| {
             for s in &samples {
                 ctx.write_assignment(s.clone())?;
@@ -584,7 +586,7 @@ fn write_ben_stream_alongside_front_loaded_asset() {
     writer
         .add_json_asset(ASSET_TYPE_GRAPH, "graph.json", graph)
         .unwrap();
-    writer
+    let writer = writer
         .write_ben_stream(BenVariant::Standard, |ctx| {
             for s in &samples {
                 ctx.write_assignment(s.clone())?;
@@ -623,8 +625,8 @@ fn write_ben_stream_alongside_front_loaded_asset() {
 fn open_assignment_reader_rejects_mismatched_format() {
     use crate::BenVariant;
 
-    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    writer
+    let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    let writer = writer
         .write_ben_stream(BenVariant::Standard, |ctx| {
             ctx.write_assignment(vec![0, 1])?;
             Ok(())
@@ -658,60 +660,24 @@ fn fully_empty_bundle_finalizes_and_round_trips() {
 }
 
 #[test]
-fn begin_stream_twice_returns_wrong_state_error() {
-    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    {
-        let handle = match writer.begin_stream() {
-            Ok(h) => h,
-            Err(_) => panic!("first begin_stream must succeed"),
-        };
-        // Drop the handle without calling finish() — the writer is
-        // now stuck in the Streaming state.
-        drop(handle);
-    }
-    let err = writer
-        .begin_stream()
-        .err()
-        .expect("second begin_stream must fail");
-    assert!(matches!(err, BendlWriteError::WrongState { .. }));
-}
-
-#[test]
-fn finish_from_streaming_state_errors() {
-    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    match writer.begin_stream() {
-        Ok(handle) => drop(handle),
-        Err(_) => panic!("begin_stream must succeed"),
-    }
-    // Intentionally leave the writer in the Streaming state.
-    let err = writer.finish().unwrap_err();
-    assert!(matches!(
-        err,
-        BendlWriteError::WrongState {
-            found: "Streaming",
-            ..
-        }
-    ));
-}
-
-#[test]
-fn begin_stream_after_stream_written_returns_wrong_state() {
-    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    writer
-        .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
-        .unwrap();
-    // Writer is now in StreamWritten state; begin_stream must fail.
-    let err = writer
-        .begin_stream()
-        .err()
-        .expect("begin_stream after StreamWritten must fail");
-    assert!(matches!(
-        err,
-        BendlWriteError::WrongState {
+fn into_stream_session_after_stream_written_returns_wrong_state() {
+    // Regression fixture for the `into_stream_session` guard: a writer
+    // that has already finished one stream phase must reject a second
+    // attempt to enter the stream phase. Without this guard, a chained
+    // `into_stream_session → finish_into_writer → into_stream_session`
+    // would silently overwrite `header.stream_offset` and corrupt the
+    // bundle. This is the only runtime fixture for that guard.
+    let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
+    // Writer is now in StreamWritten state; into_stream_session must fail.
+    match writer.into_stream_session() {
+        Err(BendlWriteError::WrongState {
+            expected: "Assets",
             found: "StreamWritten",
-            ..
-        }
-    ));
+        }) => {}
+        Err(other) => panic!("expected WrongState, got {other:?}"),
+        Ok(_) => panic!("into_stream_session after StreamWritten must fail"),
+    }
 }
 
 #[test]
@@ -730,9 +696,7 @@ fn stress_many_custom_assets_round_trip() {
             )
             .unwrap();
     }
-    writer
-        .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
-        .unwrap();
+    let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
     let buf = writer.finish().unwrap().into_inner();
 
     let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
@@ -800,9 +764,7 @@ fn append_does_not_disturb_front_loaded_asset_bytes() {
     writer
         .add_json_asset(ASSET_TYPE_GRAPH, "graph.json", graph)
         .unwrap();
-    writer
-        .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
-        .unwrap();
+    let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
     let bundle = writer.finish().unwrap().into_inner();
 
     let mut reader = BendlReader::open(Cursor::new(bundle.clone())).unwrap();
@@ -868,9 +830,7 @@ fn writer_asset_with_checksum_round_trips_through_reader() {
             },
         )
         .unwrap();
-    writer
-        .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
-        .unwrap();
+    let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
     let buf = writer.finish().unwrap().into_inner();
 
     let reader = BendlReader::open(Cursor::new(buf)).unwrap();
@@ -881,12 +841,10 @@ fn writer_asset_with_checksum_round_trips_through_reader() {
 
 #[test]
 fn finished_writer_rejects_further_operations() {
-    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    writer
-        .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
-        .unwrap();
+    let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
     // `finish` consumes `self`, which is itself the protection — there
-    // is no way to call add_asset/begin_stream afterwards.
+    // is no way to call add_asset / into_stream_session afterwards.
     let buf = writer.finish().unwrap().into_inner();
     // The resulting buffer is a valid finalized bundle.
     let reader = BendlReader::open(Cursor::new(buf)).unwrap();
@@ -928,9 +886,7 @@ fn writer_rejects_add_json_asset_with_wrong_canonical_metadata_name() {
     writer
         .add_json_asset(ASSET_TYPE_METADATA, "metadata.json", b"{}")
         .unwrap();
-    writer
-        .write_stream_bytes(b"STANDARD BEN FILE\x00fake", 1)
-        .unwrap();
+    let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
     let buf = writer.finish().unwrap().into_inner();
     let reader = BendlReader::open(Cursor::new(buf)).unwrap();
     assert_eq!(reader.assets().len(), 1);
@@ -975,15 +931,16 @@ fn append_rejects_duplicate_name_across_existing_and_pending() {
 fn write_ben_stream_closure_error_short_circuits_finalize() {
     use crate::BenVariant;
 
-    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    let err = writer
-        .write_ben_stream(BenVariant::Standard, |_ctx| {
-            Err(io::Error::new(io::ErrorKind::Other, "boom"))
-        })
-        .unwrap_err();
-    match err {
-        BendlWriteError::Io(e) => assert_eq!(e.kind(), io::ErrorKind::Other),
-        other => panic!("expected Io(Other), got {other:?}"),
+    let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    // BendlWriter doesn't implement Debug, so destructure via match
+    // rather than `.unwrap_err()`.
+    let result = writer.write_ben_stream(BenVariant::Standard, |_ctx| {
+        Err(io::Error::new(io::ErrorKind::Other, "boom"))
+    });
+    match result {
+        Ok(_) => panic!("expected closure error to short-circuit"),
+        Err(BendlWriteError::Io(e)) => assert_eq!(e.kind(), io::ErrorKind::Other),
+        Err(other) => panic!("expected Io(Other), got {other:?}"),
     }
 }
 
@@ -1049,9 +1006,7 @@ fn randomized_round_trip_many_custom_assets() {
         // assignment-complete.
         let sample_count: i64 = rng.random_range(0..=20);
         let fake_stream = b"STANDARD BEN FILE\x00\x01\x02payload".to_vec();
-        writer
-            .write_stream_bytes(&fake_stream, sample_count)
-            .unwrap();
+        let writer = write_stream_bytes_via_session(writer, &fake_stream, sample_count);
         let buf = writer.finish().unwrap().into_inner();
 
         let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
@@ -1196,8 +1151,8 @@ fn write_ben_stream_json_value_and_sample_count() {
     use crate::BenVariant;
     use serde_json::json;
 
-    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    writer
+    let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    let writer = writer
         .write_ben_stream(BenVariant::Standard, |ctx| {
             assert_eq!(ctx.sample_count(), 0);
             ctx.write_json_value(json!({"assignment": [1, 2, 3], "sample": 1}))?;
@@ -1222,8 +1177,8 @@ fn write_xben_stream_json_value() {
     use crate::BenVariant;
     use serde_json::json;
 
-    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Xben).unwrap();
-    writer
+    let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Xben).unwrap();
+    let writer = writer
         .write_xben_stream(BenVariant::Standard, |ctx| {
             ctx.write_json_value(json!({"assignment": [10, 20], "sample": 1}))?;
             ctx.write_json_value(json!({"assignment": [30, 40], "sample": 2}))?;
@@ -1240,13 +1195,16 @@ fn write_xben_stream_json_value() {
     assert_eq!(decoded, vec![vec![10, 20], vec![30, 40]]);
 }
 
-// ── BendlStreamHandle: flush ─────────────────────────────────────
+// ── BendlStreamSession: flush ────────────────────────────────────
 
 #[test]
-fn stream_handle_flush_succeeds() {
-    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    let mut handle = writer.begin_stream().unwrap();
-    handle.flush().unwrap();
+fn stream_session_flush_succeeds() {
+    let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    let mut session = writer.into_stream_session().unwrap();
+    session.flush().unwrap();
+    // Discard the session — it would warn on Drop, but the test runner
+    // does not assert on log output, so this is fine for unit tests.
+    let _ = session.finish_into_writer(0);
 }
 
 // ── BendlAppender: checksum flag ────────────────────────────────
@@ -1298,8 +1256,8 @@ fn appender_rejects_bundle_with_trailing_directory_bytes() {
 fn finish_from_finished_state_errors() {
     use crate::BenVariant;
 
-    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    writer
+    let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    let writer = writer
         .write_ben_stream(BenVariant::Standard, |ctx| {
             ctx.write_assignment(vec![1, 2])?;
             Ok(())
@@ -1310,4 +1268,181 @@ fn finish_from_finished_state_errors() {
     // Verify the result is usable
     let reader = BendlReader::open(Cursor::new(buf.into_inner())).unwrap();
     assert!(reader.is_finalized());
+}
+
+// ── Plan verification tests ──────────────────────────────────────
+
+/// Verification #4 from the plan: bundle byte-equivalence between the
+/// closure-based `write_ben_stream` and the explicit
+/// `into_stream_session` → `finish_into_writer` chain.
+#[test]
+fn bundle_byte_equivalent_via_closure_and_explicit_session_for_ben() {
+    use crate::io::writer::BenStreamWriter;
+    use crate::BenVariant;
+
+    let samples: Vec<Vec<u16>> = vec![
+        vec![0, 0, 1, 1, 2, 2],
+        vec![0, 1, 1, 1, 2, 2],
+        vec![0, 1, 1, 1, 2, 2],
+        vec![1, 1, 1, 1, 2, 2],
+    ];
+
+    // Path A: closure-based.
+    let writer_a = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    let writer_a = writer_a
+        .write_ben_stream(BenVariant::MkvChain, |ctx| {
+            for s in &samples {
+                ctx.write_assignment(s.clone())?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    let buf_a = writer_a.finish().unwrap().into_inner();
+
+    // Path B: explicit session.
+    let writer_b = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    let mut session = writer_b.into_stream_session().unwrap();
+    let mut ben = BenStreamWriter::for_ben(&mut session, BenVariant::MkvChain).unwrap();
+    for s in &samples {
+        ben.write_assignment(s.clone()).unwrap();
+    }
+    ben.finish().unwrap();
+    drop(ben);
+    let writer_b = session.finish_into_writer(samples.len() as i64);
+    let buf_b = writer_b.finish().unwrap().into_inner();
+
+    assert_eq!(
+        buf_a, buf_b,
+        "closure path and explicit session path must produce identical bundle bytes"
+    );
+}
+
+/// Verification #7: dropping a `BendlStreamSession` mid-flight must
+/// leave the bundle on disk unfinalized (no directory written, header
+/// `finalized != FINALIZED_YES`).
+#[test]
+fn bundle_streaming_session_drop_leaves_unfinalized() {
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        let writer = BendlWriter::new(Cursor::new(&mut buf), AssignmentFormat::Ben).unwrap();
+        let mut session = writer.into_stream_session().unwrap();
+        session.write_all(b"STANDARD BEN FILE\x00partial").unwrap();
+        // Drop without finish_into_writer.
+        drop(session);
+    }
+
+    // The bundle on disk has a provisional header, no directory.
+    let header = BendlHeader::read_from(&mut Cursor::new(&buf)).unwrap();
+    assert_eq!(
+        header.finalized, FINALIZED_NO,
+        "dropped session must leave the bundle unfinalized"
+    );
+}
+
+/// Verification #8: bundle XBEN compression gate. Two paths should
+/// produce identical bundle bytes — the closure helper
+/// `write_xben_stream`, and an explicit session that wraps the bundle
+/// preset xz encoder around `for_xben_with_encoder`.
+#[test]
+fn bundle_xben_byte_equivalent_closure_and_explicit_encoder() {
+    use crate::io::bundle::format::DEFAULT_XZ_PRESET;
+    use crate::io::writer::BenStreamWriter;
+    use crate::BenVariant;
+    use xz2::write::XzEncoder;
+
+    let samples: Vec<Vec<u16>> = vec![
+        vec![0, 1, 2, 3, 4, 5],
+        vec![1, 1, 2, 3, 4, 5],
+        vec![1, 1, 2, 3, 4, 4],
+    ];
+
+    // Path A: closure.
+    let writer_a = BendlWriter::new(make_buffer(), AssignmentFormat::Xben).unwrap();
+    let writer_a = writer_a
+        .write_xben_stream(BenVariant::MkvChain, |ctx| {
+            for s in &samples {
+                ctx.write_assignment(s.clone())?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    let buf_a = writer_a.finish().unwrap().into_inner();
+
+    // Path B: explicit session + XzEncoder built with the bundle preset.
+    let writer_b = BendlWriter::new(make_buffer(), AssignmentFormat::Xben).unwrap();
+    let mut session = writer_b.into_stream_session().unwrap();
+    {
+        let encoder = XzEncoder::new(&mut session, DEFAULT_XZ_PRESET);
+        let mut xben =
+            BenStreamWriter::for_xben_with_encoder(encoder, BenVariant::MkvChain, None).unwrap();
+        for s in &samples {
+            xben.write_assignment(s.clone()).unwrap();
+        }
+        xben.finish().unwrap();
+    }
+    let writer_b = session.finish_into_writer(samples.len() as i64);
+    let buf_b = writer_b.finish().unwrap().into_inner();
+
+    assert_eq!(
+        buf_a, buf_b,
+        "XBEN closure path and explicit-encoder path must produce identical bundle bytes"
+    );
+}
+
+/// Verification #9: `BendlStreamSession::write` must increment its
+/// internal byte counter by the returned write count, not by the
+/// requested buffer length, so partial writes are accounted correctly
+/// and the finalized header's `stream_len` matches the actual byte
+/// count of the stream region.
+#[test]
+fn stream_session_partial_writes_account_returned_bytes() {
+    use std::io::{self, Cursor as IoCursor, SeekFrom};
+
+    /// Inner writer that always reports `cap` bytes written per call,
+    /// regardless of the buffer length, but writes the matching prefix.
+    struct ShortWriter {
+        cursor: IoCursor<Vec<u8>>,
+        cap: usize,
+    }
+
+    impl Write for ShortWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            let n = buf.len().min(self.cap);
+            self.cursor.write_all(&buf[..n])?;
+            Ok(n)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.cursor.flush()
+        }
+    }
+
+    impl Seek for ShortWriter {
+        fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+            self.cursor.seek(pos)
+        }
+    }
+
+    let inner = ShortWriter {
+        cursor: IoCursor::new(Vec::new()),
+        cap: 3,
+    };
+    let writer = BendlWriter::new(inner, AssignmentFormat::Ben).unwrap();
+    let mut session = writer.into_stream_session().unwrap();
+
+    // Drive a few partial writes; total written should equal the sum
+    // of the returned `n` from each call.
+    let mut total_returned: u64 = 0;
+    for _ in 0..5 {
+        let n = session.write(b"hello world").unwrap();
+        total_returned += n as u64;
+    }
+    assert_eq!(session.bytes_written(), total_returned);
+
+    // Finalize and confirm `stream_len` in the patched header agrees.
+    let writer = session.finish_into_writer(0);
+    let final_inner = writer.finish().unwrap();
+    let mut bundle_buf = final_inner.cursor.into_inner();
+    let header = BendlHeader::read_from(&mut Cursor::new(&mut bundle_buf)).unwrap();
+    assert_eq!(header.stream_len, total_returned);
 }

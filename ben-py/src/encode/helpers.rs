@@ -1,17 +1,7 @@
-use binary_ensemble::io::bundle::format::DEFAULT_XZ_PRESET;
 use pyo3::exceptions::{PyException, PyIOError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
-use std::io::{self, Write};
 use std::path::PathBuf;
-use xz2::write::XzEncoder;
-
-/// xz-compress a byte slice with the bundle's default preset.
-pub(super) fn xz_compress(bytes: &[u8]) -> io::Result<Vec<u8>> {
-    let mut encoder = XzEncoder::new(Vec::new(), DEFAULT_XZ_PRESET);
-    encoder.write_all(bytes)?;
-    encoder.finish()
-}
 
 /// Normalize a user-supplied graph argument into raw UTF-8 JSON bytes.
 ///

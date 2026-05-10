@@ -58,19 +58,17 @@ pub(super) fn run_create(args: CreateArgs) -> Result<(), String> {
 
     // Stream phase: copy bytes from the input file directly into the
     // bundle's stream region. This preserves the exact BEN/XBEN bytes.
+    let mut session = writer
+        .into_stream_session()
+        .map_err(|e| format!("failed to open stream region: {e}"))?;
     {
-        let mut handle = writer
-            .begin_stream()
-            .map_err(|e| format!("failed to open stream region: {e}"))?;
         let mut input = BufReader::new(
             File::open(&args.input).map_err(|e| format!("failed to open {:?}: {e}", args.input))?,
         );
-        io::copy(&mut input, &mut handle)
+        io::copy(&mut input, &mut session)
             .map_err(|e| format!("failed to copy assignment stream: {e}"))?;
-        handle
-            .finish(sample_count)
-            .map_err(|e| format!("failed to close stream region: {e}"))?;
     }
+    let writer = session.finish_into_writer(sample_count);
 
     writer
         .finish()

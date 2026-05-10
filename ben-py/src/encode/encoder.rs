@@ -1,23 +1,52 @@
-use super::helpers::{parse_graph_input, xz_compress};
-use super::types::{OutputMode, SharedFileSlot, SharedFileWriter};
+use super::helpers::parse_graph_input;
 use crate::common::{open_output, parse_variant};
-use binary_ensemble::io::bundle::format::{
-    encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlHeader, ASSET_FLAG_JSON,
-    ASSET_FLAG_XZ, ASSET_TYPE_GRAPH, STANDARDIZED_NAME_GRAPH, FINALIZED_YES, HEADER_SIZE,
+use binary_ensemble::io::bundle::format::{AssignmentFormat, KnownAssetKind};
+use binary_ensemble::io::bundle::{
+    AddAssetOptions, BendlStreamSession, BendlWriteError, BendlWriter,
 };
 use binary_ensemble::io::writer::BenStreamWriter;
 use pyo3::exceptions::{PyException, PyIOError, PyValueError};
 use pyo3::prelude::*;
-use std::cell::RefCell;
-use std::io::{Seek, SeekFrom, Write};
+use std::fs::File;
+use std::io::{self, BufWriter, Write};
 use std::path::PathBuf;
-use std::rc::Rc;
+
+/// Per-call encoder state. The bundle path threads ownership of the
+/// underlying file through `BendlWriter` → `BendlStreamSession` →
+/// `BenStreamWriter`, so when `close()` runs we walk the chain back
+/// from `BenStreamWriter::finish_into_inner` (returning the session)
+/// to `BendlStreamSession::finish_into_writer` (returning the bundle
+/// writer) to `BendlWriter::finish` (returning the buffered file).
+enum EncoderState {
+    /// Plain `.ben` file path: writes directly to a buffered file with
+    /// no bundle framing.
+    BenOnly(BenStreamWriter<BufWriter<File>>),
+    /// `.bendl` bundle path: the session owns the buffered file and the
+    /// `BenStreamWriter` writes through it. `sample_count` is tracked
+    /// alongside so it can be plumbed into `finish_into_writer` at
+    /// `close()` time.
+    BundleStreaming {
+        writer: BenStreamWriter<BendlStreamSession<BufWriter<File>>>,
+        sample_count: i64,
+    },
+}
 
 #[pyclass(name = "BenEncoder", unsendable)]
 pub struct PyBenEncoder {
-    file: Option<SharedFileSlot>,
-    encoder: Option<BenStreamWriter<SharedFileWriter>>,
-    mode: OutputMode,
+    state: Option<EncoderState>,
+}
+
+impl PyBenEncoder {
+    fn map_bundle_err(err: BendlWriteError) -> PyErr {
+        match err {
+            BendlWriteError::Io(e) => PyIOError::new_err(format!("{e}")),
+            other => PyException::new_err(format!("{other}")),
+        }
+    }
+
+    fn map_io_err(err: io::Error) -> PyErr {
+        PyIOError::new_err(format!("{err}"))
+    }
 }
 
 #[pymethods]
@@ -69,88 +98,62 @@ impl PyBenEncoder {
         }
 
         let buf = open_output(&file_path, overwrite)?;
-        let file: SharedFileSlot = Rc::new(RefCell::new(buf));
 
-        let mode = if ben_file_only {
-            OutputMode::BenOnly
+        let state = if ben_file_only {
+            EncoderState::BenOnly(
+                BenStreamWriter::for_ben(buf, ben_var).map_err(Self::map_io_err)?,
+            )
         } else {
-            let graph_bytes = match graph {
-                Some(obj) => Some(parse_graph_input(py, &obj)?),
-                None => None,
-            };
-
-            // Write a provisional bundle header and any graph asset before
-            // the assignment stream begins.
-            let mut header = BendlHeader::provisional(AssignmentFormat::Ben, HEADER_SIZE as u64);
-            let mut entries: Vec<BendlDirectoryEntry> = Vec::new();
-            {
-                let mut slot = file.borrow_mut();
-                slot.seek(SeekFrom::Start(0))
-                    .map_err(|e| PyIOError::new_err(format!("Failed to seek output: {e}")))?;
-                header.write_to(&mut *slot).map_err(|e| {
-                    PyIOError::new_err(format!("Failed to write bundle header: {e}"))
-                })?;
-
-                if let Some(bytes) = graph_bytes {
-                    let compressed = xz_compress(&bytes).map_err(|e| {
-                        PyIOError::new_err(format!("Failed to xz-compress graph asset: {e}"))
-                    })?;
-                    let payload_offset = slot.stream_position().map_err(|e| {
-                        PyIOError::new_err(format!("Failed to query output position: {e}"))
-                    })?;
-                    slot.write_all(&compressed).map_err(|e| {
-                        PyIOError::new_err(format!("Failed to write graph asset payload: {e}"))
-                    })?;
-                    entries.push(BendlDirectoryEntry {
-                        asset_type: ASSET_TYPE_GRAPH,
-                        asset_flags: ASSET_FLAG_JSON | ASSET_FLAG_XZ,
-                        name: STANDARDIZED_NAME_GRAPH.to_string(),
-                        payload_offset,
-                        payload_len: compressed.len() as u64,
-                        checksum: None,
-                    });
-                }
+            // Bundle path. Add the optional graph asset before opening
+            // the stream session — the bundle writer auto-compresses
+            // graphs (default_compresses_by_type), so we hand it raw
+            // JSON bytes and let it apply the XZ flag.
+            let mut writer =
+                BendlWriter::new(buf, AssignmentFormat::Ben).map_err(Self::map_io_err)?;
+            if let Some(graph_obj) = graph {
+                let raw = parse_graph_input(py, &graph_obj)?;
+                writer
+                    .add_known_asset(
+                        KnownAssetKind::Graph,
+                        &raw,
+                        AddAssetOptions::defaults().json(),
+                    )
+                    .map_err(Self::map_bundle_err)?;
             }
-
-            let stream_start = file
-                .borrow_mut()
-                .stream_position()
-                .map_err(|e| PyIOError::new_err(format!("Failed to query output position: {e}")))?;
-            header.stream_offset = stream_start;
-
-            OutputMode::Bundle {
-                header,
-                entries,
-                stream_start,
+            let session = writer
+                .into_stream_session()
+                .map_err(Self::map_bundle_err)?;
+            let writer = BenStreamWriter::for_ben(session, ben_var).map_err(Self::map_io_err)?;
+            EncoderState::BundleStreaming {
+                writer,
                 sample_count: 0,
             }
         };
 
-        // Construct the BenStreamWriter on a clone of the shared slot.
-        // This writes the BEN banner as its first action, which in the
-        // bundle case becomes the first byte of the stream region.
-        let encoder = BenStreamWriter::for_ben(SharedFileWriter(Rc::clone(&file)), ben_var)
-            .map_err(|e| PyIOError::new_err(format!("Failed to create encoder: {e}")))?;
-
-        Ok(PyBenEncoder {
-            file: Some(file),
-            encoder: Some(encoder),
-            mode,
-        })
+        Ok(Self { state: Some(state) })
     }
 
     /// Encode a single assignment and append it to the output stream.
     #[pyo3(signature = (assignment))]
     #[pyo3(text_signature = "(assignment)")]
     fn write(&mut self, assignment: Vec<u16>) -> PyResult<()> {
-        let enc = self
-            .encoder
+        let state = self
+            .state
             .as_mut()
             .ok_or_else(|| PyIOError::new_err("Encoder has already been closed."))?;
-        enc.write_assignment(assignment)
-            .map_err(|e| PyIOError::new_err(format!("Failed to encode assignment: {e}")))?;
-        if let OutputMode::Bundle { sample_count, .. } = &mut self.mode {
-            *sample_count += 1;
+        match state {
+            EncoderState::BenOnly(w) => {
+                w.write_assignment(assignment).map_err(Self::map_io_err)?;
+            }
+            EncoderState::BundleStreaming {
+                writer,
+                sample_count,
+            } => {
+                writer
+                    .write_assignment(assignment)
+                    .map_err(Self::map_io_err)?;
+                *sample_count += 1;
+            }
         }
         Ok(())
     }
@@ -158,61 +161,21 @@ impl PyBenEncoder {
     /// Flush the assignment stream and, for bundle output, patch the
     /// header and write the trailing directory. Idempotent.
     fn close(&mut self) -> PyResult<()> {
-        // Finish the assignment stream and drop the inner encoder so its
-        // Rc handle to the shared file slot is released.
-        if let Some(mut enc) = self.encoder.take() {
-            enc.finish().map_err(|e| {
-                PyIOError::new_err(format!("Failed to flush encoder when closing: {e}"))
-            })?;
-            drop(enc);
-        }
-
-        let file = match self.file.take() {
-            Some(f) => f,
-            None => return Ok(()),
+        let Some(state) = self.state.take() else {
+            return Ok(());
         };
-
-        match &mut self.mode {
-            OutputMode::BenOnly => {
-                file.borrow_mut()
-                    .flush()
-                    .map_err(|e| PyIOError::new_err(format!("Failed to flush output: {e}")))?;
+        match state {
+            EncoderState::BenOnly(writer) => {
+                let mut buf = writer.finish_into_inner().map_err(Self::map_io_err)?;
+                buf.flush().map_err(Self::map_io_err)?;
             }
-            OutputMode::Bundle {
-                header,
-                entries,
-                stream_start,
+            EncoderState::BundleStreaming {
+                writer,
                 sample_count,
             } => {
-                let mut slot = file.borrow_mut();
-                let stream_end = slot.stream_position().map_err(|e| {
-                    PyIOError::new_err(format!("Failed to query output position: {e}"))
-                })?;
-                let stream_len = stream_end.saturating_sub(*stream_start);
-
-                let directory_offset = stream_end;
-                let directory_bytes = encode_directory(entries).map_err(|e| {
-                    PyException::new_err(format!("Failed to encode bundle directory: {e}"))
-                })?;
-                slot.write_all(&directory_bytes).map_err(|e| {
-                    PyIOError::new_err(format!("Failed to write bundle directory: {e}"))
-                })?;
-                let directory_len = directory_bytes.len() as u64;
-
-                header.stream_offset = *stream_start;
-                header.stream_len = stream_len;
-                header.directory_offset = directory_offset;
-                header.directory_len = directory_len;
-                header.sample_count = *sample_count;
-                header.finalized = FINALIZED_YES;
-
-                slot.seek(SeekFrom::Start(0))
-                    .map_err(|e| PyIOError::new_err(format!("Failed to seek output: {e}")))?;
-                header.write_to(&mut *slot).map_err(|e| {
-                    PyIOError::new_err(format!("Failed to patch bundle header: {e}"))
-                })?;
-                slot.flush()
-                    .map_err(|e| PyIOError::new_err(format!("Failed to flush output: {e}")))?;
+                let session = writer.finish_into_inner().map_err(Self::map_io_err)?;
+                let bundle = session.finish_into_writer(sample_count);
+                bundle.finish().map_err(Self::map_bundle_err)?;
             }
         }
         Ok(())
