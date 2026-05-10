@@ -18,7 +18,7 @@ use binary_ensemble::io::bundle::writer::{
 };
 use binary_ensemble::io::bundle::BendlReader;
 use binary_ensemble::io::reader::BenStreamReader;
-use binary_ensemble::io::writer::AssignmentWriter;
+use binary_ensemble::io::writer::BenStreamWriter;
 use binary_ensemble::ops::relabel::{relabel_ben_file, RelabelOptions};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -213,7 +213,7 @@ fn standard_rle_splits_assignment_run_longer_than_u16_max() {
     let assignment = vec![7u16; u16::MAX as usize + 1];
     let mut ben = Vec::new();
     {
-        let mut writer = AssignmentWriter::new(&mut ben, BenVariant::Standard).unwrap();
+        let mut writer = BenStreamWriter::for_ben(&mut ben, BenVariant::Standard).unwrap();
         writer.write_assignment(assignment.clone()).unwrap();
         writer.finish().unwrap();
     }
@@ -227,7 +227,7 @@ fn mkvchain_writer_splits_repetition_count_longer_than_u16_max() {
     let sample = vec![1u16, 2, 2, 1];
     let mut ben = Vec::new();
     {
-        let mut writer = AssignmentWriter::new(&mut ben, BenVariant::MkvChain).unwrap();
+        let mut writer = BenStreamWriter::for_ben(&mut ben, BenVariant::MkvChain).unwrap();
         for _ in 0..(u16::MAX as usize + 1) {
             writer.write_assignment(sample.clone()).unwrap();
         }
@@ -247,7 +247,7 @@ fn twodelta_writer_splits_repetition_count_longer_than_u16_max() {
     let sample = vec![1u16, 1, 2, 2];
     let mut ben = Vec::new();
     {
-        let mut writer = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
+        let mut writer = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
         for _ in 0..(u16::MAX as usize + 1) {
             writer.write_assignment(sample.clone()).unwrap();
         }
@@ -377,7 +377,7 @@ fn xz_compress_propagates_input_reader_errors() {
 fn relabel_map_out_of_range_old_indices_error_cleanly() {
     let mut ben = Vec::new();
     {
-        let mut writer = AssignmentWriter::new(&mut ben, BenVariant::Standard).unwrap();
+        let mut writer = BenStreamWriter::for_ben(&mut ben, BenVariant::Standard).unwrap();
         writer.write_assignment(vec![10, 20]).unwrap();
         writer.finish().unwrap();
     }
@@ -510,7 +510,7 @@ fn zero_count_frames_are_rejected() {
 fn seeded_malformed_ben_bytes_do_not_panic() {
     let mut valid_standard = Vec::new();
     {
-        let mut writer = AssignmentWriter::new(&mut valid_standard, BenVariant::Standard).unwrap();
+        let mut writer = BenStreamWriter::for_ben(&mut valid_standard, BenVariant::Standard).unwrap();
         writer.write_assignment(vec![1, 1, 2, 3]).unwrap();
         writer.write_assignment(vec![3, 3, 2, 1]).unwrap();
         writer.finish().unwrap();
@@ -518,7 +518,7 @@ fn seeded_malformed_ben_bytes_do_not_panic() {
 
     let mut valid_mkv = Vec::new();
     {
-        let mut writer = AssignmentWriter::new(&mut valid_mkv, BenVariant::MkvChain).unwrap();
+        let mut writer = BenStreamWriter::for_ben(&mut valid_mkv, BenVariant::MkvChain).unwrap();
         writer.write_assignment(vec![4, 4, 5]).unwrap();
         writer.write_assignment(vec![4, 4, 5]).unwrap();
         writer.write_assignment(vec![5, 4, 4]).unwrap();
@@ -527,7 +527,7 @@ fn seeded_malformed_ben_bytes_do_not_panic() {
 
     let mut valid_twodelta = Vec::new();
     {
-        let mut writer = AssignmentWriter::new(&mut valid_twodelta, BenVariant::TwoDelta).unwrap();
+        let mut writer = BenStreamWriter::for_ben(&mut valid_twodelta, BenVariant::TwoDelta).unwrap();
         writer.write_assignment(vec![1, 1, 2, 2]).unwrap();
         writer.write_assignment(vec![1, 2, 1, 2]).unwrap();
         writer.write_assignment(vec![2, 2, 1, 1]).unwrap();

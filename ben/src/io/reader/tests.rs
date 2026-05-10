@@ -2,7 +2,7 @@ use crate::codec::encode::encode_jsonl_to_xben;
 use crate::io::reader::errors::DecoderInitError;
 use crate::io::reader::subsample::{DecodeFrame, Selection, SubsampleFrameDecoder};
 use crate::io::reader::{BenStreamFrameReader, BenStreamReader, BenWireFormat};
-use crate::io::writer::XZAssignmentWriter;
+use crate::io::writer::BenStreamWriter;
 use crate::BenVariant;
 use std::io::{self, Cursor, Write};
 use xz2::write::XzEncoder;
@@ -14,12 +14,12 @@ fn make_xben(jsonl: &str, variant: BenVariant) -> Vec<u8> {
     xben
 }
 
-/// Build a minimal XBEN stream using XZAssignmentWriter directly.
+/// Build a minimal XBEN stream using BenStreamWriter directly.
 fn make_xben_from_assignments(assignments: &[Vec<u16>], variant: BenVariant) -> Vec<u8> {
     let mut xben = Vec::new();
     {
         let encoder = XzEncoder::new(&mut xben, 1);
-        let mut writer = XZAssignmentWriter::new(encoder, variant).unwrap();
+        let mut writer = BenStreamWriter::for_xben_with_encoder(encoder, variant, None).unwrap();
         for a in assignments {
             writer.write_assignment(a.clone()).unwrap();
         }
@@ -753,7 +753,7 @@ fn xz_twodelta_large_assignment_roundtrip() {
 
 #[test]
 fn xz_twodelta_chunk_boundary_roundtrip() {
-    use crate::io::writer::XZAssignmentWriter;
+    use crate::io::writer::BenStreamWriter;
     use xz2::write::XzEncoder;
 
     let anchor = vec![1u16, 2, 1, 2];
@@ -762,14 +762,15 @@ fn xz_twodelta_chunk_boundary_roundtrip() {
     let mut xben = Vec::new();
     {
         let encoder = XzEncoder::new(&mut xben, 1);
-        let mut writer = XZAssignmentWriter::new(encoder, BenVariant::TwoDelta)
-            .unwrap()
-            .with_chunk_size(3);
+        let mut writer =
+            BenStreamWriter::for_xben_with_encoder(encoder, BenVariant::TwoDelta, Some(3))
+                .unwrap();
         writer.write_assignment(anchor.clone()).unwrap();
         for _ in 0..10 {
             writer.write_assignment(delta.clone()).unwrap();
             writer.write_assignment(anchor.clone()).unwrap();
         }
+        writer.finish().unwrap();
     }
 
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
@@ -787,7 +788,7 @@ fn xz_twodelta_chunk_boundary_roundtrip() {
 
 #[test]
 fn xz_twodelta_repeated_delta_in_chunk_roundtrip() {
-    use crate::io::writer::XZAssignmentWriter;
+    use crate::io::writer::BenStreamWriter;
     use xz2::write::XzEncoder;
 
     let anchor = vec![1u16, 1, 2, 2];
@@ -796,13 +797,14 @@ fn xz_twodelta_repeated_delta_in_chunk_roundtrip() {
     let mut xben = Vec::new();
     {
         let encoder = XzEncoder::new(&mut xben, 1);
-        let mut writer = XZAssignmentWriter::new(encoder, BenVariant::TwoDelta)
-            .unwrap()
-            .with_chunk_size(100);
+        let mut writer =
+            BenStreamWriter::for_xben_with_encoder(encoder, BenVariant::TwoDelta, Some(100))
+                .unwrap();
         writer.write_assignment(anchor.clone()).unwrap();
         writer.write_assignment(delta.clone()).unwrap();
         writer.write_assignment(delta.clone()).unwrap();
         writer.write_assignment(delta.clone()).unwrap();
+        writer.finish().unwrap();
     }
 
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
@@ -821,7 +823,7 @@ fn xz_twodelta_repeated_delta_in_chunk_roundtrip() {
 fn translate_ben_twodelta_to_xben_roundtrip() {
     use crate::codec::encode::encode_ben_to_xben;
     use crate::codec::decode::decode_xben_to_jsonl;
-    use crate::io::writer::AssignmentWriter;
+    use crate::io::writer::BenStreamWriter;
     use std::io::BufReader;
 
     let a0 = vec![1u16, 2, 1, 2];
@@ -831,7 +833,7 @@ fn translate_ben_twodelta_to_xben_roundtrip() {
 
     let mut ben = Vec::new();
     {
-        let mut w = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
+        let mut w = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
         for a in &assignments {
             w.write_assignment(a.clone()).unwrap();
         }
@@ -862,7 +864,7 @@ fn translate_ben_twodelta_to_xben_roundtrip() {
 #[test]
 fn translate_ben_twodelta_to_xben_with_repetitions() {
     use crate::codec::encode::encode_ben_to_xben;
-    use crate::io::writer::AssignmentWriter;
+    use crate::io::writer::BenStreamWriter;
     use std::io::BufReader;
 
     let anchor = vec![1u16, 2, 1, 2];
@@ -877,7 +879,7 @@ fn translate_ben_twodelta_to_xben_with_repetitions() {
 
     let mut ben = Vec::new();
     {
-        let mut w = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
+        let mut w = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
         for a in &assignments {
             w.write_assignment(a.clone()).unwrap();
         }
@@ -895,7 +897,7 @@ fn translate_ben_twodelta_to_xben_with_repetitions() {
 #[test]
 fn translate_ben_twodelta_to_xben_many_deltas() {
     use crate::codec::encode::encode_ben_to_xben;
-    use crate::io::writer::AssignmentWriter;
+    use crate::io::writer::BenStreamWriter;
     use std::io::BufReader;
 
     let a = vec![1u16, 1, 2, 2];
@@ -906,7 +908,7 @@ fn translate_ben_twodelta_to_xben_many_deltas() {
 
     let mut ben = Vec::new();
     {
-        let mut w = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
+        let mut w = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
         for a in &assignments {
             w.write_assignment(a.clone()).unwrap();
         }
@@ -1011,13 +1013,13 @@ fn assignment_reader_mkv_roundtrip() {
 #[test]
 fn assignment_reader_twodelta_roundtrip() {
     use crate::io::reader::BenStreamReader;
-    use crate::io::writer::AssignmentWriter;
+    use crate::io::writer::BenStreamWriter;
 
     let assignments = vec![vec![1u16, 1, 2, 2], vec![2, 1, 2, 2], vec![2, 2, 2, 2]];
 
     let mut ben = Vec::new();
     {
-        let mut writer = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
+        let mut writer = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
         for a in &assignments {
             writer.write_assignment(a.clone()).unwrap();
         }
@@ -1584,12 +1586,12 @@ fn xz_reader_write_all_jsonl_standard_roundtrip() {
 #[test]
 fn raw_frame_iter_propagates_twodelta_decode_error() {
     use crate::io::reader::BenStreamReader;
-    use crate::io::writer::AssignmentWriter;
+    use crate::io::writer::BenStreamWriter;
 
     // Build a minimal TwoDelta BEN file with two samples.
     let mut ben: Vec<u8> = Vec::new();
     {
-        let mut writer = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
+        let mut writer = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
         writer.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
         writer.write_assignment(vec![2u16, 1, 2, 1]).unwrap();
     }

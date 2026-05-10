@@ -4,7 +4,7 @@ use crate::codec::decode::{
 };
 use crate::codec::encode::{encode_ben_to_xben, encode_twodelta_frame};
 use crate::codec::frames::BenEncodeFrame;
-use crate::io::writer::AssignmentWriter;
+use crate::io::writer::BenStreamWriter;
 use crate::util::rle::rle_to_vec;
 use crate::BenVariant;
 use serde_json::{json, Value};
@@ -14,7 +14,7 @@ use std::io::BufReader;
 fn make_twodelta_ben(assignments: &[Vec<u16>]) -> Vec<u8> {
     let mut out = Vec::new();
     {
-        let mut w = AssignmentWriter::new(&mut out, BenVariant::TwoDelta).unwrap();
+        let mut w = BenStreamWriter::for_ben(&mut out, BenVariant::TwoDelta).unwrap();
         for a in assignments {
             w.write_assignment(a.clone()).unwrap();
         }

@@ -23,6 +23,5 @@ mod tests;
 
 pub use reader::{BendlReader, BundleAssignmentReaderError, BundleValidationError};
 pub use writer::{
-    AddAssetOptions, BendlStreamHandle, BendlWriteError, BendlWriter, BundleAssignmentSink,
-    BundleAssignmentStreamCtx,
+    AddAssetOptions, BendlStreamHandle, BendlWriteError, BendlWriter, BundleAssignmentStreamCtx,
 };

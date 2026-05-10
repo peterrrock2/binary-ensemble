@@ -8,7 +8,7 @@ use binary_ensemble::codec::decode::decode_ben_to_jsonl;
 use binary_ensemble::codec::encode::encode_jsonl_to_ben;
 use binary_ensemble::format::banners::{MKVCHAIN_BEN_BANNER, TWODELTA_BEN_BANNER};
 use binary_ensemble::io::reader::{BenStreamFrameReader, BenStreamReader};
-use binary_ensemble::io::writer::AssignmentWriter;
+use binary_ensemble::io::writer::BenStreamWriter;
 use binary_ensemble::BenVariant;
 
 use std::io::{self, Cursor};
@@ -606,11 +606,11 @@ mod mkvchain {
 mod twodelta {
     use super::*;
 
-    /// Encode via `AssignmentWriter` so we control the exact frame layout.
+    /// Encode via `BenStreamWriter` so we control the exact frame layout.
     fn encode_twodelta(assignments: &[Vec<u16>]) -> Vec<u8> {
         let mut ben = Vec::new();
         {
-            let mut writer = AssignmentWriter::new(&mut ben, BenVariant::TwoDelta).unwrap();
+            let mut writer = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
             for a in assignments {
                 writer.write_assignment(a.clone()).unwrap();
             }

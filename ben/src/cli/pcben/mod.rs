@@ -1,6 +1,6 @@
 use crate::cli::common::{check_overwrite, set_quiet, set_verbose, CliError, CliResult};
 use crate::io::reader::BenStreamReader;
-use crate::io::writer::{AssignmentWriter, XZAssignmentWriter};
+use crate::io::writer::BenStreamWriter;
 use crate::BenVariant;
 use clap::{Parser, ValueEnum};
 use pipe::pipe;
@@ -227,7 +227,7 @@ fn render_zero_based_assignment_line(assignment: &[u16], output: &mut String) {
 
 /// Read zero-based assignment vectors and encode them as BEN.
 fn assignment_encode_ben<R: Read + BufRead, W: Write>(reader: R, writer: W) -> io::Result<()> {
-    let mut ben_writer = AssignmentWriter::new(writer, BenVariant::MkvChain)?;
+    let mut ben_writer = BenStreamWriter::for_ben(writer, BenVariant::MkvChain)?;
 
     for line in reader.lines() {
         let assignment: Vec<u16> = serde_json::from_str::<Vec<u16>>(&line.unwrap())
@@ -237,13 +237,15 @@ fn assignment_encode_ben<R: Read + BufRead, W: Write>(reader: R, writer: W) -> i
             .collect();
         ben_writer.write_assignment(assignment)?;
     }
+    ben_writer.finish()?;
     Ok(())
 }
 
 /// Read zero-based assignment vectors and encode them as XBEN.
 fn assignment_encode_xben<R: Read + BufRead, W: Write>(reader: R, writer: W) -> io::Result<()> {
     let encoder = XzEncoder::new(writer, 9);
-    let mut xben_writer = XZAssignmentWriter::new(encoder, BenVariant::MkvChain)?;
+    let mut xben_writer =
+        BenStreamWriter::for_xben_with_encoder(encoder, BenVariant::MkvChain, None)?;
 
     for line in reader.lines() {
         let assignment: Vec<u16> = serde_json::from_str::<Vec<u16>>(&line.unwrap())
@@ -253,6 +255,7 @@ fn assignment_encode_xben<R: Read + BufRead, W: Write>(reader: R, writer: W) -> 
             .collect();
         xben_writer.write_json_value(json!({ "assignment": assignment }))?;
     }
+    xben_writer.finish()?;
 
     Ok(())
 }

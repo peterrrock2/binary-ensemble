@@ -5,14 +5,14 @@ use std::io::{self, BufWriter, Write};
 use std::rc::Rc;
 
 /// Handle to the underlying output file shared between the live
-/// `AssignmentWriter` and the `PyBenEncoder` that owns it. Needed so the
+/// `BenStreamWriter` and the `PyBenEncoder` that owns it. Needed so the
 /// encoder can reach the buffered file after the inner assignment writer
 /// has finished, in order to patch the bundle header and write the
 /// trailing directory.
 pub(super) type SharedFileSlot = Rc<RefCell<BufWriter<File>>>;
 
 /// Wrapper around a shared buffered file that implements `Write`. The
-/// `AssignmentWriter` holds one of these and delegates every write into
+/// `BenStreamWriter` holds one of these and delegates every write into
 /// the shared slot.
 pub(super) struct SharedFileWriter(pub SharedFileSlot);
 

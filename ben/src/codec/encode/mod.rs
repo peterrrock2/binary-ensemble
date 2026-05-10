@@ -5,7 +5,7 @@ pub mod errors;
 mod jsonl;
 pub mod path;
 mod twodelta;
-mod xz;
+pub(crate) mod xz;
 
 pub(crate) use ben::encode_ben32_assignments;
 pub use errors::EncodeError;

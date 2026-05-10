@@ -15,10 +15,8 @@
 //! 2. **stream phase** — the caller invokes [`BendlWriter::begin_stream`]
 //!    to enter the stream region. The returned handle wraps the raw
 //!    underlying writer so the caller can plumb it into
-//!    [`crate::io::writer::AssignmentWriter`] or
-//!    [`crate::io::writer::XZAssignmentWriter`]. When the stream is
-//!    complete the caller records the sample count via
-//!    [`BendlWriter::end_stream`].
+//!    [`crate::io::writer::BenStreamWriter`]. When the stream is complete
+//!    the caller records the sample count via [`BendlWriter::end_stream`].
 //! 3. **finalize phase** — [`BendlWriter::finish`] writes the trailing
 //!    directory and patches the header.
 //!
@@ -304,8 +302,8 @@ impl<W: Write + Seek> BendlWriter<W> {
         handle.finish(sample_count)
     }
 
-    /// Open a BEN assignment stream backed by an
-    /// [`crate::io::writer::AssignmentWriter`] and invoke `f` with a
+    /// Open a BEN assignment stream backed by a
+    /// [`crate::io::writer::BenStreamWriter`] and invoke `f` with a
     /// context that can encode assignments into it.
     ///
     /// The context tracks how many `write_assignment` / `write_json_value`
@@ -324,7 +322,9 @@ impl<W: Write + Seek> BendlWriter<W> {
         let mut handle = self.begin_stream()?;
         let mut sample_count: i64 = 0;
         {
-            let mut ben = crate::io::writer::AssignmentWriter::new(&mut handle, variant)?;
+            let writer_ref: &mut dyn Write = &mut handle;
+            let mut ben =
+                crate::io::writer::BenStreamWriter::for_ben(writer_ref, variant)?;
             {
                 let mut ctx = BundleAssignmentStreamCtx {
                     writer: &mut ben,
@@ -333,18 +333,22 @@ impl<W: Write + Seek> BendlWriter<W> {
                 f(&mut ctx)?;
             }
             ben.finish()?;
-            // `ben` is dropped here, releasing its borrow on `handle`.
         }
         handle.finish(sample_count)
     }
 
-    /// Open an XBEN assignment stream backed by an
-    /// [`crate::io::writer::XZAssignmentWriter`] and invoke `f` with a
+    /// Open an XBEN assignment stream backed by a
+    /// [`crate::io::writer::BenStreamWriter`] and invoke `f` with a
     /// context that can encode assignments into it.
     ///
     /// The closure sees the same counting [`BundleAssignmentStreamCtx`]
     /// type used by [`BendlWriter::write_ben_stream`], so callers can be
     /// written to be generic over the assignment container.
+    ///
+    /// The XBEN encoder uses bundle compression preset
+    /// [`crate::io::bundle::format::DEFAULT_XZ_PRESET`], not the codec's
+    /// MT-stream defaults — bundle assignment streams are intentionally
+    /// single-threaded with a milder preset.
     pub fn write_xben_stream<F>(
         &mut self,
         variant: crate::BenVariant,
@@ -356,8 +360,11 @@ impl<W: Write + Seek> BendlWriter<W> {
         let mut handle = self.begin_stream()?;
         let mut sample_count: i64 = 0;
         {
-            let encoder = xz2::write::XzEncoder::new(&mut handle, DEFAULT_XZ_PRESET);
-            let mut xben = crate::io::writer::XZAssignmentWriter::new(encoder, variant)?;
+            let writer_ref: &mut dyn Write = &mut handle;
+            let encoder = xz2::write::XzEncoder::new(writer_ref, DEFAULT_XZ_PRESET);
+            let mut xben = crate::io::writer::BenStreamWriter::for_xben_with_encoder(
+                encoder, variant, None,
+            )?;
             {
                 let mut ctx = BundleAssignmentStreamCtx {
                     writer: &mut xben,
@@ -366,9 +373,6 @@ impl<W: Write + Seek> BendlWriter<W> {
                 f(&mut ctx)?;
             }
             xben.finish()?;
-            // `xben` is dropped here, which drops its inner `XzEncoder`,
-            // which in turn finalizes the xz stream and flushes the last
-            // bytes out to `handle`.
         }
         handle.finish(sample_count)
     }
@@ -424,8 +428,8 @@ impl<W: Write + Seek> BendlWriter<W> {
 /// Mutable handle to the stream region held by a [`BendlWriter`].
 ///
 /// The handle implements `Write` so it can be wrapped in
-/// `AssignmentWriter::new(handle, variant)` or
-/// `XZAssignmentWriter::new(handle, variant)` directly.
+/// `BenStreamWriter::for_ben(handle, variant)` or
+/// `BenStreamWriter::for_xben_with_encoder(encoder, variant, ...)` directly.
 pub struct BendlStreamHandle<'a, W: Write + Seek> {
     parent: &'a mut BendlWriter<W>,
     start_offset: u64,
@@ -456,36 +460,22 @@ impl<'a, W: Write + Seek> Write for BendlStreamHandle<'a, W> {
     }
 }
 
-/// Minimal trait that hides the concrete assignment-writer type behind a
-/// pair of methods that both [`crate::io::writer::AssignmentWriter`] and
-/// [`crate::io::writer::XZAssignmentWriter`] implement.
-///
-/// The bundle layer uses this to let a single
-/// [`BundleAssignmentStreamCtx`] wrap either container.
-pub trait BundleAssignmentSink {
-    /// Encode one assignment vector.
+/// Bundle-private adapter that hides the concrete `BenStreamWriter<W>`
+/// behind two methods, so [`BundleAssignmentStreamCtx`] can stay non-generic
+/// without forcing the public API to expose the writer's `W` parameter or
+/// to grow a second lifetime.
+trait BundleAssignmentSink {
     fn write_assignment(&mut self, assign_vec: Vec<u16>) -> io::Result<()>;
-    /// Encode one JSON assignment record.
     fn write_json_value(&mut self, data: serde_json::Value) -> io::Result<()>;
 }
 
-impl<W: Write> BundleAssignmentSink for crate::io::writer::AssignmentWriter<W> {
+impl<W: Write> BundleAssignmentSink for crate::io::writer::BenStreamWriter<W> {
     fn write_assignment(&mut self, assign_vec: Vec<u16>) -> io::Result<()> {
-        crate::io::writer::AssignmentWriter::write_assignment(self, assign_vec)
+        crate::io::writer::BenStreamWriter::write_assignment(self, assign_vec)
     }
 
     fn write_json_value(&mut self, data: serde_json::Value) -> io::Result<()> {
-        crate::io::writer::AssignmentWriter::write_json_value(self, data)
-    }
-}
-
-impl<W: Write> BundleAssignmentSink for crate::io::writer::XZAssignmentWriter<W> {
-    fn write_assignment(&mut self, assign_vec: Vec<u16>) -> io::Result<()> {
-        crate::io::writer::XZAssignmentWriter::write_assignment(self, assign_vec)
-    }
-
-    fn write_json_value(&mut self, data: serde_json::Value) -> io::Result<()> {
-        crate::io::writer::XZAssignmentWriter::write_json_value(self, data)
+        crate::io::writer::BenStreamWriter::write_json_value(self, data)
     }
 }
 

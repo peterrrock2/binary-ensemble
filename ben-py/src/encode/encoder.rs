@@ -5,7 +5,7 @@ use binary_ensemble::io::bundle::format::{
     encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlHeader, ASSET_FLAG_JSON,
     ASSET_FLAG_XZ, ASSET_TYPE_GRAPH, STANDARDIZED_NAME_GRAPH, FINALIZED_YES, HEADER_SIZE,
 };
-use binary_ensemble::io::writer::AssignmentWriter;
+use binary_ensemble::io::writer::BenStreamWriter;
 use pyo3::exceptions::{PyException, PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::cell::RefCell;
@@ -16,7 +16,7 @@ use std::rc::Rc;
 #[pyclass(name = "BenEncoder", unsendable)]
 pub struct PyBenEncoder {
     file: Option<SharedFileSlot>,
-    encoder: Option<AssignmentWriter<SharedFileWriter>>,
+    encoder: Option<BenStreamWriter<SharedFileWriter>>,
     mode: OutputMode,
 }
 
@@ -126,10 +126,10 @@ impl PyBenEncoder {
             }
         };
 
-        // Construct the AssignmentWriter on a clone of the shared slot.
+        // Construct the BenStreamWriter on a clone of the shared slot.
         // This writes the BEN banner as its first action, which in the
         // bundle case becomes the first byte of the stream region.
-        let encoder = AssignmentWriter::new(SharedFileWriter(Rc::clone(&file)), ben_var)
+        let encoder = BenStreamWriter::for_ben(SharedFileWriter(Rc::clone(&file)), ben_var)
             .map_err(|e| PyIOError::new_err(format!("Failed to create encoder: {e}")))?;
 
         Ok(PyBenEncoder {

@@ -14,8 +14,7 @@ use crate::codec::BenEncodeFrame;
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
 use crate::io::reader::BenStreamReader;
-use crate::io::writer::frame_writer::FrameWriter;
-use crate::io::writer::AssignmentWriter;
+use crate::io::writer::BenStreamWriter;
 use crate::progress::Spinner;
 use crate::BenVariant;
 use byteorder::{BigEndian, ReadBytesExt};
@@ -225,7 +224,7 @@ fn can_use_first_seen_fast_path(
 /// counted output frames, Standard targets receive `count` one-sample frames
 /// because Standard cannot encode repetition counts. With
 /// [`RunPolicy::CollapseAdjacentEqualAssignments`], the existing
-/// [`AssignmentWriter`] merging path is used.
+/// [`BenStreamWriter`] merging path is used.
 fn relabel_via_decoder<R: Read, W: Write, F>(
     reader: R,
     writer: W,
@@ -243,7 +242,7 @@ where
 
     match run_policy {
         RunPolicy::CollapseAdjacentEqualAssignments => {
-            let mut encoder = AssignmentWriter::new(writer, target_variant)?;
+            let mut encoder = BenStreamWriter::for_ben(writer, target_variant)?;
             decoder.for_each_assignment(|assignment, count| {
                 if max_samples.is_some_and(|limit| sample_number >= limit) {
                     return Ok(false);
@@ -268,7 +267,7 @@ where
             encoder.finish()?;
         }
         RunPolicy::PreserveFrameBoundaries => {
-            let mut writer = FrameWriter::new(writer, target_variant)?;
+            let mut writer = BenStreamWriter::for_ben(writer, target_variant)?;
             decoder.for_each_assignment(|assignment, count| {
                 if max_samples.is_some_and(|limit| sample_number >= limit) {
                     return Ok(false);
@@ -287,6 +286,7 @@ where
                 spinner.set_count(sample_number as u64);
                 Ok(true)
             })?;
+            writer.finish()?;
         }
     }
 

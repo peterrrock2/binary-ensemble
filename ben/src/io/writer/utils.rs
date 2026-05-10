@@ -14,7 +14,7 @@ use std::io::{self, Result};
 ///
 /// Returns a `Vec<u16>` of assignment values, or an error if the field is
 /// missing, not an array, or contains values that do not fit in a `u16`.
-pub(super) fn parse_json_assignment(data: Value) -> Result<Vec<u16>> {
+pub(crate) fn parse_json_assignment(data: Value) -> Result<Vec<u16>> {
     let assign_vec = data["assignment"].as_array().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidData,
@@ -57,7 +57,7 @@ pub(super) fn parse_json_assignment(data: Value) -> Result<Vec<u16>> {
 /// # Returns
 ///
 /// Returns the encoded frame as a byte vector.
-pub(super) fn encode_xben_twodelta_full_frame(assignments: &[u16]) -> Vec<u8> {
+pub(crate) fn encode_xben_twodelta_full_frame(assignments: &[u16]) -> Vec<u8> {
     let runs = assign_to_rle(assignments);
     let mut bytes = Vec::with_capacity(1 + 4 + runs.len() * 4);
     bytes.push(XBEN_TWODELTA_FULL_TAG);

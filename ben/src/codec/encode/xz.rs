@@ -1,7 +1,7 @@
 use crate::codec::encode::errors::EncodeError;
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
-use crate::io::writer::XZAssignmentWriter;
+use crate::io::writer::BenStreamWriter;
 use std::io::{self, BufRead, Cursor, Read, Result, Write};
 use xz2::stream::{MtStreamBuilder, Stream};
 use xz2::write::XzEncoder;
@@ -17,7 +17,7 @@ use xz2::write::XzEncoder;
 pub const XZ_DEFAULT_MT_BLOCK_SIZE: u64 = 16 * 1024 * 1024;
 
 /// Resolve `n_threads` against the host's available parallelism.
-fn resolve_threads(n_threads: Option<u32>) -> u32 {
+pub(crate) fn resolve_threads(n_threads: Option<u32>) -> u32 {
     n_threads
         .unwrap_or(1)
         .min(host_parallelism())
@@ -57,7 +57,7 @@ pub fn cpus_from_signed(n: i32) -> u32 {
 /// liblzma. When it is `None`, we default to [`XZ_DEFAULT_MT_BLOCK_SIZE`]
 /// for `n_threads > 1` and to `0` (liblzma's "auto") for the single-thread
 /// case so single-thread encoding does not pay any block-overhead cost.
-fn build_mt_stream(
+pub(crate) fn build_mt_stream(
     n_threads: u32,
     level: u32,
     block_size: Option<u64>,
@@ -167,13 +167,10 @@ pub fn encode_ben_to_xben<R: BufRead, W: Write>(
             actual: check_buffer.to_vec(),
         })
     })?;
-    let mut ben_encoder = XZAssignmentWriter::new(encoder, variant)?;
-    if let Some(cs) = chunk_size {
-        ben_encoder = ben_encoder.with_chunk_size(cs);
-    }
-
-    ben_encoder.write_ben_file(Cursor::new(check_buffer).chain(reader))?;
-
+    let mut ben_encoder =
+        BenStreamWriter::for_xben_with_encoder(encoder, variant, chunk_size)?;
+    ben_encoder.ingest_ben_stream(Cursor::new(check_buffer).chain(reader))?;
+    ben_encoder.finish()?;
     Ok(())
 }
 

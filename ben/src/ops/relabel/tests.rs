@@ -1023,7 +1023,7 @@ fn test_relabel_ben_file_twodelta_malformed_frame_error_propagates() {
     // Build a valid 2-sample TwoDelta BEN file, then corrupt the delta frame.
     let mut ben: Vec<u8> = Vec::new();
     {
-        let mut writer = crate::io::writer::AssignmentWriter::new(&mut ben, BenVariant::TwoDelta)
+        let mut writer = crate::io::writer::BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta)
             .unwrap();
         writer.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
         writer.write_assignment(vec![2u16, 1, 2, 1]).unwrap();
@@ -1043,7 +1043,7 @@ fn test_relabel_ben_file_twodelta_malformed_frame_error_propagates() {
 fn test_relabel_ben_file_with_map_twodelta_malformed_frame_error_propagates() {
     let mut ben: Vec<u8> = Vec::new();
     {
-        let mut writer = crate::io::writer::AssignmentWriter::new(&mut ben, BenVariant::TwoDelta)
+        let mut writer = crate::io::writer::BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta)
             .unwrap();
         writer.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
         writer.write_assignment(vec![2u16, 1, 2, 1]).unwrap();

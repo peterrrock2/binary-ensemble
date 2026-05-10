@@ -1,12 +1,11 @@
-pub mod assignment_writer;
-pub(crate) mod frame_writer;
 pub(crate) mod frames;
+pub(crate) mod options;
+pub(crate) mod stream_writer;
 #[cfg(test)]
 pub(crate) mod tests;
 pub(crate) mod twodelta;
 pub(crate) mod utils;
-pub mod xz_assignment_writer;
 
-pub use assignment_writer::AssignmentWriter;
+pub use options::XzEncodeOptions;
+pub use stream_writer::{BenStreamWriter, BenWireFormat};
 pub use twodelta::DEFAULT_TWODELTA_CHUNK_SIZE;
-pub use xz_assignment_writer::XZAssignmentWriter;

@@ -1,11 +1,9 @@
-use crate::codec::encode::xz::XZ_DEFAULT_MT_BLOCK_SIZE;
-use crate::codec::encode::EncodeError;
-use crate::io::writer::{AssignmentWriter, XZAssignmentWriter};
+use crate::codec::encode::xz::{build_mt_stream, resolve_threads};
+use crate::io::writer::BenStreamWriter;
 use crate::progress::Spinner;
 use crate::BenVariant;
 use serde_json::Value;
 use std::io::{self, BufRead, Result, Write};
-use xz2::stream::MtStreamBuilder;
 use xz2::write::XzEncoder;
 
 /// Encode JSONL assignment records directly into an XBEN stream.
@@ -26,8 +24,8 @@ use xz2::write::XzEncoder;
 /// * `chunk_size` - Optional TwoDelta columnar chunk size; ignored for
 ///   Standard and MkvChain variants.
 /// * `block_size` - Optional per-block size in bytes for the MT encoder.
-///   `None` defaults to [`XZ_DEFAULT_MT_BLOCK_SIZE`] when threads > 1, or
-///   `0` (liblzma auto) for single-thread runs.
+///   `None` defaults to [`crate::codec::encode::xz::XZ_DEFAULT_MT_BLOCK_SIZE`]
+///   when threads > 1, or `0` (liblzma auto) for single-thread runs.
 ///
 /// # Returns
 ///
@@ -41,34 +39,12 @@ pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
     chunk_size: Option<usize>,
     block_size: Option<u64>,
 ) -> Result<()> {
-    let n_cpus: u32 = n_threads
-        .unwrap_or(1)
-        .min(
-            std::thread::available_parallelism()
-                .map(|n| n.get())
-                .unwrap_or(1) as u32,
-        )
-        .max(1);
-
+    let n_cpus = resolve_threads(n_threads);
     let level = compression_level.unwrap_or(9).clamp(0, 9);
-
-    let resolved_block_size = match block_size {
-        Some(n) => n,
-        None if n_cpus > 1 => XZ_DEFAULT_MT_BLOCK_SIZE,
-        None => 0,
-    };
-
-    let mt = MtStreamBuilder::new()
-        .threads(n_cpus)
-        .preset(level)
-        .block_size(resolved_block_size)
-        .encoder()
-        .map_err(|e| io::Error::from(EncodeError::XzInit(e)))?;
+    let mt = build_mt_stream(n_cpus, level, block_size)?;
     let encoder = XzEncoder::new_stream(writer, mt);
-    let mut ben_encoder = XZAssignmentWriter::new(encoder, variant)?;
-    if let Some(cs) = chunk_size {
-        ben_encoder = ben_encoder.with_chunk_size(cs);
-    }
+
+    let mut ben_encoder = BenStreamWriter::for_xben_with_encoder(encoder, variant, chunk_size)?;
 
     let mut line_num = 1u64;
     let spinner = Spinner::new("Encoding line");
@@ -87,6 +63,7 @@ pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
         ben_encoder.write_json_value(data)?;
     }
 
+    ben_encoder.finish()?;
     Ok(())
 }
 
@@ -112,7 +89,7 @@ pub fn encode_jsonl_to_ben<R: BufRead, W: Write>(
 ) -> Result<()> {
     let mut line_num = 1u64;
     let spinner = Spinner::new("Encoding line");
-    let mut ben_encoder = AssignmentWriter::new(writer, variant)?;
+    let mut ben_encoder = BenStreamWriter::for_ben(writer, variant)?;
     for line_result in reader.lines() {
         spinner.set_count(line_num);
         line_num += 1;
@@ -126,5 +103,6 @@ pub fn encode_jsonl_to_ben<R: BufRead, W: Write>(
 
         ben_encoder.write_json_value(data)?;
     }
+    ben_encoder.finish()?;
     Ok(())
 }
