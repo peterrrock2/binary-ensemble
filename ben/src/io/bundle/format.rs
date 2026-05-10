@@ -104,6 +104,38 @@ pub fn standardized_name_for(asset_type: u16) -> Option<&'static str> {
     }
 }
 
+/// One of the known singleton asset types reserved by the bundle format.
+///
+/// Each variant carries a fixed `asset_type` integer and a fixed
+/// standardized name. Custom assets (writer-chosen name, multiple allowed)
+/// are not represented here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KnownAssetKind {
+    Metadata,
+    Graph,
+    NodePermutationMap,
+}
+
+impl KnownAssetKind {
+    /// The asset-type integer reserved for this kind in the bundle format.
+    pub fn asset_type(self) -> u16 {
+        match self {
+            Self::Metadata => ASSET_TYPE_METADATA,
+            Self::Graph => ASSET_TYPE_GRAPH,
+            Self::NodePermutationMap => ASSET_TYPE_NODE_PERMUTATION_MAP,
+        }
+    }
+
+    /// The standardized filename reserved for this kind.
+    pub fn standardized_name(self) -> &'static str {
+        match self {
+            Self::Metadata => STANDARDIZED_NAME_METADATA,
+            Self::Graph => STANDARDIZED_NAME_GRAPH,
+            Self::NodePermutationMap => STANDARDIZED_NAME_NODE_PERMUTATION_MAP,
+        }
+    }
+}
+
 /// Return whether a given asset type should default to xz compression
 /// when the writer is not given an explicit compression option.
 pub fn default_compresses_by_type(asset_type: u16) -> bool {

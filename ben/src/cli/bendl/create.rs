@@ -1,9 +1,7 @@
 use super::args::{CreateArgs, NamedAsset};
-use super::helpers::{add_file_asset, format_from_path};
+use super::helpers::{add_custom_file_asset, add_known_file_asset, format_from_path};
 use crate::cli::common::check_overwrite;
-use crate::io::bundle::format::{
-    ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA, ASSET_TYPE_NODE_PERMUTATION_MAP,
-};
+use crate::io::bundle::format::KnownAssetKind;
 use crate::io::bundle::{AddAssetOptions, BendlWriter};
 use crate::io::reader::subsample::count_samples_from_file;
 use crate::io::reader::BenWireFormat;
@@ -31,10 +29,9 @@ pub(super) fn run_create(args: CreateArgs) -> Result<(), String> {
 
     // Add singleton assets first, in canonical order.
     if let Some(ref path) = args.metadata {
-        add_file_asset(
+        add_known_file_asset(
             &mut writer,
-            ASSET_TYPE_METADATA,
-            "metadata.json",
+            KnownAssetKind::Metadata,
             path,
             AddAssetOptions::defaults().json(),
         )?;
@@ -45,25 +42,18 @@ pub(super) fn run_create(args: CreateArgs) -> Result<(), String> {
         } else {
             AddAssetOptions::defaults().json()
         };
-        add_file_asset(&mut writer, ASSET_TYPE_GRAPH, "graph.json", path, opts)?;
+        add_known_file_asset(&mut writer, KnownAssetKind::Graph, path, opts)?;
     }
     if let Some(ref path) = args.node_permutation_map {
-        add_file_asset(
+        add_known_file_asset(
             &mut writer,
-            ASSET_TYPE_NODE_PERMUTATION_MAP,
-            "node_permutation_map.json",
+            KnownAssetKind::NodePermutationMap,
             path,
             AddAssetOptions::defaults().json(),
         )?;
     }
     for NamedAsset { name, path } in &args.assets {
-        add_file_asset(
-            &mut writer,
-            ASSET_TYPE_CUSTOM,
-            name,
-            path,
-            AddAssetOptions::defaults(),
-        )?;
+        add_custom_file_asset(&mut writer, name, path, AddAssetOptions::defaults())?;
     }
 
     // Stream phase: copy bytes from the input file directly into the

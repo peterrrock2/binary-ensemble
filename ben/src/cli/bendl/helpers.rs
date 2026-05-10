@@ -1,4 +1,4 @@
-use crate::io::bundle::format::AssignmentFormat;
+use crate::io::bundle::format::{AssignmentFormat, KnownAssetKind};
 use crate::io::bundle::writer::BendlAppender;
 use crate::io::bundle::{AddAssetOptions, BendlWriteError, BendlWriter};
 use std::io::{Read, Seek, Write};
@@ -16,30 +16,56 @@ pub(super) fn format_from_path(path: &Path) -> Result<AssignmentFormat, String> 
     }
 }
 
-pub(super) fn add_file_asset<W: Write + Seek>(
+pub(super) fn add_known_file_asset<W: Write + Seek>(
     writer: &mut BendlWriter<W>,
-    asset_type: u16,
+    kind: KnownAssetKind,
+    path: &Path,
+    options: AddAssetOptions,
+) -> Result<(), String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("failed to read {path:?}: {e}"))?;
+    let name = kind.standardized_name();
+    writer
+        .add_known_asset(kind, &bytes, options)
+        .map_err(|e: BendlWriteError| format!("failed to add asset {name:?}: {e}"))
+}
+
+pub(super) fn add_custom_file_asset<W: Write + Seek>(
+    writer: &mut BendlWriter<W>,
     name: &str,
     path: &Path,
     options: AddAssetOptions,
 ) -> Result<(), String> {
     let bytes = std::fs::read(path).map_err(|e| format!("failed to read {path:?}: {e}"))?;
     writer
-        .add_asset(asset_type, name, &bytes, options)
+        .add_custom_asset(name, &bytes, options)
         .map_err(|e: BendlWriteError| format!("failed to add asset {name:?}: {e}"))
 }
 
-pub(super) fn append_file_asset<
+pub(super) fn append_known_file_asset<
     W: Read + Write + Seek + crate::io::bundle::writer::BendlTruncate,
 >(
     appender: &mut BendlAppender<W>,
-    asset_type: u16,
+    kind: KnownAssetKind,
+    path: &Path,
+    options: AddAssetOptions,
+) -> Result<(), String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("failed to read {path:?}: {e}"))?;
+    let name = kind.standardized_name();
+    appender
+        .add_known_asset(kind, &bytes, options)
+        .map_err(|e: BendlWriteError| format!("failed to add asset {name:?}: {e}"))
+}
+
+pub(super) fn append_custom_file_asset<
+    W: Read + Write + Seek + crate::io::bundle::writer::BendlTruncate,
+>(
+    appender: &mut BendlAppender<W>,
     name: &str,
     path: &Path,
     options: AddAssetOptions,
 ) -> Result<(), String> {
     let bytes = std::fs::read(path).map_err(|e| format!("failed to read {path:?}: {e}"))?;
     appender
-        .add_asset(asset_type, name, &bytes, options)
+        .add_custom_asset(name, &bytes, options)
         .map_err(|e: BendlWriteError| format!("failed to add asset {name:?}: {e}"))
 }

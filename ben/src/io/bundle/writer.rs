@@ -33,8 +33,9 @@ use xz2::write::XzEncoder;
 
 use super::format::{
     standardized_name_for, default_compresses_by_type, encode_directory, read_directory,
-    AssignmentFormat, BendlDirectoryEntry, BendlFormatError, BendlHeader, ASSET_FLAG_JSON,
-    ASSET_FLAG_XZ, FINALIZED_YES, DEFAULT_XZ_PRESET, HEADER_SIZE,
+    AssignmentFormat, BendlDirectoryEntry, BendlFormatError, BendlHeader, KnownAssetKind,
+    ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, FINALIZED_YES, DEFAULT_XZ_PRESET,
+    HEADER_SIZE,
 };
 
 /// Ability to truncate an underlying seekable target to a given length.
@@ -258,6 +259,28 @@ impl<W: Write + Seek> BendlWriter<W> {
             payload,
             AddAssetOptions::defaults().json(),
         )
+    }
+
+    /// Add one of the known singleton assets, using its reserved asset-type
+    /// integer and standardized name automatically.
+    pub fn add_known_asset(
+        &mut self,
+        kind: KnownAssetKind,
+        payload: &[u8],
+        options: AddAssetOptions,
+    ) -> Result<(), BendlWriteError> {
+        self.add_asset(kind.asset_type(), kind.standardized_name(), payload, options)
+    }
+
+    /// Add a custom (writer-named) asset. The asset-type is set to
+    /// [`ASSET_TYPE_CUSTOM`] automatically.
+    pub fn add_custom_asset(
+        &mut self,
+        name: &str,
+        payload: &[u8],
+        options: AddAssetOptions,
+    ) -> Result<(), BendlWriteError> {
+        self.add_asset(ASSET_TYPE_CUSTOM, name, payload, options)
     }
 
     /// Transition from the asset phase into the stream phase and return
@@ -720,6 +743,28 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
             payload,
             AddAssetOptions::defaults().json(),
         )
+    }
+
+    /// Append one of the known singleton assets, using its reserved
+    /// asset-type integer and standardized name automatically.
+    pub fn add_known_asset(
+        &mut self,
+        kind: KnownAssetKind,
+        payload: &[u8],
+        options: AddAssetOptions,
+    ) -> Result<(), BendlWriteError> {
+        self.add_asset(kind.asset_type(), kind.standardized_name(), payload, options)
+    }
+
+    /// Append a custom (writer-named) asset. The asset-type is set to
+    /// [`ASSET_TYPE_CUSTOM`] automatically.
+    pub fn add_custom_asset(
+        &mut self,
+        name: &str,
+        payload: &[u8],
+        options: AddAssetOptions,
+    ) -> Result<(), BendlWriteError> {
+        self.add_asset(ASSET_TYPE_CUSTOM, name, payload, options)
     }
 
     /// Commit all pending appends.

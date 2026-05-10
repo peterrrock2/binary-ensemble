@@ -1,8 +1,6 @@
 use super::args::{AppendArgs, NamedAsset};
-use super::helpers::append_file_asset;
-use crate::io::bundle::format::{
-    ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA, ASSET_TYPE_NODE_PERMUTATION_MAP,
-};
+use super::helpers::{append_custom_file_asset, append_known_file_asset};
+use crate::io::bundle::format::KnownAssetKind;
 use crate::io::bundle::writer::BendlAppender;
 use crate::io::bundle::AddAssetOptions;
 use std::fs::OpenOptions;
@@ -18,10 +16,9 @@ pub(super) fn run_append(args: AppendArgs) -> Result<(), String> {
 
     let mut added = 0usize;
     if let Some(ref path) = args.metadata {
-        append_file_asset(
+        append_known_file_asset(
             &mut appender,
-            ASSET_TYPE_METADATA,
-            "metadata.json",
+            KnownAssetKind::Metadata,
             path,
             AddAssetOptions::defaults().json(),
         )?;
@@ -33,27 +30,20 @@ pub(super) fn run_append(args: AppendArgs) -> Result<(), String> {
         } else {
             AddAssetOptions::defaults().json()
         };
-        append_file_asset(&mut appender, ASSET_TYPE_GRAPH, "graph.json", path, opts)?;
+        append_known_file_asset(&mut appender, KnownAssetKind::Graph, path, opts)?;
         added += 1;
     }
     if let Some(ref path) = args.node_permutation_map {
-        append_file_asset(
+        append_known_file_asset(
             &mut appender,
-            ASSET_TYPE_NODE_PERMUTATION_MAP,
-            "node_permutation_map.json",
+            KnownAssetKind::NodePermutationMap,
             path,
             AddAssetOptions::defaults().json(),
         )?;
         added += 1;
     }
     for NamedAsset { name, path } in &args.assets {
-        append_file_asset(
-            &mut appender,
-            ASSET_TYPE_CUSTOM,
-            name,
-            path,
-            AddAssetOptions::defaults(),
-        )?;
+        append_custom_file_asset(&mut appender, name, path, AddAssetOptions::defaults())?;
         added += 1;
     }
 
