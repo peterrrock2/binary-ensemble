@@ -122,22 +122,77 @@ fn directory_entry_round_trip_no_checksum() {
 
 #[test]
 fn directory_entry_round_trip_with_checksum() {
+    // ASSET_FLAG_CHECKSUM ⇒ exactly four bytes of CRC32C.
     let entry = BendlDirectoryEntry {
         asset_type: ASSET_TYPE_CUSTOM,
         asset_flags: ASSET_FLAG_CHECKSUM,
         name: "custom_blob".to_string(),
         payload_offset: 2048,
         payload_len: 512,
-        checksum: Some(vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE]),
+        checksum: Some(vec![0xDE, 0xAD, 0xBE, 0xEF]),
     };
     let bytes = entry.to_bytes().unwrap();
     let mut cursor = &bytes[..];
     let decoded = BendlDirectoryEntry::read_from(&mut cursor).unwrap();
     assert_eq!(decoded, entry);
-    assert_eq!(
-        decoded.checksum.unwrap(),
-        vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE]
-    );
+    assert_eq!(decoded.checksum.as_deref(), Some(&[0xDE, 0xAD, 0xBE, 0xEF][..]));
+    assert_eq!(decoded.checksum_u32(), Some(0xEFBEADDE));
+}
+
+#[test]
+fn directory_entry_rejects_flag_set_with_wrong_checksum_len() {
+    // Construct entry bytes by hand: flag bit set but checksum_len == 6.
+    let mut entry = BendlDirectoryEntry {
+        asset_type: ASSET_TYPE_CUSTOM,
+        asset_flags: ASSET_FLAG_CHECKSUM,
+        name: "x".to_string(),
+        payload_offset: 0,
+        payload_len: 0,
+        checksum: Some(vec![0xDE, 0xAD, 0xBE, 0xEF]),
+    };
+    let mut bytes = entry.to_bytes().unwrap();
+    // Patch checksum_len at bytes 24..28 to claim 6 (also append two
+    // bytes so we don't crash on short read in the negative path).
+    bytes[24..28].copy_from_slice(&6u32.to_le_bytes());
+    bytes.extend_from_slice(&[0x00, 0x00]); // pad to declared len
+    entry.checksum = Some(vec![0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00]);
+    let mut cursor = &bytes[..];
+    let err = BendlDirectoryEntry::read_from(&mut cursor).unwrap_err();
+    assert!(matches!(
+        err,
+        BendlFormatError::InconsistentChecksumMetadata {
+            flag_set: true,
+            checksum_len: 6,
+        }
+    ));
+}
+
+#[test]
+fn directory_entry_rejects_flag_clear_with_nonzero_checksum_len() {
+    // Construct entry bytes with flag clear but checksum_len == 4.
+    let mut entry = BendlDirectoryEntry {
+        asset_type: ASSET_TYPE_CUSTOM,
+        asset_flags: 0,
+        name: "x".to_string(),
+        payload_offset: 0,
+        payload_len: 0,
+        checksum: None,
+    };
+    let mut bytes = entry.to_bytes().unwrap();
+    // The encoded bytes have checksum_len == 0 and no trailing checksum
+    // bytes; patch checksum_len to 4 and append four bytes.
+    bytes[24..28].copy_from_slice(&4u32.to_le_bytes());
+    bytes.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
+    entry.checksum = Some(vec![0xAA, 0xBB, 0xCC, 0xDD]);
+    let mut cursor = &bytes[..];
+    let err = BendlDirectoryEntry::read_from(&mut cursor).unwrap_err();
+    assert!(matches!(
+        err,
+        BendlFormatError::InconsistentChecksumMetadata {
+            flag_set: false,
+            checksum_len: 4,
+        }
+    ));
 }
 
 #[test]

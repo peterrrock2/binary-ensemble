@@ -95,8 +95,9 @@ fn run_inspect_xben_format_and_checksum_flag() {
     use crate::io::bundle::format::ASSET_TYPE_CUSTOM;
     use crate::io::bundle::AddAssetOptions;
 
-    // Build a .bendl with a checksum asset so the flag_parts checksum
-    // branch is exercised.
+    // Every library-written asset carries ASSET_FLAG_CHECKSUM, so any
+    // add_asset call exercises the checksum flag_parts branch in
+    // `run_inspect`.
     let mut buf: Vec<u8> = Vec::new();
     let mut writer = BendlWriter::new(Cursor::new(&mut buf), AssignmentFormat::Xben).unwrap();
     writer
@@ -104,10 +105,7 @@ fn run_inspect_xben_format_and_checksum_flag() {
             ASSET_TYPE_CUSTOM,
             "checksummed",
             b"data",
-            AddAssetOptions {
-                checksum: Some(vec![0xAB, 0xCD]),
-                ..AddAssetOptions::defaults()
-            },
+            AddAssetOptions::defaults().raw(),
         )
         .unwrap();
     let mut session = writer.into_stream_session().unwrap();

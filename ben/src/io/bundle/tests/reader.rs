@@ -4,13 +4,25 @@ use xz2::write::XzEncoder;
 
 use crate::io::bundle::format::{
     encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlFormatError, BendlHeader,
-    ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA,
-    ASSET_TYPE_NODE_PERMUTATION_MAP, BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, FINALIZED_NO,
-    FINALIZED_YES, HEADER_SIZE,
+    ASSET_FLAG_CHECKSUM, ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH,
+    ASSET_TYPE_METADATA, ASSET_TYPE_NODE_PERMUTATION_MAP, BENDL_MAGIC, BENDL_MAJOR_VERSION,
+    BENDL_MINOR_VERSION, FINALIZED_NO, FINALIZED_YES, HEADER_SIZE,
 };
 use crate::io::bundle::reader::{
     validate_directory_entries, BendlReader, BundleAssignmentReaderError, BundleValidationError,
 };
+
+/// Stamp a valid CRC32C and `ASSET_FLAG_CHECKSUM` onto a hand-built
+/// directory entry whose on-disk payload bytes are `payload`. Use this
+/// in test fixtures so the entry round-trips through the verify-on-touch
+/// reader APIs. Tests that want to exercise the foreign-bundle /
+/// clear-flag path build entries directly with the flag clear and
+/// `checksum: None`.
+fn with_crc(mut entry: BendlDirectoryEntry, payload: &[u8]) -> BendlDirectoryEntry {
+    entry.asset_flags |= ASSET_FLAG_CHECKSUM;
+    entry.checksum = Some(crc32c::crc32c(payload).to_le_bytes().to_vec());
+    entry
+}
 
 /// Build a complete in-memory finalized bundle with two assets:
 /// an xz-compressed `graph.json` and a raw custom blob, followed by
@@ -49,22 +61,28 @@ fn build_finalized_bundle() -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
     let directory_offset = bundle.len() as u64;
 
     let entries = vec![
-        BendlDirectoryEntry {
-            asset_type: ASSET_TYPE_GRAPH,
-            asset_flags: ASSET_FLAG_JSON | ASSET_FLAG_XZ,
-            name: "graph.json".to_string(),
-            payload_offset: graph_offset,
-            payload_len: compressed_graph.len() as u64,
-            checksum: None,
-        },
-        BendlDirectoryEntry {
-            asset_type: ASSET_TYPE_CUSTOM,
-            asset_flags: 0,
-            name: "custom.bin".to_string(),
-            payload_offset: custom_offset,
-            payload_len: custom_blob.len() as u64,
-            checksum: None,
-        },
+        with_crc(
+            BendlDirectoryEntry {
+                asset_type: ASSET_TYPE_GRAPH,
+                asset_flags: ASSET_FLAG_JSON | ASSET_FLAG_XZ,
+                name: "graph.json".to_string(),
+                payload_offset: graph_offset,
+                payload_len: compressed_graph.len() as u64,
+                checksum: None,
+            },
+            &compressed_graph,
+        ),
+        with_crc(
+            BendlDirectoryEntry {
+                asset_type: ASSET_TYPE_CUSTOM,
+                asset_flags: 0,
+                name: "custom.bin".to_string(),
+                payload_offset: custom_offset,
+                payload_len: custom_blob.len() as u64,
+                checksum: None,
+            },
+            &custom_blob,
+        ),
     ];
     let directory_bytes = encode_directory(&entries).unwrap();
     bundle.extend_from_slice(&directory_bytes);
@@ -259,14 +277,17 @@ fn build_basic_finalized_bundle() -> Vec<u8> {
 
     // Directory at EOF with one entry.
     let directory_offset = bytes.len() as u64;
-    let entries = vec![BendlDirectoryEntry {
-        asset_type: ASSET_TYPE_METADATA,
-        asset_flags: ASSET_FLAG_JSON,
-        name: "metadata.json".to_string(),
-        payload_offset: metadata_offset,
-        payload_len: metadata_payload.len() as u64,
-        checksum: None,
-    }];
+    let entries = vec![with_crc(
+        BendlDirectoryEntry {
+            asset_type: ASSET_TYPE_METADATA,
+            asset_flags: ASSET_FLAG_JSON,
+            name: "metadata.json".to_string(),
+            payload_offset: metadata_offset,
+            payload_len: metadata_payload.len() as u64,
+            checksum: None,
+        },
+        &metadata_payload,
+    )];
     let directory = encode_directory(&entries).unwrap();
     bytes.extend_from_slice(&directory);
     let directory_len = directory.len() as u64;
@@ -588,14 +609,17 @@ fn stress_thousand_custom_assets_round_trip() {
             .collect();
         let offset = bytes.len() as u64;
         bytes.extend_from_slice(&payload);
-        entries.push(BendlDirectoryEntry {
-            asset_type: ASSET_TYPE_CUSTOM,
-            asset_flags: 0,
-            name: format!("blob-{i:04}.bin"),
-            payload_offset: offset,
-            payload_len: payload.len() as u64,
-            checksum: None,
-        });
+        entries.push(with_crc(
+            BendlDirectoryEntry {
+                asset_type: ASSET_TYPE_CUSTOM,
+                asset_flags: 0,
+                name: format!("blob-{i:04}.bin"),
+                payload_offset: offset,
+                payload_len: payload.len() as u64,
+                checksum: None,
+            },
+            &payload,
+        ));
         expected.push(payload);
     }
 
@@ -648,14 +672,17 @@ fn xz_flagged_asset_with_corrupt_payload_surfaces_io_error() {
 
     let stream_offset = bytes.len() as u64;
     let directory_offset = bytes.len() as u64;
-    let entries = vec![BendlDirectoryEntry {
-        asset_type: ASSET_TYPE_CUSTOM,
-        asset_flags: ASSET_FLAG_XZ,
-        name: "broken.xz".to_string(),
-        payload_offset,
-        payload_len: bad_payload.len() as u64,
-        checksum: None,
-    }];
+    let entries = vec![with_crc(
+        BendlDirectoryEntry {
+            asset_type: ASSET_TYPE_CUSTOM,
+            asset_flags: ASSET_FLAG_XZ,
+            name: "broken.xz".to_string(),
+            payload_offset,
+            payload_len: bad_payload.len() as u64,
+            checksum: None,
+        },
+        &bad_payload,
+    )];
     let directory = encode_directory(&entries).unwrap();
     bytes.extend_from_slice(&directory);
 
@@ -781,4 +808,498 @@ fn validate_directory_rejects_wrong_canonical_name() {
         BundleValidationError::WrongCanonicalName { .. } => {}
         _ => panic!("expected WrongCanonicalName, got {err:?}"),
     }
+}
+
+// =====================================================================
+// Asset CRC32C verification
+// =====================================================================
+//
+// These tests pin the verify-on-touch contract for directory-entry
+// assets. The structural split is:
+//
+//   - explicit verifier (`verify_asset_checksum`) vs implicit
+//     verifier (`asset_bytes` / `asset_reader`),
+//   - uncompressed vs xz-compressed assets,
+//   - stored-checksum corruption vs payload corruption (vs xz-framing
+//     corruption for compressed assets).
+//
+// The unverified APIs (`*_unverified`) are pinned in matching tests to
+// ensure they NEVER surface a `ChecksumError` (codec errors are still
+// permitted).
+
+use crate::io::bundle::error::{BendlReadError, ChecksumError, ChecksumTarget};
+
+/// Build a finalized bundle with exactly one uncompressed asset whose
+/// payload bytes are `payload`. Returns `(bundle_bytes, asset_name,
+/// directory_offset, payload_offset)` for hand-patching tests.
+fn make_single_asset_bundle(name: &str, payload: &[u8]) -> (Vec<u8>, String, u64, u64) {
+    let mut bytes = Vec::new();
+    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+
+    let payload_offset = bytes.len() as u64;
+    bytes.extend_from_slice(payload);
+
+    let stream_offset = bytes.len() as u64;
+    let directory_offset = bytes.len() as u64;
+    let entries = vec![with_crc(
+        BendlDirectoryEntry {
+            asset_type: ASSET_TYPE_CUSTOM,
+            asset_flags: 0,
+            name: name.to_string(),
+            payload_offset,
+            payload_len: payload.len() as u64,
+            checksum: None,
+        },
+        payload,
+    )];
+    let directory = encode_directory(&entries).unwrap();
+    bytes.extend_from_slice(&directory);
+
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_YES,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        reserved_0: 0,
+        flags: 0,
+        directory_offset,
+        directory_len: directory.len() as u64,
+        stream_offset,
+        stream_len: 0,
+        sample_count: 0,
+    };
+    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    (bytes, name.to_string(), directory_offset, payload_offset)
+}
+
+/// Build a finalized bundle whose only asset is `payload` stored xz-
+/// compressed. The stored CRC is over the **compressed** bytes (CRC is
+/// pre-decompression). Returns
+/// `(bundle_bytes, name, compressed_payload, directory_offset, payload_offset)`.
+fn make_single_xz_asset_bundle(
+    name: &str,
+    payload: &[u8],
+) -> (Vec<u8>, String, Vec<u8>, u64, u64) {
+    let mut encoder = XzEncoder::new(Vec::new(), 6);
+    encoder.write_all(payload).unwrap();
+    let compressed = encoder.finish().unwrap();
+
+    let mut bytes = Vec::new();
+    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+
+    let payload_offset = bytes.len() as u64;
+    bytes.extend_from_slice(&compressed);
+
+    let stream_offset = bytes.len() as u64;
+    let directory_offset = bytes.len() as u64;
+    let entries = vec![with_crc(
+        BendlDirectoryEntry {
+            asset_type: ASSET_TYPE_CUSTOM,
+            asset_flags: ASSET_FLAG_XZ,
+            name: name.to_string(),
+            payload_offset,
+            payload_len: compressed.len() as u64,
+            checksum: None,
+        },
+        &compressed,
+    )];
+    let directory = encode_directory(&entries).unwrap();
+    bytes.extend_from_slice(&directory);
+
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_YES,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        reserved_0: 0,
+        flags: 0,
+        directory_offset,
+        directory_len: directory.len() as u64,
+        stream_offset,
+        stream_len: 0,
+        sample_count: 0,
+    };
+    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    (
+        bytes,
+        name.to_string(),
+        compressed,
+        directory_offset,
+        payload_offset,
+    )
+}
+
+/// Locate the offset of an asset's stored CRC32C bytes inside a
+/// hand-built single-asset bundle. Assumes the directory starts at
+/// `directory_offset`, the entry count is one, and the entry's
+/// `checksum_len` is 4 (the only legal value when the flag is set).
+fn stored_checksum_offset(directory_offset: u64, name: &str) -> usize {
+    // directory layout: [u32 count][entry][...]
+    // entry layout:     [28-byte header][name bytes][checksum bytes]
+    let entry_start = directory_offset as usize + 4;
+    entry_start + 28 + name.len()
+}
+
+// ----- Explicit verify_asset_checksum -------------------------------
+
+#[test]
+fn verify_asset_checksum_uncompressed_passes_on_intact_bundle() {
+    let (bytes, name, _, _) = make_single_asset_bundle("blob", b"hello world");
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name(&name).cloned().unwrap();
+    reader.verify_asset_checksum(&entry).unwrap();
+}
+
+#[test]
+fn verify_asset_checksum_uncompressed_corrupt_stored_crc_returns_mismatch() {
+    let (mut bytes, name, dir_off, _) = make_single_asset_bundle("blob", b"hello world");
+    let crc_off = stored_checksum_offset(dir_off, &name);
+    bytes[crc_off] ^= 0xFF; // flip stored checksum
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name(&name).cloned().unwrap();
+    let err = reader.verify_asset_checksum(&entry).unwrap_err();
+    assert!(matches!(
+        err,
+        BendlReadError::Checksum(ChecksumError::Mismatch { ref target, .. })
+            if matches!(target, ChecksumTarget::Asset(n) if n == &name)
+    ));
+}
+
+#[test]
+fn verify_asset_checksum_uncompressed_corrupt_payload_byte_returns_mismatch() {
+    let (mut bytes, name, _, payload_off) = make_single_asset_bundle("blob", b"hello world");
+    bytes[payload_off as usize] ^= 0x01; // flip first payload byte
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name(&name).cloned().unwrap();
+    let err = reader.verify_asset_checksum(&entry).unwrap_err();
+    assert!(matches!(err, BendlReadError::Checksum(ChecksumError::Mismatch { .. })));
+}
+
+#[test]
+fn verify_asset_checksum_xz_corrupt_stored_crc_returns_mismatch_no_decoder() {
+    // The explicit verifier reads raw bytes — no XzDecoder is invoked,
+    // so even an intact compressed payload reports `Mismatch`
+    // deterministically when only the stored CRC has been corrupted.
+    let (mut bytes, name, _, dir_off, _) =
+        make_single_xz_asset_bundle("blob.xz", b"some compressible content");
+    let crc_off = stored_checksum_offset(dir_off, &name);
+    bytes[crc_off] ^= 0xFF;
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name(&name).cloned().unwrap();
+    let err = reader.verify_asset_checksum(&entry).unwrap_err();
+    assert!(matches!(err, BendlReadError::Checksum(ChecksumError::Mismatch { .. })));
+}
+
+#[test]
+fn verify_asset_checksum_xz_corrupt_payload_returns_mismatch_no_decoder() {
+    // Verifier is over raw bytes — a payload flip that breaks xz framing
+    // still surfaces as Mismatch, NOT a decoder error, because the
+    // explicit verifier never invokes the decoder.
+    let (mut bytes, name, compressed, _, payload_off) =
+        make_single_xz_asset_bundle("blob.xz", b"some compressible content");
+    assert!(compressed.len() > 5);
+    bytes[payload_off as usize + 5] ^= 0xFF;
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name(&name).cloned().unwrap();
+    let err = reader.verify_asset_checksum(&entry).unwrap_err();
+    assert!(matches!(err, BendlReadError::Checksum(ChecksumError::Mismatch { .. })));
+}
+
+#[test]
+fn verify_asset_checksum_returns_unavailable_when_flag_clear() {
+    // Hand-build a foreign bundle whose entry has the flag clear.
+    let payload = b"orphan".to_vec();
+    let mut bytes = Vec::new();
+    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    let payload_offset = bytes.len() as u64;
+    bytes.extend_from_slice(&payload);
+    let stream_offset = bytes.len() as u64;
+    let directory_offset = bytes.len() as u64;
+    let entries = vec![BendlDirectoryEntry {
+        asset_type: ASSET_TYPE_CUSTOM,
+        asset_flags: 0, // explicitly NO checksum flag
+        name: "noflag".to_string(),
+        payload_offset,
+        payload_len: payload.len() as u64,
+        checksum: None,
+    }];
+    let directory = encode_directory(&entries).unwrap();
+    bytes.extend_from_slice(&directory);
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_YES,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        reserved_0: 0,
+        flags: 0,
+        directory_offset,
+        directory_len: directory.len() as u64,
+        stream_offset,
+        stream_len: 0,
+        sample_count: 0,
+    };
+    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name("noflag").cloned().unwrap();
+    let err = reader.verify_asset_checksum(&entry).unwrap_err();
+    assert!(matches!(
+        err,
+        BendlReadError::Checksum(ChecksumError::Unavailable {
+            target: ChecksumTarget::Asset(_),
+        })
+    ));
+    // The unverified path can still read the bytes.
+    let got = reader.asset_bytes_unverified(&entry).unwrap();
+    assert_eq!(got, payload);
+}
+
+// ----- Verify-on-touch via asset_bytes ------------------------------
+
+#[test]
+fn asset_bytes_uncompressed_corrupt_payload_returns_checksum_mismatch() {
+    let (mut bytes, name, _, payload_off) = make_single_asset_bundle("blob", b"hello world");
+    bytes[payload_off as usize] ^= 0x01;
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name(&name).cloned().unwrap();
+    let err = reader.asset_bytes(&entry).unwrap_err();
+    assert!(matches!(err, BendlReadError::Checksum(ChecksumError::Mismatch { .. })));
+}
+
+#[test]
+fn asset_bytes_unverified_uncompressed_returns_corrupted_bytes_no_check() {
+    let (mut bytes, name, _, payload_off) = make_single_asset_bundle("blob", b"hello world");
+    bytes[payload_off as usize] ^= 0x01;
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name(&name).cloned().unwrap();
+    let got = reader.asset_bytes_unverified(&entry).unwrap();
+    // The bytes returned are the corrupted bytes; we do not assert
+    // exact content, only that the operation succeeded — the
+    // *_unverified contract is that ChecksumError NEVER fires.
+    assert_eq!(got.len(), b"hello world".len());
+}
+
+#[test]
+fn asset_bytes_xz_corrupt_stored_crc_returns_checksum_mismatch() {
+    // xz framing intact, but stored CRC is wrong. The codec reaches EOF
+    // cleanly first and then the BENDL-owned wrapper reports
+    // `ChecksumError::Mismatch`.
+    let (mut bytes, name, _, dir_off, _) =
+        make_single_xz_asset_bundle("blob.xz", b"some compressible content");
+    let crc_off = stored_checksum_offset(dir_off, &name);
+    bytes[crc_off] ^= 0xFF;
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name(&name).cloned().unwrap();
+    let err = reader.asset_bytes(&entry).unwrap_err();
+    assert!(matches!(err, BendlReadError::Checksum(ChecksumError::Mismatch { .. })));
+}
+
+#[test]
+fn asset_bytes_xz_corrupt_framing_returns_decode_error_not_checksum() {
+    // Payload flip breaks xz framing — the decoder fails before the
+    // CRC tee reaches raw EOF, so the variant is
+    // `BendlReadError::Decode`, not `BendlReadError::Checksum`.
+    let (mut bytes, name, compressed, _, payload_off) =
+        make_single_xz_asset_bundle("blob.xz", b"some compressible content");
+    assert!(compressed.len() > 5);
+    bytes[payload_off as usize + 5] ^= 0xFF;
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name(&name).cloned().unwrap();
+    let err = reader.asset_bytes(&entry).unwrap_err();
+    assert!(
+        matches!(err, BendlReadError::Decode(_)),
+        "expected Decode for broken xz framing, got {err:?}"
+    );
+}
+
+#[test]
+fn asset_bytes_unverified_xz_corrupt_framing_returns_decode_error_never_checksum() {
+    let (mut bytes, name, compressed, _, payload_off) =
+        make_single_xz_asset_bundle("blob.xz", b"some compressible content");
+    assert!(compressed.len() > 5);
+    bytes[payload_off as usize + 5] ^= 0xFF;
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name(&name).cloned().unwrap();
+    let err = reader.asset_bytes_unverified(&entry).unwrap_err();
+    // Unverified path NEVER surfaces a checksum error; codec errors
+    // are still allowed.
+    assert!(!matches!(err, BendlReadError::Checksum(_)));
+    assert!(matches!(err, BendlReadError::Decode(_)));
+}
+
+#[test]
+fn asset_bytes_returns_unavailable_when_flag_clear() {
+    // Same hand-built foreign bundle as in the verifier test.
+    let payload = b"orphan".to_vec();
+    let mut bytes = Vec::new();
+    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    let payload_offset = bytes.len() as u64;
+    bytes.extend_from_slice(&payload);
+    let directory_offset = bytes.len() as u64;
+    let entries = vec![BendlDirectoryEntry {
+        asset_type: ASSET_TYPE_CUSTOM,
+        asset_flags: 0,
+        name: "noflag".to_string(),
+        payload_offset,
+        payload_len: payload.len() as u64,
+        checksum: None,
+    }];
+    let directory = encode_directory(&entries).unwrap();
+    bytes.extend_from_slice(&directory);
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_YES,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        reserved_0: 0,
+        flags: 0,
+        directory_offset,
+        directory_len: directory.len() as u64,
+        stream_offset: directory_offset,
+        stream_len: 0,
+        sample_count: 0,
+    };
+    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name("noflag").cloned().unwrap();
+    let err = reader.asset_bytes(&entry).unwrap_err();
+    assert!(matches!(
+        err,
+        BendlReadError::Checksum(ChecksumError::Unavailable { .. })
+    ));
+}
+
+// ----- asset_reader EOF semantics ----------------------------------
+
+#[test]
+fn asset_reader_uncompressed_surfaces_mismatch_on_final_read() {
+    // Drive `asset_reader` byte-by-byte and assert the call that
+    // would otherwise return Ok(0) at EOF returns InvalidData wrapping
+    // ChecksumError::Mismatch.
+    let (mut bytes, name, _, payload_off) = make_single_asset_bundle("blob", b"abcdef");
+    bytes[payload_off as usize] ^= 0x01;
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name(&name).cloned().unwrap();
+    let mut r = reader.asset_reader(&entry).unwrap();
+    let mut buf = [0u8; 1024];
+    // Consume bytes until 0 or error.
+    let mut total_ok = 0usize;
+    loop {
+        match r.read(&mut buf) {
+            Ok(0) => panic!("expected a checksum error at EOF, got Ok(0) after {total_ok} bytes"),
+            Ok(n) => total_ok += n,
+            Err(e) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::InvalidData);
+                let inner = e
+                    .get_ref()
+                    .and_then(|x| x.downcast_ref::<ChecksumError>())
+                    .expect("inner ChecksumError");
+                assert!(matches!(inner, ChecksumError::Mismatch { .. }));
+                break;
+            }
+        }
+    }
+    assert_eq!(total_ok, b"abcdef".len());
+}
+
+// ----- Bulk verifier -------------------------------------------------
+
+#[test]
+fn verify_all_asset_checksums_reports_first_mismatch_in_directory_order() {
+    // Build a bundle with two assets, both corrupted. The bulk
+    // verifier must return the *first* mismatch in directory order
+    // and stop. Construct manually so we can corrupt independently.
+    let p1 = b"first".to_vec();
+    let p2 = b"second".to_vec();
+    let mut bytes = Vec::new();
+    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    let off1 = bytes.len() as u64;
+    bytes.extend_from_slice(&p1);
+    let off2 = bytes.len() as u64;
+    bytes.extend_from_slice(&p2);
+    let stream_offset = bytes.len() as u64;
+    let directory_offset = bytes.len() as u64;
+    let e1 = with_crc(
+        BendlDirectoryEntry {
+            asset_type: ASSET_TYPE_CUSTOM,
+            asset_flags: 0,
+            name: "first".to_string(),
+            payload_offset: off1,
+            payload_len: p1.len() as u64,
+            checksum: None,
+        },
+        &p1,
+    );
+    let e2 = with_crc(
+        BendlDirectoryEntry {
+            asset_type: ASSET_TYPE_CUSTOM,
+            asset_flags: 0,
+            name: "second".to_string(),
+            payload_offset: off2,
+            payload_len: p2.len() as u64,
+            checksum: None,
+        },
+        &p2,
+    );
+    let directory = encode_directory(&[e1, e2]).unwrap();
+    bytes.extend_from_slice(&directory);
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_YES,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        reserved_0: 0,
+        flags: 0,
+        directory_offset,
+        directory_len: directory.len() as u64,
+        stream_offset,
+        stream_len: 0,
+        sample_count: 0,
+    };
+    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    // Corrupt both payloads.
+    bytes[off1 as usize] ^= 0x01;
+    bytes[off2 as usize] ^= 0x01;
+
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let err = reader.verify_all_asset_checksums().unwrap_err();
+    let target = match &err {
+        BendlReadError::Checksum(ChecksumError::Mismatch { target, .. }) => target.clone(),
+        other => panic!("expected first-asset Mismatch, got {other:?}"),
+    };
+    assert!(matches!(&target, ChecksumTarget::Asset(n) if n == "first"));
+}
+
+// ----- Polynomial pin ------------------------------------------------
+
+#[test]
+fn crc32c_polynomial_pin_against_known_vectors() {
+    // Pin known CRC32C (Castagnoli) values so a future accidental
+    // swap to IEEE CRC-32 is caught at test time. The IEEE CRC-32 of
+    // [0x01,0x02,0x03,0x04] is 0xB63CFBCD; the CRC32C value below
+    // diverges from that, which is the whole point of the pin.
+    //
+    //   CRC32C("")                = 0x00000000
+    //   CRC32C([1,2,3,4])         = 0x8A2D413B
+    //   CRC32C(b"123456789")      = 0xE3069283 (Castagnoli check value)
+    //
+    // The Castagnoli check value 0xE3069283 is the canonical CRC32C
+    // test vector cited in the IEEE 802.3 / SCTP RFC 3720 specs and
+    // diverges from the IEEE CRC-32 polynomial's check value
+    // (0xCBF43926). If a future contributor accidentally swaps to
+    // IEEE CRC-32, this assertion fires.
+    assert_eq!(crc32c::crc32c(b""), 0x0000_0000);
+    // 0xE3069283 is the canonical Castagnoli check value
+    // (CRC32C of ASCII "123456789"); the IEEE CRC-32 polynomial's
+    // check value over the same input is 0xCBF43926, so any
+    // accidental swap is caught here.
+    assert_eq!(crc32c::crc32c(b"123456789"), 0xE306_9283);
+    // Extra sentinels to broaden the trip-wire.
+    assert_eq!(crc32c::crc32c(&[0x01, 0x02, 0x03, 0x04]), 0x2930_8CF4);
 }

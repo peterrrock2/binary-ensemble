@@ -6,26 +6,22 @@
 //! [header] [asset payloads] [assignment stream] [directory]
 //! ```
 //!
-//! The writer operates in three logical phases, expressed via owned
-//! typestate transitions:
+//! The writer operates in three logical phases, expressed via owned typestate transitions:
 //!
-//! 1. **asset phase** — the caller invokes [`BendlWriter::add_asset`] zero
-//!    or more times. Each call writes the (optionally xz-compressed)
-//!    payload to the file and records its absolute offset and length in
-//!    an in-memory entry list.
-//! 2. **stream phase** — the caller invokes
-//!    [`BendlWriter::into_stream_session`] to consume the writer and
-//!    obtain a [`BendlStreamSession`] that owns the underlying writer
-//!    and implements `Write`. When the stream is complete the caller
-//!    calls [`BendlStreamSession::finish_into_writer`] to recover the
-//!    [`BendlWriter`] in the `StreamWritten` state.
-//! 3. **finalize phase** — [`BendlWriter::finish`] writes the trailing
-//!    directory and patches the header.
+//! 1. **asset phase** — the caller invokes [`BendlWriter::add_asset`] zero or more times. Each
+//!    call writes the (optionally xz-compressed) payload to the file and records its absolute
+//!    offset and length in an in-memory entry list.
+//! 2. **stream phase** — the caller invokes [`BendlWriter::into_stream_session`] to consume the
+//!    writer and obtain a [`BendlStreamSession`] that owns the underlying writer and implements
+//!    `Write`. When the stream is complete the caller calls
+//!    [`BendlStreamSession::finish_into_writer`] to recover the [`BendlWriter`] in the
+//!    `StreamWritten` state.
+//! 3. **finalize phase** — [`BendlWriter::finish`] writes the trailing directory and patches the
+//!    header.
 //!
-//! The writer requires `Write + Seek` because the header is patched
-//! twice: once with the stream offset (implicitly, by having reserved
-//! its slot at construction) and once with the finalized stream length,
-//! sample count, directory offset, directory length, and `complete` flag.
+//! The writer requires `Write + Seek` because the header is patched twice: once with the stream
+//! offset (implicitly, by having reserved its slot at construction) and once with the finalized
+//! stream length, sample count, directory offset, directory length, and `complete` flag.
 
 use std::collections::HashSet;
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -34,17 +30,16 @@ use thiserror::Error;
 use xz2::write::XzEncoder;
 
 use super::format::{
-    standardized_name_for, default_compresses_by_type, encode_directory, read_directory,
+    default_compresses_by_type, encode_directory, read_directory, standardized_name_for,
     AssignmentFormat, BendlDirectoryEntry, BendlFormatError, BendlHeader, KnownAssetKind,
-    ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, FINALIZED_YES, DEFAULT_XZ_PRESET,
-    HEADER_SIZE,
+    ASSET_FLAG_CHECKSUM, ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, DEFAULT_XZ_PRESET,
+    FINALIZED_YES, HEADER_SIZE,
 };
 
 /// Ability to truncate an underlying seekable target to a given length.
 ///
-/// This is not part of `std::io`, so `BendlAppender` takes a trait bound
-/// that abstracts it and is implemented below for `std::fs::File` and
-/// `std::io::Cursor<Vec<u8>>`.
+/// This is not part of `std::io`, so `BendlAppender` takes a trait bound that abstracts it and is
+/// implemented below for `std::fs::File` and `std::io::Cursor<Vec<u8>>`.
 pub trait BendlTruncate {
     /// Truncate or extend the underlying target to exactly `len` bytes.
     fn truncate_at(&mut self, len: u64) -> io::Result<()>;
@@ -67,6 +62,11 @@ impl BendlTruncate for std::io::Cursor<Vec<u8>> {
 }
 
 /// Options passed alongside each [`BendlWriter::add_asset`] call.
+///
+/// There is no "checksum opt-in/opt-out" knob: every asset written through the library carries a
+/// CRC32C of its on-disk payload bytes, computed automatically by the writer. A future
+/// recovery/debug writer that needs to emit unchecked assets must be an explicitly named
+/// `*_unverified` API and excluded from normal write paths.
 #[derive(Debug, Clone, Default)]
 pub struct AddAssetOptions {
     /// Compression override. `None` means "follow the default policy for
@@ -76,10 +76,6 @@ pub struct AddAssetOptions {
     /// Whether the decoded payload is UTF-8 JSON. Adds the
     /// [`ASSET_FLAG_JSON`] bit to the entry's flags.
     pub is_json: bool,
-    /// Optional trailing checksum bytes to store in the directory entry.
-    /// When set, [`crate::io::bundle::format::ASSET_FLAG_CHECKSUM`] is
-    /// applied automatically.
-    pub checksum: Option<Vec<u8>>,
 }
 
 impl AddAssetOptions {
@@ -215,16 +211,18 @@ impl<W: Write + Seek> BendlWriter<W> {
             payload.to_vec()
         };
 
-        // Flags.
-        let mut asset_flags: u16 = 0;
+        // CRC32C over the on-disk payload bytes. For compressed assets this is the compressed
+        // bytes (verification happens before decompression). See ASSET_FLAG_CHECKSUM for the
+        // wire-format pin.
+        let crc = crc32c::crc32c(&payload_bytes);
+        let checksum_bytes = crc.to_le_bytes().to_vec();
+
+        let mut asset_flags: u16 = ASSET_FLAG_CHECKSUM;
         if options.is_json {
             asset_flags |= ASSET_FLAG_JSON;
         }
         if compress {
             asset_flags |= ASSET_FLAG_XZ;
-        }
-        if options.checksum.is_some() {
-            asset_flags |= crate::io::bundle::format::ASSET_FLAG_CHECKSUM;
         }
 
         // Write at current file position.
@@ -240,7 +238,7 @@ impl<W: Write + Seek> BendlWriter<W> {
             name: name.to_string(),
             payload_offset,
             payload_len,
-            checksum: options.checksum,
+            checksum: Some(checksum_bytes),
         });
 
         Ok(())
@@ -261,19 +259,24 @@ impl<W: Write + Seek> BendlWriter<W> {
         )
     }
 
-    /// Add one of the known singleton assets, using its reserved asset-type
-    /// integer and standardized name automatically.
+    /// Add one of the known singleton assets, using its reserved asset-type integer and
+    /// standardized name automatically.
     pub fn add_known_asset(
         &mut self,
         kind: KnownAssetKind,
         payload: &[u8],
         options: AddAssetOptions,
     ) -> Result<(), BendlWriteError> {
-        self.add_asset(kind.asset_type(), kind.standardized_name(), payload, options)
+        self.add_asset(
+            kind.asset_type(),
+            kind.standardized_name(),
+            payload,
+            options,
+        )
     }
 
-    /// Add a custom (writer-named) asset. The asset-type is set to
-    /// [`ASSET_TYPE_CUSTOM`] automatically.
+    /// Add a custom (writer-named) asset. The asset-type is set to [`ASSET_TYPE_CUSTOM`]
+    /// automatically.
     pub fn add_custom_asset(
         &mut self,
         name: &str,
@@ -285,22 +288,17 @@ impl<W: Write + Seek> BendlWriter<W> {
 
     /// Consume the writer and transition into the stream phase.
     ///
-    /// The returned [`BendlStreamSession`] owns the underlying writer
-    /// and implements `Write`, so it can be plumbed into a
-    /// [`crate::io::writer::BenStreamWriter`] (or written to directly).
-    /// When the stream is complete the caller calls
-    /// [`BendlStreamSession::finish_into_writer`] to recover ownership
-    /// of a [`BendlWriter`] in the `StreamWritten` state, ready for
+    /// The returned [`BendlStreamSession`] owns the underlying writer and implements `Write`, so
+    /// it can be plumbed into a [`crate::io::writer::BenStreamWriter`] (or written to directly).
+    /// When the stream is complete the caller calls [`BendlStreamSession::finish_into_writer`]
+    /// to recover ownership of a [`BendlWriter`] in the `StreamWritten` state, ready for
     /// [`BendlWriter::finish`].
     ///
-    /// Returns [`BendlWriteError::WrongState`] when called on a writer
-    /// that has already produced a stream (e.g. via a prior
-    /// `finish_into_writer`); this guard prevents a second
-    /// `into_stream_session` from silently overwriting
-    /// `header.stream_offset` and corrupting the bundle.
-    pub fn into_stream_session(
-        mut self,
-    ) -> Result<BendlStreamSession<W>, BendlWriteError> {
+    /// Returns [`BendlWriteError::WrongState`] when called on a writer that has already produced
+    /// a stream (e.g. via a prior `finish_into_writer`); this guard prevents a second
+    /// `into_stream_session` from silently overwriting `header.stream_offset` and corrupting the
+    /// bundle.
+    pub fn into_stream_session(mut self) -> Result<BendlStreamSession<W>, BendlWriteError> {
         match self.state {
             WriterState::Assets => {}
             WriterState::StreamWritten { .. } => {
@@ -369,7 +367,6 @@ impl<W: Write + Seek> BendlWriter<W> {
 
         Ok(self.inner)
     }
-
 }
 
 /// Internal state of a [`BendlWriter`] that has been temporarily moved
@@ -555,7 +552,6 @@ struct PendingAsset {
     /// Resolved compression decision: `true` means compress, `false` means raw.
     compress: bool,
     is_json: bool,
-    checksum: Option<Vec<u8>>,
 }
 
 impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
@@ -656,7 +652,6 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
             raw_payload: payload.to_vec(),
             compress,
             is_json: options.is_json,
-            checksum: options.checksum,
         });
         Ok(())
     }
@@ -684,7 +679,12 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
         payload: &[u8],
         options: AddAssetOptions,
     ) -> Result<(), BendlWriteError> {
-        self.add_asset(kind.asset_type(), kind.standardized_name(), payload, options)
+        self.add_asset(
+            kind.asset_type(),
+            kind.standardized_name(),
+            payload,
+            options,
+        )
     }
 
     /// Append a custom (writer-named) asset. The asset-type is set to
@@ -733,15 +733,16 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
                 asset.raw_payload
             };
 
-            let mut asset_flags: u16 = 0;
+            // CRC32C over on-disk payload bytes (compressed if XZ).
+            let crc = crc32c::crc32c(&bytes);
+            let checksum_bytes = crc.to_le_bytes().to_vec();
+
+            let mut asset_flags: u16 = ASSET_FLAG_CHECKSUM;
             if asset.is_json {
                 asset_flags |= ASSET_FLAG_JSON;
             }
             if asset.compress {
                 asset_flags |= ASSET_FLAG_XZ;
-            }
-            if asset.checksum.is_some() {
-                asset_flags |= crate::io::bundle::format::ASSET_FLAG_CHECKSUM;
             }
 
             encoded.push(EncodedPending {
@@ -749,7 +750,7 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
                 name: asset.name,
                 bytes,
                 asset_flags,
-                checksum: asset.checksum,
+                checksum: Some(checksum_bytes),
             });
         }
 

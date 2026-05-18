@@ -13,6 +13,7 @@
 //!   encode/decode helpers. Pure functions over byte buffers; no I/O.
 //! - [`manifest`] — serde structs for the optional `metadata.json` asset.
 
+pub mod error;
 pub mod format;
 pub mod manifest;
 pub mod reader;
@@ -21,5 +22,6 @@ pub mod writer;
 #[cfg(test)]
 mod tests;
 
+pub use error::{BendlReadError, ChecksumError, ChecksumTarget};
 pub use reader::{BendlReader, BundleAssignmentReaderError, BundleValidationError};
 pub use writer::{AddAssetOptions, BendlStreamSession, BendlWriteError, BendlWriter};

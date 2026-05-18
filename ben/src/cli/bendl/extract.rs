@@ -39,7 +39,8 @@ pub(super) fn run_extract(args: ExtractArgs) -> Result<(), String> {
         let mut asset = reader
             .asset_reader(&entry)
             .map_err(|e| format!("failed to open asset {name:?}: {e}"))?;
-        io::copy(&mut asset, &mut out).map_err(|e| format!("failed to copy asset bytes: {e}"))?;
+        io::copy(&mut asset, &mut out)
+            .map_err(|e| format!("failed to copy asset {name:?} bytes: {e}"))?;
     }
 
     out.flush().map_err(|e| format!("flush failed: {e}"))?;

@@ -148,7 +148,20 @@ pub const ASSET_FLAG_JSON: u16 = 1 << 0;
 /// directory field refers to the compressed size on disk.
 pub const ASSET_FLAG_XZ: u16 = 1 << 1;
 /// Asset flag bit: the entry carries a trailing checksum.
+///
+/// When set, the trailing checksum is exactly four little-endian bytes
+/// containing a CRC32C (Castagnoli polynomial) over the **on-disk
+/// payload bytes** (`payload_offset..payload_offset + payload_len`).
+/// For an xz-compressed asset the CRC is over the compressed bytes,
+/// not the decompressed content — verification happens before
+/// decompression. Library writer paths always set this flag with
+/// `checksum_len == [`ASSET_CHECKSUM_LEN`]`; readers reject any entry
+/// where the flag and `checksum_len` are inconsistent (see
+/// [`BendlDirectoryEntry::read_from`]).
 pub const ASSET_FLAG_CHECKSUM: u16 = 1 << 2;
+
+/// On-disk byte width of an asset-payload CRC32C.
+pub const ASSET_CHECKSUM_LEN: u32 = 4;
 
 /// Default xz preset level used when compressing asset payloads.
 ///
@@ -356,7 +369,21 @@ impl BendlDirectoryEntry {
         // header[6..8] reserved; ignored
         let payload_offset = u64::from_le_bytes(header[8..16].try_into().unwrap());
         let payload_len = u64::from_le_bytes(header[16..24].try_into().unwrap());
-        let checksum_len = u32::from_le_bytes(header[24..28].try_into().unwrap()) as usize;
+        let checksum_len_raw = u32::from_le_bytes(header[24..28].try_into().unwrap());
+
+        // Reject (flag, checksum_len) inconsistencies before allocating anything.
+        let flag_set = asset_flags & ASSET_FLAG_CHECKSUM != 0;
+        match (flag_set, checksum_len_raw) {
+            (true, ASSET_CHECKSUM_LEN) => {}
+            (false, 0) => {}
+            _ => {
+                return Err(BendlFormatError::InconsistentChecksumMetadata {
+                    flag_set,
+                    checksum_len: checksum_len_raw,
+                });
+            }
+        }
+        let checksum_len = checksum_len_raw as usize;
 
         let mut name_buf = vec![0u8; name_len];
         reader.read_exact(&mut name_buf)?;
@@ -378,6 +405,23 @@ impl BendlDirectoryEntry {
             payload_len,
             checksum,
         })
+    }
+
+    /// Return the stored CRC32C as a `u32`, if and only if the entry carries a valid checksum
+    /// (flag set, 4 bytes).
+    ///
+    /// This is the canonical accessor for verification code. Returns `None` for entries with
+    /// `ASSET_FLAG_CHECKSUM` clear; entries where the flag and length are inconsistent are
+    /// rejected at read time and so cannot reach this method.
+    pub fn checksum_u32(&self) -> Option<u32> {
+        if self.asset_flags & ASSET_FLAG_CHECKSUM == 0 {
+            return None;
+        }
+        let bytes = self.checksum.as_deref()?;
+        if bytes.len() != ASSET_CHECKSUM_LEN as usize {
+            return None;
+        }
+        Some(u32::from_le_bytes(bytes.try_into().ok()?))
     }
 }
 
@@ -460,6 +504,18 @@ pub enum BendlFormatError {
     #[error("malformed directory: {0}")]
     MalformedDirectory(String),
 
+    /// A directory entry's `ASSET_FLAG_CHECKSUM` bit and `checksum_len` disagree. The wire format
+    /// requires `flag set iff checksum_len == 4` and `flag clear iff checksum_len == 0`.
+    #[error(
+        "inconsistent checksum metadata: ASSET_FLAG_CHECKSUM={flag_set}, checksum_len={checksum_len}"
+    )]
+    InconsistentChecksumMetadata {
+        /// Whether the entry had the `ASSET_FLAG_CHECKSUM` bit set.
+        flag_set: bool,
+        /// The trailing-checksum length the entry actually declared.
+        checksum_len: u32,
+    },
+
     /// An I/O error occurred while reading or writing the format layer.
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
@@ -473,4 +529,3 @@ impl From<BendlFormatError> for io::Error {
         }
     }
 }
-

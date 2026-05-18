@@ -825,18 +825,17 @@ fn writer_accepts_custom_asset_with_canonical_name_but_non_canonical_type() {
 }
 
 #[test]
-fn writer_asset_with_checksum_round_trips_through_reader() {
+fn writer_asset_round_trips_with_auto_computed_crc32c() {
+    // Every asset gets ASSET_FLAG_CHECKSUM with a 4-byte CRC32C of the
+    // on-disk payload bytes (post-compression for xz-flagged assets).
+    let payload = b"hello".to_vec();
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    let checksum = vec![0x01, 0x02, 0x03, 0x04];
     writer
         .add_asset(
             ASSET_TYPE_CUSTOM,
             "with_checksum",
-            b"hello",
-            AddAssetOptions {
-                checksum: Some(checksum.clone()),
-                ..AddAssetOptions::defaults()
-            },
+            &payload,
+            AddAssetOptions::defaults().raw(),
         )
         .unwrap();
     let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
@@ -844,8 +843,14 @@ fn writer_asset_with_checksum_round_trips_through_reader() {
 
     let reader = BendlReader::open(Cursor::new(buf)).unwrap();
     let entry = reader.find_asset_by_name("with_checksum").cloned().unwrap();
-    assert_eq!(entry.checksum, Some(checksum));
     assert_ne!(entry.asset_flags & ASSET_FLAG_CHECKSUM, 0);
+    let expected_crc = crc32c::crc32c(&payload);
+    assert_eq!(entry.checksum_u32(), Some(expected_crc));
+    assert_eq!(
+        entry.checksum,
+        Some(expected_crc.to_le_bytes().to_vec()),
+        "stored checksum is the little-endian CRC32C"
+    );
 }
 
 #[test]
@@ -1207,26 +1212,24 @@ fn stream_session_flush_succeeds() {
 // ── BendlAppender: checksum flag ────────────────────────────────
 
 #[test]
-fn appender_commit_with_checksum_sets_checksum_flag() {
+fn appender_commit_auto_computes_crc32c_on_pending_assets() {
     let (bundle, _) = build_base_bundle();
+    let payload = b"payload".to_vec();
     let mut appender = BendlAppender::open(Cursor::new(bundle)).unwrap();
     appender
         .add_asset(
             ASSET_TYPE_CUSTOM,
             "checksummed",
-            b"payload",
-            AddAssetOptions {
-                checksum: Some(vec![0xAB, 0xCD]),
-                ..AddAssetOptions::defaults()
-            },
+            &payload,
+            AddAssetOptions::defaults().raw(),
         )
         .unwrap();
     let buf = appender.commit().unwrap().into_inner();
 
     let reader = BendlReader::open(Cursor::new(buf)).unwrap();
     let entry = reader.find_asset_by_name("checksummed").unwrap();
-    assert_eq!(entry.checksum, Some(vec![0xAB, 0xCD]));
     assert_ne!(entry.asset_flags & ASSET_FLAG_CHECKSUM, 0);
+    assert_eq!(entry.checksum_u32(), Some(crc32c::crc32c(&payload)));
 }
 
 // ── BendlAppender: trailing directory bytes ──────────────────────
