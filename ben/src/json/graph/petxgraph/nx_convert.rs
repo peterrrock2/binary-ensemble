@@ -8,8 +8,8 @@ use std::collections::{HashMap, HashSet};
 
 /// Convert an [`NxNode`] into a [`PetxNode`].
 ///
-/// The node's `id` field is moved into the attribute map under the reserved
-/// key `"__networkx_id__"` so it can be recovered later.
+/// The node's `id` field is moved into the attribute map under the reserved key `"__networkx_id__"`
+/// so it can be recovered later.
 ///
 /// # Arguments
 ///
@@ -17,8 +17,7 @@ use std::collections::{HashMap, HashSet};
 ///
 /// # Returns
 ///
-/// A [`PetxNode`] whose `attrs` map contains all original attributes plus
-/// `"__networkx_id__"`.
+/// A [`PetxNode`] whose `attrs` map contains all original attributes plus `"__networkx_id__"`.
 pub(in crate::json::graph) fn nx_node_to_petx_node(nx_node: NxNode) -> PetxNode {
     let mut attrs = nx_node.attrs;
     attrs.insert("__networkx_id__".to_string(), nx_node.id);
@@ -27,8 +26,8 @@ pub(in crate::json::graph) fn nx_node_to_petx_node(nx_node: NxNode) -> PetxNode 
 
 /// Convert a [`PetxNode`] back into an [`NxNode`].
 ///
-/// The `"__networkx_id__"` entry is removed from the attribute map and
-/// placed back into the `id` field.
+/// The `"__networkx_id__"` entry is removed from the attribute map and placed back into the `id`
+/// field.
 ///
 /// # Arguments
 ///
@@ -40,8 +39,7 @@ pub(in crate::json::graph) fn nx_node_to_petx_node(nx_node: NxNode) -> PetxNode 
 ///
 /// # Errors
 ///
-/// Returns [`NxPetgraphError::Other`] if the node has no
-/// `"__networkx_id__"` attribute.
+/// Returns [`NxPetgraphError::Other`] if the node has no `"__networkx_id__"` attribute.
 pub(in crate::json::graph) fn petx_node_to_nx_node(
     petx_node: &PetxNode,
 ) -> Result<NxNode, NxPetgraphError> {
@@ -55,15 +53,13 @@ pub(in crate::json::graph) fn petx_node_to_nx_node(
 
 /// Build a [`PetxGraph`] from a parsed [`NxGraphAdjFormat`].
 ///
-/// Nodes are added in order and edges are extracted from the adjacency lists.
-/// For undirected graphs, duplicate `(u,v)` / `(v,u)` entries are
-/// deduplicated so each edge is stored only once.
+/// Nodes are added in order and edges are extracted from the adjacency lists. For undirected
+/// graphs, duplicate `(u,v)` / `(v,u)` entries are deduplicated so each edge is stored only once.
 ///
 /// # Arguments
 ///
 /// * `nx_graph` - The parsed NetworkX graph. Consumed by this function.
-/// * `is_directed` - Whether the target graph should be directed. Must match
-///   `nx_graph.directed`.
+/// * `is_directed` - Whether the target graph should be directed. Must match `nx_graph.directed`.
 ///
 /// # Returns
 ///
@@ -141,8 +137,8 @@ where
             .expect("__networkx_id__ always set by nx_node_to_petx_node");
 
         // serde_json::Value is always serializable.
-        let source_key = serde_json::to_string(source_id)
-            .expect("serde_json::Value always serializes");
+        let source_key =
+            serde_json::to_string(source_id).expect("serde_json::Value always serializes");
 
         for edge in neighbors {
             let target_id = &edge.id;
@@ -154,8 +150,8 @@ where
                 graph.add_edge(source_idx, *target_idx, edge);
             } else {
                 // serde_json::Value is always serializable.
-                let target_key = serde_json::to_string(target_id)
-                    .expect("serde_json::Value always serializes");
+                let target_key =
+                    serde_json::to_string(target_id).expect("serde_json::Value always serializes");
 
                 let edge_key_str = edge
                     .key
@@ -180,8 +176,8 @@ where
 
 /// Check whether a graph contains parallel (multi) edges.
 ///
-/// Two edges are considered parallel if they connect the same pair of
-/// endpoints. For undirected graphs, `(u,v)` and `(v,u)` are the same pair.
+/// Two edges are considered parallel if they connect the same pair of endpoints. For undirected
+/// graphs, `(u,v)` and `(v,u)` are the same pair.
 ///
 /// # Arguments
 ///
@@ -218,10 +214,9 @@ where
 
 /// Convert a [`PetxGraph`] back into an [`NxGraphAdjFormat`].
 ///
-/// Nodes are emitted in petgraph index order. For undirected graphs, each
-/// edge appears in both endpoints' adjacency lists (except self-loops,
-/// which appear only once). The `multigraph` flag is set automatically
-/// based on whether parallel edges exist.
+/// Nodes are emitted in petgraph index order. For undirected graphs, each edge appears in both
+/// endpoints' adjacency lists (except self-loops, which appear only once). The `multigraph` flag is
+/// set automatically based on whether parallel edges exist.
 ///
 /// # Arguments
 ///
@@ -234,8 +229,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns [`NxPetgraphError::Other`] if any node is missing its
-/// `"__networkx_id__"` attribute.
+/// Returns [`NxPetgraphError::Other`] if any node is missing its `"__networkx_id__"` attribute.
 fn construct_networkx_from_petgraph<Ty>(
     petx_graph: &PetxGraph<Ty>,
     is_directed: bool,

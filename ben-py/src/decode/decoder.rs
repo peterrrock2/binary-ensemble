@@ -21,9 +21,9 @@ pub struct PyBenDecoder {
     path: PathBuf,
     mode: DecoderMode,
     backend: DecoderBackend,
-    /// Lazily-constructed frame iterator. We defer construction so opening
-    /// a bundle whose stream is empty or truncated still succeeds — only
-    /// methods that actually walk the stream need a live iterator.
+    /// Lazily-constructed frame iterator. We defer construction so opening a bundle whose stream is
+    /// empty or truncated still succeeds — only methods that actually walk the stream need a live
+    /// iterator.
     iter: Option<DynIter>,
     current_assignment: Option<Vec<u16>>,
     remaining_count: u16,
@@ -36,23 +36,22 @@ pub struct PyBenDecoder {
 impl PyBenDecoder {
     /// Open a decoder on a `.ben`, `.xben`, or `.bendl` file.
     ///
-    /// The file's leading bytes are sniffed to decide whether it is a
-    /// bundle. When the file is a `.bendl`, the bundle's header decides
-    /// the BEN/XBEN format and the `mode` argument is ignored; when the
-    /// file is a plain stream, `mode` selects between the BEN and XBEN
-    /// readers and defaults to `"ben"`.
+    /// The file's leading bytes are sniffed to decide whether it is a bundle. When the file is a
+    /// `.bendl`, the bundle's header decides the BEN/XBEN format and the `mode` argument is
+    /// ignored; when the file is a plain stream, `mode` selects between the BEN and XBEN readers
+    /// and defaults to `"ben"`.
     ///
     /// # Arguments
     ///
     /// * `file_path` - Path to the input file.
-    /// * `mode` - Either `"ben"` or `"xben"`. Only consulted for plain
-    ///   streams; bundles use `assignment_format` from the header.
+    /// * `mode` - Either `"ben"` or `"xben"`. Only consulted for plain streams; bundles use
+    ///   `assignment_format` from the header.
     #[new]
     #[pyo3(signature = (file_path, mode = "ben"))]
     #[pyo3(text_signature = "(file_path, mode='ben')")]
     fn new(py: Python<'_>, file_path: PathBuf, mode: &str) -> PyResult<Self> {
-        // Validate the mode string up front so "Unknown mode" is reported
-        // regardless of whether the file exists or turns out to be a bundle.
+        // Validate the mode string up front so "Unknown mode" is reported regardless of whether the
+        // file exists or turns out to be a bundle.
         let parsed_mode = DecoderMode::parse(mode)?;
         let is_bundle = detect_is_bundle(&file_path).map_err(|e| {
             PyIOError::new_err(format!("Failed to open {}: {e}", file_path.display()))
@@ -69,18 +68,15 @@ impl PyBenDecoder {
                 ))
             })?;
             let fmt = reader.assignment_format().ok_or_else(|| {
-                PyException::new_err(
-                    "Bundle header has an unrecognized assignment_format field.",
-                )
+                PyException::new_err("Bundle header has an unrecognized assignment_format field.")
             })?;
             let derived_mode = DecoderMode::from_assignment_format(fmt);
-            let (stream_offset, stream_len) =
-                reader.assignment_stream_range().map_err(|e| {
-                    PyException::new_err(format!(
-                        "Failed to determine stream region in {}: {e}",
-                        file_path.display()
-                    ))
-                })?;
+            let (stream_offset, stream_len) = reader.assignment_stream_range().map_err(|e| {
+                PyException::new_err(format!(
+                    "Failed to determine stream region in {}: {e}",
+                    file_path.display()
+                ))
+            })?;
             let state = BundleState {
                 reader,
                 stream_offset,
@@ -92,11 +88,10 @@ impl PyBenDecoder {
                 warn_xben_startup(py)?;
             }
 
-            // Iter construction is deferred: opening a bundle with an
-            // empty or truncated stream is legal (incomplete or zero-sample
-            // finalized bundles), and metadata methods like
-            // `count_samples`, `asset_names`, and `extract_stream` don't
-            // need a live iterator. Iteration paths build it on demand.
+            // Iter construction is deferred: opening a bundle with an empty or truncated stream is
+            // legal (incomplete or zero-sample finalized bundles), and metadata methods like
+            // `count_samples`, `asset_names`, and `extract_stream` don't need a live iterator.
+            // Iteration paths build it on demand.
             Ok(Self {
                 path: file_path,
                 mode: derived_mode,
@@ -112,10 +107,9 @@ impl PyBenDecoder {
             if matches!(parsed_mode, DecoderMode::XBen) {
                 warn_xben_startup(py)?;
             }
-            // For plain streams, opening the file as a BEN/XBEN reader is
-            // the only way to learn the variant — keep eager construction
-            // so we surface a malformed-banner error at open time, matching
-            // the documented behaviour of `BenDecoder("…", mode="ben")`.
+            // For plain streams, opening the file as a BEN/XBEN reader is the only way to learn the
+            // variant — keep eager construction so we surface a malformed-banner error at open
+            // time, matching the documented behaviour of `BenDecoder("…", mode="ben")`.
             let iter = build_plain_iter(&file_path, parsed_mode)?;
             Ok(Self {
                 path: file_path,
@@ -131,12 +125,12 @@ impl PyBenDecoder {
         }
     }
 
-    /// Return `self` as an iterator, rebuilding the underlying frame
-    /// walker so iteration can be restarted.
+    /// Return `self` as an iterator, rebuilding the underlying frame walker so iteration can be
+    /// restarted.
     ///
-    /// Calling `iter(dec)` (or using `for x in dec: …`) more than once
-    /// is supported: each call reopens the stream region from the start
-    /// and, if a subsample selection is active, reapplies it.
+    /// Calling `iter(dec)` (or using `for x in dec: …`) more than once is supported: each call
+    /// reopens the stream region from the start and, if a subsample selection is active, reapplies
+    /// it.
     fn __iter__(mut slf: PyRefMut<Self>) -> PyResult<Py<Self>> {
         slf.current_assignment = None;
         slf.remaining_count = 0;
@@ -169,10 +163,9 @@ impl PyBenDecoder {
             let a = slf.current_assignment.as_ref().unwrap().clone();
             return Ok(Some(a));
         }
-        // Build the iterator on first use (e.g. when iteration begins
-        // without an explicit `__iter__` call). For bundle backends with
-        // empty/truncated streams this is where the BEN-banner-required
-        // error surfaces, instead of at `BenDecoder(...)` construction.
+        // Build the iterator on first use (e.g. when iteration begins without an explicit
+        // `__iter__` call). For bundle backends with empty/truncated streams this is where the
+        // BEN-banner-required error surfaces, instead of at `BenDecoder(...)` construction.
         if slf.iter.is_none() {
             let path = slf.path.clone();
             let mode = slf.mode;
@@ -218,12 +211,10 @@ impl PyBenDecoder {
 
     #[pyo3(text_signature = "(self)")]
     fn count_samples(mut slf: PyRefMut<Self>, py: Python<'_>) -> PyResult<usize> {
-        // Always reports the total number of samples in the source file,
-        // even after `subsample_*` has been applied. We deliberately do
-        // not touch `len_hint` here: when a subsample selection is
-        // active, `len_hint` tracks the filtered count that `__len__`
-        // should return, and clobbering it would break `len(dec)` after
-        // a `count_samples()` call.
+        // Always reports the total number of samples in the source file, even after `subsample_*`
+        // has been applied. We deliberately do not touch `len_hint` here: when a subsample
+        // selection is active, `len_hint` tracks the filtered count that `__len__` should return,
+        // and clobbering it would break `len(dec)` after a `count_samples()` call.
         ensure_base_len(&mut slf, py)
     }
 
@@ -234,11 +225,10 @@ impl PyBenDecoder {
         py: Python<'_>,
     ) -> PyResult<Py<Self>> {
         if !indices.iter().is_sorted() {
-            // We need to sort and deduplicate the indices
-            // This is a bit annoying, but it is necessary to ensure that we can
-            // efficiently iterate over the underlying data.
-            // We use unstable sort because we don't care about the order of equal elements
-            // and it is faster than stable sort.
+            // We need to sort and deduplicate the indices This is a bit annoying, but it is
+            // necessary to ensure that we can efficiently iterate over the underlying data. We use
+            // unstable sort because we don't care about the order of equal elements and it is
+            // faster than stable sort.
             let warnings = py.import("warnings")?;
             let kwargs = PyDict::new(py);
             // kwargs.set_item("stacklevel", 2)?;
@@ -330,27 +320,24 @@ impl PyBenDecoder {
     // ---------------------------------------------------------------------
     // Bundle-inspection surface.
     //
-    // These methods only make sense when the decoder was opened on a
-    // `.bendl` file; on a plain `.ben`/`.xben` stream they raise a clear
-    // error pointing the user at the right tool.
+    // These methods only make sense when the decoder was opened on a `.bendl` file; on a plain
+    // `.ben`/`.xben` stream they raise a clear error pointing the user at the right tool.
     // ---------------------------------------------------------------------
 
-    /// Whether this decoder is backed by a `.bendl` bundle (`True`) or a
-    /// plain `.ben`/`.xben` stream (`False`).
+    /// Whether this decoder is backed by a `.bendl` bundle (`True`) or a plain `.ben`/`.xben`
+    /// stream (`False`).
     #[pyo3(text_signature = "(self)")]
     fn is_bundle(&self) -> bool {
         self.backend.is_bundle()
     }
 
-    /// Return the container format of the underlying assignment stream
-    /// as `"ben"` or `"xben"`.
+    /// Return the container format of the underlying assignment stream as `"ben"` or `"xben"`.
     #[pyo3(text_signature = "(self)")]
     fn assignment_format(&self) -> &'static str {
         self.mode.as_str()
     }
 
-    /// Return the bundle's format version as a `(major, minor)` tuple.
-    /// Errors on plain streams.
+    /// Return the bundle's format version as a `(major, minor)` tuple. Errors on plain streams.
     #[pyo3(text_signature = "(self)")]
     fn version(&self) -> PyResult<(u16, u16)> {
         let state = self.require_bundle("version()")?;
@@ -358,16 +345,14 @@ impl PyBenDecoder {
         Ok((h.major_version, h.minor_version))
     }
 
-    /// Whether the bundle was successfully finalized. Errors on plain
-    /// streams.
+    /// Whether the bundle was successfully finalized. Errors on plain streams.
     #[pyo3(text_signature = "(self)")]
     fn is_complete(&self) -> PyResult<bool> {
         let state = self.require_bundle("is_complete()")?;
         Ok(state.reader.is_finalized())
     }
 
-    /// Names of every entry in the bundle's directory, in directory
-    /// order. Errors on plain streams.
+    /// Names of every entry in the bundle's directory, in directory order. Errors on plain streams.
     #[pyo3(text_signature = "(self)")]
     fn asset_names(&self) -> PyResult<Vec<String>> {
         let state = self.require_bundle("asset_names()")?;
@@ -379,9 +364,8 @@ impl PyBenDecoder {
             .collect())
     }
 
-    /// Return the full bundle directory as a list of dicts with keys
-    /// `name`, `type`, `offset`, `len`, and `flags` (a list of string
-    /// tags). Errors on plain streams.
+    /// Return the full bundle directory as a list of dicts with keys `name`, `type`, `offset`,
+    /// `len`, and `flags` (a list of string tags). Errors on plain streams.
     #[pyo3(text_signature = "(self)")]
     fn list_assets<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyDict>>> {
         let state = self.require_bundle("list_assets()")?;
@@ -409,8 +393,8 @@ impl PyBenDecoder {
         Ok(out)
     }
 
-    /// Read the (decoded) bytes of a named asset as a Python `bytes`
-    /// object. Errors on plain streams.
+    /// Read the (decoded) bytes of a named asset as a Python `bytes` object. Errors on plain
+    /// streams.
     #[pyo3(text_signature = "(self, name, /)")]
     fn read_asset_bytes(&mut self, name: &str) -> PyResult<Vec<u8>> {
         let state = self.require_bundle_mut("read_asset_bytes()")?;
@@ -425,9 +409,8 @@ impl PyBenDecoder {
             .map_err(|e| PyIOError::new_err(format!("Failed to read asset {name:?}: {e}")))
     }
 
-    /// Parse a JSON asset into a Python object (dict, list, …). Errors
-    /// on plain streams and when the asset does not exist or is not
-    /// valid UTF-8 / JSON.
+    /// Parse a JSON asset into a Python object (dict, list, …). Errors on plain streams and when
+    /// the asset does not exist or is not valid UTF-8 / JSON.
     #[pyo3(text_signature = "(self, name, /)")]
     fn read_json_asset<'py>(&mut self, py: Python<'py>, name: &str) -> PyResult<Py<PyAny>> {
         let bytes = self.read_asset_bytes(name)?;
@@ -438,9 +421,8 @@ impl PyBenDecoder {
         Ok(parsed.into())
     }
 
-    /// Read the bundle's `graph.json` asset as a parsed JSON object.
-    /// Returns `None` if the bundle does not carry a graph asset. Errors
-    /// on plain streams.
+    /// Read the bundle's `graph.json` asset as a parsed JSON object. Returns `None` if the bundle
+    /// does not carry a graph asset. Errors on plain streams.
     #[pyo3(text_signature = "(self)")]
     fn read_graph<'py>(&mut self, py: Python<'py>) -> PyResult<Option<Py<PyAny>>> {
         {
@@ -452,8 +434,8 @@ impl PyBenDecoder {
         Ok(Some(self.read_json_asset(py, "graph.json")?))
     }
 
-    /// Read the bundle's `metadata.json` asset as a parsed JSON object,
-    /// or `None` if absent. Errors on plain streams.
+    /// Read the bundle's `metadata.json` asset as a parsed JSON object, or `None` if absent. Errors
+    /// on plain streams.
     #[pyo3(text_signature = "(self)")]
     fn read_metadata<'py>(&mut self, py: Python<'py>) -> PyResult<Option<Py<PyAny>>> {
         {
@@ -469,8 +451,8 @@ impl PyBenDecoder {
         Ok(Some(self.read_json_asset(py, "metadata.json")?))
     }
 
-    /// Read the bundle's `node_permutation_map.json` asset as a parsed
-    /// JSON object, or `None` if absent. Errors on plain streams.
+    /// Read the bundle's `node_permutation_map.json` asset as a parsed JSON object, or `None` if
+    /// absent. Errors on plain streams.
     #[pyo3(text_signature = "(self)")]
     fn read_relabel_map<'py>(&mut self, py: Python<'py>) -> PyResult<Option<Py<PyAny>>> {
         {
@@ -486,10 +468,9 @@ impl PyBenDecoder {
         Ok(Some(self.read_json_asset(py, "node_permutation_map.json")?))
     }
 
-    /// Copy the embedded assignment stream region verbatim to
-    /// `out_path`. The resulting file can be opened directly with
-    /// `PyBenDecoder(out_path, mode=dec.assignment_format())`.
-    /// Errors on plain streams.
+    /// Copy the embedded assignment stream region verbatim to `out_path`. The resulting file can be
+    /// opened directly with `PyBenDecoder(out_path, mode=dec.assignment_format())`. Errors on plain
+    /// streams.
     #[pyo3(signature = (out_path, overwrite=false))]
     #[pyo3(text_signature = "(self, out_path, overwrite=False)")]
     fn extract_stream(&mut self, out_path: PathBuf, overwrite: bool) -> PyResult<()> {
@@ -528,8 +509,8 @@ impl PyBenDecoder {
 }
 
 impl PyBenDecoder {
-    /// Borrow the bundle state or raise a clear Python error explaining
-    /// that the decoder was opened on a plain stream.
+    /// Borrow the bundle state or raise a clear Python error explaining that the decoder was opened
+    /// on a plain stream.
     fn require_bundle(&self, op: &str) -> PyResult<&BundleState> {
         match &self.backend {
             DecoderBackend::Bundle(state) => Ok(state),
@@ -587,11 +568,10 @@ fn ensure_base_len(decoder: &mut PyBenDecoder, py: Python<'_>) -> PyResult<usize
                 })?
         }
         DecoderBackend::Bundle(state) => {
-            // Prefer the authoritative sample_count carried in the
-            // bundle header, which is set for finalized bundles and is
-            // O(1). Fall back to scanning the stream region when the
-            // header has no count (unfinalized append target, or a
-            // header byte we cannot interpret).
+            // Prefer the authoritative sample_count carried in the bundle header, which is set for
+            // finalized bundles and is O(1). Fall back to scanning the stream region when the
+            // header has no count (unfinalized append target, or a header byte we cannot
+            // interpret).
             if let Some(n) = state.reader.sample_count() {
                 if n >= 0 {
                     n as usize

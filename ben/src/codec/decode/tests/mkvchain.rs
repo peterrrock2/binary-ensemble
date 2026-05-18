@@ -52,14 +52,13 @@ fn decode_ben_to_jsonl_count_three_expands_to_three_lines() {
 
 #[test]
 fn decode_ben_to_jsonl_sample_numbers_continue_across_frames() {
-    // Frame 1: [1,1,1,1,2,3,3,3] count=2  →  samples 1,2
-    // Frame 2: [23]              count=3  →  samples 3,4,5
+    // Frame 1: [1,1,1,1,2,3,3,3] count=2 → samples 1,2 Frame 2: [23] count=3 → samples 3,4,5
     let mut ben = b"MKVCHAIN BEN FILE".to_vec();
     ben.extend_from_slice(FRAME_HEADER);
     ben.extend_from_slice(FRAME_PAYLOAD);
     ben.extend_from_slice(&2u16.to_be_bytes());
-    // Frame for assignment [23]: max_val_bits=5, max_len_bits=1, n_bytes=1
-    // payload 0b101111_00 = bits 10111_1 → val=10111=23, len=1=1
+    // Frame for assignment [23]: max_val_bits=5, max_len_bits=1, n_bytes=1 payload 0b101111_00 =
+    // bits 10111_1 → val=10111=23, len=1=1
     ben.extend_from_slice(&[5, 1, 0, 0, 0, 1, 0b101111_00]);
     ben.extend_from_slice(&3u16.to_be_bytes());
 
@@ -77,8 +76,8 @@ fn decode_ben_to_jsonl_sample_numbers_continue_across_frames() {
 
 #[test]
 fn decode_ben_to_jsonl_16bit_value_with_count() {
-    // Frame bytes from test_jsonl_decode_ben_16_bit_val (assignment [1,1,1,1,512,3,3,3])
-    // with count=2 appended.
+    // Frame bytes from test_jsonl_decode_ben_16_bit_val (assignment [1,1,1,1,512,3,3,3]) with
+    // count=2 appended.
     let mut ben = b"MKVCHAIN BEN FILE".to_vec();
     ben.extend_from_slice(&[10, 3, 0, 0, 0, 5]);
     ben.extend_from_slice(&[
@@ -140,8 +139,7 @@ fn jsonl_decode_ben32_mkvchain_count_five_expands_correctly() {
 
 #[test]
 fn jsonl_decode_ben32_mkvchain_two_records_correct_sample_numbers() {
-    // Record 1: [23]          count=2  → samples 1,2
-    // Record 2: [1,2,3,4]     count=1  → sample 3
+    // Record 1: [23] count=2 → samples 1,2 Record 2: [1,2,3,4] count=1 → sample 3
     let mut input: Vec<u8> = vec![0, 23, 0, 1, 0, 0, 0, 0];
     input.extend_from_slice(&2u16.to_be_bytes());
     input.extend_from_slice(&[0, 1, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 4, 0, 1, 0, 0, 0, 0]);
@@ -180,7 +178,7 @@ fn decode_xben_to_ben_mkvchain_roundtrip() {
         Some(1),
         Some(0),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -206,7 +204,7 @@ fn decode_xben_to_jsonl_mkvchain_count_expands() {
         Some(1),
         Some(0),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -238,16 +236,23 @@ fn decode_xben_to_jsonl_rejects_mkvchain_partial_overflow() {
     let mut xz = Vec::new();
     let mut inner = b"MKVCHAIN BEN FILE".to_vec();
     inner.extend_from_slice(&[1, 2, 3]);
-    xz_compress(BufReader::new(inner.as_slice()), &mut xz, Some(1), Some(0), None).unwrap();
+    xz_compress(
+        BufReader::new(inner.as_slice()),
+        &mut xz,
+        Some(1),
+        Some(0),
+        None,
+    )
+    .unwrap();
 
     let mut out = Vec::new();
     decode_xben_to_jsonl(BufReader::new(xz.as_slice()), &mut out).unwrap();
     assert!(out.is_empty());
 }
 
-// ─── decode_ben_to_jsonl — byte-level frame encoding counterparts ──────
-// These mirror the Standard tests in standard.rs exactly, differing only in
-// the MKVCHAIN banner and the trailing u16 BE count field appended to each frame.
+// ─── decode_ben_to_jsonl — byte-level frame encoding counterparts ────── These mirror the Standard
+// tests in standard.rs exactly, differing only in the MKVCHAIN banner and the trailing u16 BE count
+// field appended to each frame.
 
 #[test]
 fn decode_ben_to_jsonl_exact() {
@@ -502,9 +507,9 @@ fn decode_ben_to_jsonl_three_frames() {
     assert_eq!(out, expected.as_bytes());
 }
 
-// ─── jsonl_decode_ben32 — byte-level counterparts ─────────────────────
-// Each Standard ben32 record has [pairs...][0,0,0,0] terminator.
-// Each MkvChain ben32 record appends a u16 BE count after the terminator.
+// ─── jsonl_decode_ben32 — byte-level counterparts ───────────────────── Each Standard ben32 record
+// has [pairs...][0,0,0,0] terminator. Each MkvChain ben32 record appends a u16 BE count after the
+// terminator.
 
 #[test]
 fn jsonl_decode_ben32_16bit_val() {

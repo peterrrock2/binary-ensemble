@@ -13,14 +13,13 @@ use crate::BenVariant;
 
 /// Iterator over raw frames from a [`BenStreamReader`].
 ///
-/// In the BEN arm: `Standard` and `MkvChain` frames are yielded as read off
-/// the wire; `TwoDelta` frames are materialized as assignments and re-encoded
-/// as `Standard` decode frames so downstream subsample consumers always see
-/// self-contained frames.
+/// In the BEN arm: `Standard` and `MkvChain` frames are yielded as read off the wire; `TwoDelta`
+/// frames are materialized as assignments and re-encoded as `Standard` decode frames so downstream
+/// subsample consumers always see self-contained frames.
 ///
-/// In the XBEN arm: `Standard` and `MkvChain` frames are yielded as raw
-/// ben32 byte slices with their repetition count; `TwoDelta` chunks are
-/// materialized to assignments and re-encoded as ben32 frames.
+/// In the XBEN arm: `Standard` and `MkvChain` frames are yielded as raw ben32 byte slices with
+/// their repetition count; `TwoDelta` chunks are materialized to assignments and re-encoded as
+/// ben32 frames.
 pub struct BenStreamFrameReader<R: Read> {
     inner: BenStreamReader<R>,
 }
@@ -113,9 +112,9 @@ impl<R: Read> Iterator for BenStreamFrameReader<R> {
                                         "BenEncodeFrame::from_assignment(Standard) always returns Standard"
                                     ),
                                 };
-                            // Strip the 6-byte frame header so the emitted decode-side
-                            // frame's raw_bytes matches the historical payload-only
-                            // shape that BenDecodeFrame::Standard carries.
+                            // Strip the 6-byte frame header so the emitted decode-side frame's
+                            // raw_bytes matches the historical payload-only shape that
+                            // BenDecodeFrame::Standard carries.
                             let payload_only = raw_bytes[6..].to_vec();
                             Some(Ok((
                                 DecodeFrame::Ben(BenDecodeFrame::Standard {
@@ -140,8 +139,8 @@ impl<R: Read> Iterator for BenStreamFrameReader<R> {
 
 /// Pull the next raw ben32 frame from an XBEN inner state.
 ///
-/// For TwoDelta streams the underlying chunk is materialized via the record
-/// iterator and re-encoded as a self-contained ben32 frame.
+/// For TwoDelta streams the underlying chunk is materialized via the record iterator and re-encoded
+/// as a self-contained ben32 frame.
 pub(super) fn next_frame_xben<R: Read>(
     inner: &mut XBenInner<R>,
     variant: BenVariant,

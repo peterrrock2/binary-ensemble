@@ -106,7 +106,14 @@ fn parse_ben_mode_output_variant_args() {
 #[test]
 fn run_json_mode_rejects_n_items() {
     let args = Args::try_parse_from([
-        "reben", "x.json", "--mode", "json", "--key", "k", "--n-items", "5",
+        "reben",
+        "x.json",
+        "--mode",
+        "json",
+        "--key",
+        "k",
+        "--n-items",
+        "5",
     ])
     .unwrap();
     let err = run_json_mode(args).unwrap_err();
@@ -115,14 +122,7 @@ fn run_json_mode_rejects_n_items() {
 
 #[test]
 fn run_ben_mode_rejects_convert_only_without_variant() {
-    let args = Args::try_parse_from([
-        "reben",
-        "x.ben",
-        "--mode",
-        "ben",
-        "--convert-only",
-    ])
-    .unwrap();
+    let args = Args::try_parse_from(["reben", "x.ben", "--mode", "ben", "--convert-only"]).unwrap();
     let err = run_ben_mode(args).unwrap_err();
     assert!(err.contains("--output-variant"));
 }
@@ -162,8 +162,7 @@ fn to_ben_variant_covers_standard() {
 
 #[test]
 fn relabeling_label_errors_on_both_key_and_ordering() {
-    let err =
-        relabeling_label(Some("k"), Some(&OrderingMethod::MultiLevelCluster)).unwrap_err();
+    let err = relabeling_label(Some("k"), Some(&OrderingMethod::MultiLevelCluster)).unwrap_err();
     assert!(err.contains("not both"));
 }
 
@@ -213,17 +212,9 @@ fn run_json_mode_with_ordering_derives_output_name() {
     .unwrap();
     let result = run_json_mode(args);
     // Clean up derived output file.
-    let derived = shape
-        .to_str()
-        .unwrap()
-        .trim_end_matches(".json")
-        .to_owned()
+    let derived = shape.to_str().unwrap().trim_end_matches(".json").to_owned()
         + "_sorted_by_reverse-cuthill-mckee_map.json";
-    let derived2 = shape
-        .to_str()
-        .unwrap()
-        .trim_end_matches(".json")
-        .to_owned()
+    let derived2 = shape.to_str().unwrap().trim_end_matches(".json").to_owned()
         + "_sorted_by_reverse-cuthill-mckee.jsonl.ben";
     let _ = fs::remove_file(&derived);
     let _ = fs::remove_file(&derived2);
@@ -326,8 +317,8 @@ fn run_ben_mode_with_output_variant_and_n_items() {
 
 #[test]
 fn run_ben_mode_with_shape_file_and_ordering() {
-    // Covers the shape_file + ordering path.
-    // Creates a map from the shape file ordering, then relabels the BEN.
+    // Covers the shape_file + ordering path. Creates a map from the shape file ordering, then
+    // relabels the BEN.
     let input = write_temp_ben("shape_order_input.jsonl.ben");
     let shape = unique_path("shape_order_shape.json");
     fs::write(
@@ -351,17 +342,9 @@ fn run_ben_mode_with_shape_file_and_ordering() {
     .unwrap();
     let result = run_ben_mode(args);
     // Clean up the map file the function derives automatically.
-    let map = shape
-        .to_str()
-        .unwrap()
-        .trim_end_matches(".json")
-        .to_owned()
+    let map = shape.to_str().unwrap().trim_end_matches(".json").to_owned()
         + "_sorted_by_reverse-cuthill-mckee_map.json";
-    let sorted_json = shape
-        .to_str()
-        .unwrap()
-        .trim_end_matches(".json")
-        .to_owned()
+    let sorted_json = shape.to_str().unwrap().trim_end_matches(".json").to_owned()
         + "_sorted_by_reverse-cuthill-mckee.json";
     let _ = fs::remove_file(&map);
     let _ = fs::remove_file(&sorted_json);
@@ -493,28 +476,30 @@ fn read_node_permutation_map_file_rejects_non_integer_index() {
     let _ = fs::remove_file(&map_path);
 }
 
-/// Pin today's behavior when a JSON map has two old indices targeting the
-/// same new index: `HashMap::insert` overwrites the prior `(new, old)` entry,
-/// shrinking the inverted map. The remaining slots no longer cover
-/// `0..=max_key` contiguously, so the relabel driver returns
-/// `NonContiguousMap` from `dense_permutation`. This is reachable from valid
-/// JSON because `serde_json` retains the last value when the input has
-/// duplicate JSON keys, and even with unique keys two distinct old indices
-/// can target the same new index.
+/// Pin today's behavior when a JSON map has two old indices targeting the same new index:
+/// `HashMap::insert` overwrites the prior `(new, old)` entry, shrinking the inverted map. The
+/// remaining slots no longer cover `0..=max_key` contiguously, so the relabel driver returns
+/// `NonContiguousMap` from `dense_permutation`. This is reachable from valid JSON because
+/// `serde_json` retains the last value when the input has duplicate JSON keys, and even with unique
+/// keys two distinct old indices can target the same new index.
 #[test]
 fn read_node_permutation_map_file_duplicate_new_index_creates_gap() {
     use crate::ops::relabel::{relabel_ben_file, RelabelOptions};
 
     let map_path = unique_path("dup_new_index_map.json");
-    // old→new: {0→1, 1→1, 2→2}. Inverted: {1: 1 (overwrites 0), 2: 2}.
-    // Slot 0 is missing in the inverted map, so dense_permutation rejects.
+    // old→new: {0→1, 1→1, 2→2}. Inverted: {1: 1 (overwrites 0), 2: 2}. Slot 0 is missing in the
+    // inverted map, so dense_permutation rejects.
     fs::write(
         &map_path,
         b"{\"node_permutation_old_to_new\":{\"0\":1,\"1\":1,\"2\":2}}",
     )
     .unwrap();
     let (map, _label) = read_node_permutation_map_file(map_path.to_str().unwrap()).unwrap();
-    assert_eq!(map.len(), 2, "duplicate new index must overwrite, shrinking the map");
+    assert_eq!(
+        map.len(),
+        2,
+        "duplicate new index must overwrite, shrinking the map"
+    );
 
     // Build a tiny BEN file to drive the relabel through dense_permutation.
     let mut ben = Vec::new();
@@ -553,13 +538,7 @@ fn read_node_permutation_map_file_rejects_non_integer_value() {
 #[test]
 fn run_ben_mode_canonicalize_derives_output_name() {
     let input = write_temp_ben("canon.jsonl.ben");
-    let args = Args::try_parse_from([
-        "reben",
-        input.to_str().unwrap(),
-        "--mode",
-        "ben",
-    ])
-    .unwrap();
+    let args = Args::try_parse_from(["reben", input.to_str().unwrap(), "--mode", "ben"]).unwrap();
     let result = run_ben_mode(args);
     let derived = input
         .to_str()
@@ -585,12 +564,7 @@ fn run_ben_mode_with_output_variant_derives_name() {
     ])
     .unwrap();
     let result = run_ben_mode(args);
-    let derived = input
-        .to_str()
-        .unwrap()
-        .trim_end_matches(".ben")
-        .to_owned()
-        + "_standard.ben";
+    let derived = input.to_str().unwrap().trim_end_matches(".ben").to_owned() + "_standard.ben";
     let _ = fs::remove_file(&derived);
     fs::remove_file(&input).unwrap();
     result.unwrap();

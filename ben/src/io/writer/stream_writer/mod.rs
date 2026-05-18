@@ -1,8 +1,7 @@
-//! Unified writer for the BEN-stack stream layer (layer 3 — see
-//! `docs/glossary.md`).
+//! Unified writer for the BEN-stack stream layer (layer 3 — see `docs/glossary.md`).
 //!
-//! Hides the wire-format choice (BEN bit-packed vs ben32 / XBEN columnar)
-//! and the transport choice (plain vs xz-compressed) behind one type.
+//! Hides the wire-format choice (BEN bit-packed vs ben32 / XBEN columnar) and the transport choice
+//! (plain vs xz-compressed) behind one type.
 
 mod ben;
 mod xben;
@@ -31,23 +30,20 @@ pub use crate::io::reader::BenWireFormat;
 use ben::BenState;
 use xben::XBenInner;
 
-/// Writer for an encoded BEN-stack stream of samples (layer 3 — see
-/// `docs/glossary.md`).
+/// Writer for an encoded BEN-stack stream of samples (layer 3 — see `docs/glossary.md`).
 ///
-/// Construct with [`BenStreamWriter::for_ben`] for plain BEN or
-/// [`BenStreamWriter::for_xben`] for XBEN. `write_assignment` is available
-/// on both arms; `write_frame` is plain-BEN-only and preserves one frame
-/// boundary per call. Calling `write_frame` on an XBEN writer returns
+/// Construct with [`BenStreamWriter::for_ben`] for plain BEN or [`BenStreamWriter::for_xben`] for
+/// XBEN. `write_assignment` is available on both arms; `write_frame` is plain-BEN-only and
+/// preserves one frame boundary per call. Calling `write_frame` on an XBEN writer returns
 /// `InvalidInput`.
 pub struct BenStreamWriter<W: Write> {
-    /// Wrapped in `Option` so [`Self::finish_into_inner`] can `take()` it
-    /// without partial-moving out of a `Drop` type. All other access
-    /// sites unwrap with `.expect("inner present")` — only the consuming
-    /// `finish_into_inner` ever leaves it `None`.
+    /// Wrapped in `Option` so [`Self::finish_into_inner`] can `take()` it without partial-moving
+    /// out of a `Drop` type. All other access sites unwrap with `.expect("inner present")` — only
+    /// the consuming `finish_into_inner` ever leaves it `None`.
     inner: Option<BenStreamInner<W>>,
     state: WriterState,
-    /// Tracks whether any sample-writing or direct-ingest operation has
-    /// touched the writer. `ingest_ben_stream` requires this to be `false`.
+    /// Tracks whether any sample-writing or direct-ingest operation has touched the writer.
+    /// `ingest_ben_stream` requires this to be `false`.
     body_started: bool,
 }
 
@@ -67,9 +63,8 @@ enum BenStreamInner<W: Write> {
 impl<W: Write> BenStreamWriter<W> {
     /// Open a plain-BEN writer. Emits the BEN banner immediately.
     ///
-    /// On error, the underlying `writer` is dropped — no partial
-    /// `BenStreamWriter` is returned. The caller treats the output as
-    /// failed and discards.
+    /// On error, the underlying `writer` is dropped — no partial `BenStreamWriter` is returned. The
+    /// caller treats the output as failed and discards.
     pub fn for_ben(mut writer: W, variant: BenVariant) -> io::Result<Self> {
         writer.write_all(banner_for_variant(variant))?;
         Ok(Self {
@@ -79,13 +74,9 @@ impl<W: Write> BenStreamWriter<W> {
         })
     }
 
-    /// Open an XBEN writer. Builds the xz encoder from `options` and emits
-    /// the BEN banner inside the compressed stream.
-    pub fn for_xben(
-        writer: W,
-        variant: BenVariant,
-        options: XzEncodeOptions,
-    ) -> io::Result<Self> {
+    /// Open an XBEN writer. Builds the xz encoder from `options` and emits the BEN banner inside
+    /// the compressed stream.
+    pub fn for_xben(writer: W, variant: BenVariant, options: XzEncodeOptions) -> io::Result<Self> {
         let n_cpus = resolve_threads(options.n_threads);
         let level = options.compression_level.unwrap_or(9).min(9);
         let mt: Stream = build_mt_stream(n_cpus, level, options.block_size)?;
@@ -93,10 +84,9 @@ impl<W: Write> BenStreamWriter<W> {
         Self::for_xben_with_encoder(encoder, variant, Some(options.twodelta_chunk_size))
     }
 
-    /// Open an XBEN writer around an already-built xz encoder. Used by codec
-    /// plumbing that constructs encoders explicitly. The TwoDelta chunk
-    /// size is passed independently because compression options have
-    /// already been consumed building the encoder; `None` means default.
+    /// Open an XBEN writer around an already-built xz encoder. Used by codec plumbing that
+    /// constructs encoders explicitly. The TwoDelta chunk size is passed independently because
+    /// compression options have already been consumed building the encoder; `None` means default.
     pub(crate) fn for_xben_with_encoder(
         mut encoder: XzEncoder<W>,
         variant: BenVariant,
@@ -131,14 +121,15 @@ impl<W: Write> BenStreamWriter<W> {
         }
     }
 
-    /// Encode one assignment vector. Count-capable formats buffer
-    /// adjacent-equal assignments into counted frames; XBEN-Standard writes
-    /// each assignment immediately, and Standard BEN expands buffered
-    /// counts into one-sample frames on flush.
+    /// Encode one assignment vector. Count-capable formats buffer adjacent-equal assignments into
+    /// counted frames; XBEN-Standard writes each assignment immediately, and Standard BEN expands
+    /// buffered counts into one-sample frames on flush.
     pub fn write_assignment(&mut self, assign_vec: Vec<u16>) -> io::Result<()> {
         match self.state {
             WriterState::Complete | WriterState::Failed | WriterState::BodyClosed => {
-                return Err(invalid_input("writer is not in a state that accepts samples"));
+                return Err(invalid_input(
+                    "writer is not in a state that accepts samples",
+                ));
             }
             WriterState::Open => {}
         }
@@ -154,16 +145,17 @@ impl<W: Write> BenStreamWriter<W> {
         result
     }
 
-    /// Plain-BEN only: encode one assignment vector with a caller-supplied
-    /// count. MkvChain/TwoDelta emit one counted frame; Standard expands
-    /// `count` into one-sample frames.
+    /// Plain-BEN only: encode one assignment vector with a caller-supplied count. MkvChain/TwoDelta
+    /// emit one counted frame; Standard expands `count` into one-sample frames.
     ///
-    /// Guard order: writer-state, then mode, then zero-count no-op, then
-    /// the stateful flush/encode path.
+    /// Guard order: writer-state, then mode, then zero-count no-op, then the stateful flush/encode
+    /// path.
     pub fn write_frame(&mut self, assignment: Vec<u16>, count: u16) -> io::Result<()> {
         match self.state {
             WriterState::Complete | WriterState::Failed | WriterState::BodyClosed => {
-                return Err(invalid_input("writer is not in a state that accepts frames"));
+                return Err(invalid_input(
+                    "writer is not in a state that accepts frames",
+                ));
             }
             WriterState::Open => {}
         }
@@ -189,7 +181,9 @@ impl<W: Write> BenStreamWriter<W> {
     pub fn write_json_value(&mut self, data: Value) -> io::Result<()> {
         match self.state {
             WriterState::Complete | WriterState::Failed | WriterState::BodyClosed => {
-                return Err(invalid_input("writer is not in a state that accepts samples"));
+                return Err(invalid_input(
+                    "writer is not in a state that accepts samples",
+                ));
             }
             WriterState::Open => {}
         }
@@ -207,9 +201,8 @@ impl<W: Write> BenStreamWriter<W> {
         result
     }
 
-    /// Crate-private XBEN-only direct ingest. Fresh-writer-only and terminal
-    /// for sample writes: on success the writer transitions to `BodyClosed`
-    /// and only `finish()` remains valid.
+    /// Crate-private XBEN-only direct ingest. Fresh-writer-only and terminal for sample writes: on
+    /// success the writer transitions to `BodyClosed` and only `finish()` remains valid.
     pub(crate) fn ingest_ben_stream(&mut self, reader: impl BufRead) -> io::Result<()> {
         match self.state {
             WriterState::Complete | WriterState::Failed | WriterState::BodyClosed => {
@@ -245,10 +238,9 @@ impl<W: Write> BenStreamWriter<W> {
         }
     }
 
-    /// Flush buffered BEN/XBEN state and finalize the underlying compressed
-    /// stream when present. Valid from `Open` and `BodyClosed`. Repeated
-    /// `finish()` after success returns `Ok(())`. Once finalization enters
-    /// the stateful path, any encode/writer/encoder error transitions the
+    /// Flush buffered BEN/XBEN state and finalize the underlying compressed stream when present.
+    /// Valid from `Open` and `BodyClosed`. Repeated `finish()` after success returns `Ok(())`. Once
+    /// finalization enters the stateful path, any encode/writer/encoder error transitions the
     /// writer to `Failed`; subsequent calls return `InvalidInput`.
     pub fn finish(&mut self) -> io::Result<()> {
         match self.state {
@@ -292,17 +284,14 @@ impl<W: Write> BenStreamWriter<W> {
         }
     }
 
-    /// Consume the writer, flush any buffered state, finalize the
-    /// underlying compressed stream when present (XBEN), and return the
-    /// underlying `W`.
+    /// Consume the writer, flush any buffered state, finalize the underlying compressed stream when
+    /// present (XBEN), and return the underlying `W`.
     ///
-    /// Unlike `std::io::BufWriter::into_inner`, this method's name is
-    /// intentionally `finish_into_inner` because errors from the BEN
-    /// flush or the consuming `XzEncoder::finish()` can still lose
-    /// access to the inner writer. Returns `InvalidInput` if the writer
-    /// is in `Failed`. Accepted from `Open`, `BodyClosed`, and
-    /// `Complete`; the `Complete` path simply extracts the inner writer
-    /// after prior finalization.
+    /// Unlike `std::io::BufWriter::into_inner`, this method's name is intentionally
+    /// `finish_into_inner` because errors from the BEN flush or the consuming `XzEncoder::finish()`
+    /// can still lose access to the inner writer. Returns `InvalidInput` if the writer is in
+    /// `Failed`. Accepted from `Open`, `BodyClosed`, and `Complete`; the `Complete` path simply
+    /// extracts the inner writer after prior finalization.
     pub fn finish_into_inner(mut self) -> io::Result<W> {
         let state = self.state;
         match state {
@@ -330,8 +319,7 @@ impl<W: Write> BenStreamWriter<W> {
 
 impl<W: Write> Drop for BenStreamWriter<W> {
     fn drop(&mut self) {
-        if self.inner.is_some()
-            && matches!(self.state, WriterState::Open | WriterState::BodyClosed)
+        if self.inner.is_some() && matches!(self.state, WriterState::Open | WriterState::BodyClosed)
         {
             let _ = self.finish();
         }

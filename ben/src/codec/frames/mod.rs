@@ -1,15 +1,12 @@
 //! Frame-layer types — one sample's encoded bytes.
 //!
-//! See `docs/glossary.md` for the encoding-stack layering. This module owns
-//! layer 2 (frame). Each direction is a single enum whose arms mirror
-//! [`crate::BenVariant`]:
+//! See `docs/glossary.md` for the encoding-stack layering. This module owns layer 2 (frame). Each
+//! direction is a single enum whose arms mirror [`crate::BenVariant`]:
 //!
-//! - [`BenEncodeFrame`] is built **from** RLE runs (or a pair + run-length
-//!   vector for the `TwoDelta` arm) and carries the source representation
-//!   alongside the serialized bytes.
-//! - [`BenDecodeFrame`] is built **from** wire bytes and keeps the bit-packed
-//!   payload opaque on `Standard`/`MkvChain` arms so frame-level subsampling
-//!   stays cheap (no eager bit-unpacking).
+//! - [`BenEncodeFrame`] is built **from** RLE runs (or a pair + run-length vector for the
+//!   `TwoDelta` arm) and carries the source representation alongside the serialized bytes.
+//! - [`BenDecodeFrame`] is built **from** wire bytes and keeps the bit-packed payload opaque on
+//!   `Standard`/`MkvChain` arms so frame-level subsampling stays cheap (no eager bit-unpacking).
 
 mod decode;
 mod encode;

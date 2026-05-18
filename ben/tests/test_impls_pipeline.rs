@@ -67,9 +67,8 @@ where
 
 // ---------- proptest strategies ----------
 
-/// Strategy for a single assignment vector:
-/// Generate as RLE runs (value in [1, max_val], length in [1, max_run]),
-/// expand to a bounded length.
+/// Strategy for a single assignment vector: Generate as RLE runs (value in [1, max_val], length in
+/// [1, max_run]), expand to a bounded length.
 fn strat_assignment(max_val: u16, max_run: u16, max_len: usize) -> impl Strategy<Value = Vec<u16>> {
     // up to ~50 runs per vector to keep things small/fast
     let runs = 1..=50usize;
@@ -211,8 +210,7 @@ proptest! {
         prop_assert_eq!(out, jsonl);
     }
 
-    // JSONL -> XBEN(Standard)  -> BEN -> JSONL
-    // Also vary threads & compression level.
+    // JSONL -> XBEN(Standard) -> BEN -> JSONL Also vary threads & compression level.
     #[test]
     fn fuzz_roundtrip_xben_standard(seq in strat_assignment_seq(), params in strat_threads_levels()) {
         let (threads, level) = params;
@@ -590,12 +588,19 @@ fn invalid_ben_header_yields_error() {
 
 #[test]
 fn xben_decoder_rejects_bad_banner() {
-    // Valid XZ container but wrong banner should raise InvalidData
-    // Build a minimal XBEN stream with a wrong banner inside.
+    // Valid XZ container but wrong banner should raise InvalidData Build a minimal XBEN stream with
+    // a wrong banner inside.
     let mut inner = Vec::new();
     inner.extend_from_slice(b"BAD BAD BAD BAD!!"); // 17 bytes
     let mut xz = Vec::new();
-    xz_compress(BufReader::new(inner.as_slice()), &mut xz, Some(1), Some(0), None).unwrap();
+    xz_compress(
+        BufReader::new(inner.as_slice()),
+        &mut xz,
+        Some(1),
+        Some(0),
+        None,
+    )
+    .unwrap();
 
     let err = BenStreamReader::from_xben(xz.as_slice())
         .err()
@@ -619,7 +624,7 @@ fn subsample_every_respects_offset() {
         Some(1),
         Some(0),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -679,7 +684,7 @@ fn xbenencoder_drop_flushes_tail_group() {
             Some(1),
             Some(0),
             None,
-                    None,
+            None,
         )
         .unwrap();
         out
@@ -702,7 +707,7 @@ fn ben_new_invalid_header_detects_xz() {
         &mut xz,
         Some(1),
         Some(0),
-            None,
+        None,
     )
     .unwrap();
 
@@ -730,7 +735,7 @@ fn xben_new_invalid_banner() {
         &mut wrong,
         Some(1),
         Some(0),
-            None,
+        None,
     )
     .unwrap();
     let err = BenStreamReader::from_xben(wrong.as_slice())
@@ -756,7 +761,7 @@ fn xben_truncated_frame_reports_unexpected_eof() {
         Some(1),
         Some(0),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -844,7 +849,7 @@ fn subsample_by_indices_sorts_and_dedups() {
         Some(1),
         Some(0),
         None,
-            None,
+        None,
     )
     .unwrap();
     let xb = BenStreamReader::from_xben(xz.as_slice()).unwrap();
@@ -890,7 +895,7 @@ fn ben_encode_xben_respects_existing_ben_header() {
             Some(1),
             Some(0),
             None,
-                    None,
+            None,
         )
         .expect("ben->xben failed");
 
@@ -915,7 +920,7 @@ fn xz_mt_params_are_capped_and_safe() {
         Some(10_000),
         Some(42),
         None,
-            None,
+        None,
     )
     .unwrap();
     let mut ben = Vec::new();
@@ -945,7 +950,9 @@ fn ben_encoder_write_assignment_path_roundtrips() {
 
 #[test]
 fn ben_decoder_new_reports_short_header_as_io_error() {
-    let err = BenStreamReader::from_ben([1u8, 2, 3].as_slice()).err().unwrap();
+    let err = BenStreamReader::from_ben([1u8, 2, 3].as_slice())
+        .err()
+        .unwrap();
     match err {
         DecoderInitError::Io(e) => assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof),
         other => panic!("unexpected error: {other:?}"),
@@ -987,7 +994,7 @@ fn xben_frame_decoder_new_and_truncated_iteration_paths() {
         Some(1),
         Some(0),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -1163,7 +1170,7 @@ fn decoder_init_error_display_source_and_conversion_paths() {
             &mut buf,
             Some(1),
             Some(0),
-                    None,
+            None,
         )
         .unwrap();
         buf
@@ -1212,7 +1219,7 @@ fn ben_decoder_and_xben_decoder_count_samples() {
         Some(1),
         Some(0),
         None,
-            None,
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -1235,7 +1242,7 @@ fn ben_decoder_and_xben_decoder_count_samples() {
         Some(1),
         Some(0),
         None,
-            None,
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -1272,7 +1279,7 @@ fn build_frame_iter_and_count_samples_from_file_cover_public_file_api() {
         Some(1),
         Some(0),
         None,
-            None,
+        None,
     )
     .unwrap();
     let xben_path = unique_temp_path("sample.xben");
@@ -1284,8 +1291,14 @@ fn build_frame_iter_and_count_samples_from_file_cover_public_file_api() {
     let xben_iter = build_frame_iter(&xben_path, BenWireFormat::XBen).unwrap();
     assert_eq!(collect_frames(xben_iter).unwrap().len(), 2);
 
-    assert_eq!(count_samples_from_file(&ben_path, BenWireFormat::Ben).unwrap(), 3);
-    assert_eq!(count_samples_from_file(&xben_path, BenWireFormat::XBen).unwrap(), 3);
+    assert_eq!(
+        count_samples_from_file(&ben_path, BenWireFormat::Ben).unwrap(),
+        3
+    );
+    assert_eq!(
+        count_samples_from_file(&xben_path, BenWireFormat::XBen).unwrap(),
+        3
+    );
 
     fs::remove_file(ben_path).unwrap();
     fs::remove_file(xben_path).unwrap();
@@ -1368,7 +1381,9 @@ fn twodelta_roundtrips_and_counts_repeated_frames() {
     decode_ben_to_jsonl(ben.as_slice(), &mut jsonl).unwrap();
     assert_eq!(jsonl, jsonl_from_assignments(&assignments));
 
-    let frames = BenStreamReader::from_ben(ben.as_slice()).unwrap().into_frames();
+    let frames = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .into_frames();
     assert_eq!(collect_frames(frames).unwrap().len(), 3);
 }
 
@@ -1464,6 +1479,9 @@ fn twodelta_supports_frame_iteration_counting_and_sample_extraction() {
 
     let ben_path = unique_temp_path("twodelta_sample.ben");
     fs::write(&ben_path, &ben).unwrap();
-    assert_eq!(count_samples_from_file(&ben_path, BenWireFormat::Ben).unwrap(), 4);
+    assert_eq!(
+        count_samples_from_file(&ben_path, BenWireFormat::Ben).unwrap(),
+        4
+    );
     fs::remove_file(ben_path).unwrap();
 }

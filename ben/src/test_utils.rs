@@ -1,9 +1,8 @@
 //! Test helpers shared across unit and integration tests.
 //!
-//! This module is always-compiled (not `#[cfg(test)]`) so integration tests
-//! in `ben/tests/` — which are separate crates — can reuse the same helpers
-//! as unit tests inside `ben/src/.../tests.rs`. It is `#[doc(hidden)]` and
-//! is not part of the stable public API.
+//! This module is always-compiled (not `#[cfg(test)]`) so integration tests in `ben/tests/` — which
+//! are separate crates — can reuse the same helpers as unit tests inside `ben/src/.../tests.rs`. It
+//! is `#[doc(hidden)]` and is not part of the stable public API.
 
 use std::io::{Cursor, Write};
 use std::path::PathBuf;
@@ -16,9 +15,9 @@ use crate::io::bundle::format::AssignmentFormat;
 use crate::io::bundle::BendlWriter;
 use crate::BenVariant;
 
-/// Return a unique temp path of the form `binary-ensemble-{name}-{nonce}` in
-/// the system temp directory. The nonce is the current monotonic-ish time in
-/// nanoseconds, sufficient to avoid collisions between parallel test runs.
+/// Return a unique temp path of the form `binary-ensemble-{name}-{nonce}` in the system temp
+/// directory. The nonce is the current monotonic-ish time in nanoseconds, sufficient to avoid
+/// collisions between parallel test runs.
 pub fn unique_path(name: &str) -> PathBuf {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -27,8 +26,7 @@ pub fn unique_path(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("binary-ensemble-{name}-{nonce}"))
 }
 
-/// Build a JSONL byte buffer from a sequence of assignment vectors,
-/// numbering samples from 1.
+/// Build a JSONL byte buffer from a sequence of assignment vectors, numbering samples from 1.
 pub fn jsonl_from_assignments(assignments: &[Vec<u16>]) -> Vec<u8> {
     let mut buf = Vec::new();
     for (i, a) in assignments.iter().enumerate() {
@@ -37,8 +35,7 @@ pub fn jsonl_from_assignments(assignments: &[Vec<u16>]) -> Vec<u8> {
     buf
 }
 
-/// Expand an RLE sequence `(value, length)` into a flat assignment vector,
-/// truncating at `cap`.
+/// Expand an RLE sequence `(value, length)` into a flat assignment vector, truncating at `cap`.
 pub fn expand_rle(rle: &[(u16, u16)], cap: usize) -> Vec<u16> {
     let mut v = Vec::with_capacity(cap);
     for &(val, len) in rle {
@@ -51,17 +48,16 @@ pub fn expand_rle(rle: &[(u16, u16)], cap: usize) -> Vec<u16> {
     v
 }
 
-/// Encode the given JSONL bytes as a BEN byte vector, including the 17-byte
-/// banner. Panics on encoder error; intended only for fixture construction.
+/// Encode the given JSONL bytes as a BEN byte vector, including the 17-byte banner. Panics on
+/// encoder error; intended only for fixture construction.
 pub fn sample_ben_bytes(jsonl: &[u8], variant: BenVariant) -> Vec<u8> {
     let mut out = Vec::new();
     encode_jsonl_to_ben(jsonl, &mut out, variant).unwrap();
     out
 }
 
-/// Build a minimal finalized `.bendl` byte vector containing the given
-/// pre-encoded assignment stream bytes. Panics on writer error; intended
-/// only for fixture construction.
+/// Build a minimal finalized `.bendl` byte vector containing the given pre-encoded assignment
+/// stream bytes. Panics on writer error; intended only for fixture construction.
 pub fn sample_bendl_bytes(stream: &[u8], format: AssignmentFormat) -> Vec<u8> {
     let mut buf: Vec<u8> = Vec::new();
     {

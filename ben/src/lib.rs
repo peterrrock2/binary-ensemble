@@ -1,24 +1,21 @@
 //! Tools for working with binary ensembles of districting plans.
 //!
-//! This crate provides several command line tools and library functions for
-//! converting ensembles of districting plans contained in a JSONL file with
-//! lines of the form
+//! This crate provides several command line tools and library functions for converting ensembles of
+//! districting plans contained in a JSONL file with lines of the form
 //!
 //! ```text
 //! {"assignment": <assignment>, "sample": <sample>}
 //! ```
 //!
-//! into binary ensembles (BEN) and extremely compressed binary ensembles
-//! (XBEN). It also provides several tools for working with these files
-//! including several tools for relabeling the ensembles to improve
-//! compression ratios.
+//! into binary ensembles (BEN) and extremely compressed binary ensembles (XBEN). It also provides
+//! several tools for working with these files including several tools for relabeling the ensembles
+//! to improve compression ratios.
 //!
 //! The main CLI tools provided by this crate are:
 //!
-//! - `ben`: A tool for converting JSONL files into BEN files.
-//!    and for converting between BEN and XBEN files.
+//! - `ben`: A tool for converting JSONL files into BEN files. and for converting between BEN and
+//!   XBEN files.
 //! - `reben`: A tool for relabeling BEN files to improve compression ratios.
-//!
 
 #[cfg(not(target_pointer_width = "64"))]
 compile_error!("binary-ensemble requires a 64-bit target");
@@ -56,13 +53,12 @@ pub enum BenVariant {
     TwoDelta,
 }
 
-/// The subset of [`BenVariant`] values that pass through the BEN32 intermediate
-/// wire format (see `docs/glossary.md`).
+/// The subset of [`BenVariant`] values that pass through the BEN32 intermediate wire format
+/// (see `docs/glossary.md`).
 ///
-/// `TwoDelta` streams use a separate XBEN columnar layout and are intentionally
-/// excluded; functions parameterised by `XBenVariant` cannot be called for
-/// TwoDelta at compile time. Convert with `From<XBenVariant> for BenVariant`
-/// or `TryFrom<BenVariant> for XBenVariant`.
+/// `TwoDelta` streams use a separate XBEN columnar layout and are intentionally excluded; functions
+/// parameterised by `XBenVariant` cannot be called for TwoDelta at compile time. Convert with
+/// `From<XBenVariant> for BenVariant` or `TryFrom<BenVariant> for XBenVariant`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XBenVariant {
     Standard,
@@ -78,8 +74,8 @@ impl From<XBenVariant> for BenVariant {
     }
 }
 
-/// Returned by `TryFrom<BenVariant> for XBenVariant` when the input is
-/// `TwoDelta`, which has no BEN32 representation.
+/// Returned by `TryFrom<BenVariant> for XBenVariant` when the input is `TwoDelta`, which has no
+/// BEN32 representation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TwoDeltaNotXBenError;
 

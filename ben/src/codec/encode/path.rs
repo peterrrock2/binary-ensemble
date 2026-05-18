@@ -1,9 +1,9 @@
 //! Path-based convenience wrappers around the streaming encoders.
 //!
-//! Each wrapper opens a buffered reader on the input and a buffered writer on
-//! the output, then delegates to the corresponding streaming function. The
-//! wrappers exist so that CLI dispatch and library consumers do not have to
-//! repeat the `BufReader`/`BufWriter`/`File` plumbing at every callsite.
+//! Each wrapper opens a buffered reader on the input and a buffered writer on the output, then
+//! delegates to the corresponding streaming function. The wrappers exist so that CLI dispatch and
+//! library consumers do not have to repeat the `BufReader`/`BufWriter`/`File` plumbing at every
+//! callsite.
 
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Result};
@@ -151,17 +151,16 @@ mod tests {
         let xben = unique_path("path-bxb.xben");
         let ben_back = unique_path("path-bxb-back.ben");
 
-        std::fs::write(
-            &jsonl_in,
-            jsonl_from_assignments(&[vec![1, 2, 3]]),
-        )
-        .unwrap();
+        std::fs::write(&jsonl_in, jsonl_from_assignments(&[vec![1, 2, 3]])).unwrap();
         encode_jsonl_to_ben_path(&jsonl_in, &ben, BenVariant::Standard).unwrap();
         encode_ben_to_xben_path(&ben, &xben, Some(1), Some(1), None, None).unwrap();
         decode_xben_to_ben_path(&xben, &ben_back).unwrap();
 
         // Round trip: ben_back should be byte-equivalent to ben (same banner, same content).
-        assert_eq!(std::fs::read(&ben).unwrap(), std::fs::read(&ben_back).unwrap());
+        assert_eq!(
+            std::fs::read(&ben).unwrap(),
+            std::fs::read(&ben_back).unwrap()
+        );
 
         for p in [&jsonl_in, &ben, &xben, &ben_back] {
             let _ = std::fs::remove_file(p);

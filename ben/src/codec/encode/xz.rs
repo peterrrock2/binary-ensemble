@@ -6,34 +6,29 @@ use std::io::{self, BufRead, Cursor, Read, Result, Write};
 use xz2::stream::{MtStreamBuilder, Stream};
 use xz2::write::XzEncoder;
 
-/// Default per-block size used by the multithreaded XZ encoder when the
-/// caller does not pass an explicit `block_size`.
+/// Default per-block size used by the multithreaded XZ encoder when the caller does not pass an
+/// explicit `block_size`.
 ///
-/// liblzma's `block_size = 0` means "auto" (`3 × dict_size`), which at
-/// preset 9 is ~192 MiB — far too coarse for streaming inputs to fan out
-/// across worker threads. 16 MiB strikes a balance between scaling
-/// thread utilization on medium ensembles and keeping per-block
-/// dictionary reuse mostly intact.
+/// liblzma's `block_size = 0` means "auto" (`3 × dict_size`), which at preset 9 is ~192 MiB — far
+/// too coarse for streaming inputs to fan out across worker threads. 16 MiB strikes a balance
+/// between scaling thread utilization on medium ensembles and keeping per-block dictionary reuse
+/// mostly intact.
 pub const XZ_DEFAULT_MT_BLOCK_SIZE: u64 = 16 * 1024 * 1024;
 
 /// Resolve `n_threads` against the host's available parallelism.
 pub(crate) fn resolve_threads(n_threads: Option<u32>) -> u32 {
-    n_threads
-        .unwrap_or(1)
-        .min(host_parallelism())
-        .max(1)
+    n_threads.unwrap_or(1).min(host_parallelism()).max(1)
 }
 
-/// Number of cores reported by `std::thread::available_parallelism`,
-/// or `1` if the platform cannot answer.
+/// Number of cores reported by `std::thread::available_parallelism`, or `1` if the platform cannot
+/// answer.
 fn host_parallelism() -> u32 {
     std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1) as u32
 }
 
-/// Convert a user-supplied signed thread count into the unsigned count
-/// the encoder expects.
+/// Convert a user-supplied signed thread count into the unsigned count the encoder expects.
 ///
 /// CLI and Python users want sklearn-style sentinel semantics:
 ///
@@ -50,13 +45,11 @@ pub fn cpus_from_signed(n: i32) -> u32 {
     }
 }
 
-/// Build a multithreaded XZ encoder stream with the project's default
-/// `block_size` policy applied.
+/// Build a multithreaded XZ encoder stream with the project's default `block_size` policy applied.
 ///
-/// When `block_size` is `Some(n)`, that exact byte count is passed to
-/// liblzma. When it is `None`, we default to [`XZ_DEFAULT_MT_BLOCK_SIZE`]
-/// for `n_threads > 1` and to `0` (liblzma's "auto") for the single-thread
-/// case so single-thread encoding does not pay any block-overhead cost.
+/// When `block_size` is `Some(n)`, that exact byte count is passed to liblzma. When it is `None`,
+/// we default to [`XZ_DEFAULT_MT_BLOCK_SIZE`] for `n_threads > 1` and to `0` (liblzma's "auto") for
+/// the single-thread case so single-thread encoding does not pay any block-overhead cost.
 pub(crate) fn build_mt_stream(
     n_threads: u32,
     level: u32,
@@ -78,21 +71,19 @@ pub(crate) fn build_mt_stream(
 
 /// Compress an arbitrary byte stream with XZ/LZMA2.
 ///
-/// This is a general-purpose helper used by the XBEN tooling, but it can also
-/// be used for plain XZ compression when BEN-specific framing is not needed.
+/// This is a general-purpose helper used by the XBEN tooling, but it can also be used for plain XZ
+/// compression when BEN-specific framing is not needed.
 ///
 /// # Arguments
 ///
 /// * `reader` - The input byte stream to compress.
 /// * `writer` - The destination for the compressed XZ bytes.
-/// * `n_threads` - Optional XZ encoder thread count. Defaults to `1`
-///   (single-threaded) when `None`. Values larger than the host's
-///   available parallelism are silently clamped down.
+/// * `n_threads` - Optional XZ encoder thread count. Defaults to `1` (single-threaded) when `None`.
+///   Values larger than the host's available parallelism are silently clamped down.
 /// * `compression_level` - Optional XZ compression level in the range `0..=9`.
-/// * `block_size` - Optional per-block size in bytes for the MT encoder.
-///   `None` defaults to [`XZ_DEFAULT_MT_BLOCK_SIZE`] when threads > 1, or
-///   `0` (liblzma auto) for single-thread runs. Smaller blocks improve
-///   thread fan-out at a slight compression-ratio cost.
+/// * `block_size` - Optional per-block size in bytes for the MT encoder. `None` defaults to
+///   [`XZ_DEFAULT_MT_BLOCK_SIZE`] when threads > 1, or `0` (liblzma auto) for single-thread runs.
+///   Smaller blocks improve thread fan-out at a slight compression-ratio cost.
 ///
 /// # Returns
 ///
@@ -125,22 +116,20 @@ pub fn xz_compress<R: BufRead, W: Write>(
 
 /// Convert an existing BEN stream into an XBEN stream.
 ///
-/// The input must begin with a BEN banner so that the variant can be preserved
-/// in the compressed output.
+/// The input must begin with a BEN banner so that the variant can be preserved in the compressed
+/// output.
 ///
 /// # Arguments
 ///
 /// * `reader` - The input BEN stream, including its banner.
 /// * `writer` - The destination for the compressed XBEN bytes.
-/// * `n_threads` - Optional XZ encoder thread count. Defaults to `1`
-///   (single-threaded) when `None`. Values larger than the host's
-///   available parallelism are silently clamped down.
+/// * `n_threads` - Optional XZ encoder thread count. Defaults to `1` (single-threaded) when `None`.
+///   Values larger than the host's available parallelism are silently clamped down.
 /// * `compression_level` - Optional XZ compression level in the range `0..=9`.
-/// * `chunk_size` - Optional TwoDelta columnar chunk size; ignored for
-///   Standard and MkvChain variants.
-/// * `block_size` - Optional per-block size in bytes for the MT encoder.
-///   `None` defaults to [`XZ_DEFAULT_MT_BLOCK_SIZE`] when threads > 1, or
-///   `0` (liblzma auto) for single-thread runs.
+/// * `chunk_size` - Optional TwoDelta columnar chunk size; ignored for Standard and MkvChain
+///   variants.
+/// * `block_size` - Optional per-block size in bytes for the MT encoder. `None` defaults to
+///   [`XZ_DEFAULT_MT_BLOCK_SIZE`] when threads > 1, or `0` (liblzma auto) for single-thread runs.
 ///
 /// # Returns
 ///
@@ -167,8 +156,7 @@ pub fn encode_ben_to_xben<R: BufRead, W: Write>(
             actual: check_buffer.to_vec(),
         })
     })?;
-    let mut ben_encoder =
-        BenStreamWriter::for_xben_with_encoder(encoder, variant, chunk_size)?;
+    let mut ben_encoder = BenStreamWriter::for_xben_with_encoder(encoder, variant, chunk_size)?;
     ben_encoder.ingest_ben_stream(Cursor::new(check_buffer).chain(reader))?;
     ben_encoder.finish()?;
     Ok(())

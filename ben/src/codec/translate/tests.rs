@@ -236,10 +236,9 @@ fn test_random_translation_ben_to_ben32() {
 
 #[test]
 fn test_ben_to_ben32_lines_non_eof_error_on_frame_boundary() {
-    // Provide a valid BEN frame followed by a read that errors with a non-EOF
-    // error at exactly the point where the next frame's first byte would be read.
-    // This exercises the `return Err(e)` branch (line ~191) in the
-    // `read_exact → match → Err(e) → not UnexpectedEof` path.
+    // Provide a valid BEN frame followed by a read that errors with a non-EOF error at exactly the
+    // point where the next frame's first byte would be read. This exercises the `return Err(e)`
+    // branch (line ~191) in the `read_exact → match → Err(e) → not UnexpectedEof` path.
     struct FailOnSecondFrame {
         data: Vec<u8>,
         pos: usize,
@@ -249,7 +248,10 @@ fn test_ben_to_ben32_lines_non_eof_error_on_frame_boundary() {
     impl Read for FailOnSecondFrame {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
             if self.pos >= self.frame_boundary {
-                return Err(io::Error::new(io::ErrorKind::BrokenPipe, "pipe broke on boundary"));
+                return Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "pipe broke on boundary",
+                ));
             }
             let available = (self.frame_boundary - self.pos).min(buf.len());
             let end = self.pos + available;
@@ -290,7 +292,8 @@ fn test_ben32_to_ben_line_rejects_invalid_length() {
 
 #[test]
 fn test_ben32_to_ben_line_rejects_missing_terminator() {
-    let err = ben32_to_ben_line(vec![0, 1, 0, 2, 0, 0, 0, 1], XBenVariant::Standard, 0).unwrap_err();
+    let err =
+        ben32_to_ben_line(vec![0, 1, 0, 2, 0, 0, 0, 1], XBenVariant::Standard, 0).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     assert_eq!(
         err.to_string(),

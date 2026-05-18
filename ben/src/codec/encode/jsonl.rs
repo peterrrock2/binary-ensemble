@@ -8,24 +8,23 @@ use xz2::write::XzEncoder;
 
 /// Encode JSONL assignment records directly into an XBEN stream.
 ///
-/// Each input line must be a JSON object with an `assignment` array. The output
-/// stream begins with the standard BEN banner inside the compressed payload and
-/// then stores each assignment in ben32 form.
+/// Each input line must be a JSON object with an `assignment` array. The output stream begins with
+/// the standard BEN banner inside the compressed payload and then stores each assignment in ben32
+/// form.
 ///
 /// # Arguments
 ///
 /// * `reader` - A JSONL input stream with one assignment record per line.
 /// * `writer` - The destination for the compressed XBEN bytes.
 /// * `variant` - The BEN variant to use inside the XBEN payload.
-/// * `n_threads` - Optional XZ encoder thread count. Defaults to `1`
-///   (single-threaded) when `None`. Values larger than the host's
-///   available parallelism are silently clamped down.
+/// * `n_threads` - Optional XZ encoder thread count. Defaults to `1` (single-threaded) when `None`.
+///   Values larger than the host's available parallelism are silently clamped down.
 /// * `compression_level` - Optional XZ compression level in the range `0..=9`.
-/// * `chunk_size` - Optional TwoDelta columnar chunk size; ignored for
-///   Standard and MkvChain variants.
-/// * `block_size` - Optional per-block size in bytes for the MT encoder.
-///   `None` defaults to [`crate::codec::encode::xz::XZ_DEFAULT_MT_BLOCK_SIZE`]
-///   when threads > 1, or `0` (liblzma auto) for single-thread runs.
+/// * `chunk_size` - Optional TwoDelta columnar chunk size; ignored for Standard and MkvChain
+///   variants.
+/// * `block_size` - Optional per-block size in bytes for the MT encoder. `None` defaults to
+///   [`crate::codec::encode::xz::XZ_DEFAULT_MT_BLOCK_SIZE`] when threads > 1, or `0` (liblzma auto)
+///   for single-thread runs.
 ///
 /// # Returns
 ///
@@ -69,9 +68,8 @@ pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
 
 /// Encode JSONL assignment records into an uncompressed BEN file.
 ///
-/// The input is expected to contain one JSON object per line with an
-/// `assignment` array. The `sample` field is ignored because BEN sample order is
-/// determined by the stream position.
+/// The input is expected to contain one JSON object per line with an `assignment` array. The
+/// `sample` field is ignored because BEN sample order is determined by the stream position.
 ///
 /// # Arguments
 ///

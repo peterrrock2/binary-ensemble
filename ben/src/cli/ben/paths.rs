@@ -15,9 +15,8 @@ pub(super) type DynWriter = Box<dyn Write>;
 /// * `input_file_name` - The input file path supplied by the user.
 /// * `output_file_name` - An optional explicit output path.
 /// * `overwrite` - Whether to skip overwrite prompting.
-/// * `with_graph` - When true, the output is a `.bendl` bundle instead
-///   of a bare `.ben`/`.xben` stream, so the derived extension is
-///   `.bendl` regardless of `mode`.
+/// * `with_graph` - When true, the output is a `.bendl` bundle instead of a bare `.ben`/`.xben`
+///   stream, so the derived extension is `.bendl` regardless of `mode`.
 ///
 /// # Returns
 ///
@@ -65,8 +64,7 @@ pub(super) fn encode_setup(
 ///
 /// * `in_file_name` - The input file path supplied by the user.
 /// * `out_file_name` - An optional explicit output path.
-/// * `full_decode` - Whether the decode should go all the way to JSONL instead
-///   of stopping at BEN.
+/// * `full_decode` - Whether the decode should go all the way to JSONL instead of stopping at BEN.
 /// * `overwrite` - Whether to skip overwrite prompting.
 ///
 /// # Returns
@@ -165,9 +163,8 @@ pub(super) fn open_derived_writer(path: String) -> DynWriter {
     Box::new(BufWriter::new(File::create(path).unwrap()))
 }
 
-/// Count the number of non-empty lines in a JSONL file. Used to populate
-/// the bundle header's `sample_count` when wrapping a stream encode in a
-/// `.bendl` container.
+/// Count the number of non-empty lines in a JSONL file. Used to populate the bundle header's
+/// `sample_count` when wrapping a stream encode in a `.bendl` container.
 pub(super) fn count_jsonl_lines(path: &Path) -> io::Result<i64> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);

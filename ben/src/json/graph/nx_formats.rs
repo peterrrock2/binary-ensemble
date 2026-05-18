@@ -4,10 +4,9 @@ use std::collections::BTreeMap;
 
 /// A NetworkX graph in adjacency-format JSON.
 ///
-/// This is the Rust representation of the JSON produced by
-/// `networkx.adjacency_data()`. All fields use `#[serde(default)]` so that
-/// inputs which omit optional keys (e.g. `"directed"`) still deserialize
-/// successfully.
+/// This is the Rust representation of the JSON produced by `networkx.adjacency_data()`. All fields
+/// use `#[serde(default)]` so that inputs which omit optional keys (e.g. `"directed"`) still
+/// deserialize successfully.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct NxGraphAdjFormat {
     /// Whether the graph is directed. Defaults to `false`.
@@ -23,8 +22,8 @@ pub(crate) struct NxGraphAdjFormat {
     /// The list of nodes, each carrying an `id` and arbitrary attributes.
     #[serde(default)]
     pub nodes: Vec<NxNode>,
-    /// Adjacency lists parallel to `nodes`. `adjacency[i]` lists the
-    /// neighbors (and edge attributes) of `nodes[i]`.
+    /// Adjacency lists parallel to `nodes`. `adjacency[i]` lists the neighbors (and edge
+    /// attributes) of `nodes[i]`.
     #[serde(default)]
     pub adjacency: Vec<Vec<NxAdjEntry>>,
 }
@@ -48,8 +47,7 @@ pub(crate) struct NxAdjEntry {
     #[serde(rename = "id")]
     pub id: Value,
 
-    /// The edge key, present only in multigraphs. Omitted from JSON when
-    /// `None`.
+    /// The edge key, present only in multigraphs. Omitted from JSON when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<Value>,
 

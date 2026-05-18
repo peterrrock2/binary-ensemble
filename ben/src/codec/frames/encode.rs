@@ -4,10 +4,9 @@ use crate::BenVariant;
 
 /// One sample's encoded bytes at the frame layer.
 ///
-/// Variants mirror [`BenVariant`]: a stream's variant tag dictates which arm
-/// each frame in the stream uses. Encode-side arms carry the source RLE runs
-/// (or run-length vector for `TwoDelta`) alongside the serialized `raw_bytes`,
-/// because frames on this side are built *from* runs.
+/// Variants mirror [`BenVariant`]: a stream's variant tag dictates which arm each frame in the
+/// stream uses. Encode-side arms carry the source RLE runs (or run-length vector for `TwoDelta`)
+/// alongside the serialized `raw_bytes`, because frames on this side are built *from* runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BenEncodeFrame {
     /// A `Standard`-variant frame. No trailing repetition count on the wire.
@@ -38,18 +37,16 @@ pub enum BenEncodeFrame {
         /// The number of times this frame repeats.
         count: u16,
     },
-    /// A `TwoDelta`-variant frame: a delta over `pair` with alternating run
-    /// lengths. Carries a trailing `u16` repetition count.
+    /// A `TwoDelta`-variant frame: a delta over `pair` with alternating run lengths. Carries a
+    /// trailing `u16` repetition count.
     TwoDelta {
-        /// The pair of district ids encoded in this frame.
-        /// `pair.0` corresponds to the first run.
+        /// The pair of district ids encoded in this frame. `pair.0` corresponds to the first run.
         pair: (u16, u16),
         /// The number of bits used to encode the maximum run length.
         max_len_bit_count: u8,
         /// The number of bytes in the packed payload.
         n_bytes: u32,
-        /// The alternating run-length vector over the positions occupied by
-        /// the pair.
+        /// The alternating run-length vector over the positions occupied by the pair.
         run_length_vector: Vec<u16>,
         /// The full serialized TwoDelta frame bytes (header + payload + count).
         raw_bytes: Vec<u8>,
@@ -65,8 +62,8 @@ impl BenEncodeFrame {
     ///
     /// # Panics
     ///
-    /// Panics if `variant` is [`BenVariant::TwoDelta`]; use
-    /// [`BenEncodeFrame::from_run_lengths`] for that.
+    /// Panics if `variant` is [`BenVariant::TwoDelta`]; use [`BenEncodeFrame::from_run_lengths`]
+    /// for that.
     pub fn from_rle(runs: Vec<(u16, u16)>, variant: BenVariant, count: Option<u16>) -> Self {
         let (max_val, max_len) = runs
             .iter()
@@ -112,8 +109,8 @@ impl BenEncodeFrame {
     ///
     /// # Panics
     ///
-    /// Panics if `variant` is [`BenVariant::TwoDelta`]; TwoDelta frames cannot
-    /// be derived from a single assignment vector.
+    /// Panics if `variant` is [`BenVariant::TwoDelta`]; TwoDelta frames cannot be derived from a
+    /// single assignment vector.
     pub fn from_assignment(
         assignment: impl AsRef<[u16]>,
         variant: BenVariant,
@@ -178,13 +175,11 @@ impl BenEncodeFrame {
         }
     }
 
-    /// Reconstruct a `TwoDelta` frame from already-parsed header fields and a
-    /// raw payload.
+    /// Reconstruct a `TwoDelta` frame from already-parsed header fields and a raw payload.
     ///
-    /// This is the inverse of [`BenEncodeFrame::from_run_lengths`]: it
-    /// re-assembles the serialized bytes and decodes the bit-packed payload
-    /// back into the run-length vector so that both representations are
-    /// available on the resulting frame.
+    /// This is the inverse of [`BenEncodeFrame::from_run_lengths`]: it re-assembles the serialized
+    /// bytes and decodes the bit-packed payload back into the run-length vector so that both
+    /// representations are available on the resulting frame.
     pub fn from_parts(
         pair: (u16, u16),
         max_len_bit_count: u8,
@@ -251,26 +246,20 @@ impl BenEncodeFrame {
         }
     }
 
-    /// Borrow just the packed payload bytes (the variant-specific region
-    /// between the frame header and any trailing count).
+    /// Borrow just the packed payload bytes (the variant-specific region between the frame header
+    /// and any trailing count).
     ///
     /// Returns the payload slice for any well-formed frame.
     pub fn payload(&self) -> &[u8] {
         match self {
             Self::Standard {
-                n_bytes,
-                raw_bytes,
-                ..
+                n_bytes, raw_bytes, ..
             }
             | Self::MkvChain {
-                n_bytes,
-                raw_bytes,
-                ..
+                n_bytes, raw_bytes, ..
             } => &raw_bytes[6..6 + *n_bytes as usize],
             Self::TwoDelta {
-                n_bytes,
-                raw_bytes,
-                ..
+                n_bytes, raw_bytes, ..
             } => &raw_bytes[9..9 + *n_bytes as usize],
         }
     }
@@ -292,8 +281,8 @@ impl BenEncodeFrame {
         }
     }
 
-    /// The bit width of the largest district id in this frame, or `None` for
-    /// `TwoDelta` (which doesn't carry one).
+    /// The bit width of the largest district id in this frame, or `None` for `TwoDelta`
+    /// (which doesn't carry one).
     pub fn max_val_bit_count(&self) -> Option<u8> {
         match self {
             Self::Standard {
@@ -330,8 +319,7 @@ impl BenEncodeFrame {
         }
     }
 
-    /// The pair of district ids encoded by a `TwoDelta` frame, or `None` for
-    /// the snapshot arms.
+    /// The pair of district ids encoded by a `TwoDelta` frame, or `None` for the snapshot arms.
     pub fn pair(&self) -> Option<(u16, u16)> {
         match self {
             Self::TwoDelta { pair, .. } => Some(*pair),
@@ -339,8 +327,8 @@ impl BenEncodeFrame {
         }
     }
 
-    /// Borrow the source RLE runs for `Standard` and `MkvChain`, or `None`
-    /// for `TwoDelta` (which carries `run_length_vector` instead).
+    /// Borrow the source RLE runs for `Standard` and `MkvChain`, or `None` for `TwoDelta`
+    /// (which carries `run_length_vector` instead).
     pub fn runs(&self) -> Option<&[(u16, u16)]> {
         match self {
             Self::Standard { runs, .. } | Self::MkvChain { runs, .. } => Some(runs),
@@ -348,8 +336,8 @@ impl BenEncodeFrame {
         }
     }
 
-    /// Borrow the alternating run-length vector for a `TwoDelta` frame, or
-    /// `None` for the snapshot arms.
+    /// Borrow the alternating run-length vector for a `TwoDelta` frame, or `None` for the snapshot
+    /// arms.
     pub fn run_length_vector(&self) -> Option<&[u16]> {
         match self {
             Self::TwoDelta {

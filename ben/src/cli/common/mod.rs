@@ -9,9 +9,8 @@ static QUIET: AtomicBool = AtomicBool::new(false);
 
 /// Configure tracing for CLI execution.
 ///
-/// When `verbose` is set and the user has not already provided `RUST_LOG`, the
-/// default log filter is elevated to `trace`. The tracing subscriber is then
-/// initialized exactly once for the process.
+/// When `verbose` is set and the user has not already provided `RUST_LOG`, the default log filter
+/// is elevated to `trace`. The tracing subscriber is then initialized exactly once for the process.
 ///
 /// # Arguments
 ///
@@ -29,8 +28,8 @@ pub fn set_verbose(verbose: bool) {
 
 /// Suppress in-place progress spinners for this process.
 ///
-/// Independent of [`set_verbose`]: trace logging is gated by `RUST_LOG`,
-/// while spinners are gated by this flag plus stderr TTY detection.
+/// Independent of [`set_verbose`]: trace logging is gated by `RUST_LOG`, while spinners are gated
+/// by this flag plus stderr TTY detection.
 ///
 /// # Arguments
 ///
@@ -52,25 +51,24 @@ pub fn is_quiet() -> bool {
     QUIET.load(Ordering::Relaxed)
 }
 
-/// Decide whether overwriting an output path should proceed, given the
-/// state observed by the caller.
+/// Decide whether overwriting an output path should proceed, given the state observed by the
+/// caller.
 ///
-/// This is the pure half of [`check_overwrite`]: it does no I/O, so it can
-/// be unit-tested by enumerating the four reachable states (file missing /
-/// `overwrite` flag set / user said yes / user said anything else).
+/// This is the pure half of [`check_overwrite`]: it does no I/O, so it can be unit-tested by
+/// enumerating the four reachable states (file missing / `overwrite` flag set / user said yes /
+/// user said anything else).
 ///
 /// # Arguments
 ///
 /// * `file_exists` - Whether the candidate output path already exists.
 /// * `overwrite` - Whether the caller passed `--overwrite` to skip prompting.
-/// * `response` - The line the user typed in response to the overwrite
-///   prompt, or `None` if no prompt was issued.
+/// * `response` - The line the user typed in response to the overwrite prompt, or `None` if no
+///   prompt was issued.
 ///
 /// # Returns
 ///
-/// Returns `true` when the caller may safely overwrite; `false` when the
-/// user (or the absence of a yes-response) indicates the operation should
-/// be aborted.
+/// Returns `true` when the caller may safely overwrite; `false` when the user (or the absence of a
+/// yes-response) indicates the operation should be aborted.
 pub(crate) fn check_overwrite_pure(
     file_exists: bool,
     overwrite: bool,
@@ -87,9 +85,8 @@ pub(crate) fn check_overwrite_pure(
 
 /// Confirm whether an existing output path may be overwritten.
 ///
-/// If `overwrite` is `false` and the destination already exists, the user is
-/// prompted on stdin. An `AlreadyExists` error is returned when the user
-/// declines.
+/// If `overwrite` is `false` and the destination already exists, the user is prompted on stdin. An
+/// `AlreadyExists` error is returned when the user declines.
 ///
 /// # Arguments
 ///

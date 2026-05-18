@@ -8,9 +8,9 @@
 //!
 //! The writer operates in three logical phases, expressed via owned typestate transitions:
 //!
-//! 1. **asset phase** — the caller invokes [`BendlWriter::add_asset`] zero or more times. Each
-//!    call writes the (optionally xz-compressed) payload to the file and records its absolute
-//!    offset and length in an in-memory entry list.
+//! 1. **asset phase** — the caller invokes [`BendlWriter::add_asset`] zero or more times. Each call
+//!    writes the (optionally xz-compressed) payload to the file and records its absolute offset and
+//!    length in an in-memory entry list.
 //! 2. **stream phase** — the caller invokes [`BendlWriter::into_stream_session`] to consume the
 //!    writer and obtain a [`BendlStreamSession`] that owns the underlying writer and implements
 //!    `Write`. When the stream is complete the caller calls
@@ -69,12 +69,11 @@ impl BendlTruncate for std::io::Cursor<Vec<u8>> {
 /// `*_unverified` API and excluded from normal write paths.
 #[derive(Debug, Clone, Default)]
 pub struct AddAssetOptions {
-    /// Compression override. `None` means "follow the default policy for
-    /// this asset type"; `Some(true)` forces xz compression; `Some(false)`
-    /// forces a raw payload.
+    /// Compression override. `None` means "follow the default policy for this asset type";
+    /// `Some(true)` forces xz compression; `Some(false)` forces a raw payload.
     pub compress: Option<bool>,
-    /// Whether the decoded payload is UTF-8 JSON. Adds the
-    /// [`ASSET_FLAG_JSON`] bit to the entry's flags.
+    /// Whether the decoded payload is UTF-8 JSON. Adds the [`ASSET_FLAG_JSON`] bit to the entry's
+    /// flags.
     pub is_json: bool,
 }
 
@@ -96,8 +95,7 @@ impl AddAssetOptions {
         self
     }
 
-    /// Force the writer to store the payload raw even if the default
-    /// policy would compress it.
+    /// Force the writer to store the payload raw even if the default policy would compress it.
     pub fn raw(mut self) -> Self {
         self.compress = Some(false);
         self
@@ -116,28 +114,26 @@ pub struct BendlWriter<W: Write + Seek> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WriterState {
-    /// No assets have been written yet, but the provisional header is
-    /// already in place and the writer is positioned just after it.
+    /// No assets have been written yet, but the provisional header is already in place and the
+    /// writer is positioned just after it.
     Assets,
-    /// A stream session has been finished and the writer is ready for
-    /// [`BendlWriter::finish`]. The streaming phase itself is expressed
-    /// in the type system via [`BendlStreamSession`] and is therefore
-    /// not observable in this enum.
+    /// A stream session has been finished and the writer is ready for [`BendlWriter::finish`]. The
+    /// streaming phase itself is expressed in the type system via [`BendlStreamSession`] and is
+    /// therefore not observable in this enum.
     StreamWritten { stream_len: u64, sample_count: i64 },
 }
 
 impl<W: Write + Seek> BendlWriter<W> {
     /// Create a new writer by writing a provisional header at offset 0.
     ///
-    /// The assignment stream will begin immediately after the asset
-    /// payload region — [`BendlWriter::into_stream_session`] computes
-    /// the exact offset at the moment it is called, so asset writes
-    /// that happen between `new` and `into_stream_session` push the
-    /// stream out as expected.
+    /// The assignment stream will begin immediately after the asset payload region —
+    /// [`BendlWriter::into_stream_session`] computes the exact offset at the moment it is called,
+    /// so asset writes that happen between `new` and `into_stream_session` push the stream out as
+    /// expected.
     pub fn new(mut inner: W, assignment_format: AssignmentFormat) -> io::Result<Self> {
         inner.seek(SeekFrom::Start(0))?;
-        // stream_offset in the provisional header is patched at
-        // into_stream_session time; start it just after the header.
+        // stream_offset in the provisional header is patched at into_stream_session time; start it
+        // just after the header.
         let header = BendlHeader::provisional(assignment_format, HEADER_SIZE as u64);
         header.write_to(&mut inner)?;
 
@@ -153,14 +149,12 @@ impl<W: Write + Seek> BendlWriter<W> {
 
     /// Add an asset to the bundle.
     ///
-    /// The payload is written to the file immediately at the current
-    /// position (right after the previous asset, or right after the
-    /// header if this is the first asset). Its absolute offset and
-    /// length are recorded in the in-memory directory entry list.
+    /// The payload is written to the file immediately at the current position (right after the
+    /// previous asset, or right after the header if this is the first asset). Its absolute offset
+    /// and length are recorded in the in-memory directory entry list.
     ///
-    /// This method enforces the canonical-name and uniqueness rules
-    /// **before** writing any bytes, so a rejected asset leaves the
-    /// file untouched.
+    /// This method enforces the canonical-name and uniqueness rules **before** writing any bytes,
+    /// so a rejected asset leaves the file untouched.
     pub fn add_asset(
         &mut self,
         asset_type: u16,
@@ -188,9 +182,8 @@ impl<W: Write + Seek> BendlWriter<W> {
 
         // Unique name rule.
         if !self.names.insert(name.to_string()) {
-            // Roll back the singleton insertion before returning, so
-            // the writer remains in a consistent state. (Only known
-            // singleton types would have been inserted above.)
+            // Roll back the singleton insertion before returning, so the writer remains in a
+            // consistent state. (Only known singleton types would have been inserted above.)
             if standardized_name_for(asset_type).is_some() {
                 self.singleton_types.remove(&asset_type);
             }
@@ -211,9 +204,9 @@ impl<W: Write + Seek> BendlWriter<W> {
             payload.to_vec()
         };
 
-        // CRC32C over the on-disk payload bytes. For compressed assets this is the compressed
-        // bytes (verification happens before decompression). See ASSET_FLAG_CHECKSUM for the
-        // wire-format pin.
+        // CRC32C over the on-disk payload bytes. For compressed assets this is the compressed bytes
+        // (verification happens before decompression). See ASSET_FLAG_CHECKSUM for the wire-format
+        // pin.
         let crc = crc32c::crc32c(&payload_bytes);
         let checksum_bytes = crc.to_le_bytes().to_vec();
 
@@ -288,14 +281,14 @@ impl<W: Write + Seek> BendlWriter<W> {
 
     /// Consume the writer and transition into the stream phase.
     ///
-    /// The returned [`BendlStreamSession`] owns the underlying writer and implements `Write`, so
-    /// it can be plumbed into a [`crate::io::writer::BenStreamWriter`] (or written to directly).
-    /// When the stream is complete the caller calls [`BendlStreamSession::finish_into_writer`]
-    /// to recover ownership of a [`BendlWriter`] in the `StreamWritten` state, ready for
+    /// The returned [`BendlStreamSession`] owns the underlying writer and implements `Write`, so it
+    /// can be plumbed into a [`crate::io::writer::BenStreamWriter`] (or written to directly). When
+    /// the stream is complete the caller calls [`BendlStreamSession::finish_into_writer`] to
+    /// recover ownership of a [`BendlWriter`] in the `StreamWritten` state, ready for
     /// [`BendlWriter::finish`].
     ///
-    /// Returns [`BendlWriteError::WrongState`] when called on a writer that has already produced
-    /// a stream (e.g. via a prior `finish_into_writer`); this guard prevents a second
+    /// Returns [`BendlWriteError::WrongState`] when called on a writer that has already produced a
+    /// stream (e.g. via a prior `finish_into_writer`); this guard prevents a second
     /// `into_stream_session` from silently overwriting `header.stream_offset` and corrupting the
     /// bundle.
     pub fn into_stream_session(mut self) -> Result<BendlStreamSession<W>, BendlWriteError> {
@@ -325,8 +318,7 @@ impl<W: Write + Seek> BendlWriter<W> {
         })
     }
 
-    /// Write the trailing directory, patch the header, and return the
-    /// underlying writer.
+    /// Write the trailing directory, patch the header, and return the underlying writer.
     pub fn finish(mut self) -> Result<W, BendlWriteError> {
         let (stream_len, sample_count) = match self.state {
             WriterState::StreamWritten {
@@ -334,8 +326,7 @@ impl<W: Write + Seek> BendlWriter<W> {
                 sample_count,
             } => (stream_len, sample_count),
             WriterState::Assets => {
-                // No stream written; treat as empty stream located just
-                // after the asset region.
+                // No stream written; treat as empty stream located just after the asset region.
                 let stream_offset = self.inner.seek(SeekFrom::Current(0))?;
                 self.header.stream_offset = stream_offset;
                 (0, 0)
@@ -369,9 +360,9 @@ impl<W: Write + Seek> BendlWriter<W> {
     }
 }
 
-/// Internal state of a [`BendlWriter`] that has been temporarily moved
-/// into a [`BendlStreamSession`]. Stored as a single struct so
-/// `finish_into_writer` can rebuild the writer with one move.
+/// Internal state of a [`BendlWriter`] that has been temporarily moved into a
+/// [`BendlStreamSession`]. Stored as a single struct so `finish_into_writer` can rebuild the writer
+/// with one move.
 struct ParentState {
     header: BendlHeader,
     entries: Vec<BendlDirectoryEntry>,
@@ -379,18 +370,14 @@ struct ParentState {
     singleton_types: HashSet<u16>,
 }
 
-/// Owned stream-phase session. Holds the underlying writer and the
-/// parent [`BendlWriter`]'s in-memory state across the streaming phase,
-/// implements `Write` so it can be plumbed into a
-/// [`crate::io::writer::BenStreamWriter`], and exposes
-/// [`Self::finish_into_writer`] to hand ownership back as a
-/// [`BendlWriter`] in the `StreamWritten` state.
+/// Owned stream-phase session. Holds the underlying writer and the parent [`BendlWriter`]'s
+/// in-memory state across the streaming phase, implements `Write` so it can be plumbed into a
+/// [`crate::io::writer::BenStreamWriter`], and exposes [`Self::finish_into_writer`] to hand
+/// ownership back as a [`BendlWriter`] in the `StreamWritten` state.
 ///
-/// `inner` and `parent` are wrapped in `Option` so `finish_into_writer`
-/// can `take()` them without partial-moving out of a `Drop` type. The
-/// [`Drop`] impl emits a `tracing::warn!` if the session is dropped
-/// without `finish_into_writer`, since that leaves the bundle on disk
-/// unfinalized.
+/// `inner` and `parent` are wrapped in `Option` so `finish_into_writer` can `take()` them without
+/// partial-moving out of a `Drop` type. The [`Drop`] impl emits a `tracing::warn!` if the session
+/// is dropped without `finish_into_writer`, since that leaves the bundle on disk unfinalized.
 pub struct BendlStreamSession<W: Write + Seek> {
     inner: Option<W>,
     parent: Option<ParentState>,
@@ -399,25 +386,23 @@ pub struct BendlStreamSession<W: Write + Seek> {
 }
 
 impl<W: Write + Seek> BendlStreamSession<W> {
-    /// Number of bytes written into the stream region so far. Pure
-    /// counter — no I/O, no `&mut` required.
+    /// Number of bytes written into the stream region so far. Pure counter — no I/O, no `&mut`
+    /// required.
     pub fn bytes_written(&self) -> u64 {
         self.bytes_written
     }
 
-    /// Offset (in the underlying writer) at which the stream region
-    /// began, recorded at session-construction time.
+    /// Offset (in the underlying writer) at which the stream region began, recorded at
+    /// session-construction time.
     pub fn start_offset(&self) -> u64 {
         self.start_offset
     }
 
-    /// End the stream phase and return ownership of a [`BendlWriter`]
-    /// in the `StreamWritten` state, ready for [`BendlWriter::finish`].
+    /// End the stream phase and return ownership of a [`BendlWriter`] in the `StreamWritten` state,
+    /// ready for [`BendlWriter::finish`].
     ///
-    /// Infallible: the body is `take()` + arithmetic + struct
-    /// construction with no I/O. Once this method returns, the
-    /// session's [`Drop`] impl observes `inner.is_none()` and skips
-    /// the warn.
+    /// Infallible: the body is `take()` + arithmetic + struct construction with no I/O. Once this
+    /// method returns, the session's [`Drop`] impl observes `inner.is_none()` and skips the warn.
     pub fn finish_into_writer(mut self, sample_count: i64) -> BendlWriter<W> {
         let inner = self.inner.take().expect("session has not been finished");
         let parent = self.parent.take().expect("session has not been finished");
@@ -514,24 +499,21 @@ pub enum BendlWriteError {
 // Append path
 // ---------------------------------------------------------------------------
 
-/// Post-finalize appender that grows an existing `.bendl` file with new
-/// assets without rewriting the assignment stream.
+/// Post-finalize appender that grows an existing `.bendl` file with new assets without rewriting
+/// the assignment stream.
 ///
 /// The workflow is:
 ///
-/// 1. [`BendlAppender::open`] opens a finalized bundle and loads its
-///    directory into memory.
-/// 2. [`BendlAppender::add_asset`] (or [`BendlAppender::add_json_asset`])
-///    validates and buffers each new asset. Validation happens up front,
-///    so duplicate singletons or names are rejected **before** any file
-///    mutation, and a rejected add_asset leaves the file unchanged.
-/// 3. [`BendlAppender::commit`] compresses the buffered assets (if any),
-///    truncates the file at the old directory offset, writes the new
-///    asset payloads, writes a new directory at the new EOF, and patches
-///    the header.
+/// 1. [`BendlAppender::open`] opens a finalized bundle and loads its directory into memory.
+/// 2. [`BendlAppender::add_asset`] (or [`BendlAppender::add_json_asset`]) validates and buffers
+///    each new asset. Validation happens up front, so duplicate singletons or names are rejected
+///    **before** any file mutation, and a rejected add_asset leaves the file unchanged.
+/// 3. [`BendlAppender::commit`] compresses the buffered assets (if any), truncates the file at the
+///    old directory offset, writes the new asset payloads, writes a new directory at the new EOF,
+///    and patches the header.
 ///
-/// A [`BendlAppender`] that is dropped without calling `commit` leaves
-/// the underlying file unchanged.
+/// A [`BendlAppender`] that is dropped without calling `commit` leaves the underlying file
+/// unchanged.
 pub struct BendlAppender<W: Read + Write + Seek + BendlTruncate> {
     inner: W,
     header: BendlHeader,
@@ -557,9 +539,8 @@ struct PendingAsset {
 impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
     /// Open a finalized bundle for append.
     ///
-    /// Returns [`BendlWriteError::BundleIncomplete`] if the header's
-    /// `complete` flag is not set — append is unsafe on unfinalized
-    /// bundles because the stream region has no authoritative end.
+    /// Returns [`BendlWriteError::BundleIncomplete`] if the header's `complete` flag is not set —
+    /// append is unsafe on unfinalized bundles because the stream region has no authoritative end.
     pub fn open(mut inner: W) -> Result<Self, BendlWriteError> {
         inner.seek(SeekFrom::Start(0))?;
         let header = BendlHeader::read_from(&mut inner).map_err(BendlWriteError::Format)?;
@@ -606,10 +587,9 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
 
     /// Enqueue a new asset for append.
     ///
-    /// This validates the new asset against both the loaded directory
-    /// and any previously-enqueued pending assets. If validation fails,
-    /// the pending list is unchanged and no bytes have been written to
-    /// the file.
+    /// This validates the new asset against both the loaded directory and any previously-enqueued
+    /// pending assets. If validation fails, the pending list is unchanged and no bytes have been
+    /// written to the file.
     pub fn add_asset(
         &mut self,
         asset_type: u16,
@@ -671,8 +651,8 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
         )
     }
 
-    /// Append one of the known singleton assets, using its reserved
-    /// asset-type integer and standardized name automatically.
+    /// Append one of the known singleton assets, using its reserved asset-type integer and
+    /// standardized name automatically.
     pub fn add_known_asset(
         &mut self,
         kind: KnownAssetKind,
@@ -687,8 +667,8 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
         )
     }
 
-    /// Append a custom (writer-named) asset. The asset-type is set to
-    /// [`ASSET_TYPE_CUSTOM`] automatically.
+    /// Append a custom (writer-named) asset. The asset-type is set to [`ASSET_TYPE_CUSTOM`]
+    /// automatically.
     pub fn add_custom_asset(
         &mut self,
         name: &str,
@@ -700,10 +680,9 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
 
     /// Commit all pending appends.
     ///
-    /// This compresses any buffered payloads that need it (entirely in
-    /// memory), then performs the file mutation in a single burst:
-    /// truncate at the old directory offset, write new payloads, write
-    /// a new directory, and patch the header.
+    /// This compresses any buffered payloads that need it (entirely in memory), then performs the
+    /// file mutation in a single burst: truncate at the old directory offset, write new payloads,
+    /// write a new directory, and patch the header.
     ///
     /// If compression fails, the file is left unchanged.
     pub fn commit(mut self) -> Result<W, BendlWriteError> {
@@ -712,9 +691,8 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
             return Ok(self.inner);
         }
 
-        // Phase 1: compress any pending payloads and build new entries with
-        // placeholder offsets. Do this entirely in memory so failures here
-        // leave the file untouched.
+        // Phase 1: compress any pending payloads and build new entries with placeholder offsets. Do
+        // this entirely in memory so failures here leave the file untouched.
         struct EncodedPending {
             asset_type: u16,
             name: String,
@@ -754,11 +732,10 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
             });
         }
 
-        // Phase 2: file mutation. From this point forward, a failure
-        // leaves the bundle in a damaged state. We do everything in the
-        // order (truncate, write payloads, write directory, patch header)
-        // so that even if we crash mid-way, the header still points at
-        // the old directory until the very last write.
+        // Phase 2: file mutation. From this point forward, a failure leaves the bundle in a damaged
+        // state. We do everything in the order (truncate, write payloads, write directory, patch
+        // header) so that even if we crash mid-way, the header still points at the old directory
+        // until the very last write.
         let old_directory_offset = self.header.directory_offset;
 
         // Truncate at the old directory offset.
@@ -799,8 +776,7 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
         Ok(self.inner)
     }
 
-    /// Release the underlying reader without committing any pending
-    /// appends. The file is unchanged.
+    /// Release the underlying reader without committing any pending appends. The file is unchanged.
     pub fn abort(self) -> W {
         self.inner
     }

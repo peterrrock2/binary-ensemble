@@ -6,8 +6,8 @@ use std::collections::{HashSet, VecDeque};
 
 /// Compute a Reverse Cuthill-McKee ordering and apply it to the graph in place.
 ///
-/// Each connected component is ordered independently via RCM, and components
-/// are sorted by their minimum node index. The graph is then permuted in place.
+/// Each connected component is ordered independently via RCM, and components are sorted by their
+/// minimum node index. The graph is then permuted in place.
 ///
 /// Arguments:
 ///
@@ -15,8 +15,8 @@ use std::collections::{HashSet, VecDeque};
 ///
 /// Returns:
 ///
-/// - The permutation that was applied: `order[new_index]` is the `NodeIndex`
-///   the node occupied before reordering.
+/// - The permutation that was applied: `order[new_index]` is the `NodeIndex` the node occupied
+///   before reordering.
 pub(super) fn apply_reverse_cuthill_mckee<Ty>(petx_graph: &mut PetxGraph<Ty>) -> Vec<NodeIndex>
 where
     Ty: petgraph::EdgeType,
@@ -46,14 +46,13 @@ where
 
 /// Reverse Cuthill-McKee ordering for a single connected component.
 ///
-/// Starts BFS from the minimum-degree node (ties broken by label), then
-/// reverses the result to produce the RCM permutation.
+/// Starts BFS from the minimum-degree node (ties broken by label), then reverses the result to
+/// produce the RCM permutation.
 ///
 /// # Arguments
 ///
 /// * `graph` - The full graph (only edges within `component` are relevant).
-/// * `labels` - Per-node labels for tie-breaking, indexed by
-///   `NodeIndex::index()`.
+/// * `labels` - Per-node labels for tie-breaking, indexed by `NodeIndex::index()`.
 /// * `component` - The subset of `NodeIndex` values to order.
 ///
 /// # Returns
@@ -100,22 +99,19 @@ where
 
 /// Compute the degree of each component node restricted to the component.
 ///
-/// For each node in `component`, counts how many of its neighbors are also
-/// in the component. The result is indexed by `NodeIndex::index()`, so
-/// entries for nodes outside the component are zero.
+/// For each node in `component`, counts how many of its neighbors are also in the component. The
+/// result is indexed by `NodeIndex::index()`, so entries for nodes outside the component are zero.
 ///
 /// # Arguments
 ///
 /// * `graph` - The full graph.
-/// * `component_set` - A `HashSet` of the nodes in the component, used for
-///   fast membership checks.
+/// * `component_set` - A `HashSet` of the nodes in the component, used for fast membership checks.
 /// * `component` - The slice of `NodeIndex` values in the component.
 ///
 /// # Returns
 ///
-/// A vector of length `graph.node_bound()` where
-/// `result[node.index()]` is the number of neighbors of `node` that are in
-/// the component, or `0` for nodes not in the component.
+/// A vector of length `graph.node_bound()` where `result[node.index()]` is the number of neighbors
+/// of `node` that are in the component, or `0` for nodes not in the component.
 pub(super) fn local_degree_in_component<N, E, Ty>(
     graph: &Graph<N, E, Ty>,
     component_set: &HashSet<NodeIndex>,

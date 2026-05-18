@@ -23,8 +23,7 @@ pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
         }
     }
 
-    // --graph path: produce a .bendl bundle with the XBEN stream
-    // plus a post-stream graph asset.
+    // --graph path: produce a .bendl bundle with the XBEN stream plus a post-stream graph asset.
     if let Some(graph_path) = args.graph.as_ref() {
         let in_file = args.input_file.as_ref().ok_or_else(|| {
             CliError::other("--graph requires an input file (stdin not supported).")

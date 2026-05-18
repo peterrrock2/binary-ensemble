@@ -1,8 +1,6 @@
 use super::args::{Args, Mode};
 use super::paths::{derive_output_path, resolved_output_path};
-use super::translate::{
-    assignment_decode_ben, assignment_encode_ben, assignment_encode_xben,
-};
+use super::translate::{assignment_decode_ben, assignment_encode_ben, assignment_encode_xben};
 use crate::codec::decode::{decode_ben_to_jsonl, decode_xben_to_jsonl};
 use crate::codec::encode::encode_jsonl_to_ben;
 use crate::BenVariant;
@@ -118,11 +116,10 @@ fn assignment_encode_xben_offsets_values_and_writes_xben() {
 
 #[test]
 fn assignment_decode_ben_iterator_error_propagates() {
-    // Provides a valid BEN banner so BenStreamReader::from_ben succeeds,
-    // then returns a non-EOF error on the next read so the iterator
-    // fires the Err(e) => return Err(e) arm (line 204).
-    use std::io::Read;
+    // Provides a valid BEN banner so BenStreamReader::from_ben succeeds, then returns a non-EOF
+    // error on the next read so the iterator fires the Err(e) => return Err(e) arm (line 204).
     use crate::format::banners::STANDARD_BEN_BANNER;
+    use std::io::Read;
 
     struct BannerThenError {
         banner: &'static [u8],
@@ -141,7 +138,10 @@ fn assignment_decode_ben_iterator_error_propagates() {
         }
     }
 
-    let reader = BannerThenError { banner: STANDARD_BEN_BANNER, pos: 0 };
+    let reader = BannerThenError {
+        banner: STANDARD_BEN_BANNER,
+        pos: 0,
+    };
     let mut out = Vec::new();
     let err = assignment_decode_ben(reader, &mut out).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);

@@ -9,8 +9,8 @@ use std::path::PathBuf;
 ///
 /// - `dict` / `list`: serialized via `json.dumps`.
 /// - `bytes` / `bytearray`: used verbatim.
-/// - any object with a `.read()` method (e.g. `io.BytesIO`, open files):
-///   `.read()` is called and the result is coerced to bytes.
+/// - any object with a `.read()` method (e.g. `io.BytesIO`, open files): `.read()` is called and
+///   the result is coerced to bytes.
 /// - `pathlib.Path` or `str`: treated as a filesystem path to read.
 pub(super) fn parse_graph_input(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<Vec<u8>> {
     // Dict / list → json.dumps.
@@ -29,8 +29,8 @@ pub(super) fn parse_graph_input(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyRes
         return Ok(b);
     }
 
-    // File-like: must have .read(). Check before str/path, since a plain
-    // `str` / `Path` has no `.read()` attribute and will fall through.
+    // File-like: must have .read(). Check before str/path, since a plain `str` / `Path` has no
+    // `.read()` attribute and will fall through.
     if obj.hasattr("read")? {
         let data = obj.call_method0("read")?;
         if let Ok(b) = data.downcast::<PyBytes>() {

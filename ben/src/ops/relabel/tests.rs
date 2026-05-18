@@ -42,9 +42,9 @@ where
     map
 }
 
-/// Wrap a banner-stripped frame payload back into a full BEN file by prepending
-/// the banner. Tests that previously fed banner-less buffers feed a full BEN
-/// file under the new API and call [`relabel_ben_file`] directly.
+/// Wrap a banner-stripped frame payload back into a full BEN file by prepending the banner. Tests
+/// that previously fed banner-less buffers feed a full BEN file under the new API and call
+/// [`relabel_ben_file`] directly.
 fn with_banner(variant: BenVariant, payload: &[u8]) -> Vec<u8> {
     let mut out = crate::format::banners::banner_for_variant(variant).to_vec();
     out.extend_from_slice(payload);
@@ -69,7 +69,10 @@ fn test_relabel_ben_line_simple() {
     )
     .unwrap();
 
-    assert_eq!(&buf[..BANNER_LEN], crate::format::banners::STANDARD_BEN_BANNER);
+    assert_eq!(
+        &buf[..BANNER_LEN],
+        crate::format::banners::STANDARD_BEN_BANNER
+    );
     assert_eq!(&buf[BANNER_LEN..], expected.as_slice());
 }
 
@@ -272,7 +275,10 @@ fn test_relabel_ben_line_with_map() {
     )
     .unwrap();
 
-    assert_eq!(&buf[..BANNER_LEN], crate::format::banners::STANDARD_BEN_BANNER);
+    assert_eq!(
+        &buf[..BANNER_LEN],
+        crate::format::banners::STANDARD_BEN_BANNER
+    );
     assert_eq!(&buf[BANNER_LEN..], expected.as_slice());
 }
 
@@ -572,9 +578,8 @@ fn test_relabel_file_with_map_rejects_invalid_header() {
 
 #[test]
 fn test_relabel_lines_propagate_non_eof_reader_error() {
-    // Reader returns a valid Standard banner via Cursor, then the BoomReader
-    // produces a non-EOF I/O error on the body. The byte-walk fast path
-    // returns this I/O error unchanged.
+    // Reader returns a valid Standard banner via Cursor, then the BoomReader produces a non-EOF I/O
+    // error on the body. The byte-walk fast path returns this I/O error unchanged.
     struct BoomReader {
         returned_first: bool,
     }
@@ -590,11 +595,10 @@ fn test_relabel_lines_propagate_non_eof_reader_error() {
         }
     }
 
-    let chained = io::Cursor::new(crate::format::banners::STANDARD_BEN_BANNER.to_vec()).chain(
-        BoomReader {
+    let chained =
+        io::Cursor::new(crate::format::banners::STANDARD_BEN_BANNER.to_vec()).chain(BoomReader {
             returned_first: false,
-        },
-    );
+        });
     let err = relabel_ben_file(chained, Vec::new(), RelabelOptions::first_seen()).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::Other);
 }
@@ -616,11 +620,10 @@ fn test_relabel_lines_with_map_propagate_non_eof_reader_error() {
         }
     }
 
-    let chained = io::Cursor::new(crate::format::banners::STANDARD_BEN_BANNER.to_vec()).chain(
-        BoomReader {
+    let chained =
+        io::Cursor::new(crate::format::banners::STANDARD_BEN_BANNER.to_vec()).chain(BoomReader {
             returned_first: false,
-        },
-    );
+        });
     let err = relabel_ben_file(
         chained,
         Vec::new(),
@@ -968,8 +971,8 @@ fn test_relabel_ben_file_as_variant_rejects_invalid_banner() {
 
 #[test]
 fn test_relabel_ben_length_mismatch() {
-    // BEN stream with assignment length 3 ([1,2,3]); permutation of length 5
-    // — triggers LengthMismatch.
+    // BEN stream with assignment length 3 ([1,2,3]); permutation of length 5 — triggers
+    // LengthMismatch.
     let jsonl = r#"{"assignment":[1,2,3],"sample":1}
 "#;
     let mut ben = Vec::new();
@@ -998,8 +1001,7 @@ fn test_relabel_ben_lines_non_eof_read_error_propagates() {
     let chained = io::Cursor::new(crate::format::banners::STANDARD_BEN_BANNER.to_vec())
         .chain(ErrorAfterOneByte);
     let mut output = Vec::new();
-    let err =
-        relabel_ben_file(chained, &mut output, RelabelOptions::first_seen()).unwrap_err();
+    let err = relabel_ben_file(chained, &mut output, RelabelOptions::first_seen()).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
 }
 
@@ -1009,12 +1011,8 @@ fn test_relabel_ben_file_with_map_non_eof_read_error_propagates() {
     let chained = io::Cursor::new(crate::format::banners::STANDARD_BEN_BANNER.to_vec())
         .chain(ErrorAfterOneByte);
     let mut output = Vec::new();
-    let err = relabel_ben_file(
-        chained,
-        &mut output,
-        RelabelOptions::node_permutation(map),
-    )
-    .unwrap_err();
+    let err =
+        relabel_ben_file(chained, &mut output, RelabelOptions::node_permutation(map)).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
 }
 
@@ -1023,19 +1021,20 @@ fn test_relabel_ben_file_twodelta_malformed_frame_error_propagates() {
     // Build a valid 2-sample TwoDelta BEN file, then corrupt the delta frame.
     let mut ben: Vec<u8> = Vec::new();
     {
-        let mut writer = crate::io::writer::BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta)
-            .unwrap();
+        let mut writer =
+            crate::io::writer::BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
         writer.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
         writer.write_assignment(vec![2u16, 1, 2, 1]).unwrap();
     }
     let banner_len = 17usize;
-    let n_bytes = u32::from_be_bytes(ben[banner_len+2..banner_len+6].try_into().unwrap()) as usize;
+    let n_bytes =
+        u32::from_be_bytes(ben[banner_len + 2..banner_len + 6].try_into().unwrap()) as usize;
     let anchor_end = banner_len + 6 + n_bytes + 2;
     ben[anchor_end + 4] = 0;
 
     let mut output = Vec::new();
-    let err = relabel_ben_file(ben.as_slice(), &mut output, RelabelOptions::first_seen())
-        .unwrap_err();
+    let err =
+        relabel_ben_file(ben.as_slice(), &mut output, RelabelOptions::first_seen()).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 }
 
@@ -1043,13 +1042,14 @@ fn test_relabel_ben_file_twodelta_malformed_frame_error_propagates() {
 fn test_relabel_ben_file_with_map_twodelta_malformed_frame_error_propagates() {
     let mut ben: Vec<u8> = Vec::new();
     {
-        let mut writer = crate::io::writer::BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta)
-            .unwrap();
+        let mut writer =
+            crate::io::writer::BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
         writer.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
         writer.write_assignment(vec![2u16, 1, 2, 1]).unwrap();
     }
     let banner_len = 17usize;
-    let n_bytes = u32::from_be_bytes(ben[banner_len+2..banner_len+6].try_into().unwrap()) as usize;
+    let n_bytes =
+        u32::from_be_bytes(ben[banner_len + 2..banner_len + 6].try_into().unwrap()) as usize;
     let anchor_end = banner_len + 6 + n_bytes + 2;
     ben[anchor_end + 4] = 0;
 
@@ -1107,9 +1107,9 @@ fn fast_path_predicate_matrix() {
     assert_eq!(true_cases, 2, "expected exactly two true matrix entries");
 }
 
-/// Forced-slow vs. fast-path equivalence for first-seen relabeling on
-/// Standard input. Forcing the slow path uses `with_target_variant(input)`
-/// per decision #5 (`is_none()` semantics in the predicate).
+/// Forced-slow vs. fast-path equivalence for first-seen relabeling on Standard input. Forcing the
+/// slow path uses `with_target_variant(input)` per decision #5 (`is_none()` semantics in the
+/// predicate).
 #[test]
 fn fast_path_matches_slow_path_standard() {
     let file = concat!(
@@ -1180,8 +1180,8 @@ fn fast_path_matches_slow_path_mkvchain() {
     )
     .unwrap();
 
-    // Decoded equivalence is the load-bearing assertion. Byte-identity is also
-    // expected here (per plan verification step 4) — tighten if it holds.
+    // Decoded equivalence is the load-bearing assertion. Byte-identity is also expected here
+    // (per plan verification step 4) — tighten if it holds.
     let mut fast_jsonl = Vec::new();
     decode_ben_to_jsonl(fast_out.as_slice(), &mut fast_jsonl).unwrap();
     let mut slow_jsonl = Vec::new();
@@ -1191,10 +1191,9 @@ fn fast_path_matches_slow_path_mkvchain() {
 
 #[test]
 fn collapse_policy_disables_fast_path() {
-    // With CollapseAdjacentEqualAssignments + first-seen on Standard input,
-    // the predicate must be false (fast path disabled). We verify behaviorally
-    // by running both: the merging path should produce the same decoded
-    // content but takes a different code path internally.
+    // With CollapseAdjacentEqualAssignments + first-seen on Standard input, the predicate must be
+    // false (fast path disabled). We verify behaviorally by running both: the merging path should
+    // produce the same decoded content but takes a different code path internally.
     let file = concat!(
         "{\"assignment\":[3,1,2],\"sample\":1}\n",
         "{\"assignment\":[3,1,2],\"sample\":2}\n",
@@ -1211,8 +1210,7 @@ fn collapse_policy_disables_fast_path() {
     relabel_ben_file(
         encoded.as_slice(),
         &mut out,
-        RelabelOptions::first_seen()
-            .with_run_policy(RunPolicy::CollapseAdjacentEqualAssignments),
+        RelabelOptions::first_seen().with_run_policy(RunPolicy::CollapseAdjacentEqualAssignments),
     )
     .unwrap();
 
@@ -1222,22 +1220,19 @@ fn collapse_policy_disables_fast_path() {
     assert!(s.contains("\"assignment\":[1,2,3]"));
 }
 
-/// Decision #9: with `PreserveFrameBoundaries`, two adjacent input frames
-/// with the same assignment but distinct counts must remain distinct counted
-/// frames at MkvChain target — not merged into one frame with summed count.
-/// With `CollapseAdjacentEqualAssignments`, they are merged.
+/// Decision #9: with `PreserveFrameBoundaries`, two adjacent input frames with the same assignment
+/// but distinct counts must remain distinct counted frames at MkvChain target — not merged into one
+/// frame with summed count. With `CollapseAdjacentEqualAssignments`, they are merged.
 #[test]
 fn run_policy_pins_frame_preservation_and_collapse() {
-    // Build an MkvChain BEN file with two adjacent equal-assignment frames of
-    // counts 5 and 7 (12 total samples).
+    // Build an MkvChain BEN file with two adjacent equal-assignment frames of counts 5 and 7
+    // (12 total samples).
     let mut input = Vec::new();
     {
         let banner = crate::format::banners::MKVCHAIN_BEN_BANNER;
         input.extend_from_slice(banner);
-        let frame_a =
-            BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(5));
-        let frame_b =
-            BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(7));
+        let frame_a = BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(5));
+        let frame_b = BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(7));
         input.extend_from_slice(frame_a.as_slice());
         input.extend_from_slice(frame_b.as_slice());
     }
@@ -1258,8 +1253,7 @@ fn run_policy_pins_frame_preservation_and_collapse() {
         let mut frames = 0;
         while i < ben.len() {
             // header: max_val_bits(1), max_len_bits(1), n_bytes(4), payload(n_bytes), count(2)
-            let n_bytes =
-                u32::from_be_bytes(ben[i + 2..i + 6].try_into().unwrap()) as usize;
+            let n_bytes = u32::from_be_bytes(ben[i + 2..i + 6].try_into().unwrap()) as usize;
             i += 6 + n_bytes + 2;
             frames += 1;
         }
@@ -1304,8 +1298,8 @@ fn run_policy_pins_frame_preservation_and_collapse() {
     );
 }
 
-/// Cross-policy invariant for Standard targets: byte-identical output
-/// regardless of run policy, because Standard cannot encode counts.
+/// Cross-policy invariant for Standard targets: byte-identical output regardless of run policy,
+/// because Standard cannot encode counts.
 #[test]
 fn standard_target_cross_policy_byte_identity() {
     // Build the same (5, 7) MkvChain fixture.
@@ -1313,10 +1307,8 @@ fn standard_target_cross_policy_byte_identity() {
     {
         let banner = crate::format::banners::MKVCHAIN_BEN_BANNER;
         input.extend_from_slice(banner);
-        let frame_a =
-            BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(5));
-        let frame_b =
-            BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(7));
+        let frame_a = BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(5));
+        let frame_b = BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(7));
         input.extend_from_slice(frame_a.as_slice());
         input.extend_from_slice(frame_b.as_slice());
     }

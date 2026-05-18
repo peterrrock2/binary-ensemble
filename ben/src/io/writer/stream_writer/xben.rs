@@ -72,7 +72,11 @@ impl XBenState {
 }
 
 impl<W: Write> XBenInner<W> {
-    pub(super) fn new(encoder: XzEncoder<W>, variant: BenVariant, twodelta_chunk_size: usize) -> Self {
+    pub(super) fn new(
+        encoder: XzEncoder<W>,
+        variant: BenVariant,
+        twodelta_chunk_size: usize,
+    ) -> Self {
         Self {
             encoder,
             state: XBenState::new(variant, twodelta_chunk_size),
@@ -222,8 +226,8 @@ impl<W: Write> XBenInner<W> {
         }
     }
 
-    /// Translate a BEN TwoDelta stream directly to XBEN TwoDelta without
-    /// materializing full assignment vectors.
+    /// Translate a BEN TwoDelta stream directly to XBEN TwoDelta without materializing full
+    /// assignment vectors.
     fn translate_ben_twodelta_to_xben(&mut self, mut reader: impl Read) -> io::Result<()> {
         let chunk_size = match &self.state {
             XBenState::TwoDelta {
@@ -307,8 +311,7 @@ impl<W: Write> XBenInner<W> {
 
     /// Crate-private direct ingest entry point.
     ///
-    /// Standard/MkvChain accept bannered or bannerless input; TwoDelta
-    /// requires a banner.
+    /// Standard/MkvChain accept bannered or bannerless input; TwoDelta requires a banner.
     pub(super) fn ingest_ben_stream(&mut self, mut reader: impl BufRead) -> io::Result<()> {
         let peek = reader.fill_buf()?;
         let has_banner = peek.len() >= BANNER_LEN && has_known_banner_prefix(peek);

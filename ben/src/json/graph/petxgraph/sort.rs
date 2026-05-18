@@ -6,8 +6,8 @@ use std::cmp::Ordering;
 
 /// Sort a `PetxGraph` by a node attribute and apply the permutation in place.
 ///
-/// Nodes are ordered by the value of `key` in their attribute map, using
-/// numeric comparison when possible and falling back to string comparison.
+/// Nodes are ordered by the value of `key` in their attribute map, using numeric comparison when
+/// possible and falling back to string comparison.
 ///
 /// Returns the permutation that was applied.
 pub(in crate::json::graph) fn sort_by_key<Ty>(
@@ -32,19 +32,17 @@ where
 
 /// Look up the sort attribute for a node.
 ///
-/// The special key `"id"` is mapped to the internal `"__networkx_id__"`
-/// attribute so callers can sort by the NetworkX node id.
+/// The special key `"id"` is mapped to the internal `"__networkx_id__"` attribute so callers can
+/// sort by the NetworkX node id.
 ///
 /// # Arguments
 ///
 /// * `node` - The node whose attribute is being looked up.
-/// * `key` - The attribute name. `"id"` is treated as an alias for
-///   `"__networkx_id__"`.
+/// * `key` - The attribute name. `"id"` is treated as an alias for `"__networkx_id__"`.
 ///
 /// # Returns
 ///
-/// A reference to the attribute [`Value`], or `None` if the attribute is
-/// absent.
+/// A reference to the attribute [`Value`], or `None` if the attribute is absent.
 fn get_sort_attr<'a>(node: &'a PetxNode, key: &str) -> Option<&'a Value> {
     if key == "id" {
         node.attrs.get("__networkx_id__")
@@ -55,9 +53,9 @@ fn get_sort_attr<'a>(node: &'a PetxNode, key: &str) -> Option<&'a Value> {
 
 /// Compare two optional attribute values for sorting.
 ///
-/// Values are compared numerically when both can be interpreted as `f64`
-/// (covers integers, floats, and numeric strings). Otherwise they are
-/// compared as strings. `None` is treated as the string `"null"`.
+/// Values are compared numerically when both can be interpreted as `f64` (covers integers, floats,
+/// and numeric strings). Otherwise they are compared as strings. `None` is treated as the string
+/// `"null"`.
 ///
 /// # Arguments
 ///

@@ -5,8 +5,8 @@ use std::io::{self, BufRead, Write};
 
 /// Decode a single ben32 frame into an assignment vector and repetition count.
 ///
-/// This helper is crate-private because ben32 is an implementation detail of
-/// XBEN, but it underpins both the stream decoders and the translation logic.
+/// This helper is crate-private because ben32 is an implementation detail of XBEN, but it underpins
+/// both the stream decoders and the translation logic.
 ///
 /// # Arguments
 ///
@@ -59,8 +59,8 @@ pub(crate) fn decode_ben32_line<R: BufRead>(
 ///
 /// * `reader` - The ben32 input stream.
 /// * `writer` - The destination for the JSONL output.
-/// * `starting_sample` - The 0-based sample offset that should be added to the
-///   emitted sample numbers.
+/// * `starting_sample` - The 0-based sample offset that should be added to the emitted sample
+///   numbers.
 /// * `variant` - The BEN variant used to interpret repetition counts.
 ///
 /// # Returns

@@ -1,10 +1,9 @@
 //! Translation helpers between BEN and ben32 representations.
 //!
-//! The ben32 intermediate format is used only by the Standard and MkvChain
-//! variants. TwoDelta streams use a separate columnar layout and bypass
-//! ben32 entirely — see [`BenStreamWriter`](crate::io::writer::BenStreamWriter)
-//! and [`BenStreamReader`](crate::io::reader::BenStreamReader) for the
-//! TwoDelta compressed-I/O path.
+//! The ben32 intermediate format is used only by the Standard and MkvChain variants. TwoDelta
+//! streams use a separate columnar layout and bypass ben32 entirely — see
+//! [`BenStreamWriter`](crate::io::writer::BenStreamWriter) and
+//! [`BenStreamReader`](crate::io::reader::BenStreamReader) for the TwoDelta compressed-I/O path.
 
 mod errors;
 use errors::TranslateError;
@@ -22,18 +21,14 @@ use crate::{BenVariant, XBenVariant};
 /// # Arguments
 ///
 /// * `ben32_vec` - The ben32 frame bytes, including the four-byte terminator.
-/// * `variant` - The BEN32-supporting variant. Determines whether the resulting
-///   BEN frame embeds a trailing repetition count.
+/// * `variant` - The BEN32-supporting variant. Determines whether the resulting BEN frame embeds a
+///   trailing repetition count.
 /// * `count` - The repetition count for `MkvChain`. Ignored for `Standard`.
 ///
 /// # Returns
 ///
 /// Returns the encoded BEN frame payload and header.
-fn ben32_to_ben_line(
-    ben32_vec: Vec<u8>,
-    variant: XBenVariant,
-    count: u16,
-) -> io::Result<Vec<u8>> {
+fn ben32_to_ben_line(ben32_vec: Vec<u8>, variant: XBenVariant, count: u16) -> io::Result<Vec<u8>> {
     let mut buffer = [0u8; 4];
     let mut ben32_rle: Vec<(u16, u16)> = Vec::new();
 
@@ -69,17 +64,17 @@ fn ben32_to_ben_line(
 
 /// Translate a stream of ben32 frames into BEN frames.
 ///
-/// This is primarily used while decoding XBEN, where the compressed payload is
-/// stored in ben32 form. Parameterised by [`XBenVariant`] so TwoDelta is
-/// excluded at compile time; TwoDelta streams use a different compressed
-/// layout and do not pass through ben32 (see the module-level documentation).
+/// This is primarily used while decoding XBEN, where the compressed payload is stored in ben32
+/// form. Parameterised by [`XBenVariant`] so TwoDelta is excluded at compile time; TwoDelta streams
+/// use a different compressed layout and do not pass through ben32 (see the module-level
+/// documentation).
 ///
 /// # Arguments
 ///
 /// * `reader` - The ben32 input stream.
 /// * `writer` - The destination for the translated BEN frames.
-/// * `variant` - The BEN32-supporting variant, used to determine whether
-///   repetition counts follow each ben32 frame.
+/// * `variant` - The BEN32-supporting variant, used to determine whether repetition counts follow
+///   each ben32 frame.
 ///
 /// # Returns
 ///
@@ -156,17 +151,16 @@ fn ben_to_ben32_line<R: Read>(
 
 /// Translate a BEN stream into ben32 frames.
 ///
-/// This is the format used inside XBEN after the outer XZ compression layer is
-/// removed. Parameterised by [`XBenVariant`] so TwoDelta is excluded at compile
-/// time; TwoDelta streams use a separate columnar layout and bypass ben32
-/// entirely (see the module-level documentation).
+/// This is the format used inside XBEN after the outer XZ compression layer is removed.
+/// Parameterised by [`XBenVariant`] so TwoDelta is excluded at compile time; TwoDelta streams use a
+/// separate columnar layout and bypass ben32 entirely (see the module-level documentation).
 ///
 /// # Arguments
 ///
 /// * `reader` - The BEN input stream without its 17-byte file banner.
 /// * `writer` - The destination for the translated ben32 frames.
-/// * `variant` - The BEN32-supporting variant, used to determine whether
-///   repetition counts follow each translated frame.
+/// * `variant` - The BEN32-supporting variant, used to determine whether repetition counts follow
+///   each translated frame.
 ///
 /// # Returns
 ///

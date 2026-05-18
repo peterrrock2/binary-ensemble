@@ -31,8 +31,8 @@ impl<W: Write> BenState<W> {
         }
     }
 
-    /// Encode and write the buffered assignment with the accumulated repetition count.
-    /// No-op when nothing is pending.
+    /// Encode and write the buffered assignment with the accumulated repetition count. No-op when
+    /// nothing is pending.
     pub(super) fn flush_pending_frame(&mut self) -> io::Result<()> {
         let pending = match self.pending_assignment.take() {
             Some(p) => p,
@@ -45,8 +45,8 @@ impl<W: Write> BenState<W> {
         Ok(())
     }
 
-    /// Encode one `(assignment, count)` directly, used for both flush and `write_frame`.
-    /// Updates `previous_masks` for TwoDelta.
+    /// Encode one `(assignment, count)` directly, used for both flush and `write_frame`. Updates
+    /// `previous_masks` for TwoDelta.
     fn encode_and_write_frame(&mut self, assignment: &[u16], count: u16) -> io::Result<()> {
         match self.variant {
             BenVariant::Standard => {
@@ -62,8 +62,8 @@ impl<W: Write> BenState<W> {
             }
             BenVariant::TwoDelta => {
                 if self.previous_assignment.is_empty() {
-                    // First frame: encode as MkvChain wire format and seed
-                    // the position masks for subsequent delta frames.
+                    // First frame: encode as MkvChain wire format and seed the position masks for
+                    // subsequent delta frames.
                     for (idx, &val) in assignment.iter().enumerate() {
                         self.previous_masks.entry(val).or_default().push(idx);
                     }
@@ -108,25 +108,21 @@ impl<W: Write> BenState<W> {
         Ok(())
     }
 
-    /// Encode one frame with the supplied count, flushing any pending merge state first.
-    /// Caller has already verified `count != 0` and that the writer is in a valid state.
+    /// Encode one frame with the supplied count, flushing any pending merge state first. Caller has
+    /// already verified `count != 0` and that the writer is in a valid state.
     pub(super) fn write_frame(&mut self, assignment: Vec<u16>, count: u16) -> io::Result<()> {
         self.flush_pending_frame()?;
         self.encode_and_write_frame(&assignment, count)?;
-        // For TwoDelta, the next delta is encoded against the just-emitted
-        // frame. `encode_and_write_frame` already updated `previous_masks`
-        // when the previous_assignment was empty; in all variants we need
-        // to update `previous_assignment` here so a subsequent
+        // For TwoDelta, the next delta is encoded against the just-emitted frame.
+        // `encode_and_write_frame` already updated `previous_masks` when the previous_assignment
+        // was empty; in all variants we need to update `previous_assignment` here so a subsequent
         // `write_assignment` sees the right baseline.
         self.previous_assignment = assignment;
         Ok(())
     }
 }
 
-pub(crate) fn twodelta_repeat_frame(
-    assignment: &[u16],
-    count: u16,
-) -> io::Result<BenEncodeFrame> {
+pub(crate) fn twodelta_repeat_frame(assignment: &[u16], count: u16) -> io::Result<BenEncodeFrame> {
     let (pair, run_lengths) = twodelta_repeat_runs(assignment)?;
     Ok(BenEncodeFrame::from_run_lengths(
         pair,

@@ -26,16 +26,14 @@ pub enum GraphOrderingMethod {
 
 /// Sorts a JSON-formatted NetworkX graph file by a node attribute.
 ///
-/// Reads a NetworkX adjacency-format JSON graph, reorders nodes so that they
-/// are sorted by the given attribute key, and writes the reordered graph back
-/// as JSON.
+/// Reads a NetworkX adjacency-format JSON graph, reorders nodes so that they are sorted by the
+/// given attribute key, and writes the reordered graph back as JSON.
 ///
 /// # Arguments
 ///
 /// * `reader` - A source of JSON bytes in NetworkX adjacency format.
 /// * `writer` - Destination for the reordered JSON output.
-/// * `key` - The node attribute name to sort by. Use `"id"` to sort by the
-///   NetworkX node id.
+/// * `key` - The node attribute name to sort by. Use `"id"` to sort by the NetworkX node id.
 ///
 /// # Returns
 ///
@@ -61,9 +59,8 @@ pub fn sort_json_file_by_key<R: Read, W: Write>(
 
 /// Reorder a JSON-formatted NetworkX graph file using a topology-based method.
 ///
-/// Reads a NetworkX adjacency-format JSON graph, reorders nodes using the
-/// specified graph ordering algorithm, and writes the reordered graph back
-/// as JSON.
+/// Reads a NetworkX adjacency-format JSON graph, reorders nodes using the specified graph ordering
+/// algorithm, and writes the reordered graph back as JSON.
 ///
 /// # Arguments
 ///
@@ -102,8 +99,8 @@ pub fn sort_json_file_by_ordering<R: Read, W: Write>(
 ///
 /// # Returns
 ///
-/// The permutation that was applied: `order[new_index]` is the `NodeIndex`
-/// the node occupied before reordering.
+/// The permutation that was applied: `order[new_index]` is the `NodeIndex` the node occupied before
+/// reordering.
 fn run_ordering_method<Ty: petgraph::EdgeType>(
     petx: &mut PetxGraph<Ty>,
     method: GraphOrderingMethod,
@@ -118,8 +115,7 @@ fn run_ordering_method<Ty: petgraph::EdgeType>(
 ///
 /// # Arguments
 ///
-/// * `order` - The permutation that was applied: `order[new_index]` is the
-///   old `NodeIndex`.
+/// * `order` - The permutation that was applied: `order[new_index]` is the old `NodeIndex`.
 ///
 /// # Returns
 ///
@@ -148,8 +144,7 @@ fn write_nx_graph<W: Write>(mut writer: W, nx_graph: &NxGraphAdjFormat) -> io::R
     writer.write_all(rendered.as_bytes())
 }
 
-/// Convert an [`NxPetgraphError`] into a [`std::io::Error`] with
-/// [`ErrorKind::InvalidData`].
+/// Convert an [`NxPetgraphError`] into a [`std::io::Error`] with [`ErrorKind::InvalidData`].
 ///
 /// # Arguments
 ///
@@ -162,8 +157,8 @@ fn nx_err(e: NxPetgraphError) -> Error {
     Error::new(ErrorKind::InvalidData, e)
 }
 
-/// Convert an [`NxGraphAdjFormat`] into a directed [`PetxGraph`], apply an
-/// in-place reordering operation, and convert back to JSON adjacency form.
+/// Convert an [`NxGraphAdjFormat`] into a directed [`PetxGraph`], apply an in-place reordering
+/// operation, and convert back to JSON adjacency form.
 fn reorder_directed<F>(
     nx_graph: NxGraphAdjFormat,
     op: F,
@@ -177,8 +172,8 @@ where
     Ok((result, order))
 }
 
-/// Convert an [`NxGraphAdjFormat`] into an undirected [`PetxGraph`], apply an
-/// in-place reordering operation, and convert back to JSON adjacency form.
+/// Convert an [`NxGraphAdjFormat`] into an undirected [`PetxGraph`], apply an in-place reordering
+/// operation, and convert back to JSON adjacency form.
 fn reorder_undirected<F>(
     nx_graph: NxGraphAdjFormat,
     op: F,

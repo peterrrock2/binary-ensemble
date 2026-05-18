@@ -1,8 +1,8 @@
 //! Rigorous tests for `BenStreamReader` with the MkvChain and TwoDelta BEN variants.
 //!
-//! Standard-variant tests already exist in `test_coverage.rs`.  This file adds
-//! equivalent depth for the two more complex variants.  The helpers intentionally
-//! mirror those in `test_coverage.rs` so that the two suites are easy to compare.
+//! Standard-variant tests already exist in `test_coverage.rs`. This file adds equivalent depth for
+//! the two more complex variants. The helpers intentionally mirror those in `test_coverage.rs` so
+//! that the two suites are easy to compare.
 
 use binary_ensemble::codec::decode::decode_ben_to_jsonl;
 use binary_ensemble::codec::encode::encode_jsonl_to_ben;
@@ -16,8 +16,7 @@ use std::io::{self, Cursor};
 mod common;
 use common::jsonl_from_assignments;
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Shared helpers
+// ────────────────────────────────────────────────────────────────────────────── Shared helpers
 // ──────────────────────────────────────────────────────────────────────────────
 
 fn encode_ben(assignments: &[Vec<u16>], variant: BenVariant) -> Vec<u8> {
@@ -42,8 +41,7 @@ fn expand_assignments(ben: &[u8]) -> Vec<Vec<u16>> {
     out
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// MkvChain variant
+// ────────────────────────────────────────────────────────────────────────────── MkvChain variant
 // ──────────────────────────────────────────────────────────────────────────────
 
 mod mkvchain {
@@ -67,7 +65,9 @@ mod mkvchain {
     #[test]
     fn empty_payload_yields_nothing() {
         let ben = MKVCHAIN_BEN_BANNER.to_vec();
-        let decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
+        let decoder = BenStreamReader::from_ben(ben.as_slice())
+            .unwrap()
+            .silent(true);
         let frames: Vec<_> = decoder.collect::<io::Result<Vec<_>>>().unwrap();
         assert!(frames.is_empty());
     }
@@ -79,7 +79,9 @@ mod mkvchain {
         let assignment = vec![3u16, 3, 1, 2, 2, 1];
         let ben = encode_ben(&[assignment.clone()], BenVariant::MkvChain);
 
-        let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
+        let mut decoder = BenStreamReader::from_ben(ben.as_slice())
+            .unwrap()
+            .silent(true);
         let (decoded, count) = decoder.next().unwrap().unwrap();
         assert_eq!(count, 1);
         assert_eq!(decoded, assignment);
@@ -91,7 +93,9 @@ mod mkvchain {
         let assignments = vec![vec![1u16, 2, 3], vec![3u16, 2, 1], vec![2u16, 1, 3]];
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
-        let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
+        let mut decoder = BenStreamReader::from_ben(ben.as_slice())
+            .unwrap()
+            .silent(true);
         for expected in &assignments {
             let (decoded, count) = decoder.next().unwrap().unwrap();
             assert_eq!(count, 1, "distinct assignment should have count=1");
@@ -107,7 +111,9 @@ mod mkvchain {
         let assignments = vec![assignment.clone(); 5];
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
-        let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
+        let mut decoder = BenStreamReader::from_ben(ben.as_slice())
+            .unwrap()
+            .silent(true);
         let (decoded, count) = decoder.next().unwrap().unwrap();
         assert_eq!(count, 5, "expected compressed count=5, got {count}");
         assert_eq!(decoded, assignment);
@@ -130,7 +136,9 @@ mod mkvchain {
         ];
         let ben = encode_ben(&assignments, BenVariant::MkvChain);
 
-        let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
+        let mut decoder = BenStreamReader::from_ben(ben.as_slice())
+            .unwrap()
+            .silent(true);
 
         let (d1, c1) = decoder.next().unwrap().unwrap();
         assert_eq!(c1, 3);
@@ -437,9 +445,9 @@ mod mkvchain {
 
     // ─── subsampling ──────────────────────────────────────────────────────────
     //
-    // SubsampleFrameDecoder operates at the frame level: it returns one
-    // (assignment, count) tuple per frame that contains any selected indices,
-    // where count is the number of selected indices in that frame.
+    // SubsampleFrameDecoder operates at the frame level: it returns one (assignment, count) tuple
+    // per frame that contains any selected indices, where count is the number of selected indices
+    // in that frame.
 
     #[test]
     fn subsample_by_indices_locates_correct_sample_in_run() {
@@ -484,7 +492,8 @@ mod mkvchain {
 
     #[test]
     fn subsample_by_range_spans_repeated_frames() {
-        // A×3, B×3; range [2, 5] → A contributes samples 2,3 (count=2) and B contributes 4,5 (count=2).
+        // A×3, B×3; range [2, 5] → A contributes samples 2,3 (count=2) and B contributes 4,5
+        // (count=2).
         let a = vec![10u16; 3];
         let b = vec![20u16; 3];
         let assignments: Vec<_> = (0..3)
@@ -599,8 +608,7 @@ mod mkvchain {
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// TwoDelta variant
+// ────────────────────────────────────────────────────────────────────────────── TwoDelta variant
 // ──────────────────────────────────────────────────────────────────────────────
 
 mod twodelta {
@@ -667,15 +675,17 @@ mod twodelta {
 
     #[test]
     fn delta_values_are_applied_correctly() {
-        // Explicit value check: the decoder must correctly update the previous
-        // assignment when it applies the delta.
+        // Explicit value check: the decoder must correctly update the previous assignment when it
+        // applies the delta.
         //   anchor: [1, 2, 1, 2, 1]
         //   next:   [2, 1, 2, 1, 2]  (every element swaps 1↔2)
         let anchor = vec![1u16, 2, 1, 2, 1];
         let next = vec![2u16, 1, 2, 1, 2];
         let ben = encode_twodelta(&[anchor, next.clone()]);
 
-        let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
+        let mut decoder = BenStreamReader::from_ben(ben.as_slice())
+            .unwrap()
+            .silent(true);
         let _ = decoder.next().unwrap().unwrap(); // skip anchor
         let (decoded_next, _) = decoder.next().unwrap().unwrap();
         assert_eq!(decoded_next, next);
@@ -711,7 +721,9 @@ mod twodelta {
         let anchor = vec![1u16, 1, 2, 2];
         let ben = encode_twodelta(&vec![anchor.clone(); 3]);
 
-        let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
+        let mut decoder = BenStreamReader::from_ben(ben.as_slice())
+            .unwrap()
+            .silent(true);
         let (decoded, count) = decoder.next().unwrap().unwrap();
         assert_eq!(count, 3, "anchor count should be 3");
         assert_eq!(decoded, anchor);
@@ -728,7 +740,9 @@ mod twodelta {
             .collect();
         let ben = encode_twodelta(&assignments);
 
-        let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
+        let mut decoder = BenStreamReader::from_ben(ben.as_slice())
+            .unwrap()
+            .silent(true);
 
         let (d_anchor, c_anchor) = decoder.next().unwrap().unwrap();
         assert_eq!(c_anchor, 1, "anchor count");
@@ -743,7 +757,7 @@ mod twodelta {
 
     #[test]
     fn anchor_and_delta_repetitions_round_trip() {
-        // a×2, b×3 → anchor(2), delta(3).  Expanding must give 5 correct assignments.
+        // a×2, b×3 → anchor(2), delta(3). Expanding must give 5 correct assignments.
         let a = vec![1u16, 1, 2, 2];
         let b = vec![2u16, 2, 1, 1];
         let assignments: Vec<_> = (0..2)
@@ -1125,9 +1139,8 @@ mod twodelta {
 
     #[test]
     fn subsample_by_indices_across_repeated_frames() {
-        // a×3, b×3 → 6 samples from 2 frames.
-        // Indices 1 and 3 fall in the anchor (a) frame → (a, 2).
-        // Index 4 is the first b → (b, 1).
+        // a×3, b×3 → 6 samples from 2 frames. Indices 1 and 3 fall in the anchor (a) frame →
+        // (a, 2). Index 4 is the first b → (b, 1).
         let a = vec![1u16, 1, 2, 2];
         let b = vec![2u16, 2, 1, 1];
         let assignments: Vec<_> = (0..3)

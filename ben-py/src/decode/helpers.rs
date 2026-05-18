@@ -2,8 +2,8 @@ use super::types::{BundleState, DecoderBackend, DecoderMode, DynIter};
 use crate::common::open_input;
 use binary_ensemble::io::bundle::format::BENDL_MAGIC;
 use binary_ensemble::io::reader::{
-    build_frame_iter, build_frame_iter_from_reader, count_samples_from_frame_iter,
-    BenStreamReader, BenWireFormat,
+    build_frame_iter, build_frame_iter_from_reader, count_samples_from_frame_iter, BenStreamReader,
+    BenWireFormat,
 };
 use pyo3::exceptions::{PyException, PyIOError, PyUserWarning};
 use pyo3::prelude::*;
@@ -28,8 +28,7 @@ pub(super) fn warn_xben_startup(py: Python<'_>) -> PyResult<()> {
     Ok(())
 }
 
-/// Sniff the first 8 bytes of a file and decide whether it starts with
-/// the `BENDL` magic.
+/// Sniff the first 8 bytes of a file and decide whether it starts with the `BENDL` magic.
 pub(super) fn detect_is_bundle(path: &Path) -> io::Result<bool> {
     let mut file = File::open(path)?;
     let mut magic = [0u8; 8];
@@ -64,9 +63,8 @@ pub(super) fn build_plain_iter(path: &Path, mode: DecoderMode) -> PyResult<DynIt
     open_stream_reader(reader, mode.wire_format())
 }
 
-/// Open a second file handle on the bundle path, seek to the stream
-/// region, and wrap it in the appropriate assignment reader so the
-/// decoder iterator only walks the embedded stream.
+/// Open a second file handle on the bundle path, seek to the stream region, and wrap it in the
+/// appropriate assignment reader so the decoder iterator only walks the embedded stream.
 pub(super) fn build_bundle_iter(
     path: &Path,
     state: &BundleState,
@@ -76,8 +74,7 @@ pub(super) fn build_bundle_iter(
     open_stream_reader(reader, mode.wire_format())
 }
 
-/// Create a `Read`-only handle bounded to the bundle's assignment stream
-/// region.
+/// Create a `Read`-only handle bounded to the bundle's assignment stream region.
 pub(super) fn open_bundle_stream_reader(
     path: &Path,
     state: &BundleState,
@@ -97,14 +94,12 @@ pub(super) fn build_frames_for_subsample(
 ) -> PyResult<binary_ensemble::io::reader::FrameIter> {
     let format = mode.wire_format();
     match backend {
-        DecoderBackend::Plain => {
-            build_frame_iter(&path.to_path_buf(), format).map_err(|e| {
-                PyException::new_err(format!(
-                    "Failed to create frame iterator from {}: {e}",
-                    path.display()
-                ))
-            })
-        }
+        DecoderBackend::Plain => build_frame_iter(&path.to_path_buf(), format).map_err(|e| {
+            PyException::new_err(format!(
+                "Failed to create frame iterator from {}: {e}",
+                path.display()
+            ))
+        }),
         DecoderBackend::Bundle(state) => {
             let reader = open_bundle_stream_reader(path, state)?;
             build_frame_iter_from_reader(reader, format).map_err(|e| {

@@ -10,7 +10,16 @@ use xz2::write::XzEncoder;
 /// Build a minimal XBEN stream from JSONL input for testing.
 fn make_xben(jsonl: &str, variant: BenVariant) -> Vec<u8> {
     let mut xben = Vec::new();
-    encode_jsonl_to_xben(jsonl.as_bytes(), &mut xben, variant, Some(1), Some(1), None, None).unwrap();
+    encode_jsonl_to_xben(
+        jsonl.as_bytes(),
+        &mut xben,
+        variant,
+        Some(1),
+        Some(1),
+        None,
+        None,
+    )
+    .unwrap();
     xben
 }
 
@@ -656,11 +665,7 @@ fn subsample_indices_empty_yields_nothing() {
 
 #[test]
 fn subsample_twodelta_by_range() {
-    let assignments = vec![
-        vec![1u16, 1, 2, 2],
-        vec![2, 1, 2, 2],
-        vec![2, 2, 2, 2],
-    ];
+    let assignments = vec![vec![1u16, 1, 2, 2], vec![2, 1, 2, 2], vec![2, 2, 2, 2]];
     let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader
@@ -725,7 +730,9 @@ fn xz_twodelta_all_identical_single_value_roundtrip() {
 fn xz_twodelta_alternating_assignments_roundtrip() {
     let a = vec![1u16, 1, 2, 2];
     let b = vec![2u16, 2, 1, 1];
-    let assignments: Vec<_> = (0..50).map(|i| if i % 2 == 0 { a.clone() } else { b.clone() }).collect();
+    let assignments: Vec<_> = (0..50)
+        .map(|i| if i % 2 == 0 { a.clone() } else { b.clone() })
+        .collect();
     let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
@@ -763,8 +770,7 @@ fn xz_twodelta_chunk_boundary_roundtrip() {
     {
         let encoder = XzEncoder::new(&mut xben, 1);
         let mut writer =
-            BenStreamWriter::for_xben_with_encoder(encoder, BenVariant::TwoDelta, Some(3))
-                .unwrap();
+            BenStreamWriter::for_xben_with_encoder(encoder, BenVariant::TwoDelta, Some(3)).unwrap();
         writer.write_assignment(anchor.clone()).unwrap();
         for _ in 0..10 {
             writer.write_assignment(delta.clone()).unwrap();
@@ -821,8 +827,8 @@ fn xz_twodelta_repeated_delta_in_chunk_roundtrip() {
 
 #[test]
 fn translate_ben_twodelta_to_xben_roundtrip() {
-    use crate::codec::encode::encode_ben_to_xben;
     use crate::codec::decode::decode_xben_to_jsonl;
+    use crate::codec::encode::encode_ben_to_xben;
     use crate::io::writer::BenStreamWriter;
     use std::io::BufReader;
 
@@ -840,7 +846,15 @@ fn translate_ben_twodelta_to_xben_roundtrip() {
     }
 
     let mut xben = Vec::new();
-    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None, None).unwrap();
+    encode_ben_to_xben(
+        BufReader::new(ben.as_slice()),
+        &mut xben,
+        Some(1),
+        Some(0),
+        None,
+        None,
+    )
+    .unwrap();
 
     let mut jsonl = Vec::new();
     decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut jsonl).unwrap();
@@ -886,7 +900,15 @@ fn translate_ben_twodelta_to_xben_with_repetitions() {
     }
 
     let mut xben = Vec::new();
-    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None, None).unwrap();
+    encode_ben_to_xben(
+        BufReader::new(ben.as_slice()),
+        &mut xben,
+        Some(1),
+        Some(0),
+        None,
+        None,
+    )
+    .unwrap();
 
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap()).collect();
@@ -915,7 +937,15 @@ fn translate_ben_twodelta_to_xben_many_deltas() {
     }
 
     let mut xben = Vec::new();
-    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None, None).unwrap();
+    encode_ben_to_xben(
+        BufReader::new(ben.as_slice()),
+        &mut xben,
+        Some(1),
+        Some(0),
+        None,
+        None,
+    )
+    .unwrap();
 
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
@@ -926,8 +956,10 @@ fn translate_ben_twodelta_to_xben_many_deltas() {
 
 #[test]
 fn count_samples_from_frame_iter_basic() {
-    use crate::io::reader::subsample::{build_frame_iter_from_reader, count_samples_from_frame_iter};
     use crate::codec::encode::encode_jsonl_to_ben;
+    use crate::io::reader::subsample::{
+        build_frame_iter_from_reader, count_samples_from_frame_iter,
+    };
 
     let jsonl = r#"{"assignment":[1,2],"sample":1}
 {"assignment":[3,4],"sample":2}
@@ -942,7 +974,9 @@ fn count_samples_from_frame_iter_basic() {
 
 #[test]
 fn count_samples_from_frame_iter_xben() {
-    use crate::io::reader::subsample::{build_frame_iter_from_reader, count_samples_from_frame_iter};
+    use crate::io::reader::subsample::{
+        build_frame_iter_from_reader, count_samples_from_frame_iter,
+    };
 
     let jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
 {"assignment":[2,2,1,1],"sample":2}
@@ -954,8 +988,10 @@ fn count_samples_from_frame_iter_xben() {
 
 #[test]
 fn count_samples_from_frame_iter_mkv() {
-    use crate::io::reader::subsample::{build_frame_iter_from_reader, count_samples_from_frame_iter};
     use crate::codec::encode::encode_jsonl_to_ben;
+    use crate::io::reader::subsample::{
+        build_frame_iter_from_reader, count_samples_from_frame_iter,
+    };
 
     let jsonl = r#"{"assignment":[1,2],"sample":1}
 {"assignment":[1,2],"sample":2}
@@ -1080,9 +1116,7 @@ fn xz_reader_standard_zero_count_frame_errors() {
     {
         let mut encoder = XzEncoder::new(&mut xben, 1);
         // Write banner
-        encoder
-            .write_all(b"STANDARD BEN FILE")
-            .unwrap();
+        encoder.write_all(b"STANDARD BEN FILE").unwrap();
         // Write a ben32 frame: one RLE pair (value=1, count=3) + zero terminator
         let frame: &[u8] = &[
             0, 1, 0, 3, // (value=1, count=3)
@@ -1092,19 +1126,16 @@ fn xz_reader_standard_zero_count_frame_errors() {
         encoder.finish().unwrap();
     }
 
-    // Manually patch: for Standard, there's no count field after the
-    // terminator. Zero-count only fires for MkvChain where the count is explicit.
-    // So test MkvChain zero-count instead.
+    // Manually patch: for Standard, there's no count field after the terminator. Zero-count only
+    // fires for MkvChain where the count is explicit. So test MkvChain zero-count instead.
     let mut xben_mkv = Vec::new();
     {
         let mut encoder = XzEncoder::new(&mut xben_mkv, 1);
-        encoder
-            .write_all(b"MKVCHAIN BEN FILE")
-            .unwrap();
+        encoder.write_all(b"MKVCHAIN BEN FILE").unwrap();
         let frame: &[u8] = &[
             0, 1, 0, 3, // (value=1, count=3)
             0, 0, 0, 0, // zero terminator
-            0, 0,        // count = 0  <-- triggers zero_count_frame_error
+            0, 0, // count = 0  <-- triggers zero_count_frame_error
         ];
         encoder.write_all(frame).unwrap();
         encoder.finish().unwrap();
@@ -1122,9 +1153,7 @@ fn xz_reader_twodelta_unknown_frame_tag_errors() {
     let mut xben = Vec::new();
     {
         let mut encoder = XzEncoder::new(&mut xben, 1);
-        encoder
-            .write_all(b"TWODELTA BEN FILE")
-            .unwrap();
+        encoder.write_all(b"TWODELTA BEN FILE").unwrap();
         // Write a byte with unknown tag (0xFF)
         encoder.write_all(&[0xFF]).unwrap();
         encoder.finish().unwrap();
@@ -1142,9 +1171,7 @@ fn xz_reader_truncated_stream_errors() {
     let mut xben = Vec::new();
     {
         let mut encoder = XzEncoder::new(&mut xben, 1);
-        encoder
-            .write_all(b"STANDARD BEN FILE")
-            .unwrap();
+        encoder.write_all(b"STANDARD BEN FILE").unwrap();
         // Write a partial ben32 frame (no zero terminator)
         encoder.write_all(&[0, 1, 0, 3]).unwrap();
         encoder.finish().unwrap();
@@ -1159,8 +1186,8 @@ fn xz_reader_truncated_stream_errors() {
 
 #[test]
 fn subsample_every_first_past_hi() {
-    // 4 samples, step=10, offset=5: first selected = 5, but only 4 samples
-    // exist → the `first > hi` branch fires for every frame.
+    // 4 samples, step=10, offset=5: first selected = 5, but only 4 samples exist → the `first > hi`
+    // branch fires for every frame.
     let jsonl = concat!(
         "{\"assignment\":[1,2],\"sample\":1}\n",
         "{\"assignment\":[3,4],\"sample\":2}\n",
@@ -1246,7 +1273,7 @@ fn xz_reader_twodelta_chunk_zero_count_errors() {
         // Chunk (tag=2) with 1 frame, count=0
         encoder.write_all(&[2u8]).unwrap(); // tag=2
         encoder.write_all(&1u32.to_be_bytes()).unwrap(); // n_frames=1
-        // Pair channel: (2,1)
+                                                         // Pair channel: (2,1)
         encoder.write_all(&2u16.to_be_bytes()).unwrap();
         encoder.write_all(&1u16.to_be_bytes()).unwrap();
         // Count channel: 0
@@ -1263,15 +1290,19 @@ fn xz_reader_twodelta_chunk_zero_count_errors() {
     let results: Vec<_> = reader.collect();
     assert_eq!(results.len(), 2); // anchor + chunk frame
     assert!(results[0].is_ok());
-    assert!(results[1].as_ref().unwrap_err().to_string().contains("zero"));
+    assert!(results[1]
+        .as_ref()
+        .unwrap_err()
+        .to_string()
+        .contains("zero"));
 }
 
 // ── Subsample with indices that skip past frame boundaries ──────────
 
 #[test]
 fn subsample_indices_skip_past_lo() {
-    // MkvChain stream where first frame has count=5 but we only want indices [7,8].
-    // This forces the Indices selection to skip past `lo` (line 160-161 in subsample.rs).
+    // MkvChain stream where first frame has count=5 but we only want indices [7,8]. This forces the
+    // Indices selection to skip past `lo` (line 160-161 in subsample.rs).
     let jsonl = concat!(
         "{\"assignment\":[1,2,3],\"sample\":1}\n",
         "{\"assignment\":[1,2,3],\"sample\":2}\n",
@@ -1388,8 +1419,7 @@ fn xz_reader_twodelta_tag1_rejected_as_unknown() {
     let _first = iter.next().unwrap().unwrap(); // consume the valid full frame
     let err = iter.next().unwrap().unwrap_err();
     assert!(
-        err.to_string().to_lowercase().contains("unknown")
-            || err.to_string().contains("tag"),
+        err.to_string().to_lowercase().contains("unknown") || err.to_string().contains("tag"),
         "expected unknown-tag error, got: {}",
         err
     );
@@ -1492,15 +1522,15 @@ fn xz_frame_reader_twodelta_truncated_errors() {
 fn xz_reader_standard_corrupt_frame_errors() {
     use xz2::write::XzEncoder;
 
-    // Write a valid-looking ben32 frame structure but with corrupted content
-    // that decode_xben_frame_to_assignment can't parse
+    // Write a valid-looking ben32 frame structure but with corrupted content that
+    // decode_xben_frame_to_assignment can't parse
     let mut xben = Vec::new();
     {
         let mut encoder = XzEncoder::new(&mut xben, 1);
         encoder.write_all(b"STANDARD BEN FILE").unwrap();
-        // Write 4 bytes followed by zero terminator — the frame decodes to
-        // a single run (value=255, count=255). This should actually be valid.
-        // Instead, write a completely empty frame (just the zero terminator).
+        // Write 4 bytes followed by zero terminator — the frame decodes to a single run (value=255,
+        // count=255). This should actually be valid. Instead, write a completely empty frame
+        // (just the zero terminator).
         encoder.write_all(&[0, 0, 0, 0]).unwrap(); // just zero terminator (no runs)
         encoder.finish().unwrap();
     }
@@ -1516,17 +1546,15 @@ fn xz_reader_standard_corrupt_frame_errors() {
 
 #[test]
 fn subsample_decoder_zero_count_frame_errors() {
-    // A frame iterator that yields a frame with count=0 should produce an
-    // InvalidData error from SubsampleFrameDecoder::next().
+    // A frame iterator that yields a frame with count=0 should produce an InvalidData error from
+    // SubsampleFrameDecoder::next().
     let frame = DecodeFrame::XBen(
         vec![0, 1, 0, 2, 0, 0, 0, 0], // valid ben32: [1,2] + zero terminator
         BenVariant::Standard,
     );
     let items: Vec<io::Result<(DecodeFrame, u16)>> = vec![Ok((frame, 0))];
-    let mut decoder = SubsampleFrameDecoder::new(
-        items.into_iter(),
-        Selection::Range { start: 1, end: 10 },
-    );
+    let mut decoder =
+        SubsampleFrameDecoder::new(items.into_iter(), Selection::Range { start: 1, end: 10 });
     let err = decoder.next().unwrap().unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     assert!(err.to_string().contains("zero"), "got: {}", err);
@@ -1536,9 +1564,8 @@ fn subsample_decoder_zero_count_frame_errors() {
 
 #[test]
 fn xz_frame_reader_twodelta_into_frames() {
-    // Verify that into_frames() works for TwoDelta streams. The frame reader
-    // takes the TwoDelta short-circuit path (re-encoding decoded assignments
-    // back to ben32).
+    // Verify that into_frames() works for TwoDelta streams. The frame reader takes the TwoDelta
+    // short-circuit path (re-encoding decoded assignments back to ben32).
     let jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
 {"assignment":[2,1,2,2],"sample":2}
 "#;
@@ -1596,15 +1623,16 @@ fn raw_frame_iter_propagates_twodelta_decode_error() {
         writer.write_assignment(vec![2u16, 1, 2, 1]).unwrap();
     }
 
-    // Locate the TwoDelta delta frame start by parsing the anchor (MkvChain)
-    // frame header: banner(17) + max_val_bits(1) + max_len_bits(1) +
-    // n_bytes(4 BE) + payload(n_bytes) + count(2) = anchor_end.
+    // Locate the TwoDelta delta frame start by parsing the anchor (MkvChain) frame header:
+    // banner(17) + max_val_bits(1) + max_len_bits(1) + n_bytes(4 BE) + payload(n_bytes) + count(2)
+    // = anchor_end.
     let banner_len = 17usize;
-    let n_bytes = u32::from_be_bytes(ben[banner_len+2..banner_len+6].try_into().unwrap()) as usize;
+    let n_bytes =
+        u32::from_be_bytes(ben[banner_len + 2..banner_len + 6].try_into().unwrap()) as usize;
     let anchor_end = banner_len + 6 + n_bytes + 2;
 
-    // The TwoDelta delta frame: pair_a(2) + pair_b(2) + max_len_bits(1) + ...
-    // Set max_len_bits to 0, which triggers InvalidData during decoding.
+    // The TwoDelta delta frame: pair_a(2) + pair_b(2) + max_len_bits(1) + ... Set max_len_bits to
+    // 0, which triggers InvalidData during decoding.
     ben[anchor_end + 4] = 0;
 
     let reader = BenStreamReader::from_ben(Cursor::new(ben)).unwrap();
@@ -1642,9 +1670,7 @@ fn assignment_reader_for_each_rejects_zero_count_frame() {
     use crate::io::reader::BenStreamReader;
     let data = make_mkvchain_zero_count_frame();
     let mut reader = BenStreamReader::from_ben(Cursor::new(data)).unwrap();
-    let err = reader
-        .for_each_assignment(|_, _| Ok(true))
-        .unwrap_err();
+    let err = reader.for_each_assignment(|_, _| Ok(true)).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 }
 

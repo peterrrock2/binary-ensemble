@@ -12,8 +12,8 @@ use crate::BenVariant;
 
 /// Try to extract one complete ben32 frame from the buffered overflow.
 ///
-/// Scans `overflow` for a four-byte zero sentinel that terminates a ben32
-/// frame and, for MkvChain streams, reads the trailing repetition count.
+/// Scans `overflow` for a four-byte zero sentinel that terminates a ben32 frame and, for MkvChain
+/// streams, reads the trailing repetition count.
 pub(super) fn pop_frame_from_overflow<'a>(
     variant: BenVariant,
     overflow: &'a [u8],
@@ -86,9 +86,9 @@ fn pop_twodelta_frame_from_overflow(
 
 /// Try to parse a columnar TwoDelta chunk from the overflow buffer.
 ///
-/// If the overflow starts with the chunk tag and contains enough bytes for
-/// the full chunk, all frames are decoded and pushed onto `chunk_queue`.
-/// Returns `true` on success, `false` when the overflow is incomplete.
+/// If the overflow starts with the chunk tag and contains enough bytes for the full chunk, all
+/// frames are decoded and pushed onto `chunk_queue`. Returns `true` on success, `false` when the
+/// overflow is incomplete.
 fn try_parse_twodelta_chunk<R: Read>(inner: &mut XBenInner<R>) -> bool {
     if inner.overflow.first() != Some(&XBEN_TWODELTA_CHUNK_TAG) {
         return false;
@@ -167,7 +167,10 @@ fn try_parse_twodelta_chunk<R: Read>(inner: &mut XBenInner<R>) -> bool {
 }
 
 /// Decode one raw ben32 frame from an XBEN stream into a full assignment vector.
-fn decode_xben_frame_to_assignment(frame_bytes: &[u8], variant: BenVariant) -> io::Result<Vec<u16>> {
+fn decode_xben_frame_to_assignment(
+    frame_bytes: &[u8],
+    variant: BenVariant,
+) -> io::Result<Vec<u16>> {
     let (assignment, _) = decode_ben32_line(Cursor::new(frame_bytes), variant)?;
     Ok(assignment)
 }

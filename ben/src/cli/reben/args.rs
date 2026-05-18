@@ -53,19 +53,17 @@ pub(super) struct Args {
     /// Topology-based ordering method to use instead of a key sort.
     #[arg(long, value_enum)]
     pub ordering: Option<OrderingMethod>,
-    /// Shape file to use for sorting the BEN file. Only needed
-    /// in BEN mode when a map is not provided.
+    /// Shape file to use for sorting the BEN file. Only needed in BEN mode when a map is not
+    /// provided.
     #[arg(short, long)]
     pub shape_file: Option<String>,
     /// Map file to use for relabeling the BEN file.
     #[arg(short = 'p', long)]
     pub map_file: Option<String>,
-    /// Mode to run the program in (either JSON or BEN).
-    /// The JSON mode will sort a JSON file by a given key or graph-ordering
-    /// method. The BEN mode will relabel a BEN file according to a map file
-    /// or a graph-ordering request (which also requires a dual-graph file). If no
-    /// map file or key is provided, the BEN mode will canonicalize
-    /// the assignment vectors in the BEN file.
+    /// Mode to run the program in (either JSON or BEN). The JSON mode will sort a JSON file by a
+    /// given key or graph-ordering method. The BEN mode will relabel a BEN file according to a map
+    /// file or a graph-ordering request (which also requires a dual-graph file). If no map file or
+    /// key is provided, the BEN mode will canonicalize the assignment vectors in the BEN file.
     #[arg(short, long)]
     pub mode: Mode,
     /// Only relabel the first `n` expanded samples in BEN mode.

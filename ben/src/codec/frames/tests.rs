@@ -67,7 +67,13 @@ fn unwrap_encode_standard(frame: BenEncodeFrame) -> (Vec<(u16, u16)>, u8, u8, u3
             max_len_bit_count,
             n_bytes,
             raw_bytes,
-        } => (runs, max_val_bit_count, max_len_bit_count, n_bytes, raw_bytes),
+        } => (
+            runs,
+            max_val_bit_count,
+            max_len_bit_count,
+            n_bytes,
+            raw_bytes,
+        ),
         other => panic!("expected Standard encode arm, got {:?}", other),
     }
 }
@@ -93,9 +99,7 @@ fn unwrap_encode_mkv(frame: BenEncodeFrame) -> (Vec<(u16, u16)>, u8, u8, u32, Ve
     }
 }
 
-fn unwrap_encode_twodelta(
-    frame: BenEncodeFrame,
-) -> ((u16, u16), u8, u32, Vec<u16>, Vec<u8>, u16) {
+fn unwrap_encode_twodelta(frame: BenEncodeFrame) -> ((u16, u16), u8, u32, Vec<u16>, Vec<u8>, u16) {
     match frame {
         BenEncodeFrame::TwoDelta {
             pair,
@@ -355,11 +359,9 @@ fn twodelta_from_run_lengths_count_none_defaults_to_one() {
 fn twodelta_from_run_lengths_then_from_parts_roundtrip() {
     let original = BenEncodeFrame::from_run_lengths((3, 4), vec![5, 5, 5], Some(2));
     let bytes = original.as_slice().to_vec();
-    let (pair, max_len_bits, n_bytes, _, _, count) =
-        unwrap_encode_twodelta(original.clone());
+    let (pair, max_len_bits, n_bytes, _, _, count) = unwrap_encode_twodelta(original.clone());
     let payload_slice = &bytes[9..9 + n_bytes as usize];
-    let rebuilt =
-        BenEncodeFrame::from_parts(pair, max_len_bits, payload_slice.to_vec(), count);
+    let rebuilt = BenEncodeFrame::from_parts(pair, max_len_bits, payload_slice.to_vec(), count);
     let (rb_pair, _, _, rb_runs, _, rb_count) = unwrap_encode_twodelta(rebuilt);
     assert_eq!(rb_pair, pair);
     assert_eq!(rb_runs, vec![5, 5, 5]);
@@ -619,11 +621,7 @@ fn encode_partial_eq_vec_both_directions() {
 #[test]
 fn decode_expand_standard_assignment() {
     // An assignment of [1, 1, 2, 2, 3] becomes RLE [(1,2),(2,2),(3,1)].
-    let encoded = BenEncodeFrame::from_assignment(
-        &[1u16, 1, 2, 2, 3],
-        BenVariant::Standard,
-        None,
-    );
+    let encoded = BenEncodeFrame::from_assignment(&[1u16, 1, 2, 2, 3], BenVariant::Standard, None);
     let mut cursor = io::Cursor::new(encoded.into_bytes());
     let decoded = BenDecodeFrame::from_reader(&mut cursor, BenVariant::Standard)
         .unwrap()

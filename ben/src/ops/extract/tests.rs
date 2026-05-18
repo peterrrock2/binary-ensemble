@@ -144,7 +144,7 @@ fn test_extract_assignment_xben_roundtrip_and_errors() {
         Some(1),
         Some(0),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -200,8 +200,14 @@ fn extract_assignment_ben_path_returns_assignment() {
     let path = unique_path("extract-path.ben");
     std::fs::write(&path, &ben_bytes).unwrap();
 
-    assert_eq!(extract_assignment_ben_path(&path, 1).unwrap(), vec![1, 2, 3]);
-    assert_eq!(extract_assignment_ben_path(&path, 2).unwrap(), vec![3, 2, 1]);
+    assert_eq!(
+        extract_assignment_ben_path(&path, 1).unwrap(),
+        vec![1, 2, 3]
+    );
+    assert_eq!(
+        extract_assignment_ben_path(&path, 2).unwrap(),
+        vec![3, 2, 1]
+    );
 
     let _ = std::fs::remove_file(&path);
 }

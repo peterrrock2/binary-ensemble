@@ -4,22 +4,20 @@ use petgraph::graph::{Graph, NodeIndex};
 use petgraph::visit::{EdgeRef, NodeIndexable};
 use serde_json::Value;
 
-/// Apply a node permutation to a `PetxGraph`, returning a new graph with nodes
-/// reordered.
+/// Apply a node permutation to a `PetxGraph`, returning a new graph with nodes reordered.
 ///
 /// Arguments:
 ///
 /// - `petx_graph`: The input graph to permute.
-/// - `order`: A permutation where `order[new_index]` is the `NodeIndex` of the
-///   node that should occupy position `new_index` in the output graph. Must be
-///   a valid permutation of the graph's node indices.
+/// - `order`: A permutation where `order[new_index]` is the `NodeIndex` of the node that should
+///   occupy position `new_index` in the output graph. Must be a valid permutation of the graph's
+///   node indices.
 ///
 /// Returns:
 ///
-/// - A new `PetxGraph` with nodes in the specified order and edges remapped to
-///   the new indices. Edge attributes (including `key` and `attrs`) are
-///   preserved; the `NxAdjEntry::id` field is left as-is since
-///   `construct_networkx_from_petgraph` overwrites it on export.
+/// - A new `PetxGraph` with nodes in the specified order and edges remapped to the new indices.
+///   Edge attributes (including `key` and `attrs`) are preserved; the `NxAdjEntry::id` field is
+///   left as-is since `construct_networkx_from_petgraph` overwrites it on export.
 pub(in crate::json::graph) fn apply_permutation<Ty>(
     petx_graph: &PetxGraph<Ty>,
     order: &[NodeIndex],

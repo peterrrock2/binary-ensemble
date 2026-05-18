@@ -1,5 +1,5 @@
-use super::args::{Args, CliVariant, Mode};
 use super::args::resolve_variant;
+use super::args::{Args, CliVariant, Mode};
 use super::bundle::{
     append_graph_asset, run_encode_bundle_with_graph, run_xencode_bundle_with_graph,
 };

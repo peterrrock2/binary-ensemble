@@ -4,9 +4,8 @@ use std::io;
 
 /// Apply decoded TwoDelta run lengths to produce a new assignment vector.
 ///
-/// Positions in `assignment` that hold either value of `pair` are overwritten
-/// according to the alternating run-length encoding. `pair.0` fills the first
-/// run, `pair.1` the second, and so on.
+/// Positions in `assignment` that hold either value of `pair` are overwritten according to the
+/// alternating run-length encoding. `pair.0` fills the first run, `pair.1` the second, and so on.
 ///
 /// # Arguments
 ///
@@ -16,8 +15,8 @@ use std::io;
 ///
 /// # Returns
 ///
-/// Returns the updated assignment vector, or an error if the run lengths are
-/// exhausted before all relevant positions are covered.
+/// Returns the updated assignment vector, or an error if the run lengths are exhausted before all
+/// relevant positions are covered.
 pub(crate) fn apply_twodelta_runs_to_assignment(
     mut assignment: Vec<u16>,
     pair: (u16, u16),
@@ -66,17 +65,12 @@ pub(crate) fn apply_twodelta_runs_to_assignment(
 /// # Arguments
 ///
 /// * `previous` - The assignment vector from the preceding frame.
-/// * `frame` - A TwoDelta-arm [`BenEncodeFrame`] containing the pair and
-///   run-length vector.
+/// * `frame` - A TwoDelta-arm [`BenEncodeFrame`] containing the pair and run-length vector.
 ///
 /// # Returns
 ///
-/// Returns the updated assignment vector, or an error if `frame` is not the
-/// `TwoDelta` arm.
-pub fn decode_twodelta_frame(
-    previous: Vec<u16>,
-    frame: &BenEncodeFrame,
-) -> io::Result<Vec<u16>> {
+/// Returns the updated assignment vector, or an error if `frame` is not the `TwoDelta` arm.
+pub fn decode_twodelta_frame(previous: Vec<u16>, frame: &BenEncodeFrame) -> io::Result<Vec<u16>> {
     match frame {
         BenEncodeFrame::TwoDelta {
             pair,

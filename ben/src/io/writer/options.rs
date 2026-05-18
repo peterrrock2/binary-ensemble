@@ -1,10 +1,9 @@
 //! Encode-side configuration knobs for the unified BEN stream writer.
 //!
-//! Mirrors the discipline of `RelabelOptions`: a `#[non_exhaustive]` struct
-//! with private fields and value-taking builder setters, so adding a knob
-//! later is non-breaking. `None` semantically means "use the codec/lzma
-//! default" and is distinct from any specific user-provided value;
-//! callers who want defaults simply do not call the setter.
+//! Mirrors the discipline of `RelabelOptions`: a `#[non_exhaustive]` struct with private fields and
+//! value-taking builder setters, so adding a knob later is non-breaking. `None` semantically means
+//! "use the codec/lzma default" and is distinct from any specific user-provided value; callers who
+//! want defaults simply do not call the setter.
 
 use super::twodelta::DEFAULT_TWODELTA_CHUNK_SIZE;
 
@@ -42,8 +41,8 @@ impl XzEncodeOptions {
         self
     }
 
-    /// Set the TwoDelta columnar chunk size. `0` normalizes to `1`.
-    /// Ignored for Standard and MkvChain XBEN streams.
+    /// Set the TwoDelta columnar chunk size. `0` normalizes to `1`. Ignored for Standard and
+    /// MkvChain XBEN streams.
     pub fn with_twodelta_chunk_size(mut self, size: usize) -> Self {
         self.twodelta_chunk_size = size.max(1);
         self

@@ -16,8 +16,8 @@ pub(super) fn run_create(args: CreateArgs) -> Result<(), String> {
     )
     .map_err(|e| format!("{e}"))?;
 
-    // Count samples up front so we can patch the header at finalize time.
-    // This pre-scan is O(stream size); the second pass streams bytes directly.
+    // Count samples up front so we can patch the header at finalize time. This pre-scan is
+    // O(stream size); the second pass streams bytes directly.
     let sample_count: i64 = count_samples_from_file(&args.input, BenWireFormat::from(format))
         .map_err(|e| format!("failed to count samples in {:?}: {e}", args.input))?
         as i64;
@@ -56,8 +56,8 @@ pub(super) fn run_create(args: CreateArgs) -> Result<(), String> {
         add_custom_file_asset(&mut writer, name, path, AddAssetOptions::defaults())?;
     }
 
-    // Stream phase: copy bytes from the input file directly into the
-    // bundle's stream region. This preserves the exact BEN/XBEN bytes.
+    // Stream phase: copy bytes from the input file directly into the bundle's stream region. This
+    // preserves the exact BEN/XBEN bytes.
     let mut session = writer
         .into_stream_session()
         .map_err(|e| format!("failed to open stream region: {e}"))?;

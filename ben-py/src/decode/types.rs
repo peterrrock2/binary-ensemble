@@ -49,9 +49,8 @@ impl DecoderMode {
 
 /// Cached bundle state for a decoder opened on a `.bendl` file.
 ///
-/// Holds a dedicated [`BendlReader`] so the decoder can satisfy TOC
-/// inspection and asset-read calls without disturbing the iterator (which
-/// reads the stream region through a separate file handle).
+/// Holds a dedicated [`BendlReader`] so the decoder can satisfy TOC inspection and asset-read calls
+/// without disturbing the iterator (which reads the stream region through a separate file handle).
 pub(super) struct BundleState {
     pub reader: BendlReader<BufReader<File>>,
     pub stream_offset: u64,
@@ -72,10 +71,9 @@ impl DecoderBackend {
 
 /// Stored form of the most recently installed subsampling selection.
 ///
-/// The iterator is single-pass, so to support restarting iteration
-/// (e.g. `for x in dec: ... ; for x in dec: ...`) the decoder remembers
-/// the active selection and rebuilds a fresh frame decoder on every
-/// call to `__iter__`.
+/// The iterator is single-pass, so to support restarting iteration (e.g.
+/// `for x in dec: ... ; for x in dec: ...`) the decoder remembers the active selection and rebuilds
+/// a fresh frame decoder on every call to `__iter__`.
 #[derive(Clone)]
 pub(super) enum ActiveSelection {
     None,

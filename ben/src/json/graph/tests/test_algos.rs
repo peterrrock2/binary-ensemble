@@ -324,7 +324,6 @@ fn test_sort_json_file_by_multi_level_cluster() {
     assert_eq!(output_json["nodes"].as_array().unwrap().len(), 4);
 }
 
-
 #[test]
 fn test_sort_by_ordering_directed_rcm() {
     let input = r#"{
@@ -450,8 +449,8 @@ fn test_sort_json_file_by_key_mixed_numeric_and_string() {
 
 #[test]
 fn test_sort_json_file_by_key_missing_attribute_uses_null() {
-    // When a node lacks the sort key, compare_attr_values receives None
-    // which maps to the string "null" for comparison purposes.
+    // When a node lacks the sort key, compare_attr_values receives None which maps to the string
+    // "null" for comparison purposes.
     let input = r#"{
         "nodes": [
             {"id": 0, "rank": 5},
@@ -478,8 +477,8 @@ fn test_sort_json_file_by_key_missing_attribute_uses_null() {
 
 #[test]
 fn test_mlc_with_isolated_node() {
-    // A graph containing an isolated node (no edges) triggers the
-    // single-node-component early return in mlc_component.
+    // A graph containing an isolated node (no edges) triggers the single-node-component early
+    // return in mlc_component.
     let input = r#"{
         "nodes": [
             {"id": 0},
@@ -514,9 +513,9 @@ fn test_mlc_with_isolated_node() {
 
 #[test]
 fn test_sort_json_file_by_key_fips_string_ids() {
-    // Node IDs are FIPS codes stored as JSON strings ("360191010003" etc.).
-    // The mapping must use original positions (0-indexed) as keys, not the
-    // raw FIPS values, so that downstream BEN relabeling can index correctly.
+    // Node IDs are FIPS codes stored as JSON strings ("360191010003" etc.). The mapping must use
+    // original positions (0-indexed) as keys, not the raw FIPS values, so that downstream BEN
+    // relabeling can index correctly.
     let input = r#"{
         "nodes": [
             {"id": "360191010003", "rank": 30},
@@ -542,7 +541,7 @@ fn test_sort_json_file_by_key_fips_string_ids() {
     assert_eq!(mapping[&0], 2); // pos 0 (rank=30) → new pos 2
     assert_eq!(mapping[&1], 0); // pos 1 (rank=10) → new pos 0
     assert_eq!(mapping[&2], 1); // pos 2 (rank=20) → new pos 1
-    // All new positions 0..N-1 are valid BEN array indices.
+                                // All new positions 0..N-1 are valid BEN array indices.
     let mut new_positions: Vec<usize> = mapping.values().copied().collect();
     new_positions.sort();
     assert_eq!(new_positions, vec![0, 1, 2]);
@@ -550,9 +549,9 @@ fn test_sort_json_file_by_key_fips_string_ids() {
 
 #[test]
 fn test_sort_json_file_by_key_float_sort_values() {
-    // Sort key values are JSON floats; they should sort numerically, not as strings
-    // (e.g. 1.5 < 10.0, not "1.5" < "10.0" would also hold, but 2.5 < 10.0 would break
-    // lexicographically as "10.0" < "2.5").
+    // Sort key values are JSON floats; they should sort numerically, not as strings (e.g. 1.5 <
+    // 10.0, not "1.5" < "10.0" would also hold, but 2.5 < 10.0 would break lexicographically as
+    // "10.0" < "2.5").
     let input = r#"{
         "nodes": [
             {"id": 0, "score": 10.0},

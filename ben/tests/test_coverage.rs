@@ -1,9 +1,8 @@
 //! Rigorous coverage tests for the binary-ensemble `ben` library.
 //!
-//! These tests target code paths and edge-cases that are not covered by the
-//! existing integration / property-based suites.  They are deliberately strict:
-//! if the implementation behaves in an unexpected way the test should fail
-//! rather than silently accept wrong output.
+//! These tests target code paths and edge-cases that are not covered by the existing integration /
+//! property-based suites. They are deliberately strict: if the implementation behaves in an
+//! unexpected way the test should fail rather than silently accept wrong output.
 
 use binary_ensemble::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben};
 use binary_ensemble::codec::encode::{
@@ -32,8 +31,7 @@ use std::io::{self, BufReader, Cursor};
 mod common;
 use common::jsonl_from_assignments;
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Helpers
+// ────────────────────────────────────────────────────────────────────────────── Helpers
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Encode assignments as a Standard BEN byte vector (including the 17-byte banner).
@@ -62,14 +60,14 @@ fn encode_xben(assignments: &[Vec<u16>], variant: BenVariant) -> Vec<u8> {
         Some(1),
         Some(1),
         None,
-            None,
+        None,
     )
     .unwrap();
     xben
 }
 
-/// Build a ring-graph JSON string with `n` nodes (0-based ids).
-/// Each node i is connected to (i-1) mod n and (i+1) mod n.
+/// Build a ring-graph JSON string with `n` nodes (0-based ids). Each node i is connected to (i-1)
+/// mod n and (i+1) mod n.
 fn make_ring_graph_json(n: usize) -> String {
     let nodes: Vec<serde_json::Value> = (0..n).map(|i| json!({"id": i})).collect();
     let adjacency: Vec<serde_json::Value> = (0..n)
@@ -82,8 +80,7 @@ fn make_ring_graph_json(n: usize) -> String {
     serde_json::to_string(&json!({"nodes": nodes, "adjacency": adjacency})).unwrap()
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// format::banners
+// ────────────────────────────────────────────────────────────────────────────── format::banners
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -175,8 +172,7 @@ fn has_known_banner_prefix_rejects_garbage() {
     assert!(!has_known_banner_prefix(b"\x00"));
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// util::rle
+// ────────────────────────────────────────────────────────────────────────────── util::rle
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -253,9 +249,8 @@ fn rle_roundtrip_with_max_values() {
     assert_eq!(recovered, original);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// io::reader  –  DecoderInitError
-// ──────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────── io::reader –
+// DecoderInitError ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn decoder_init_error_display_io_variant() {
@@ -323,9 +318,8 @@ fn decoder_init_error_converts_to_io_error_from_invalid_format() {
     assert_eq!(io_err.kind(), io::ErrorKind::InvalidData);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// io::reader  –  BenStreamReader
-// ──────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────── io::reader –
+// BenStreamReader ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn ben_decoder_rejects_empty_input() {
@@ -377,7 +371,9 @@ fn ben_decoder_standard_multiple_assignments_round_trip() {
     let assignments = vec![vec![1u16, 2, 3], vec![3u16, 2, 1], vec![1u16, 1, 1]];
     let ben = encode_standard_ben(&assignments);
 
-    let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
+    let mut decoder = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .silent(true);
     for expected in &assignments {
         let (decoded, count) = decoder.next().unwrap().unwrap();
         assert_eq!(count, 1);
@@ -402,7 +398,9 @@ fn ben_decoder_mkv_preserves_repetition_counts() {
     let mut ben = Vec::new();
     encode_jsonl_to_ben(jsonl.as_bytes(), &mut ben, BenVariant::MkvChain).unwrap();
 
-    let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
+    let mut decoder = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .silent(true);
 
     let (a1, c1) = decoder.next().unwrap().unwrap();
     assert_eq!(a1, vec![1u16, 2, 3]);
@@ -465,7 +463,9 @@ fn ben_decoder_for_each_assignment_early_stop() {
     let assignments = vec![vec![1u16, 2], vec![3u16, 4], vec![5u16, 6]];
     let ben = encode_standard_ben(&assignments);
 
-    let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
+    let mut decoder = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .silent(true);
     let mut seen = Vec::new();
     decoder
         .for_each_assignment(|a, _count| {
@@ -479,9 +479,8 @@ fn ben_decoder_for_each_assignment_early_stop() {
     assert_eq!(seen[1], vec![3u16, 4]);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// io::reader  –  BenStreamReader
-// ──────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────── io::reader –
+// BenStreamReader ──────────────────────────────────────────────────────────────────────────────
 
 fn make_xben(assignments: &[Vec<u16>], variant: BenVariant) -> Vec<u8> {
     let jsonl = jsonl_from_assignments(assignments);
@@ -493,7 +492,7 @@ fn make_xben(assignments: &[Vec<u16>], variant: BenVariant) -> Vec<u8> {
         Some(1),
         Some(1),
         None,
-            None,
+        None,
     )
     .unwrap();
     xben
@@ -525,9 +524,8 @@ fn xben_decoder_reads_variant_from_banner_twodelta() {
     assert_eq!(decoder.variant(), BenVariant::TwoDelta);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// io::writer  –  BenEncoder
-// ──────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────── io::writer –
+// BenEncoder ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn ben_encoder_writes_correct_banner_standard() {
@@ -663,8 +661,8 @@ fn ben_encoder_mkv_identical_assignments_deduplicated() {
         enc.finish().unwrap();
     }
 
-    // The BEN payload should be much smaller than 3 independent frames.
-    // More importantly, decoding must give back 3 lines.
+    // The BEN payload should be much smaller than 3 independent frames. More importantly, decoding
+    // must give back 3 lines.
     let mut decoded = Vec::new();
     decode_ben_to_jsonl(out.as_slice(), &mut decoded).unwrap();
     assert_eq!(decoded.iter().filter(|&&b| b == b'\n').count(), 3);
@@ -690,8 +688,8 @@ fn ben_encoder_twodelta_base_frame_then_delta_round_trip() {
     assert_eq!(lines.len(), 2, "decoded:\n{s}");
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// codec::encode – encode_ben_vec_from_rle and encode_ben_vec_from_assign
+// ────────────────────────────────────────────────────────────────────────────── codec::encode –
+// encode_ben_vec_from_rle and encode_ben_vec_from_assign
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -725,9 +723,8 @@ fn encode_ben_vec_from_assign_all_same() {
     assert!(!frame.as_slice().is_empty());
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// codec::encode  –  encode_ben_to_xben
-// ──────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────── codec::encode –
+// encode_ben_to_xben ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn encode_ben_to_xben_and_back_standard() {
@@ -735,7 +732,15 @@ fn encode_ben_to_xben_and_back_standard() {
     let ben = encode_standard_ben(&assignments);
 
     let mut xben = Vec::new();
-    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, None, None, None, None).unwrap();
+    encode_ben_to_xben(
+        BufReader::new(ben.as_slice()),
+        &mut xben,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
 
     let mut ben2 = Vec::new();
     decode_xben_to_ben(BufReader::new(xben.as_slice()), &mut ben2).unwrap();
@@ -752,8 +757,8 @@ fn encode_ben_to_xben_and_back_standard() {
     assert_eq!(String::from_utf8(decoded).unwrap(), expected);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// ops::relabel  –  convert_ben_file and convert_ben_file_limit
+// ────────────────────────────────────────────────────────────────────────────── ops::relabel –
+// convert_ben_file and convert_ben_file_limit
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -841,8 +846,8 @@ fn convert_ben_file_limit_zero_produces_banner_only() {
     assert!(decoded.is_empty());
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// ops::relabel  –  relabel_ben_lines_limit
+// ────────────────────────────────────────────────────────────────────────────── ops::relabel –
+// relabel_ben_lines_limit
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -872,8 +877,8 @@ fn relabel_ben_lines_limit_truncates_standard() {
     );
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// ops::relabel  –  relabel_ben_file_as_variant
+// ────────────────────────────────────────────────────────────────────────────── ops::relabel –
+// relabel_ben_file_as_variant
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -895,9 +900,8 @@ fn relabel_ben_file_as_variant_standard_to_standard() {
     decode_ben_to_jsonl(out.as_slice(), &mut decoded).unwrap();
     let s = String::from_utf8(decoded).unwrap();
 
-    // Each frame is canonicalized independently (first-seen within the frame → 1, etc.).
-    // Frame 1: [5,5,1] → first 5→1, then 1→2 → [1,1,2]
-    // Frame 2: [1,5,5] → first 1→1, then 5→2 → [1,2,2]
+    // Each frame is canonicalized independently (first-seen within the frame → 1, etc.). Frame 1:
+    // [5,5,1] → first 5→1, then 1→2 → [1,1,2] Frame 2: [1,5,5] → first 1→1, then 5→2 → [1,2,2]
     assert!(
         s.contains("\"assignment\":[1,1,2]"),
         "frame1 mismatch, got: {s}"
@@ -983,8 +987,8 @@ fn relabel_ben_file_as_variant_limit_zero_gives_empty() {
     assert!(decoded.is_empty(), "expected empty output for limit=0");
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// ops::relabel  –  relabel_ben_file_with_map_as_variant
+// ────────────────────────────────────────────────────────────────────────────── ops::relabel –
+// relabel_ben_file_with_map_as_variant
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Build a map that reverses a 3-element assignment: new[0]←old[2], etc.
@@ -1001,8 +1005,7 @@ fn relabel_ben_file_with_map_as_variant_standard_to_standard() {
     relabel_ben_file(
         ben.as_slice(),
         &mut out,
-        RelabelOptions::node_permutation(reverse_map_3())
-            .with_target_variant(BenVariant::Standard),
+        RelabelOptions::node_permutation(reverse_map_3()).with_target_variant(BenVariant::Standard),
     )
     .unwrap();
 
@@ -1028,8 +1031,7 @@ fn relabel_ben_file_with_map_as_variant_standard_to_mkvchain() {
     relabel_ben_file(
         ben.as_slice(),
         &mut out,
-        RelabelOptions::node_permutation(reverse_map_3())
-            .with_target_variant(BenVariant::MkvChain),
+        RelabelOptions::node_permutation(reverse_map_3()).with_target_variant(BenVariant::MkvChain),
     )
     .unwrap();
 
@@ -1045,8 +1047,7 @@ fn relabel_ben_file_with_map_as_variant_rejects_invalid_header() {
     let err = relabel_ben_file(
         b"NOT A VALID BEN!!".as_slice(),
         Vec::new(),
-        RelabelOptions::node_permutation(reverse_map_3())
-            .with_target_variant(BenVariant::Standard),
+        RelabelOptions::node_permutation(reverse_map_3()).with_target_variant(BenVariant::Standard),
     )
     .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
@@ -1098,8 +1099,8 @@ fn relabel_ben_file_with_map_as_variant_limit_zero_gives_empty() {
     assert!(decoded.is_empty());
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// ops::relabel  –  dense_permutation edge cases (tested indirectly)
+// ────────────────────────────────────────────────────────────────────────────── ops::relabel –
+// dense_permutation edge cases (tested indirectly)
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1120,8 +1121,8 @@ fn relabel_file_with_map_detects_gap_in_permutation() {
     assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// ops::relabel  –  convert_ben_file with MkvChain truncation
+// ────────────────────────────────────────────────────────────────────────────── ops::relabel –
+// convert_ben_file with MkvChain truncation
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1157,8 +1158,8 @@ fn convert_ben_file_limit_with_mkvchain_repetitions() {
     assert_eq!(decoded.iter().filter(|&&b| b == b'\n').count(), 3);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// ops::relabel  –  relabel_ben_file TwoDelta (canonicalization path)
+// ────────────────────────────────────────────────────────────────────────────── ops::relabel –
+// relabel_ben_file TwoDelta (canonicalization path)
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1176,12 +1177,7 @@ fn relabel_ben_file_twodelta_canonicalizes_labels() {
     encode_jsonl_to_ben(file.as_bytes(), &mut ben, BenVariant::TwoDelta).unwrap();
 
     let mut relabeled = Vec::new();
-    relabel_ben_file(
-        ben.as_slice(),
-        &mut relabeled,
-        RelabelOptions::first_seen(),
-    )
-    .unwrap();
+    relabel_ben_file(ben.as_slice(), &mut relabeled, RelabelOptions::first_seen()).unwrap();
 
     let mut decoded = Vec::new();
     decode_ben_to_jsonl(relabeled.as_slice(), &mut decoded).unwrap();
@@ -1191,9 +1187,8 @@ fn relabel_ben_file_twodelta_canonicalizes_labels() {
     assert!(s.contains("\"assignment\":[1,1,2,2,3,3]"), "got: {s}");
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Encoding  –  empty assignment vectors
-// ──────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────── Encoding – empty
+// assignment vectors ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn encode_and_decode_empty_assignment_standard() {
@@ -1208,9 +1203,8 @@ fn encode_and_decode_empty_assignment_standard() {
     assert!(s.contains("\"assignment\":[]"), "got: {s}");
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Encoding  –  large u16 values
-// ──────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────── Encoding – large
+// u16 values ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn encode_and_decode_max_u16_values_standard() {
@@ -1223,8 +1217,8 @@ fn encode_and_decode_max_u16_values_standard() {
     );
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Encoding  –  single-sample files
+// ────────────────────────────────────────────────────────────────────────────── Encoding –
+// single-sample files
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1249,8 +1243,7 @@ fn single_sample_mkvchain_round_trip() {
     assert!(s.contains("\"assignment\":[1,2,3]"), "got: {s}");
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Decode error paths
+// ────────────────────────────────────────────────────────────────────────────── Decode error paths
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1274,8 +1267,8 @@ fn decode_ben_to_jsonl_rejects_truncated_frame_header() {
     assert_ne!(err.kind(), io::ErrorKind::Other); // not just "ok"
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// XBEN round-trip with various compression levels
+// ────────────────────────────────────────────────────────────────────────────── XBEN round-trip
+// with various compression levels
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1291,7 +1284,7 @@ fn xben_round_trip_with_level_0_compression() {
         Some(1),
         Some(0), // compression level 0
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -1324,7 +1317,7 @@ fn xben_mkvchain_round_trip_preserves_all_samples() {
         Some(1),
         Some(1),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -1340,8 +1333,8 @@ fn xben_mkvchain_round_trip_preserves_all_samples() {
     );
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Relabel  –  file_as_variant with MkvChain source
+// ────────────────────────────────────────────────────────────────────────────── Relabel –
+// file_as_variant with MkvChain source
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1376,8 +1369,8 @@ fn relabel_ben_file_as_variant_mkvchain_to_standard() {
     assert_eq!(s.lines().count(), 3);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Relabel  –  with_map_as_variant permutation correctness
+// ────────────────────────────────────────────────────────────────────────────── Relabel –
+// with_map_as_variant permutation correctness
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1403,15 +1396,16 @@ fn relabel_ben_file_with_map_as_variant_permutes_correctly() {
     );
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// BenStreamReader  –  iterator interface
-// ──────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────── BenStreamReader –
+// iterator interface ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn ben_decoder_iterator_collects_all_frames() {
     let assignments = vec![vec![1u16, 2, 3], vec![4u16, 5, 6], vec![7u16, 8, 9]];
     let ben = encode_standard_ben(&assignments);
-    let decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
+    let decoder = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .silent(true);
     let frames: Vec<_> = decoder.collect::<io::Result<Vec<_>>>().unwrap();
     assert_eq!(frames.len(), 3);
     for (i, (a, count)) in frames.iter().enumerate() {
@@ -1423,13 +1417,15 @@ fn ben_decoder_iterator_collects_all_frames() {
 #[test]
 fn ben_decoder_iterator_on_empty_payload_yields_nothing() {
     let ben = STANDARD_BEN_BANNER.to_vec(); // banner only, no frames
-    let decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
+    let decoder = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .silent(true);
     let frames: Vec<_> = decoder.collect::<io::Result<Vec<_>>>().unwrap();
     assert!(frames.is_empty());
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Relabeling  –  idempotence of canonicalization
+// ────────────────────────────────────────────────────────────────────────────── Relabeling –
+// idempotence of canonicalization
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1465,8 +1461,8 @@ fn relabel_ben_file_standard_is_idempotent() {
     assert_eq!(decoded1, decoded2, "relabeling is not idempotent");
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Edge case: assignment with a single unique label
+// ────────────────────────────────────────────────────────────────────────────── Edge case:
+// assignment with a single unique label
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1486,12 +1482,7 @@ fn single_unique_label_relabeled_to_one() {
     let ben = encode_standard_ben(&[assignment]);
 
     let mut relabeled = Vec::new();
-    relabel_ben_file(
-        ben.as_slice(),
-        &mut relabeled,
-        RelabelOptions::first_seen(),
-    )
-    .unwrap();
+    relabel_ben_file(ben.as_slice(), &mut relabeled, RelabelOptions::first_seen()).unwrap();
 
     let decoded_str = decode_ben_to_string(&relabeled);
     // All 99s should become 1s.
@@ -1501,8 +1492,8 @@ fn single_unique_label_relabeled_to_one() {
     );
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Edge case: frame with maximum run-length value
+// ────────────────────────────────────────────────────────────────────────────── Edge case: frame
+// with maximum run-length value
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1522,9 +1513,8 @@ fn encode_decode_max_run_length_standard() {
     );
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// BenVariant debug / clone / copy
-// ──────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────── BenVariant debug /
+// clone / copy ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn ben_variant_clone_and_copy() {
@@ -1541,8 +1531,8 @@ fn ben_variant_debug() {
     assert_eq!(s, "TwoDelta");
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Cursor::new round trips for Cursor-based readers
+// ────────────────────────────────────────────────────────────────────────────── Cursor::new round
+// trips for Cursor-based readers
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1664,7 +1654,10 @@ fn twodelta_frame_from_parts_round_trip() {
     );
     assert_eq!(original.as_slice(), reconstructed.as_slice());
     assert_eq!(original.pair().unwrap(), reconstructed.pair().unwrap());
-    assert_eq!(original.max_len_bit_count(), reconstructed.max_len_bit_count());
+    assert_eq!(
+        original.max_len_bit_count(),
+        reconstructed.max_len_bit_count()
+    );
     assert_eq!(original.n_bytes(), reconstructed.n_bytes());
     assert_eq!(original.count(), reconstructed.count());
 }
@@ -1680,8 +1673,8 @@ fn twodelta_frame_asref_and_deref() {
     assert_eq!(as_ref, frame.as_slice());
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// EncodeBenFrame (BenFrame from codec::encode) accessors
+// ────────────────────────────────────────────────────────────────────────────── EncodeBenFrame
+// (BenFrame from codec::encode) accessors
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1709,7 +1702,8 @@ fn encode_ben_frame_max_len_bits() {
 
 #[test]
 fn encode_ben_frame_n_bytes_consistent() {
-    // Frame layout: 1 byte (max_val_bits) + 1 byte (max_len_bits) + 4 bytes (n_bytes header) + n_bytes payload
+    // Frame layout: 1 byte (max_val_bits) + 1 byte (max_len_bits) + 4 bytes (n_bytes header) +
+    // n_bytes payload
     let runs = vec![(1u16, 5u16), (2u16, 3u16)];
     let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
     assert_eq!(frame.n_bytes() as usize + 6, frame.as_slice().len());
@@ -1759,8 +1753,8 @@ fn encode_ben_frame_from_assignment() {
     assert_eq!(runs, &[(1u16, 2u16), (2u16, 2u16), (3u16, 1u16)]);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Graph ordering with >8 nodes (triggers multilevel clustering recursion)
+// ────────────────────────────────────────────────────────────────────────────── Graph ordering
+// with >8 nodes (triggers multilevel clustering recursion)
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1898,8 +1892,8 @@ fn graph_invalid_link_id_errors() {
 
 #[test]
 fn sort_by_ordering_large_graph_multilevel_verifies_permutation() {
-    // 30-node ring — large enough that greedy_cluster_partition produces multiple clusters
-    // and the coarse graph recursion fires
+    // 30-node ring — large enough that greedy_cluster_partition produces multiple clusters and the
+    // coarse graph recursion fires
     let graph_json = make_ring_graph_json(30);
     let mut output = Vec::new();
     let mapping = sort_json_file_by_ordering(
@@ -1916,8 +1910,8 @@ fn sort_by_ordering_large_graph_multilevel_verifies_permutation() {
     assert_eq!(new_ids, (0..30).collect::<Vec<_>>());
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// BenStreamReader / BenStreamFrameReader
+// ────────────────────────────────────────────────────────────────────────────── BenStreamReader /
+// BenStreamFrameReader
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]

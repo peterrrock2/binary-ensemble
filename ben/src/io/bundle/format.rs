@@ -1,9 +1,8 @@
 //! Binary header and directory definitions for the `.bendl` container.
 //!
-//! This module is the pure format layer: it defines the on-disk byte
-//! layout, the associated constants, and the encode/decode helpers that
-//! convert between in-memory Rust structs and their on-disk representation.
-//! There is no I/O orchestration here — higher layers (`reader`, `writer`)
+//! This module is the pure format layer: it defines the on-disk byte layout, the associated
+//! constants, and the encode/decode helpers that convert between in-memory Rust structs and their
+//! on-disk representation. There is no I/O orchestration here — higher layers (`reader`, `writer`)
 //! combine these primitives with seekable files.
 //!
 //! All multi-byte integers in the `.bendl` format are little-endian.
@@ -43,9 +42,8 @@ pub const ASSIGNMENT_FORMAT_XBEN: u8 = 2;
 
 /// Container format of the embedded assignment stream.
 ///
-/// The BEN *variant* (`Standard`, `MkvChain`, `TwoDelta`) is carried by
-/// the 17-byte banner at the start of the embedded stream and is not
-/// duplicated in the bundle header.
+/// The BEN *variant* (`Standard`, `MkvChain`, `TwoDelta`) is carried by the 17-byte banner at the
+/// start of the embedded stream and is not duplicated in the bundle header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssignmentFormat {
     /// Uncompressed BEN byte stream.
@@ -93,8 +91,8 @@ pub const STANDARDIZED_NAME_GRAPH: &str = "graph.json";
 /// Standardized name for the `node_permutation_map.json` asset.
 pub const STANDARDIZED_NAME_NODE_PERMUTATION_MAP: &str = "node_permutation_map.json";
 
-/// Return the standardized name reserved for a known singleton asset type,
-/// or `None` for custom or unknown types.
+/// Return the standardized name reserved for a known singleton asset type, or `None` for custom or
+/// unknown types.
 pub fn standardized_name_for(asset_type: u16) -> Option<&'static str> {
     match asset_type {
         ASSET_TYPE_METADATA => Some(STANDARDIZED_NAME_METADATA),
@@ -106,9 +104,8 @@ pub fn standardized_name_for(asset_type: u16) -> Option<&'static str> {
 
 /// One of the known singleton asset types reserved by the bundle format.
 ///
-/// Each variant carries a fixed `asset_type` integer and a fixed
-/// standardized name. Custom assets (writer-chosen name, multiple allowed)
-/// are not represented here.
+/// Each variant carries a fixed `asset_type` integer and a fixed standardized name. Custom assets
+/// (writer-chosen name, multiple allowed) are not represented here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KnownAssetKind {
     Metadata,
@@ -136,28 +133,25 @@ impl KnownAssetKind {
     }
 }
 
-/// Return whether a given asset type should default to xz compression
-/// when the writer is not given an explicit compression option.
+/// Return whether a given asset type should default to xz compression when the writer is not given
+/// an explicit compression option.
 pub fn default_compresses_by_type(asset_type: u16) -> bool {
     matches!(asset_type, ASSET_TYPE_GRAPH)
 }
 
 /// Asset flag bit: the decoded payload is UTF-8 JSON.
 pub const ASSET_FLAG_JSON: u16 = 1 << 0;
-/// Asset flag bit: the stored payload is xz-compressed. The `payload_len`
-/// directory field refers to the compressed size on disk.
+/// Asset flag bit: the stored payload is xz-compressed. The `payload_len` directory field refers to
+/// the compressed size on disk.
 pub const ASSET_FLAG_XZ: u16 = 1 << 1;
 /// Asset flag bit: the entry carries a trailing checksum.
 ///
-/// When set, the trailing checksum is exactly four little-endian bytes
-/// containing a CRC32C (Castagnoli polynomial) over the **on-disk
-/// payload bytes** (`payload_offset..payload_offset + payload_len`).
-/// For an xz-compressed asset the CRC is over the compressed bytes,
-/// not the decompressed content — verification happens before
-/// decompression. Library writer paths always set this flag with
-/// `checksum_len == [`ASSET_CHECKSUM_LEN`]`; readers reject any entry
-/// where the flag and `checksum_len` are inconsistent (see
-/// [`BendlDirectoryEntry::read_from`]).
+/// When set, the trailing checksum is exactly four little-endian bytes containing a CRC32C
+/// (Castagnoli polynomial) over the **on-disk payload bytes** (`payload_offset..payload_offset +
+/// payload_len`). For an xz-compressed asset the CRC is over the compressed bytes, not the
+/// decompressed content — verification happens before decompression. Library writer paths always
+/// set this flag with `checksum_len == [`ASSET_CHECKSUM_LEN`]`; readers reject any entry where the
+/// flag and `checksum_len` are inconsistent (see [`BendlDirectoryEntry::read_from`]).
 pub const ASSET_FLAG_CHECKSUM: u16 = 1 << 2;
 
 /// On-disk byte width of an asset-payload CRC32C.
@@ -165,8 +159,8 @@ pub const ASSET_CHECKSUM_LEN: u32 = 4;
 
 /// Default xz preset level used when compressing asset payloads.
 ///
-/// Level 6 matches the `xz` CLI's own default and `xz2::XzEncoder::new`'s
-/// default, and is a reasonable ratio/speed balance for JSON payloads.
+/// Level 6 matches the `xz` CLI's own default and `xz2::XzEncoder::new`'s default, and is a
+/// reasonable ratio/speed balance for JSON payloads.
 pub const DEFAULT_XZ_PRESET: u32 = 6;
 
 // ---------------------------------------------------------------------------
@@ -190,9 +184,8 @@ pub struct BendlHeader {
     pub reserved_0: u16,
     /// Bundle-level feature flags.
     pub flags: u64,
-    /// Absolute byte offset of the directory table, or `0` if no directory
-    /// has been written yet. In a finalized bundle the directory lives at
-    /// the end of the file.
+    /// Absolute byte offset of the directory table, or `0` if no directory has been written yet. In
+    /// a finalized bundle the directory lives at the end of the file.
     pub directory_offset: u64,
     /// Byte length of the directory table, or `0` if absent.
     pub directory_len: u64,
@@ -200,8 +193,7 @@ pub struct BendlHeader {
     pub stream_offset: u64,
     /// Byte length of the assignment stream, or `0` if unfinalized.
     pub stream_len: u64,
-    /// Number of expanded samples in the assignment stream, or `-1` if
-    /// unfinalized.
+    /// Number of expanded samples in the assignment stream, or `-1` if unfinalized.
     pub sample_count: i64,
 }
 
@@ -302,8 +294,8 @@ impl BendlHeader {
 // Directory entry
 // ---------------------------------------------------------------------------
 
-/// Fixed-size header at the start of every directory entry, before the
-/// variable-length `name` and optional `checksum` bytes.
+/// Fixed-size header at the start of every directory entry, before the variable-length `name` and
+/// optional `checksum` bytes.
 pub const DIRECTORY_ENTRY_HEADER_SIZE: usize = 28;
 
 /// In-memory representation of a single directory entry.
@@ -317,8 +309,8 @@ pub struct BendlDirectoryEntry {
     pub name: String,
     /// Absolute file offset of the asset payload.
     pub payload_offset: u64,
-    /// Byte length of the asset payload as stored on disk (post-compression
-    /// when the xz flag is set).
+    /// Byte length of the asset payload as stored on disk (post-compression when the xz flag is
+    /// set).
     pub payload_len: u64,
     /// Optional trailing checksum bytes. Interpretation depends on flags.
     pub checksum: Option<Vec<u8>>,
@@ -411,8 +403,8 @@ impl BendlDirectoryEntry {
     /// (flag set, 4 bytes).
     ///
     /// This is the canonical accessor for verification code. Returns `None` for entries with
-    /// `ASSET_FLAG_CHECKSUM` clear; entries where the flag and length are inconsistent are
-    /// rejected at read time and so cannot reach this method.
+    /// `ASSET_FLAG_CHECKSUM` clear; entries where the flag and length are inconsistent are rejected
+    /// at read time and so cannot reach this method.
     pub fn checksum_u32(&self) -> Option<u32> {
         if self.asset_flags & ASSET_FLAG_CHECKSUM == 0 {
             return None;
@@ -431,10 +423,9 @@ impl BendlDirectoryEntry {
 
 /// Read the full directory table from a `Read` source.
 ///
-/// The source should be positioned at the first byte of the directory
-/// table (i.e. at `header.directory_offset`) and is expected to contain
-/// exactly `entry_count` entries followed by no trailing bytes within the
-/// directory region.
+/// The source should be positioned at the first byte of the directory table (i.e. at
+/// `header.directory_offset`) and is expected to contain exactly `entry_count` entries followed by
+/// no trailing bytes within the directory region.
 pub fn read_directory<R: Read>(
     reader: &mut R,
 ) -> Result<Vec<BendlDirectoryEntry>, BendlFormatError> {

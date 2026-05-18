@@ -262,8 +262,7 @@ fn test_encode_jsonl_to_ben_len_65535() {
 #[test]
 fn test_encode_ben_vec_from_assign_matches_rle_entrypoint() {
     let assign_vec = vec![4u16, 4, 4, 1, 1, 3, 3, 3, 2];
-    let direct =
-        BenEncodeFrame::from_assignment(assign_vec.clone(), BenVariant::Standard, None);
+    let direct = BenEncodeFrame::from_assignment(assign_vec.clone(), BenVariant::Standard, None);
     let via_rle = BenEncodeFrame::from_rle(
         crate::util::rle::assign_to_rle(assign_vec),
         BenVariant::Standard,
@@ -736,7 +735,7 @@ fn encode_jsonl_to_xben_roundtrip() {
         Some(1),
         Some(1),
         None,
-            None,
+        None,
     )
     .unwrap();
     assert!(!xben.is_empty());
@@ -755,7 +754,7 @@ fn encode_jsonl_to_xben_with_chunk_size() {
         Some(1),
         Some(1),
         Some(2),
-            None,
+        None,
     )
     .unwrap();
     assert!(!xben.is_empty());
@@ -772,7 +771,7 @@ fn encode_jsonl_to_xben_invalid_json_errors() {
         Some(1),
         Some(1),
         None,
-            None,
+        None,
     )
     .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
@@ -792,7 +791,7 @@ fn encode_jsonl_to_xben_mkv_variant() {
         Some(1),
         Some(1),
         None,
-            None,
+        None,
     )
     .unwrap();
     assert!(!xben.is_empty());
@@ -938,7 +937,7 @@ fn encode_jsonl_to_xben_roundtrip_verifies_content() {
         Some(1),
         Some(1),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -971,7 +970,7 @@ fn encode_jsonl_to_xben_mkv_verifies_content() {
         Some(1),
         Some(1),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -1008,10 +1007,9 @@ fn twodelta_encode_with_count() {
 #[test]
 fn twodelta_encode_run_lengths_correct() {
     use crate::codec::encode::encode_twodelta_frame;
-    // prev: [1,1,2,2], next: [2,1,2,1]
-    // pair positions (1 or 2): 0,1,2,3
-    // In next: pos0=2, pos1=1, pos2=2, pos3=1 → runs of (2,1,2,1) = [1,1,1,1]
-    // pair.0 = value at first pair position in next = 2
+    // prev: [1,1,2,2], next: [2,1,2,1] pair positions (1 or 2): 0,1,2,3 In next: pos0=2, pos1=1,
+    // pos2=2, pos3=1 → runs of (2,1,2,1) = [1,1,1,1] pair.0 = value at first pair position in next
+    // = 2
     let prev = vec![1u16, 1, 2, 2];
     let next = vec![2u16, 1, 2, 1];
     let frame = encode_twodelta_frame(&prev, &next, None).unwrap();
@@ -1022,9 +1020,8 @@ fn twodelta_encode_run_lengths_correct() {
 #[test]
 fn twodelta_encode_run_lengths_with_non_pair_gaps() {
     use crate::codec::encode::encode_twodelta_frame;
-    // prev: [1,3,2,3,1], next: [2,3,1,3,2]
-    // pair=(1,2), pair positions: 0,2,4 (positions with value 1 or 2)
-    // In next: pos0=2, pos2=1, pos4=2 → runs [1,1,1]
+    // prev: [1,3,2,3,1], next: [2,3,1,3,2] pair=(1,2), pair positions: 0,2,4 (positions with value
+    // 1 or 2) In next: pos0=2, pos2=1, pos4=2 → runs [1,1,1]
     let prev = vec![1u16, 3, 2, 3, 1];
     let next = vec![2u16, 3, 1, 3, 2];
     let frame = encode_twodelta_frame(&prev, &next, None).unwrap();
@@ -1173,7 +1170,7 @@ fn encode_jsonl_to_xben_twodelta_roundtrip() {
         Some(1),
         Some(1),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -1194,8 +1191,8 @@ fn encode_jsonl_to_xben_twodelta_roundtrip() {
 fn twodelta_encode_outside_pair_change_errors() {
     use super::twodelta::encode_twodelta_frame;
 
-    // prev=[1,2,3,4], curr=[2,1,3,5] — positions 0,1 swap pair (1,2),
-    // but position 3 changes from 4→5 which is outside the pair.
+    // prev=[1,2,3,4], curr=[2,1,3,5] — positions 0,1 swap pair (1,2), but position 3 changes from
+    // 4→5 which is outside the pair.
     let prev = vec![1u16, 2, 3, 4];
     let curr = vec![2u16, 1, 3, 5];
     let err = encode_twodelta_frame(&prev, &curr, None).unwrap_err();
@@ -1284,9 +1281,9 @@ fn twodelta_encode_pair_mask_run_exceeds_u16_max_errors() {
     use crate::codec::encode::encode_twodelta_frame_with_hint;
     use std::collections::HashMap;
 
-    // 65538 positions: pair positions 0..65537 hold value 1 in prev, one more
-    // (65537) holds value 2.  In curr all pair positions hold value 2, so the
-    // run of value-2 positions reaches u16::MAX and the encoder must error.
+    // 65538 positions: pair positions 0..65537 hold value 1 in prev, one more (65537) holds value
+    // 2. In curr all pair positions hold value 2, so the run of value-2 positions reaches u16::MAX
+    // and the encoder must error.
     let mut prev = vec![1u16; 65538];
     prev[65537] = 2;
     let mut curr = vec![2u16; 65538];
@@ -1296,9 +1293,8 @@ fn twodelta_encode_pair_mask_run_exceeds_u16_max_errors() {
     masks.insert(1, (0..65537_usize).collect());
     masks.insert(2, vec![65537_usize]);
 
-    let err =
-        encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
-            .unwrap_err();
+    let err = encode_twodelta_frame_with_hint(&prev, &curr, Some((1, 2)), Some(&mut masks), None)
+        .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     assert!(err.to_string().contains("u16::MAX"));
 }
@@ -1307,8 +1303,8 @@ fn twodelta_encode_pair_mask_run_exceeds_u16_max_errors() {
 fn twodelta_encode_from_scratch_run_exceeds_u16_max_errors() {
     use crate::codec::encode::encode_twodelta_frame;
 
-    // 65538 positions all in pair {1, 2}: first 65537 change 1→2, last 1 changes 2→1.
-    // The from-scratch encoder hits u16::MAX consecutive positions with value 2 and errors.
+    // 65538 positions all in pair {1, 2}: first 65537 change 1→2, last 1 changes 2→1. The
+    // from-scratch encoder hits u16::MAX consecutive positions with value 2 and errors.
     let mut prev = vec![1u16; 65538];
     prev[65537] = 2;
     let mut curr = vec![2u16; 65538];
@@ -1323,9 +1319,9 @@ fn twodelta_encode_from_scratch_run_exceeds_u16_max_errors() {
 fn ben32_encode_run_exceeding_u16_max_splits_correctly() {
     use super::ben::encode_ben32_assignments;
 
-    // Build an assignment with 65537 identical values: the run reaches u16::MAX
-    // (65535) and must be flushed early, then continues with a new run.
-    // encode_ben32_assignments appends a 4-byte zero sentinel at the end.
+    // Build an assignment with 65537 identical values: the run reaches u16::MAX (65535) and must be
+    // flushed early, then continues with a new run. encode_ben32_assignments appends a 4-byte zero
+    // sentinel at the end.
     let assign: Vec<u16> = vec![7u16; 65537];
     let encoded = encode_ben32_assignments(&assign).unwrap();
 

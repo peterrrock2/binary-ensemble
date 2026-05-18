@@ -8,9 +8,7 @@ use crate::io::bundle::format::{
     BENDL_MINOR_VERSION, DEFAULT_XZ_PRESET, FINALIZED_NO, FINALIZED_YES, HEADER_SIZE,
 };
 use crate::io::bundle::reader::BendlReader;
-use crate::io::bundle::writer::{
-    AddAssetOptions, BendlAppender, BendlWriteError, BendlWriter,
-};
+use crate::io::bundle::writer::{AddAssetOptions, BendlAppender, BendlWriteError, BendlWriter};
 use crate::io::reader::BenWireFormat;
 use crate::io::writer::BenStreamWriter;
 
@@ -18,8 +16,8 @@ fn make_buffer() -> Cursor<Vec<u8>> {
     Cursor::new(Vec::new())
 }
 
-/// Test helper: replicate the deleted `BendlWriter::write_stream_bytes`
-/// using the owned-session chain. Used purely to keep test bodies short.
+/// Test helper: replicate the deleted `BendlWriter::write_stream_bytes` using the owned-session
+/// chain. Used purely to keep test bodies short.
 fn write_stream_bytes_via_session(
     writer: BendlWriter<Cursor<Vec<u8>>>,
     bytes: &[u8],
@@ -80,9 +78,9 @@ fn graph_asset_is_compressed_by_default() {
         .cloned()
         .expect("graph entry present");
     assert_ne!(entry.asset_flags & ASSET_FLAG_XZ, 0);
-    // Compressed size should differ from the raw size for a non-trivial
-    // JSON payload. For very short payloads xz actually inflates the
-    // bytes, so this just checks the size is non-zero and different.
+    // Compressed size should differ from the raw size for a non-trivial JSON payload. For very
+    // short payloads xz actually inflates the bytes, so this just checks the size is non-zero and
+    // different.
     assert_ne!(entry.payload_len, graph.len() as u64);
 
     // Decoded bytes round-trip.
@@ -164,8 +162,8 @@ fn writer_rejects_duplicate_custom_name() {
 
 #[test]
 fn writer_rejects_asset_added_after_stream_begins() {
-    // After a session has been finished, the writer is in `StreamWritten`
-    // and `add_*_asset` rejects further additions with `AssetsAfterStream`.
+    // After a session has been finished, the writer is in `StreamWritten` and `add_*_asset` rejects
+    // further additions with `AssetsAfterStream`.
     let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     let mut writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
     let err = writer
@@ -212,9 +210,8 @@ fn finalized_directory_lives_at_eof() {
 // Append-path tests
 // -----------------------------------------------------------------------
 
-/// Build a finalized bundle with a single `metadata.json` asset and
-/// a short fake stream, then return both the bytes and the byte
-/// range (offset, len) occupied by the stream region.
+/// Build a finalized bundle with a single `metadata.json` asset and a short fake stream, then
+/// return both the bytes and the byte range (offset, len) occupied by the stream region.
 fn build_base_bundle() -> (Vec<u8>, (u64, u64)) {
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     writer
@@ -265,8 +262,8 @@ fn append_leaves_stream_bytes_byte_for_byte_unchanged() {
         .unwrap();
     let buf = appender.commit().unwrap().into_inner();
 
-    // Read back the new header to locate the stream region, then
-    // confirm the stream bytes are byte-identical to the original.
+    // Read back the new header to locate the stream region, then confirm the stream bytes are
+    // byte-identical to the original.
     let reader = BendlReader::open(Cursor::new(buf.clone())).unwrap();
     let (off, len) = (reader.header().stream_offset, reader.header().stream_len);
     let appended_stream_bytes = buf[off as usize..(off + len) as usize].to_vec();
@@ -323,8 +320,8 @@ fn append_rejects_duplicate_singleton_without_touching_file() {
 
 #[test]
 fn append_rejects_duplicate_custom_name_without_touching_file() {
-    // Start from a bundle containing a custom asset named "blob", then
-    // try to append another "blob".
+    // Start from a bundle containing a custom asset named "blob", then try to append another
+    // "blob".
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     writer
         .add_asset(
@@ -376,8 +373,8 @@ fn append_rejects_wrong_canonical_name_without_touching_file() {
 
 #[test]
 fn append_rejects_incomplete_bundle() {
-    // Construct a minimal incomplete bundle: just the provisional
-    // header and some stream bytes, no directory.
+    // Construct a minimal incomplete bundle: just the provisional header and some stream bytes, no
+    // directory.
     let header = BendlHeader {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
@@ -405,8 +402,7 @@ fn append_rejects_incomplete_bundle() {
 
 #[test]
 fn append_rejects_complete_bundle_with_zero_directory() {
-    // Header claims complete but has directory_offset=0 — hits the second
-    // BundleIncomplete check.
+    // Header claims complete but has directory_offset=0 — hits the second BundleIncomplete check.
     let header = BendlHeader {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
@@ -458,8 +454,8 @@ fn append_multiple_assets_in_one_commit() {
 
     let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
     assert_eq!(reader.assets().len(), 4);
-    // Round-trip the appended graph through the reader to confirm
-    // compression happened and decodes cleanly.
+    // Round-trip the appended graph through the reader to confirm compression happened and decodes
+    // cleanly.
     let graph_entry = reader
         .find_asset_by_name("graph.json")
         .cloned()
@@ -670,12 +666,11 @@ fn fully_empty_bundle_finalizes_and_round_trips() {
 
 #[test]
 fn into_stream_session_after_stream_written_returns_wrong_state() {
-    // Regression fixture for the `into_stream_session` guard: a writer
-    // that has already finished one stream phase must reject a second
-    // attempt to enter the stream phase. Without this guard, a chained
-    // `into_stream_session → finish_into_writer → into_stream_session`
-    // would silently overwrite `header.stream_offset` and corrupt the
-    // bundle. This is the only runtime fixture for that guard.
+    // Regression fixture for the `into_stream_session` guard: a writer that has already finished
+    // one stream phase must reject a second attempt to enter the stream phase. Without this guard,
+    // a chained `into_stream_session → finish_into_writer → into_stream_session` would silently
+    // overwrite `header.stream_offset` and corrupt the bundle. This is the only runtime fixture for
+    // that guard.
     let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
     // Writer is now in StreamWritten state; into_stream_session must fail.
@@ -758,16 +753,14 @@ fn append_then_reopen_and_append_again() {
     assert!(names.contains(&"metadata.json"));
     assert!(names.contains(&"graph.json"));
     assert!(names.contains(&"extra.bin"));
-    // Sample count from the original stream is preserved across both
-    // appends.
+    // Sample count from the original stream is preserved across both appends.
     assert_eq!(reader.sample_count(), Some(3));
 }
 
 #[test]
 fn append_does_not_disturb_front_loaded_asset_bytes() {
-    // Base bundle has a graph.json asset with known bytes; after
-    // append of a custom blob, reading graph.json must still return
-    // exactly the same decoded bytes as before.
+    // Base bundle has a graph.json asset with known bytes; after append of a custom blob, reading
+    // graph.json must still return exactly the same decoded bytes as before.
     let graph = br#"{"nodes":[0,1,2,3,4,5,6,7,8,9,10]}"#;
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     writer
@@ -806,9 +799,9 @@ fn append_does_not_disturb_front_loaded_asset_bytes() {
 
 #[test]
 fn writer_accepts_custom_asset_with_canonical_name_but_non_canonical_type() {
-    // A custom asset named "graph.json" is not a singleton because the
-    // singleton uniqueness check keys off asset_type, not name. Adding
-    // a real GRAPH singleton after it must then fail on DuplicateName.
+    // A custom asset named "graph.json" is not a singleton because the singleton uniqueness check
+    // keys off asset_type, not name. Adding a real GRAPH singleton after it must then fail on
+    // DuplicateName.
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     writer
         .add_asset(
@@ -826,8 +819,8 @@ fn writer_accepts_custom_asset_with_canonical_name_but_non_canonical_type() {
 
 #[test]
 fn writer_asset_round_trips_with_auto_computed_crc32c() {
-    // Every asset gets ASSET_FLAG_CHECKSUM with a 4-byte CRC32C of the
-    // on-disk payload bytes (post-compression for xz-flagged assets).
+    // Every asset gets ASSET_FLAG_CHECKSUM with a 4-byte CRC32C of the on-disk payload bytes
+    // (post-compression for xz-flagged assets).
     let payload = b"hello".to_vec();
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     writer
@@ -857,8 +850,8 @@ fn writer_asset_round_trips_with_auto_computed_crc32c() {
 fn finished_writer_rejects_further_operations() {
     let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
-    // `finish` consumes `self`, which is itself the protection — there
-    // is no way to call add_asset / into_stream_session afterwards.
+    // `finish` consumes `self`, which is itself the protection — there is no way to call add_asset
+    // / into_stream_session afterwards.
     let buf = writer.finish().unwrap().into_inner();
     // The resulting buffer is a valid finalized bundle.
     let reader = BendlReader::open(Cursor::new(buf)).unwrap();
@@ -895,8 +888,8 @@ fn writer_rejects_add_json_asset_with_wrong_canonical_metadata_name() {
             ..
         }
     ));
-    // After a rejected add, no entries have been recorded — a
-    // subsequent valid add proceeds normally.
+    // After a rejected add, no entries have been recorded — a subsequent valid add proceeds
+    // normally.
     writer
         .add_json_asset(ASSET_TYPE_METADATA, "metadata.json", b"{}")
         .unwrap();
@@ -908,9 +901,8 @@ fn writer_rejects_add_json_asset_with_wrong_canonical_metadata_name() {
 
 #[test]
 fn writer_rejected_add_leaves_singleton_slot_usable() {
-    // A rejected singleton add must not consume the singleton slot —
-    // otherwise a future valid add with the correct standardized name
-    // would spuriously fail with DuplicateSingletonType.
+    // A rejected singleton add must not consume the singleton slot — otherwise a future valid add
+    // with the correct standardized name would spuriously fail with DuplicateSingletonType.
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     // First try with wrong standardized name — rejected.
     let _ = writer
@@ -945,10 +937,9 @@ fn append_rejects_duplicate_name_across_existing_and_pending() {
 // Randomized / stress tests
 // -----------------------------------------------------------------------
 
-/// Build a bundle from a random set of custom assets (plus an optional
-/// metadata asset) and fully round-trip it through the reader. Repeated
-/// with a seeded ChaCha PRNG so the sequence is deterministic but
-/// covers a wide surface.
+/// Build a bundle from a random set of custom assets (plus an optional metadata asset) and fully
+/// round-trip it through the reader. Repeated with a seeded ChaCha PRNG so the sequence is
+/// deterministic but covers a wide surface.
 #[test]
 fn randomized_round_trip_many_custom_assets() {
     use rand::{Rng, SeedableRng};
@@ -976,8 +967,8 @@ fn randomized_round_trip_many_custom_assets() {
             let compress = rng.random_bool(0.4);
             let is_json = rng.random_bool(0.15) && size > 0;
             let payload = if is_json {
-                // Override with a synthetic JSON blob so the json flag
-                // actually matches the content.
+                // Override with a synthetic JSON blob so the json flag actually matches the
+                // content.
                 format!(r#"{{"i":{i},"seed":{seed}}}"#).into_bytes()
             } else {
                 payload
@@ -999,8 +990,7 @@ fn randomized_round_trip_many_custom_assets() {
             expected.push((name, payload, is_json));
         }
 
-        // Write a small deterministic stream so the bundle is
-        // assignment-complete.
+        // Write a small deterministic stream so the bundle is assignment-complete.
         let sample_count: i64 = rng.random_range(0..=20);
         let fake_stream = b"STANDARD BEN FILE\x00\x01\x02payload".to_vec();
         let writer = write_stream_bytes_via_session(writer, &fake_stream, sample_count);
@@ -1036,10 +1026,9 @@ fn randomized_round_trip_many_custom_assets() {
 
 #[test]
 fn five_successive_appends_preserve_everything() {
-    // Start from a finalized bundle with only a metadata asset and a
-    // short stream. Then open it five times via BendlAppender and add
-    // one asset per round. After every round, the previous assets must
-    // still be readable and sample_count must remain authoritative.
+    // Start from a finalized bundle with only a metadata asset and a short stream. Then open it
+    // five times via BendlAppender and add one asset per round. After every round, the previous
+    // assets must still be readable and sample_count must remain authoritative.
     let (mut buf, _) = build_base_bundle();
 
     // Sanity-check the baseline.
@@ -1068,8 +1057,8 @@ fn five_successive_appends_preserve_everything() {
         buf = commit.into_inner();
         accumulated.push((name, payload));
 
-        // Re-open and verify the full set is intact and sample_count
-        // still matches the baseline (append must not touch it).
+        // Re-open and verify the full set is intact and sample_count still matches the baseline
+        // (append must not touch it).
         let mut reader = BendlReader::open(Cursor::new(buf.clone())).unwrap();
         assert!(reader.is_finalized(), "round {round}");
         assert_eq!(
@@ -1097,9 +1086,8 @@ fn five_successive_appends_preserve_everything() {
 
 #[test]
 fn randomized_append_sequence_preserves_all_prior_entries() {
-    // Independent coverage for append: random number of rounds, random
-    // payload sizes. Catches any bookkeeping drift in the appender's
-    // directory-rewrite path.
+    // Independent coverage for append: random number of rounds, random payload sizes. Catches any
+    // bookkeeping drift in the appender's directory-rewrite path.
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
@@ -1204,8 +1192,8 @@ fn stream_session_flush_succeeds() {
     let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     let mut session = writer.into_stream_session().unwrap();
     session.flush().unwrap();
-    // Discard the session — it would warn on Drop, but the test runner
-    // does not assert on log output, so this is fine for unit tests.
+    // Discard the session — it would warn on Drop, but the test runner does not assert on log
+    // output, so this is fine for unit tests.
     let _ = session.finish_into_writer(0);
 }
 
@@ -1237,8 +1225,8 @@ fn appender_commit_auto_computes_crc32c_on_pending_assets() {
 #[test]
 fn appender_rejects_bundle_with_trailing_directory_bytes() {
     let (mut bundle, _) = build_base_bundle();
-    // Patch the header's directory_len field (bytes 32-39) to claim
-    // the directory is 4 bytes longer than it actually is.
+    // Patch the header's directory_len field (bytes 32-39) to claim the directory is 4 bytes longer
+    // than it actually is.
     let old_len = u64::from_le_bytes(bundle[32..40].try_into().unwrap());
     let patched = (old_len + 4).to_le_bytes();
     bundle[32..40].copy_from_slice(&patched);
@@ -1272,9 +1260,8 @@ fn finish_after_assignment_stream_produces_finalized_bundle() {
 
 // ── Plan verification tests ──────────────────────────────────────
 
-/// Verification #7: dropping a `BendlStreamSession` mid-flight must
-/// leave the bundle on disk unfinalized (no directory written, header
-/// `finalized != FINALIZED_YES`).
+/// Verification #7: dropping a `BendlStreamSession` mid-flight must leave the bundle on disk
+/// unfinalized (no directory written, header `finalized != FINALIZED_YES`).
 #[test]
 fn bundle_streaming_session_drop_leaves_unfinalized() {
     let mut buf: Vec<u8> = Vec::new();
@@ -1294,17 +1281,16 @@ fn bundle_streaming_session_drop_leaves_unfinalized() {
     );
 }
 
-/// Verification #9: `BendlStreamSession::write` must increment its
-/// internal byte counter by the returned write count, not by the
-/// requested buffer length, so partial writes are accounted correctly
-/// and the finalized header's `stream_len` matches the actual byte
-/// count of the stream region.
+/// Verification #9: `BendlStreamSession::write` must increment its internal byte counter by the
+/// returned write count, not by the requested buffer length, so partial writes are accounted
+/// correctly and the finalized header's `stream_len` matches the actual byte count of the stream
+/// region.
 #[test]
 fn stream_session_partial_writes_account_returned_bytes() {
     use std::io::{self, Cursor as IoCursor, SeekFrom};
 
-    /// Inner writer that always reports `cap` bytes written per call,
-    /// regardless of the buffer length, but writes the matching prefix.
+    /// Inner writer that always reports `cap` bytes written per call, regardless of the buffer
+    /// length, but writes the matching prefix.
     struct ShortWriter {
         cursor: IoCursor<Vec<u8>>,
         cap: usize,
@@ -1335,8 +1321,8 @@ fn stream_session_partial_writes_account_returned_bytes() {
     let writer = BendlWriter::new(inner, AssignmentFormat::Ben).unwrap();
     let mut session = writer.into_stream_session().unwrap();
 
-    // Drive a few partial writes; total written should equal the sum
-    // of the returned `n` from each call.
+    // Drive a few partial writes; total written should equal the sum of the returned `n` from each
+    // call.
     let mut total_returned: u64 = 0;
     for _ in 0..5 {
         let n = session.write(b"hello world").unwrap();

@@ -4,8 +4,8 @@ use crate::BenVariant;
 use std::io::Cursor;
 use xz2::write::XzEncoder;
 
-/// Build a `BenStreamWriter` over an explicit single-thread XZ encoder so
-/// the resulting xben byte stream is deterministic and small.
+/// Build a `BenStreamWriter` over an explicit single-thread XZ encoder so the resulting xben byte
+/// stream is deterministic and small.
 fn build_xben_writer<'a>(
     out: &'a mut Vec<u8>,
     variant: BenVariant,
@@ -192,8 +192,8 @@ fn writer_twodelta_u16_max_value_in_assignment() {
 
 #[test]
 fn ben_writer_twodelta_repeat_frame_via_u16max_overflow() {
-    // Assignment with 3 distinct values exercises the `continue` skip path
-    // inside `twodelta_repeat_frame` for values outside the picked pair.
+    // Assignment with 3 distinct values exercises the `continue` skip path inside
+    // `twodelta_repeat_frame` for values outside the picked pair.
     let assign = vec![1u16, 2, 3, 1, 2];
     let n = u16::MAX as usize + 2; // 65537: triggers overflow → repeat frame
 
@@ -373,8 +373,8 @@ fn writer_twodelta_stress_many_unique_deltas() {
 
 #[test]
 fn writer_twodelta_anchor_count_overflow_u16max() {
-    // Use 3 distinct values to exercise the `continue` skip in
-    // twodelta_repeat_buffered_frame for values outside the picked pair.
+    // Use 3 distinct values to exercise the `continue` skip in twodelta_repeat_buffered_frame for
+    // values outside the picked pair.
     let assign = vec![1u16, 2, 3, 1, 2];
     let n = u16::MAX as usize + 2; // 65537 — triggers the overflow branch
 
@@ -451,8 +451,8 @@ fn writer_translate_ben_twodelta_chunk_flush() {
 
 #[test]
 fn xz_writer_twodelta_too_many_ids_propagates_on_write() {
-    // Writing a third assignment that changes 3 distinct IDs errors at the
-    // TwoDelta encode boundary.
+    // Writing a third assignment that changes 3 distinct IDs errors at the TwoDelta encode
+    // boundary.
     let anchor = vec![1u16, 1, 2, 2];
     let invalid = vec![2u16, 3, 1, 3]; // 3 distinct changing ids
     let mut xben = Vec::new();
@@ -486,11 +486,13 @@ fn writer_mkv_count_overflow_u16max() {
 
 #[test]
 fn twodelta_repeat_frame_run_exceeds_u16_max_errors() {
-    use super::stream_writer::test_helpers::{twodelta_repeat_buffered_frame, twodelta_repeat_frame};
+    use super::stream_writer::test_helpers::{
+        twodelta_repeat_buffered_frame, twodelta_repeat_frame,
+    };
     use std::io;
 
-    // All-identical-value assignment with 65536 elements: the pair-position
-    // run reaches u16::MAX and the encoder must error.
+    // All-identical-value assignment with 65536 elements: the pair-position run reaches u16::MAX
+    // and the encoder must error.
     let assign = vec![1u16; 65536];
     let err = twodelta_repeat_frame(&assign, 1).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
@@ -507,9 +509,9 @@ fn twodelta_repeat_frame_run_exceeds_u16_max_errors() {
 fn translate_twodelta_non_eof_read_error_propagates() {
     use std::io::{self, Read};
 
-    // ingest_ben_stream in TwoDelta mode calls translate_ben_twodelta_to_xben.
-    // After reading the anchor frame it loops reading delta frames; a
-    // non-EOF error on pair_a (first u16 read in the loop) must propagate.
+    // ingest_ben_stream in TwoDelta mode calls translate_ben_twodelta_to_xben. After reading the
+    // anchor frame it loops reading delta frames; a non-EOF error on pair_a (first u16 read in the
+    // loop) must propagate.
     let mut xben = Vec::new();
     let mut writer = build_xben_writer(&mut xben, BenVariant::TwoDelta, None);
 
@@ -578,9 +580,8 @@ fn ben_write_frame_then_write_assignment_mixed_mkv() {
 
 #[test]
 fn ben_write_frame_zero_count_is_noop_and_does_not_flush() {
-    // write_assignment(a); write_frame(b, 0); write_assignment(a) should
-    // act like two adjacent write_assignment(a) calls — no inserted
-    // frame boundary.
+    // write_assignment(a); write_frame(b, 0); write_assignment(a) should act like two adjacent
+    // write_assignment(a) calls — no inserted frame boundary.
     let a = vec![1u16, 2, 3];
     let b = vec![4u16, 5, 6];
 
@@ -627,8 +628,8 @@ fn ben_twodelta_write_frame_updates_previous_assignment_for_next_delta() {
         w.write_assignment(b.clone()).unwrap();
         w.finish().unwrap();
     }
-    // Round-trip must reproduce the inputs, which proves the delta against
-    // the emitted anchor was encoded correctly.
+    // Round-trip must reproduce the inputs, which proves the delta against the emitted anchor was
+    // encoded correctly.
     let mut reader = BenStreamReader::from_ben(ben.as_slice()).unwrap();
     let mut samples: Vec<Vec<u16>> = Vec::new();
     reader
@@ -689,8 +690,7 @@ fn write_methods_after_finish_return_invalid_input() {
 
 #[test]
 fn write_frame_after_finish_with_zero_count_still_returns_invalid_input() {
-    // Pin guard ordering: finished/wrong-mode checks happen before the
-    // zero-count no-op.
+    // Pin guard ordering: finished/wrong-mode checks happen before the zero-count no-op.
     let mut ben = Vec::new();
     let mut w = BenStreamWriter::for_ben(&mut ben, BenVariant::MkvChain).unwrap();
     w.finish().unwrap();
@@ -767,10 +767,9 @@ fn ingest_ben_stream_rejects_ben_mode_writer() {
 
 #[test]
 fn ben_writer_failed_state_after_underlying_writer_error() {
-    // The banner write happens during construction; constructor failure
-    // bypasses WriterState entirely. To exercise the post-construction
-    // poisoning path we wrap a buffer that accepts only the 17 banner
-    // bytes and errors on subsequent writes.
+    // The banner write happens during construction; constructor failure bypasses WriterState
+    // entirely. To exercise the post-construction poisoning path we wrap a buffer that accepts only
+    // the 17 banner bytes and errors on subsequent writes.
     struct FailAfterN {
         buf: Vec<u8>,
         n: usize,
@@ -798,8 +797,8 @@ fn ben_writer_failed_state_after_underlying_writer_error() {
     .unwrap();
     // First call buffers the assignment as pending; no IO yet.
     w.write_assignment(vec![1u16, 2, 3]).unwrap();
-    // Second call with a different assignment triggers a flush, which
-    // must fail and poison the writer.
+    // Second call with a different assignment triggers a flush, which must fail and poison the
+    // writer.
     let err = w.write_assignment(vec![4u16, 5, 6]).unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::Other);
     let err = w.write_assignment(vec![1u16, 2, 3]).unwrap_err();

@@ -1,8 +1,7 @@
 use serde_json::Value;
 use std::fmt;
 
-/// Errors that can occur when converting between [`NxGraphAdjFormat`] and
-/// [`PetxGraph`].
+/// Errors that can occur when converting between [`NxGraphAdjFormat`] and [`PetxGraph`].
 #[derive(Debug)]
 pub(crate) enum NxPetgraphError {
     /// The `directed` flag on the input does not match the target graph type.

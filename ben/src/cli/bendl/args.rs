@@ -58,15 +58,15 @@ pub(super) enum Command {
 
 #[derive(Parser, Debug)]
 pub(super) struct CreateArgs {
-    /// Path to the `.ben` or `.xben` assignment stream to embed.
-    /// File extension chooses the container format.
+    /// Path to the `.ben` or `.xben` assignment stream to embed. File extension chooses the
+    /// container format.
     #[arg(short = 'i', long)]
     pub input: PathBuf,
     /// Destination `.bendl` path.
     #[arg(short = 'o', long)]
     pub output: PathBuf,
-    /// Optional `graph.json` asset path. Will be stored under the
-    /// standardized name `graph.json` and xz-compressed by default.
+    /// Optional `graph.json` asset path. Will be stored under the standardized name `graph.json`
+    /// and xz-compressed by default.
     #[arg(long)]
     pub graph: Option<PathBuf>,
     /// Optional `metadata.json` asset path. Stored under standardized name.
@@ -99,12 +99,11 @@ pub(super) struct ExtractArgs {
     /// Output file path for the extracted bytes.
     #[arg(short = 'o', long)]
     pub output: PathBuf,
-    /// Extract the embedded assignment stream region verbatim. Mutually
-    /// exclusive with `--asset`.
+    /// Extract the embedded assignment stream region verbatim. Mutually exclusive with `--asset`.
     #[arg(long, conflicts_with = "asset")]
     pub stream: bool,
-    /// Name of the asset to extract (e.g. `graph.json`). If the asset is
-    /// xz-compressed, the extracted file contains the decompressed bytes.
+    /// Name of the asset to extract (e.g. `graph.json`). If the asset is xz-compressed, the
+    /// extracted file contains the decompressed bytes.
     #[arg(long)]
     pub asset: Option<String>,
     /// Overwrite the output file if it already exists.

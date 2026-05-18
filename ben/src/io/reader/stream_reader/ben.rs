@@ -10,9 +10,8 @@ use crate::BenVariant;
 
 /// Read the next frame from the underlying BEN stream.
 ///
-/// In a `TwoDelta` stream the first frame is encoded in `MkvChain` wire
-/// format; this helper tracks that state so the frame module stays
-/// variant-clean.
+/// In a `TwoDelta` stream the first frame is encoded in `MkvChain` wire format; this helper tracks
+/// that state so the frame module stays variant-clean.
 pub(super) fn pop_frame_from_reader<R: Read>(
     reader: &mut R,
     variant: BenVariant,
@@ -103,10 +102,7 @@ pub(super) fn next_record_ben<R: Read>(
     Some(Ok((assignment, count)))
 }
 
-pub(super) fn count_samples_ben<R: Read>(
-    mut reader: R,
-    variant: BenVariant,
-) -> io::Result<usize> {
+pub(super) fn count_samples_ben<R: Read>(mut reader: R, variant: BenVariant) -> io::Result<usize> {
     let mut twodelta_consumed_first_frame = false;
     let mut total = 0usize;
     while let Some(frame_res) =

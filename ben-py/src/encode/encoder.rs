@@ -11,20 +11,17 @@ use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::PathBuf;
 
-/// Per-call encoder state. The bundle path threads ownership of the
-/// underlying file through `BendlWriter` → `BendlStreamSession` →
-/// `BenStreamWriter`, so when `close()` runs we walk the chain back
-/// from `BenStreamWriter::finish_into_inner` (returning the session)
-/// to `BendlStreamSession::finish_into_writer` (returning the bundle
-/// writer) to `BendlWriter::finish` (returning the buffered file).
+/// Per-call encoder state. The bundle path threads ownership of the underlying file through
+/// `BendlWriter` → `BendlStreamSession` → `BenStreamWriter`, so when `close()` runs we walk the
+/// chain back from `BenStreamWriter::finish_into_inner` (returning the session) to
+/// `BendlStreamSession::finish_into_writer` (returning the bundle writer) to `BendlWriter::finish`
+/// (returning the buffered file).
 enum EncoderState {
-    /// Plain `.ben` file path: writes directly to a buffered file with
-    /// no bundle framing.
+    /// Plain `.ben` file path: writes directly to a buffered file with no bundle framing.
     BenOnly(BenStreamWriter<BufWriter<File>>),
-    /// `.bendl` bundle path: the session owns the buffered file and the
-    /// `BenStreamWriter` writes through it. `sample_count` is tracked
-    /// alongside so it can be plumbed into `finish_into_writer` at
-    /// `close()` time.
+    /// `.bendl` bundle path: the session owns the buffered file and the `BenStreamWriter` writes
+    /// through it. `sample_count` is tracked alongside so it can be plumbed into
+    /// `finish_into_writer` at `close()` time.
     BundleStreaming {
         writer: BenStreamWriter<BendlStreamSession<BufWriter<File>>>,
         sample_count: i64,
@@ -51,24 +48,22 @@ impl PyBenEncoder {
 
 #[pymethods]
 impl PyBenEncoder {
-    /// Open a new encoder. The default output is a `.bendl` bundle with
-    /// an embedded assignment stream and an optional embedded graph; set
-    /// `ben_file_only=True` to emit a plain `.ben` file instead.
+    /// Open a new encoder. The default output is a `.bendl` bundle with an embedded assignment
+    /// stream and an optional embedded graph; set `ben_file_only=True` to emit a plain `.ben` file
+    /// instead.
     ///
     /// # Arguments
     ///
     /// * `file_path` - Output path. Must not exist unless `overwrite=True`.
     /// * `overwrite` - Replace an existing file at `file_path`.
-    /// * `variant` - BEN variant for the assignment stream (`"standard"`,
-    ///   `"mkv_chain"`, or `"twodelta"`).
-    /// * `graph` - Optional graph to embed as the `graph.json` asset when
-    ///   writing a bundle. Accepts a `pathlib.Path` / `str` path, a
-    ///   `bytes` object containing UTF-8 JSON, a Python `dict` / `list`
-    ///   that will be serialized with `json.dumps`, or a file-like object
-    ///   with a `.read()` method. Passing a graph alongside
-    ///   `ben_file_only=True` is an error.
-    /// * `ben_file_only` - If `True`, emit a plain `.ben` file with no
-    ///   bundle framing. Defaults to `False`.
+    /// * `variant` - BEN variant for the assignment stream (`"standard"`, `"mkv_chain"`, or
+    ///   `"twodelta"`).
+    /// * `graph` - Optional graph to embed as the `graph.json` asset when writing a bundle. Accepts
+    ///   a `pathlib.Path` / `str` path, a `bytes` object containing UTF-8 JSON, a Python `dict` /
+    ///   `list` that will be serialized with `json.dumps`, or a file-like object with a `.read()`
+    ///   method. Passing a graph alongside `ben_file_only=True` is an error.
+    /// * `ben_file_only` - If `True`, emit a plain `.ben` file with no bundle framing. Defaults to
+    ///   `False`.
     #[new]
     #[pyo3(signature = (
         file_path,
@@ -100,13 +95,10 @@ impl PyBenEncoder {
         let buf = open_output(&file_path, overwrite)?;
 
         let state = if ben_file_only {
-            EncoderState::BenOnly(
-                BenStreamWriter::for_ben(buf, ben_var).map_err(Self::map_io_err)?,
-            )
+            EncoderState::BenOnly(BenStreamWriter::for_ben(buf, ben_var).map_err(Self::map_io_err)?)
         } else {
-            // Bundle path. Add the optional graph asset before opening
-            // the stream session — the bundle writer auto-compresses
-            // graphs (default_compresses_by_type), so we hand it raw
+            // Bundle path. Add the optional graph asset before opening the stream session — the
+            // bundle writer auto-compresses graphs (default_compresses_by_type), so we hand it raw
             // JSON bytes and let it apply the XZ flag.
             let mut writer =
                 BendlWriter::new(buf, AssignmentFormat::Ben).map_err(Self::map_io_err)?;
@@ -120,9 +112,7 @@ impl PyBenEncoder {
                     )
                     .map_err(Self::map_bundle_err)?;
             }
-            let session = writer
-                .into_stream_session()
-                .map_err(Self::map_bundle_err)?;
+            let session = writer.into_stream_session().map_err(Self::map_bundle_err)?;
             let writer = BenStreamWriter::for_ben(session, ben_var).map_err(Self::map_io_err)?;
             EncoderState::BundleStreaming {
                 writer,
@@ -158,8 +148,8 @@ impl PyBenEncoder {
         Ok(())
     }
 
-    /// Flush the assignment stream and, for bundle output, patch the
-    /// header and write the trailing directory. Idempotent.
+    /// Flush the assignment stream and, for bundle output, patch the header and write the trailing
+    /// directory. Idempotent.
     fn close(&mut self) -> PyResult<()> {
         let Some(state) = self.state.take() else {
             return Ok(());

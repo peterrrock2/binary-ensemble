@@ -54,7 +54,10 @@ fn run_create_with_relabel_map_and_custom_asset() {
         // Must end in .ben so format_from_path recognises it.
         let p = std::env::temp_dir().join(format!(
             "bendl-create-relabel-{}.ben",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         let jsonl = b"{\"assignment\":[1,2,3],\"sample\":1}\n";
         let mut b = Vec::new();
@@ -82,7 +85,9 @@ fn run_create_with_relabel_map_and_custom_asset() {
     run_create(args).unwrap();
 
     let reader = BendlReader::open(BufReader::new(std::fs::File::open(&out).unwrap())).unwrap();
-    assert!(reader.find_asset_by_name("node_permutation_map.json").is_some());
+    assert!(reader
+        .find_asset_by_name("node_permutation_map.json")
+        .is_some());
     assert!(reader.find_asset_by_name("myblob").is_some());
 
     for p in [&ben, &relabel, &custom, &out] {
@@ -95,9 +100,8 @@ fn run_inspect_xben_format_and_checksum_flag() {
     use crate::io::bundle::format::ASSET_TYPE_CUSTOM;
     use crate::io::bundle::AddAssetOptions;
 
-    // Every library-written asset carries ASSET_FLAG_CHECKSUM, so any
-    // add_asset call exercises the checksum flag_parts branch in
-    // `run_inspect`.
+    // Every library-written asset carries ASSET_FLAG_CHECKSUM, so any add_asset call exercises the
+    // checksum flag_parts branch in `run_inspect`.
     let mut buf: Vec<u8> = Vec::new();
     let mut writer = BendlWriter::new(Cursor::new(&mut buf), AssignmentFormat::Xben).unwrap();
     writer
@@ -135,8 +139,7 @@ fn run_append_no_assets_is_noop() {
     };
     run_append(args).unwrap();
     // File should be unchanged (bundle is still valid).
-    let reader =
-        BendlReader::open(BufReader::new(std::fs::File::open(&bendl).unwrap())).unwrap();
+    let reader = BendlReader::open(BufReader::new(std::fs::File::open(&bendl).unwrap())).unwrap();
     assert!(reader.is_finalized());
     let _ = std::fs::remove_file(&bendl);
 }
@@ -159,10 +162,11 @@ fn run_append_with_metadata_and_relabel_map() {
     };
     run_append(args).unwrap();
 
-    let reader =
-        BendlReader::open(BufReader::new(std::fs::File::open(&bendl).unwrap())).unwrap();
+    let reader = BendlReader::open(BufReader::new(std::fs::File::open(&bendl).unwrap())).unwrap();
     assert!(reader.find_asset_by_name("metadata.json").is_some());
-    assert!(reader.find_asset_by_name("node_permutation_map.json").is_some());
+    assert!(reader
+        .find_asset_by_name("node_permutation_map.json")
+        .is_some());
 
     for p in [&bendl, &meta, &relabel] {
         let _ = std::fs::remove_file(p);
@@ -174,7 +178,10 @@ fn run_create_with_graph_raw_flag() {
     let ben = {
         let p = std::env::temp_dir().join(format!(
             "bendl-create-raw-{}.ben",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         let jsonl = b"{\"assignment\":[1,2],\"sample\":1}\n";
         let mut b = Vec::new();
@@ -212,15 +219,15 @@ fn run_inspect_unknown_format_and_no_sample_count() {
         BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, FINALIZED_NO, HEADER_SIZE,
     };
 
-    // Build a header with an unknown assignment format byte and
-    // finalized=0 so sample_count() returns None.
+    // Build a header with an unknown assignment format byte and finalized=0 so sample_count()
+    // returns None.
     let mut header = [0u8; HEADER_SIZE];
     header[0..8].copy_from_slice(&BENDL_MAGIC);
     header[8..10].copy_from_slice(&BENDL_MAJOR_VERSION.to_le_bytes());
     header[10..12].copy_from_slice(&BENDL_MINOR_VERSION.to_le_bytes());
     header[12] = FINALIZED_NO;
     header[13] = 0xFF; // unknown format byte
-    // stream_offset = HEADER_SIZE, stream_len = 0, sample_count = -1
+                       // stream_offset = HEADER_SIZE, stream_len = 0, sample_count = -1
     let stream_offset = HEADER_SIZE as u64;
     header[40..48].copy_from_slice(&stream_offset.to_le_bytes());
     let sample_count: i64 = -1;
@@ -251,8 +258,7 @@ fn run_append_with_graph_raw_and_graph_asset() {
     };
     run_append(args).unwrap();
 
-    let reader =
-        BendlReader::open(BufReader::new(std::fs::File::open(&bendl).unwrap())).unwrap();
+    let reader = BendlReader::open(BufReader::new(std::fs::File::open(&bendl).unwrap())).unwrap();
     assert!(reader.find_asset_by_name("graph.json").is_some());
 
     for p in [&bendl, &graph] {
@@ -262,13 +268,8 @@ fn run_append_with_graph_raw_and_graph_asset() {
 
 #[test]
 fn run_extract_rejects_missing_stream_and_asset() {
-    let args = ExtractArgs::try_parse_from([
-        "extract",
-        "--output",
-        "/tmp/out.bin",
-        "bundle.bendl",
-    ])
-    .unwrap();
+    let args = ExtractArgs::try_parse_from(["extract", "--output", "/tmp/out.bin", "bundle.bendl"])
+        .unwrap();
     let err = run_extract(args).unwrap_err();
     assert!(err.contains("either --stream or --asset"));
 }
@@ -278,7 +279,10 @@ fn run_create_errors_on_missing_metadata_file() {
     let ben = {
         let p = std::env::temp_dir().join(format!(
             "bendl-err-meta-{}.ben",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         let jsonl = b"{\"assignment\":[1],\"sample\":1}\n";
         let mut b = Vec::new();
@@ -308,7 +312,10 @@ fn run_create_errors_on_missing_relabel_map_file() {
     let ben = {
         let p = std::env::temp_dir().join(format!(
             "bendl-err-relabel-{}.ben",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         let mut b = Vec::new();
         encode_jsonl_to_ben(
@@ -342,7 +349,10 @@ fn run_create_errors_on_missing_custom_asset_file() {
     let ben = {
         let p = std::env::temp_dir().join(format!(
             "bendl-err-custom-{}.ben",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         let mut b = Vec::new();
         encode_jsonl_to_ben(

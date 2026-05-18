@@ -135,7 +135,10 @@ fn directory_entry_round_trip_with_checksum() {
     let mut cursor = &bytes[..];
     let decoded = BendlDirectoryEntry::read_from(&mut cursor).unwrap();
     assert_eq!(decoded, entry);
-    assert_eq!(decoded.checksum.as_deref(), Some(&[0xDE, 0xAD, 0xBE, 0xEF][..]));
+    assert_eq!(
+        decoded.checksum.as_deref(),
+        Some(&[0xDE, 0xAD, 0xBE, 0xEF][..])
+    );
     assert_eq!(decoded.checksum_u32(), Some(0xEFBEADDE));
 }
 
@@ -151,8 +154,8 @@ fn directory_entry_rejects_flag_set_with_wrong_checksum_len() {
         checksum: Some(vec![0xDE, 0xAD, 0xBE, 0xEF]),
     };
     let mut bytes = entry.to_bytes().unwrap();
-    // Patch checksum_len at bytes 24..28 to claim 6 (also append two
-    // bytes so we don't crash on short read in the negative path).
+    // Patch checksum_len at bytes 24..28 to claim 6 (also append two bytes so we don't crash on
+    // short read in the negative path).
     bytes[24..28].copy_from_slice(&6u32.to_le_bytes());
     bytes.extend_from_slice(&[0x00, 0x00]); // pad to declared len
     entry.checksum = Some(vec![0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00]);
@@ -179,8 +182,8 @@ fn directory_entry_rejects_flag_clear_with_nonzero_checksum_len() {
         checksum: None,
     };
     let mut bytes = entry.to_bytes().unwrap();
-    // The encoded bytes have checksum_len == 0 and no trailing checksum
-    // bytes; patch checksum_len to 4 and append four bytes.
+    // The encoded bytes have checksum_len == 0 and no trailing checksum bytes; patch checksum_len
+    // to 4 and append four bytes.
     bytes[24..28].copy_from_slice(&4u32.to_le_bytes());
     bytes.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
     entry.checksum = Some(vec![0xAA, 0xBB, 0xCC, 0xDD]);
@@ -241,8 +244,8 @@ fn empty_directory_table_round_trip() {
 
 #[test]
 fn header_and_directory_entry_header_sizes_are_stable() {
-    // These sizes are baked into the on-disk format; regressing them
-    // would silently break existing bundles.
+    // These sizes are baked into the on-disk format; regressing them would silently break existing
+    // bundles.
     assert_eq!(HEADER_SIZE, 64);
     assert_eq!(DIRECTORY_ENTRY_HEADER_SIZE, 28);
 }

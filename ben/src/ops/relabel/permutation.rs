@@ -177,9 +177,8 @@ mod tests {
         assert_eq!(runs, vec![(1, 3), (2, 1), (1, 2), (3, 1)]);
     }
 
-    /// Cross-check: assignment-level and RLE-level first-seen relabeling must
-    /// agree for any input. This pins the equivalence as a property, not a
-    /// coincidence (decision #6 / risk mitigation).
+    /// Cross-check: assignment-level and RLE-level first-seen relabeling must agree for any input.
+    /// This pins the equivalence as a property, not a coincidence (decision #6 / risk mitigation).
     #[test]
     fn first_seen_relabel_assignment_equals_rle_path() {
         let inputs: Vec<Vec<u16>> = vec![

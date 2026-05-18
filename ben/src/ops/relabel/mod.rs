@@ -1,7 +1,7 @@
 //! Relabeling operations for BEN files.
 //!
-//! All seven logical relabel/convert operations route through the single
-//! [`relabel_ben_file`] driver, parameterised by [`RelabelOptions`].
+//! All seven logical relabel/convert operations route through the single [`relabel_ben_file`]
+//! driver, parameterised by [`RelabelOptions`].
 
 mod errors;
 mod permutation;
@@ -39,20 +39,18 @@ pub enum RelabelTransform {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum RunPolicy {
-    /// Each input frame produces a separate output frame; counts are preserved
-    /// where the target variant can encode them, and expanded to one-sample
-    /// frames otherwise.
+    /// Each input frame produces a separate output frame; counts are preserved where the target
+    /// variant can encode them, and expanded to one-sample frames otherwise.
     PreserveFrameBoundaries,
-    /// Adjacent identical output assignments are merged into a single counted
-    /// frame where the target variant can encode counts.
+    /// Adjacent identical output assignments are merged into a single counted frame where the
+    /// target variant can encode counts.
     CollapseAdjacentEqualAssignments,
 }
 
 /// Options for [`relabel_ben_file`].
 ///
-/// Constructed via [`RelabelOptions::first_seen`],
-/// [`RelabelOptions::node_permutation`], or [`RelabelOptions::convert_to`],
-/// then refined with the `with_*` builder methods.
+/// Constructed via [`RelabelOptions::first_seen`], [`RelabelOptions::node_permutation`], or
+/// [`RelabelOptions::convert_to`], then refined with the `with_*` builder methods.
 #[non_exhaustive]
 pub struct RelabelOptions {
     transform: RelabelTransform,
@@ -62,8 +60,7 @@ pub struct RelabelOptions {
 }
 
 impl RelabelOptions {
-    /// First-seen district relabeling, preserving the input variant and frame
-    /// boundaries.
+    /// First-seen district relabeling, preserving the input variant and frame boundaries.
     pub fn first_seen() -> Self {
         Self {
             transform: RelabelTransform::FirstSeen,
@@ -73,8 +70,8 @@ impl RelabelOptions {
         }
     }
 
-    /// Node permutation through `new_idx -> old_idx`, preserving the input
-    /// variant and frame boundaries.
+    /// Node permutation through `new_idx -> old_idx`, preserving the input variant and frame
+    /// boundaries.
     pub fn node_permutation(map: HashMap<usize, usize>) -> Self {
         Self {
             transform: RelabelTransform::NodePermutation(map),
@@ -84,8 +81,8 @@ impl RelabelOptions {
         }
     }
 
-    /// Convert to `target` without relabeling, collapsing adjacent equal
-    /// assignments to preserve today's conversion compression behavior.
+    /// Convert to `target` without relabeling, collapsing adjacent equal assignments to preserve
+    /// today's conversion compression behavior.
     pub fn convert_to(target: BenVariant) -> Self {
         Self {
             transform: RelabelTransform::Identity,
@@ -135,10 +132,9 @@ impl RelabelOptions {
 
 /// Process a BEN file according to the supplied options.
 ///
-/// All seven logical relabel/convert operations route through this driver.
-/// Internally chooses between an RLE-fast-path byte walker (first-seen
-/// relabeling, no variant change, frame-preserving, Standard/MkvChain input)
-/// and the high-level decoder driver (everything else).
+/// All seven logical relabel/convert operations route through this driver. Internally chooses
+/// between an RLE-fast-path byte walker (first-seen relabeling, no variant change,
+/// frame-preserving, Standard/MkvChain input) and the high-level decoder driver (everything else).
 pub fn relabel_ben_file<R: Read, W: Write>(
     reader: R,
     writer: W,
@@ -202,8 +198,8 @@ pub fn convert_ben_file<R: Read, W: Write>(
 
 /// True when the driver may take the byte-walking RLE fast path.
 ///
-/// The predicate is one boolean computed once. See `risks` in the plan for
-/// why it is its own pure function and gets a dedicated unit-test matrix.
+/// The predicate is one boolean computed once. See `risks` in the plan for why it is its own pure
+/// function and gets a dedicated unit-test matrix.
 fn can_use_first_seen_fast_path(
     transform: &RelabelTransform,
     target_variant: Option<BenVariant>,
@@ -216,15 +212,13 @@ fn can_use_first_seen_fast_path(
         && matches!(input, BenVariant::Standard | BenVariant::MkvChain)
 }
 
-/// Decode a BEN stream, apply a per-assignment transform, and re-encode into
-/// the target variant.
+/// Decode a BEN stream, apply a per-assignment transform, and re-encode into the target variant.
 ///
-/// With [`RunPolicy::PreserveFrameBoundaries`], the implementation never
-/// merges across input frame boundaries: MkvChain/TwoDelta targets receive
-/// counted output frames, Standard targets receive `count` one-sample frames
-/// because Standard cannot encode repetition counts. With
-/// [`RunPolicy::CollapseAdjacentEqualAssignments`], the existing
-/// [`BenStreamWriter`] merging path is used.
+/// With [`RunPolicy::PreserveFrameBoundaries`], the implementation never merges across input frame
+/// boundaries: MkvChain/TwoDelta targets receive counted output frames, Standard targets receive
+/// `count` one-sample frames because Standard cannot encode repetition counts. With
+/// [`RunPolicy::CollapseAdjacentEqualAssignments`], the existing [`BenStreamWriter`] merging path
+/// is used.
 fn relabel_via_decoder<R: Read, W: Write, F>(
     reader: R,
     writer: W,
@@ -295,10 +289,9 @@ where
 
 /// Byte-walking RLE fast path for first-seen relabeling on Standard/MkvChain.
 ///
-/// Walks 6-byte frame headers, decodes the RLE in place, applies first-seen
-/// relabeling on the `(val, len)` pairs, and re-encodes. Skips assignment
-/// vector materialization entirely. The output banner has been emitted by the
-/// caller before this is invoked.
+/// Walks 6-byte frame headers, decodes the RLE in place, applies first-seen relabeling on the
+/// `(val, len)` pairs, and re-encodes. Skips assignment vector materialization entirely. The output
+/// banner has been emitted by the caller before this is invoked.
 fn relabel_first_seen_via_byte_walk<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,
@@ -337,8 +330,7 @@ fn relabel_first_seen_via_byte_walk<R: Read, W: Write>(
             1
         };
 
-        let frame =
-            BenEncodeFrame::from_rle(ben_line, input_variant, Some(count_occurrences));
+        let frame = BenEncodeFrame::from_rle(ben_line, input_variant, Some(count_occurrences));
         writer.write_all(frame.as_slice())?;
 
         sample_number += count_occurrences as usize;

@@ -36,8 +36,8 @@ fn edge_set_directed(graph: &PetxDiInnerGraph) -> Vec<(usize, usize)> {
     edges
 }
 
-/// Normalize an NxGraphAdjFormat by sorting each adjacency list by target id,
-/// so structural equality can be checked after roundtrip.
+/// Normalize an NxGraphAdjFormat by sorting each adjacency list by target id, so structural
+/// equality can be checked after roundtrip.
 fn normalize(format: &mut NxGraphAdjFormat) {
     for adj_list in &mut format.adjacency {
         adj_list.sort_by(|a, b| {
@@ -629,8 +629,8 @@ fn type_aliases_work() {
 
 #[test]
 fn undirected_dedup_produces_correct_edge_count() {
-    // NetworkX adjacency format lists each undirected edge twice: once from
-    // each endpoint. The converter should deduplicate to a single petgraph edge.
+    // NetworkX adjacency format lists each undirected edge twice: once from each endpoint. The
+    // converter should deduplicate to a single petgraph edge.
     let nx = parse_nx(P4_JSON);
     // P4 adjacency has 6 total entries (1+2+2+1) but only 3 unique edges
     let total_adj_entries: usize = nx.adjacency.iter().map(|a| a.len()).sum();
@@ -642,8 +642,7 @@ fn undirected_dedup_produces_correct_edge_count() {
 
 #[test]
 fn construct_nx_from_petx_restores_both_directions() {
-    // When converting back, each undirected edge should appear in both
-    // endpoints' adjacency lists.
+    // When converting back, each undirected edge should appear in both endpoints' adjacency lists.
     let nx_original = parse_nx(P4_JSON);
     let petx: PetxUnGraph = nx_original.try_into().unwrap();
     let nx_roundtrip = NxGraphAdjFormat::try_from(&petx).unwrap();
@@ -702,13 +701,12 @@ fn graph_with_parallel_edges_sets_multigraph_true() {
 //
 // These tests verify that the full pipeline
 //   JSON string → NxGraphAdjFormat → PetxGraph → NxGraphAdjFormat → JSON string
-// produces output whose serde_json::Value representation matches the input.
-// This catches serialization artifacts (e.g. `"key": null` for absent fields)
-// that struct-level roundtrip tests miss.
+// produces output whose serde_json::Value representation matches the input. This catches
+// serialization artifacts (e.g. `"key": null` for absent fields) that struct-level roundtrip tests
+// miss.
 
-/// Normalize a `serde_json::Value` representing an NxGraphAdjFormat by sorting
-/// each adjacency list by the stringified `"id"` field, so edge-order
-/// differences don't cause spurious failures.
+/// Normalize a `serde_json::Value` representing an NxGraphAdjFormat by sorting each adjacency list
+/// by the stringified `"id"` field, so edge-order differences don't cause spurious failures.
 fn normalize_json_value(v: &mut serde_json::Value) {
     if let Some(adj) = v.get_mut("adjacency").and_then(|a| a.as_array_mut()) {
         for list in adj.iter_mut() {

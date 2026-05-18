@@ -12,8 +12,8 @@ use std::io::{self, Result};
 ///
 /// # Returns
 ///
-/// Returns a `Vec<u16>` of assignment values, or an error if the field is
-/// missing, not an array, or contains values that do not fit in a `u16`.
+/// Returns a `Vec<u16>` of assignment values, or an error if the field is missing, not an array, or
+/// contains values that do not fit in a `u16`.
 pub(crate) fn parse_json_assignment(data: Value) -> Result<Vec<u16>> {
     let assign_vec = data["assignment"].as_array().ok_or_else(|| {
         io::Error::new(
@@ -47,8 +47,8 @@ pub(crate) fn parse_json_assignment(data: Value) -> Result<Vec<u16>> {
 
 /// Encode an assignment vector as a full XBEN two-delta frame.
 ///
-/// The frame begins with a full-frame tag byte followed by RLE-encoded
-/// assignment runs in big-endian format.
+/// The frame begins with a full-frame tag byte followed by RLE-encoded assignment runs in
+/// big-endian format.
 ///
 /// # Arguments
 ///

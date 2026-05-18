@@ -40,7 +40,7 @@ fn decode_xben_to_ben_twodelta_roundtrip() {
         Some(1),
         Some(1),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -83,7 +83,7 @@ fn decode_xben_to_jsonl_twodelta() {
         Some(1),
         Some(1),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -248,7 +248,7 @@ fn decode_xben_to_ben_twodelta_with_repeated_assignments() {
         Some(1),
         Some(1),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -291,11 +291,8 @@ fn xz_compress_direct_test() {
     assert!(!out.is_empty());
 
     let mut decompressed = Vec::new();
-    crate::codec::decode::xz_decompress(
-        std::io::BufReader::new(out.as_slice()),
-        &mut decompressed,
-    )
-    .unwrap();
+    crate::codec::decode::xz_decompress(std::io::BufReader::new(out.as_slice()), &mut decompressed)
+        .unwrap();
     assert_eq!(decompressed, data);
 }
 
@@ -305,7 +302,8 @@ fn encode_ben_to_xben_rejects_invalid_banner() {
 
     let garbage = b"GARBAGE BANNER!!!extra_padding";
     let mut out = Vec::new();
-    let err = encode_ben_to_xben(garbage.as_slice(), &mut out, Some(1), Some(1), None, None).unwrap_err();
+    let err =
+        encode_ben_to_xben(garbage.as_slice(), &mut out, Some(1), Some(1), None, None).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 }
 

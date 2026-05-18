@@ -30,10 +30,9 @@ fn expected_line(assignment: &[u16], sample: usize) -> String {
 
 #[test]
 fn apply_runs_basic_two_position_swap() {
-    // prev: [1,2,1,2], run_lengths=[2,2] starting with value 1
-    // → first 2 pair positions get value 1, next 2 get value 2
-    // pair positions (where val is 1 or 2): 0,1,2,3
-    // run 1 (len=2, val=1): pos 0,1 → 1,1; run 2 (len=2, val=2): pos 2,3 → 2,2
+    // prev: [1,2,1,2], run_lengths=[2,2] starting with value 1 → first 2 pair positions get value
+    // 1, next 2 get value 2 pair positions (where val is 1 or 2): 0,1,2,3 run 1 (len=2, val=1): pos
+    // 0,1 → 1,1; run 2 (len=2, val=2): pos 2,3 → 2,2
     let prev = vec![1u16, 2, 1, 2];
     let result = apply_twodelta_runs_to_assignment(prev, (1, 2), &[2, 2]).unwrap();
     assert_eq!(result, vec![1, 1, 2, 2]);
@@ -41,10 +40,8 @@ fn apply_runs_basic_two_position_swap() {
 
 #[test]
 fn apply_runs_non_pair_positions_unchanged() {
-    // prev: [1,2,3,1,2], pair=(1,2), run_lengths=[2,2]
-    // pair positions: 0,1,3,4 (index 2 holds value 3 → unchanged)
-    // run 1 (len=2, val=1): pos 0,1 → 1,1
-    // run 2 (len=2, val=2): pos 3,4 → 2,2
+    // prev: [1,2,3,1,2], pair=(1,2), run_lengths=[2,2] pair positions: 0,1,3,4 (index 2 holds value
+    // 3 → unchanged) run 1 (len=2, val=1): pos 0,1 → 1,1 run 2 (len=2, val=2): pos 3,4 → 2,2
     let prev = vec![1u16, 2, 3, 1, 2];
     let result = apply_twodelta_runs_to_assignment(prev, (1, 2), &[2, 2]).unwrap();
     assert_eq!(result, vec![1, 1, 3, 2, 2]);
@@ -52,8 +49,7 @@ fn apply_runs_non_pair_positions_unchanged() {
 
 #[test]
 fn apply_runs_full_reversal() {
-    // prev: [1,1,2,2], pair=(2,1), run_lengths=[2,2]
-    // pair positions: 0,1,2,3; pair.0=2 comes first
+    // prev: [1,1,2,2], pair=(2,1), run_lengths=[2,2] pair positions: 0,1,2,3; pair.0=2 comes first
     // run 1 (len=2, val=2): pos 0,1 → 2,2; run 2 (len=2, val=1): pos 2,3 → 1,1
     let prev = vec![1u16, 1, 2, 2];
     let result = apply_twodelta_runs_to_assignment(prev, (2, 1), &[2, 2]).unwrap();
@@ -62,8 +58,8 @@ fn apply_runs_full_reversal() {
 
 #[test]
 fn apply_runs_exhausted_before_all_positions_covered_errors() {
-    // prev: [1,2,1], pair=(1,2), run_lengths=[1] — too short
-    // After consuming run 0 (1 position with value 1), run 1 missing → error
+    // prev: [1,2,1], pair=(1,2), run_lengths=[1] — too short After consuming run 0 (1 position with
+    // value 1), run 1 missing → error
     let prev = vec![1u16, 2, 1];
     let err = apply_twodelta_runs_to_assignment(prev, (1, 2), &[1]).unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
@@ -71,8 +67,8 @@ fn apply_runs_exhausted_before_all_positions_covered_errors() {
 
 #[test]
 fn apply_runs_alternating_single_positions() {
-    // prev: [1,2,1,2,1], pair=(1,2), run_lengths=[1,1,1,1,1]
-    // Each pair position flips: run alternates 1,2,1,2,1
+    // prev: [1,2,1,2,1], pair=(1,2), run_lengths=[1,1,1,1,1] Each pair position flips: run
+    // alternates 1,2,1,2,1
     let prev = vec![1u16, 2, 1, 2, 1];
     let result = apply_twodelta_runs_to_assignment(prev, (1, 2), &[1, 1, 1, 1, 1]).unwrap();
     // run[0]=1 → pos0=1; run[1]=1 → pos1=2; run[2]=1 → pos2=1; etc.
@@ -91,8 +87,8 @@ fn decode_twodelta_frame_basic() {
 
 #[test]
 fn decode_twodelta_frame_full_swap() {
-    // pair=(2,1) means run starts with value 2; run_lengths=[2,2]
-    // prev [1,2,1,2]: pair positions 0,1,2,3 → [2,2,1,1]
+    // pair=(2,1) means run starts with value 2; run_lengths=[2,2] prev [1,2,1,2]: pair positions
+    // 0,1,2,3 → [2,2,1,1]
     let frame = BenEncodeFrame::from_run_lengths((2, 1), vec![2, 2], None);
     let prev = vec![1u16, 2, 1, 2];
     let result = decode_twodelta_frame(prev, &frame).unwrap();
@@ -101,8 +97,8 @@ fn decode_twodelta_frame_full_swap() {
 
 #[test]
 fn decode_twodelta_frame_chain_returns_to_original() {
-    // Frame 1: (1,2) run=[2,2] applied to [1,2,1,2] → [1,1,2,2]
-    // Frame 2: (1,2) run=[1,1,1,1] applied to [1,1,2,2] → [1,2,1,2]
+    // Frame 1: (1,2) run=[2,2] applied to [1,2,1,2] → [1,1,2,2] Frame 2: (1,2) run=[1,1,1,1]
+    // applied to [1,1,2,2] → [1,2,1,2]
     let f1 = BenEncodeFrame::from_run_lengths((1, 2), vec![2, 2], None);
     let f2 = BenEncodeFrame::from_run_lengths((1, 2), vec![1, 1, 1, 1], None);
     let initial = vec![1u16, 2, 1, 2];
@@ -214,11 +210,10 @@ fn decode_ben_to_jsonl_twodelta_multiple_repeated_deltas() {
     assert_eq!(out, expected.as_bytes());
 }
 
-// ─── decode_ben_to_jsonl — byte-level anchor frame counterparts ────────
-// The TwoDelta first frame (anchor) is encoded in MkvChain format.  These tests
-// mirror every byte-level Standard / MkvChain decode_ben_to_jsonl test using the
-// TWODELTA banner and the same bit-packed frame bytes, verifying that the anchor
-// path decodes the same payload correctly regardless of variant.
+// ─── decode_ben_to_jsonl — byte-level anchor frame counterparts ──────── The TwoDelta first frame
+// (anchor) is encoded in MkvChain format. These tests mirror every byte-level Standard / MkvChain
+// decode_ben_to_jsonl test using the TWODELTA banner and the same bit-packed frame bytes, verifying
+// that the anchor path decodes the same payload correctly regardless of variant.
 
 #[test]
 fn decode_ben_to_jsonl_underflow_anchor() {
@@ -493,7 +488,7 @@ fn decode_xben_to_jsonl_twodelta_anchor_only() {
         Some(1),
         Some(0),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -518,7 +513,7 @@ fn decode_xben_to_jsonl_twodelta_chain_roundtrip() {
         Some(1),
         Some(0),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -542,7 +537,7 @@ fn decode_xben_to_jsonl_twodelta_with_repetitions() {
         Some(1),
         Some(0),
         None,
-            None,
+        None,
     )
     .unwrap();
 

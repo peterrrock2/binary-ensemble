@@ -26,12 +26,10 @@ pub enum DecodeFrame {
 impl DecodeFrame {
     /// Expand a self-contained subsample frame into an assignment vector.
     ///
-    /// Distinct from [`BenDecodeFrame::expand`] (which takes a previous
-    /// assignment for delta variants); the frame readers guarantee frames
-    /// reaching the subsample path are self-contained, so no `prev` is
-    /// needed: plain-BEN TwoDelta is materialized and re-encoded as
-    /// `Standard`, and XBEN TwoDelta is materialized and re-encoded as
-    /// ben32.
+    /// Distinct from [`BenDecodeFrame::expand`] (which takes a previous assignment for delta
+    /// variants); the frame readers guarantee frames reaching the subsample path are
+    /// self-contained, so no `prev` is needed: plain-BEN TwoDelta is materialized and re-encoded as
+    /// `Standard`, and XBEN TwoDelta is materialized and re-encoded as ben32.
     pub fn expand_self_contained(&self) -> io::Result<Vec<u16>> {
         match self {
             DecodeFrame::Ben(f) => f.expand(None),
@@ -197,8 +195,8 @@ where
 
 /// Build a generic frame iterator from a BEN or XBEN file path.
 ///
-/// Frame iteration is useful for subsampling and counting because it avoids
-/// decoding every sample into a full assignment vector.
+/// Frame iteration is useful for subsampling and counting because it avoids decoding every sample
+/// into a full assignment vector.
 pub fn build_frame_iter(file_path: &PathBuf, format: BenWireFormat) -> io::Result<FrameIter> {
     let file = File::options().read(true).open(file_path)?;
     let reader = BufReader::new(file);
@@ -207,10 +205,9 @@ pub fn build_frame_iter(file_path: &PathBuf, format: BenWireFormat) -> io::Resul
 
 /// Build a generic frame iterator from an already-opened reader.
 ///
-/// This is the reader-driven variant of [`build_frame_iter`], useful when
-/// the caller needs to iterate frames over a sub-region of a file (e.g.
-/// the assignment stream embedded in a `.bendl` bundle, wrapped in a
-/// [`std::io::Read::take`] guard) without re-opening the file from offset
+/// This is the reader-driven variant of [`build_frame_iter`], useful when the caller needs to
+/// iterate frames over a sub-region of a file (e.g. the assignment stream embedded in a `.bendl`
+/// bundle, wrapped in a [`std::io::Read::take`] guard) without re-opening the file from offset
 /// zero.
 pub fn build_frame_iter_from_reader<R: Read + Send + 'static>(
     reader: R,
@@ -230,8 +227,8 @@ pub fn build_frame_iter_from_reader<R: Read + Send + 'static>(
 
 /// Count the number of samples in a BEN or XBEN file on disk.
 ///
-/// The file is walked frame-by-frame, so this is linear in file size but avoids
-/// materializing full assignment vectors.
+/// The file is walked frame-by-frame, so this is linear in file size but avoids materializing full
+/// assignment vectors.
 pub fn count_samples_from_file(path: &Path, format: BenWireFormat) -> io::Result<usize> {
     let iter = build_frame_iter(&path.to_path_buf(), format)?;
     count_samples_from_frame_iter(iter)
@@ -239,10 +236,9 @@ pub fn count_samples_from_file(path: &Path, format: BenWireFormat) -> io::Result
 
 /// Count the number of samples reachable through a pre-built frame iterator.
 ///
-/// Mirror of [`count_samples_from_file`] that operates on an existing
-/// [`FrameIter`], so callers that already have one (e.g. constructed via
-/// [`build_frame_iter_from_reader`] over a bundle's stream region) can
-/// reuse the walking logic without re-opening any files.
+/// Mirror of [`count_samples_from_file`] that operates on an existing [`FrameIter`], so callers
+/// that already have one (e.g. constructed via [`build_frame_iter_from_reader`] over a bundle's
+/// stream region) can reuse the walking logic without re-opening any files.
 pub fn count_samples_from_frame_iter(iter: FrameIter) -> io::Result<usize> {
     let mut total = 0usize;
     for item in iter {
@@ -251,4 +247,3 @@ pub fn count_samples_from_frame_iter(iter: FrameIter) -> io::Result<usize> {
     }
     Ok(total)
 }
-

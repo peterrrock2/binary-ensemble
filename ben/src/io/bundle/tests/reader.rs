@@ -12,21 +12,18 @@ use crate::io::bundle::reader::{
     validate_directory_entries, BendlReader, BundleAssignmentReaderError, BundleValidationError,
 };
 
-/// Stamp a valid CRC32C and `ASSET_FLAG_CHECKSUM` onto a hand-built
-/// directory entry whose on-disk payload bytes are `payload`. Use this
-/// in test fixtures so the entry round-trips through the verify-on-touch
-/// reader APIs. Tests that want to exercise the foreign-bundle /
-/// clear-flag path build entries directly with the flag clear and
-/// `checksum: None`.
+/// Stamp a valid CRC32C and `ASSET_FLAG_CHECKSUM` onto a hand-built directory entry whose on-disk
+/// payload bytes are `payload`. Use this in test fixtures so the entry round-trips through the
+/// verify-on-touch reader APIs. Tests that want to exercise the foreign-bundle / clear-flag path
+/// build entries directly with the flag clear and `checksum: None`.
 fn with_crc(mut entry: BendlDirectoryEntry, payload: &[u8]) -> BendlDirectoryEntry {
     entry.asset_flags |= ASSET_FLAG_CHECKSUM;
     entry.checksum = Some(crc32c::crc32c(payload).to_le_bytes().to_vec());
     entry
 }
 
-/// Build a complete in-memory finalized bundle with two assets:
-/// an xz-compressed `graph.json` and a raw custom blob, followed by
-/// a fake BEN stream and a trailing directory.
+/// Build a complete in-memory finalized bundle with two assets: an xz-compressed `graph.json` and a
+/// raw custom blob, followed by a fake BEN stream and a trailing directory.
 fn build_finalized_bundle() -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
     // Asset payloads (decoded):
     let graph_json = br#"{"nodes":[0,1,2],"edges":[[0,1],[1,2]]}"#.to_vec();
@@ -259,9 +256,8 @@ fn validate_directory_catches_wrong_canonical_name() {
 // Robustness tests
 // -----------------------------------------------------------------------
 
-/// Build a small finalized bundle with a known graph asset, metadata
-/// asset, empty stream, and no validation pitfalls. Useful as a base
-/// that tests can mutate byte-by-byte.
+/// Build a small finalized bundle with a known graph asset, metadata asset, empty stream, and no
+/// validation pitfalls. Useful as a base that tests can mutate byte-by-byte.
 fn build_basic_finalized_bundle() -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
@@ -337,8 +333,8 @@ fn open_rejects_directory_with_inflated_entry_count() {
     let mut bytes = build_basic_finalized_bundle();
     // Read directory_offset from the header (bytes 24..32).
     let directory_offset = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
-    // Blow up the entry count at the start of the directory to a
-    // value that cannot possibly fit in the remaining file bytes.
+    // Blow up the entry count at the start of the directory to a value that cannot possibly fit in
+    // the remaining file bytes.
     bytes[directory_offset..directory_offset + 4].copy_from_slice(&9999u32.to_le_bytes());
     match BendlReader::open(Cursor::new(bytes)) {
         Err(BendlFormatError::Io(_)) => {}
@@ -349,8 +345,8 @@ fn open_rejects_directory_with_inflated_entry_count() {
 
 #[test]
 fn open_rejects_directory_with_chopped_final_entry() {
-    // Drop the last byte of the file, which lies inside the name
-    // field of the final directory entry.
+    // Drop the last byte of the file, which lies inside the name field of the final directory
+    // entry.
     let mut bytes = build_basic_finalized_bundle();
     bytes.pop();
     match BendlReader::open(Cursor::new(bytes)) {
@@ -403,24 +399,22 @@ fn interleaved_reads_do_not_corrupt_each_other() {
 
 #[test]
 fn asset_bytes_errors_when_declared_length_runs_past_eof() {
-    // Hand-construct a bundle where the metadata directory entry
-    // claims a payload_len that extends well past EOF.
+    // Hand-construct a bundle where the metadata directory entry claims a payload_len that extends
+    // well past EOF.
     let mut bytes = build_basic_finalized_bundle();
     // Parse the directory offset to find where the entry lives.
     let directory_offset = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
-    // Skip the u32 entry count (4 bytes) and then the 16-byte fixed
-    // entry header up to `payload_len` (bytes 16..24 of the entry).
+    // Skip the u32 entry count (4 bytes) and then the 16-byte fixed entry header up to
+    // `payload_len` (bytes 16..24 of the entry).
     let entry_start = directory_offset + 4;
     let payload_len_offset = entry_start + 16;
     bytes[payload_len_offset..payload_len_offset + 8].copy_from_slice(&u64::MAX.to_le_bytes());
 
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let entry = reader.find_asset_by_name("metadata.json").cloned().unwrap();
-    // The reader opens fine — the directory parses. But reading the
-    // asset bytes must surface an error eventually (short read vs
-    // declared length). xz would also trip on this, but this is the
-    // raw-asset path.
-    // Either returns an error or a slice shorter than u64::MAX.
+    // The reader opens fine — the directory parses. But reading the asset bytes must surface an
+    // error eventually (short read vs declared length). xz would also trip on this, but this is the
+    // raw-asset path. Either returns an error or a slice shorter than u64::MAX.
     reader
         .asset_bytes(&entry)
         .map(|b| assert!(b.len() < u64::MAX as usize))
@@ -429,9 +423,8 @@ fn asset_bytes_errors_when_declared_length_runs_past_eof() {
 
 #[test]
 fn incomplete_bundle_sample_count_is_none_even_if_header_value_is_nonzero() {
-    // Build an incomplete bundle but stuff a stale sample count into
-    // the header. `sample_count()` must still return None because
-    // the `complete` flag is what makes the value authoritative.
+    // Build an incomplete bundle but stuff a stale sample count into the header. `sample_count()`
+    // must still return None because the `complete` flag is what makes the value authoritative.
     let header = BendlHeader {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
@@ -455,8 +448,8 @@ fn incomplete_bundle_sample_count_is_none_even_if_header_value_is_nonzero() {
 
 #[test]
 fn unknown_assignment_format_reports_none_on_typed_getter() {
-    // Build a finalized but otherwise-empty bundle and corrupt the
-    // assignment_format byte to a value that is neither BEN nor XBEN.
+    // Build a finalized but otherwise-empty bundle and corrupt the assignment_format byte to a
+    // value that is neither BEN nor XBEN.
     let mut bytes = build_basic_finalized_bundle();
     // assignment_format byte is at offset 13 in the header.
     bytes[13] = 42;
@@ -508,10 +501,9 @@ fn incomplete_bundle_stream_range_runs_to_eof_without_directory() {
 
 #[test]
 fn validate_directory_catches_duplicate_singleton_types() {
-    // Two entries of type METADATA. The second one uses a non-canonical
-    // name to confirm the canonical-name check fires (it lands first
-    // here, and is the path we cover; the singleton check is exercised
-    // elsewhere via duplicate standardized names).
+    // Two entries of type METADATA. The second one uses a non-canonical name to confirm the
+    // canonical-name check fires (it lands first here, and is the path we cover; the singleton
+    // check is exercised elsewhere via duplicate standardized names).
     let entries = vec![
         BendlDirectoryEntry {
             asset_type: ASSET_TYPE_METADATA,
@@ -524,16 +516,16 @@ fn validate_directory_catches_duplicate_singleton_types() {
         BendlDirectoryEntry {
             asset_type: ASSET_TYPE_METADATA,
             asset_flags: 0,
-            // Distinct name so the duplicate-name check does not fire
-            // first; the singleton-type check should catch this.
+            // Distinct name so the duplicate-name check does not fire first; the singleton-type
+            // check should catch this.
             name: "meta2.json".to_string(),
             payload_offset: 65,
             payload_len: 1,
             checksum: None,
         },
     ];
-    // The second entry has asset_type METADATA but name "meta2.json"
-    // which fails the canonical-name check.
+    // The second entry has asset_type METADATA but name "meta2.json" which fails the canonical-name
+    // check.
     let err = validate_directory_entries(&entries).unwrap_err();
     assert!(matches!(
         err,
@@ -543,8 +535,8 @@ fn validate_directory_catches_duplicate_singleton_types() {
 
 #[test]
 fn validate_directory_accepts_well_formed_multi_singleton_bundle() {
-    // A bundle with one of every singleton type, plus two custom
-    // assets with distinct names, should validate cleanly.
+    // A bundle with one of every singleton type, plus two custom assets with distinct names, should
+    // validate cleanly.
     let entries = vec![
         BendlDirectoryEntry {
             asset_type: ASSET_TYPE_METADATA,
@@ -592,9 +584,8 @@ fn validate_directory_accepts_well_formed_multi_singleton_bundle() {
 
 #[test]
 fn stress_thousand_custom_assets_round_trip() {
-    // Build a directory with 1000 small custom assets, each with a
-    // unique payload derived from its index, and confirm they all
-    // round-trip via `asset_bytes`. This catches any off-by-one or
+    // Build a directory with 1000 small custom assets, each with a unique payload derived from its
+    // index, and confirm they all round-trip via `asset_bytes`. This catches any off-by-one or
     // seek-caching bugs that might only show up with many entries.
     const N: usize = 1000;
 
@@ -660,9 +651,8 @@ fn stress_thousand_custom_assets_round_trip() {
 
 #[test]
 fn xz_flagged_asset_with_corrupt_payload_surfaces_io_error() {
-    // Hand-build a bundle with a single asset flagged ASSET_FLAG_XZ
-    // whose payload bytes are not a valid xz container. `asset_bytes`
-    // must surface an io::Error rather than panicking.
+    // Hand-build a bundle with a single asset flagged ASSET_FLAG_XZ whose payload bytes are not a
+    // valid xz container. `asset_bytes` must surface an io::Error rather than panicking.
     let mut bytes = Vec::new();
     bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
 
@@ -710,15 +700,13 @@ fn xz_flagged_asset_with_corrupt_payload_surfaces_io_error() {
 
 #[test]
 fn reader_scales_to_very_wide_stream_offset_field() {
-    // Confirm the `Take` bound clamps a stream reader even when the
-    // header's stream_len is much larger than the actual remaining
-    // bytes: the reader must return the shorter slice rather than
+    // Confirm the `Take` bound clamps a stream reader even when the header's stream_len is much
+    // larger than the actual remaining bytes: the reader must return the shorter slice rather than
     // loop forever or panic. This is a "short read" tolerance check.
     let fake_stream = b"STANDARD BEN FILE\x00\x01tiny".to_vec();
     let actual_len = fake_stream.len() as u64;
     let directory_offset = HEADER_SIZE as u64 + actual_len;
-    // Build a bundle that lies about stream_len: claims ten times
-    // what's actually present.
+    // Build a bundle that lies about stream_len: claims ten times what's actually present.
     let entries: Vec<BendlDirectoryEntry> = Vec::new();
     let directory_bytes = encode_directory(&entries).unwrap();
     let header = BendlHeader {
@@ -742,25 +730,24 @@ fn reader_scales_to_very_wide_stream_offset_field() {
 
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let mut buf = Vec::new();
-    // Take will try to read `stream_len` bytes but the Cursor will
-    // just return however many bytes remain from stream_offset to EOF.
-    // The reader must not panic; it must simply return what it got.
+    // Take will try to read `stream_len` bytes but the Cursor will just return however many bytes
+    // remain from stream_offset to EOF. The reader must not panic; it must simply return what it
+    // got.
     reader
         .assignment_stream_reader()
         .unwrap()
         .read_to_end(&mut buf)
         .unwrap();
-    // Take includes the directory bytes in the window since they come
-    // after stream_offset and the claim exceeds file size — so we
-    // assert only that we got *at least* the real stream bytes as a
+    // Take includes the directory bytes in the window since they come after stream_offset and the
+    // claim exceeds file size — so we assert only that we got *at least* the real stream bytes as a
     // prefix, which is the basic "no truncation of what exists" check.
     assert!(buf.starts_with(&fake_stream));
 }
 
 #[test]
 fn incomplete_bundle_with_nonzero_directory_offset_uses_it_as_stream_end() {
-    // An incomplete bundle where directory_offset is non-zero:
-    // the stream end is taken as directory_offset, not EOF.
+    // An incomplete bundle where directory_offset is non-zero: the stream end is taken as
+    // directory_offset, not EOF.
     let fake_stream = b"STANDARD BEN FILE\x00partial".to_vec();
     let fake_dir = b"some-directory-bytes";
     let stream_start = HEADER_SIZE as u64;
@@ -814,24 +801,21 @@ fn validate_directory_rejects_wrong_canonical_name() {
 // Asset CRC32C verification
 // =====================================================================
 //
-// These tests pin the verify-on-touch contract for directory-entry
-// assets. The structural split is:
+// These tests pin the verify-on-touch contract for directory-entry assets. The structural split is:
 //
-//   - explicit verifier (`verify_asset_checksum`) vs implicit
-//     verifier (`asset_bytes` / `asset_reader`),
+//   - explicit verifier (`verify_asset_checksum`) vs implicit verifier (`asset_bytes` /
+//     `asset_reader`),
 //   - uncompressed vs xz-compressed assets,
-//   - stored-checksum corruption vs payload corruption (vs xz-framing
-//     corruption for compressed assets).
+//   - stored-checksum corruption vs payload corruption (vs xz-framing corruption for compressed
+//     assets).
 //
-// The unverified APIs (`*_unverified`) are pinned in matching tests to
-// ensure they NEVER surface a `ChecksumError` (codec errors are still
-// permitted).
+// The unverified APIs (`*_unverified`) are pinned in matching tests to ensure they NEVER surface a
+// `ChecksumError` (codec errors are still permitted).
 
 use crate::io::bundle::error::{BendlReadError, ChecksumError, ChecksumTarget};
 
-/// Build a finalized bundle with exactly one uncompressed asset whose
-/// payload bytes are `payload`. Returns `(bundle_bytes, asset_name,
-/// directory_offset, payload_offset)` for hand-patching tests.
+/// Build a finalized bundle with exactly one uncompressed asset whose payload bytes are `payload`.
+/// Returns `(bundle_bytes, asset_name, directory_offset, payload_offset)` for hand-patching tests.
 fn make_single_asset_bundle(name: &str, payload: &[u8]) -> (Vec<u8>, String, u64, u64) {
     let mut bytes = Vec::new();
     bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
@@ -873,14 +857,10 @@ fn make_single_asset_bundle(name: &str, payload: &[u8]) -> (Vec<u8>, String, u64
     (bytes, name.to_string(), directory_offset, payload_offset)
 }
 
-/// Build a finalized bundle whose only asset is `payload` stored xz-
-/// compressed. The stored CRC is over the **compressed** bytes (CRC is
-/// pre-decompression). Returns
+/// Build a finalized bundle whose only asset is `payload` stored xz- compressed. The stored CRC is
+/// over the **compressed** bytes (CRC is pre-decompression). Returns
 /// `(bundle_bytes, name, compressed_payload, directory_offset, payload_offset)`.
-fn make_single_xz_asset_bundle(
-    name: &str,
-    payload: &[u8],
-) -> (Vec<u8>, String, Vec<u8>, u64, u64) {
+fn make_single_xz_asset_bundle(name: &str, payload: &[u8]) -> (Vec<u8>, String, Vec<u8>, u64, u64) {
     let mut encoder = XzEncoder::new(Vec::new(), 6);
     encoder.write_all(payload).unwrap();
     let compressed = encoder.finish().unwrap();
@@ -931,13 +911,12 @@ fn make_single_xz_asset_bundle(
     )
 }
 
-/// Locate the offset of an asset's stored CRC32C bytes inside a
-/// hand-built single-asset bundle. Assumes the directory starts at
-/// `directory_offset`, the entry count is one, and the entry's
+/// Locate the offset of an asset's stored CRC32C bytes inside a hand-built single-asset bundle.
+/// Assumes the directory starts at `directory_offset`, the entry count is one, and the entry's
 /// `checksum_len` is 4 (the only legal value when the flag is set).
 fn stored_checksum_offset(directory_offset: u64, name: &str) -> usize {
-    // directory layout: [u32 count][entry][...]
-    // entry layout:     [28-byte header][name bytes][checksum bytes]
+    // directory layout: [u32 count][entry][...] entry layout: [28-byte header][name bytes][checksum
+    // bytes]
     let entry_start = directory_offset as usize + 4;
     entry_start + 28 + name.len()
 }
@@ -974,14 +953,16 @@ fn verify_asset_checksum_uncompressed_corrupt_payload_byte_returns_mismatch() {
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let entry = reader.find_asset_by_name(&name).cloned().unwrap();
     let err = reader.verify_asset_checksum(&entry).unwrap_err();
-    assert!(matches!(err, BendlReadError::Checksum(ChecksumError::Mismatch { .. })));
+    assert!(matches!(
+        err,
+        BendlReadError::Checksum(ChecksumError::Mismatch { .. })
+    ));
 }
 
 #[test]
 fn verify_asset_checksum_xz_corrupt_stored_crc_returns_mismatch_no_decoder() {
-    // The explicit verifier reads raw bytes — no XzDecoder is invoked,
-    // so even an intact compressed payload reports `Mismatch`
-    // deterministically when only the stored CRC has been corrupted.
+    // The explicit verifier reads raw bytes — no XzDecoder is invoked, so even an intact compressed
+    // payload reports `Mismatch` deterministically when only the stored CRC has been corrupted.
     let (mut bytes, name, _, dir_off, _) =
         make_single_xz_asset_bundle("blob.xz", b"some compressible content");
     let crc_off = stored_checksum_offset(dir_off, &name);
@@ -989,14 +970,16 @@ fn verify_asset_checksum_xz_corrupt_stored_crc_returns_mismatch_no_decoder() {
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let entry = reader.find_asset_by_name(&name).cloned().unwrap();
     let err = reader.verify_asset_checksum(&entry).unwrap_err();
-    assert!(matches!(err, BendlReadError::Checksum(ChecksumError::Mismatch { .. })));
+    assert!(matches!(
+        err,
+        BendlReadError::Checksum(ChecksumError::Mismatch { .. })
+    ));
 }
 
 #[test]
 fn verify_asset_checksum_xz_corrupt_payload_returns_mismatch_no_decoder() {
-    // Verifier is over raw bytes — a payload flip that breaks xz framing
-    // still surfaces as Mismatch, NOT a decoder error, because the
-    // explicit verifier never invokes the decoder.
+    // Verifier is over raw bytes — a payload flip that breaks xz framing still surfaces as
+    // Mismatch, NOT a decoder error, because the explicit verifier never invokes the decoder.
     let (mut bytes, name, compressed, _, payload_off) =
         make_single_xz_asset_bundle("blob.xz", b"some compressible content");
     assert!(compressed.len() > 5);
@@ -1004,7 +987,10 @@ fn verify_asset_checksum_xz_corrupt_payload_returns_mismatch_no_decoder() {
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let entry = reader.find_asset_by_name(&name).cloned().unwrap();
     let err = reader.verify_asset_checksum(&entry).unwrap_err();
-    assert!(matches!(err, BendlReadError::Checksum(ChecksumError::Mismatch { .. })));
+    assert!(matches!(
+        err,
+        BendlReadError::Checksum(ChecksumError::Mismatch { .. })
+    ));
 }
 
 #[test]
@@ -1066,7 +1052,10 @@ fn asset_bytes_uncompressed_corrupt_payload_returns_checksum_mismatch() {
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let entry = reader.find_asset_by_name(&name).cloned().unwrap();
     let err = reader.asset_bytes(&entry).unwrap_err();
-    assert!(matches!(err, BendlReadError::Checksum(ChecksumError::Mismatch { .. })));
+    assert!(matches!(
+        err,
+        BendlReadError::Checksum(ChecksumError::Mismatch { .. })
+    ));
 }
 
 #[test]
@@ -1076,17 +1065,15 @@ fn asset_bytes_unverified_uncompressed_returns_corrupted_bytes_no_check() {
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let entry = reader.find_asset_by_name(&name).cloned().unwrap();
     let got = reader.asset_bytes_unverified(&entry).unwrap();
-    // The bytes returned are the corrupted bytes; we do not assert
-    // exact content, only that the operation succeeded — the
-    // *_unverified contract is that ChecksumError NEVER fires.
+    // The bytes returned are the corrupted bytes; we do not assert exact content, only that the
+    // operation succeeded — the *_unverified contract is that ChecksumError NEVER fires.
     assert_eq!(got.len(), b"hello world".len());
 }
 
 #[test]
 fn asset_bytes_xz_corrupt_stored_crc_returns_checksum_mismatch() {
-    // xz framing intact, but stored CRC is wrong. The codec reaches EOF
-    // cleanly first and then the BENDL-owned wrapper reports
-    // `ChecksumError::Mismatch`.
+    // xz framing intact, but stored CRC is wrong. The codec reaches EOF cleanly first and then the
+    // BENDL-owned wrapper reports `ChecksumError::Mismatch`.
     let (mut bytes, name, _, dir_off, _) =
         make_single_xz_asset_bundle("blob.xz", b"some compressible content");
     let crc_off = stored_checksum_offset(dir_off, &name);
@@ -1094,14 +1081,16 @@ fn asset_bytes_xz_corrupt_stored_crc_returns_checksum_mismatch() {
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let entry = reader.find_asset_by_name(&name).cloned().unwrap();
     let err = reader.asset_bytes(&entry).unwrap_err();
-    assert!(matches!(err, BendlReadError::Checksum(ChecksumError::Mismatch { .. })));
+    assert!(matches!(
+        err,
+        BendlReadError::Checksum(ChecksumError::Mismatch { .. })
+    ));
 }
 
 #[test]
 fn asset_bytes_xz_corrupt_framing_returns_decode_error_not_checksum() {
-    // Payload flip breaks xz framing — the decoder fails before the
-    // CRC tee reaches raw EOF, so the variant is
-    // `BendlReadError::Decode`, not `BendlReadError::Checksum`.
+    // Payload flip breaks xz framing — the decoder fails before the CRC tee reaches raw EOF, so the
+    // variant is `BendlReadError::Decode`, not `BendlReadError::Checksum`.
     let (mut bytes, name, compressed, _, payload_off) =
         make_single_xz_asset_bundle("blob.xz", b"some compressible content");
     assert!(compressed.len() > 5);
@@ -1124,8 +1113,7 @@ fn asset_bytes_unverified_xz_corrupt_framing_returns_decode_error_never_checksum
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let entry = reader.find_asset_by_name(&name).cloned().unwrap();
     let err = reader.asset_bytes_unverified(&entry).unwrap_err();
-    // Unverified path NEVER surfaces a checksum error; codec errors
-    // are still allowed.
+    // Unverified path NEVER surfaces a checksum error; codec errors are still allowed.
     assert!(!matches!(err, BendlReadError::Checksum(_)));
     assert!(matches!(err, BendlReadError::Decode(_)));
 }
@@ -1178,9 +1166,8 @@ fn asset_bytes_returns_unavailable_when_flag_clear() {
 
 #[test]
 fn asset_reader_uncompressed_surfaces_mismatch_on_final_read() {
-    // Drive `asset_reader` byte-by-byte and assert the call that
-    // would otherwise return Ok(0) at EOF returns InvalidData wrapping
-    // ChecksumError::Mismatch.
+    // Drive `asset_reader` byte-by-byte and assert the call that would otherwise return Ok(0) at
+    // EOF returns InvalidData wrapping ChecksumError::Mismatch.
     let (mut bytes, name, _, payload_off) = make_single_asset_bundle("blob", b"abcdef");
     bytes[payload_off as usize] ^= 0x01;
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
@@ -1211,9 +1198,8 @@ fn asset_reader_uncompressed_surfaces_mismatch_on_final_read() {
 
 #[test]
 fn verify_all_asset_checksums_reports_first_mismatch_in_directory_order() {
-    // Build a bundle with two assets, both corrupted. The bulk
-    // verifier must return the *first* mismatch in directory order
-    // and stop. Construct manually so we can corrupt independently.
+    // Build a bundle with two assets, both corrupted. The bulk verifier must return the *first*
+    // mismatch in directory order and stop. Construct manually so we can corrupt independently.
     let p1 = b"first".to_vec();
     let p2 = b"second".to_vec();
     let mut bytes = Vec::new();
@@ -1280,25 +1266,22 @@ fn verify_all_asset_checksums_reports_first_mismatch_in_directory_order() {
 
 #[test]
 fn crc32c_polynomial_pin_against_known_vectors() {
-    // Pin known CRC32C (Castagnoli) values so a future accidental
-    // swap to IEEE CRC-32 is caught at test time. The IEEE CRC-32 of
-    // [0x01,0x02,0x03,0x04] is 0xB63CFBCD; the CRC32C value below
+    // Pin known CRC32C (Castagnoli) values so a future accidental swap to IEEE CRC-32 is caught at
+    // test time. The IEEE CRC-32 of [0x01,0x02,0x03,0x04] is 0xB63CFBCD; the CRC32C value below
     // diverges from that, which is the whole point of the pin.
     //
     //   CRC32C("")                = 0x00000000
     //   CRC32C([1,2,3,4])         = 0x8A2D413B
     //   CRC32C(b"123456789")      = 0xE3069283 (Castagnoli check value)
     //
-    // The Castagnoli check value 0xE3069283 is the canonical CRC32C
-    // test vector cited in the IEEE 802.3 / SCTP RFC 3720 specs and
-    // diverges from the IEEE CRC-32 polynomial's check value
-    // (0xCBF43926). If a future contributor accidentally swaps to
-    // IEEE CRC-32, this assertion fires.
+    // The Castagnoli check value 0xE3069283 is the canonical CRC32C test vector cited in the IEEE
+    // 802.3 / SCTP RFC 3720 specs and diverges from the IEEE CRC-32 polynomial's check value
+    // (0xCBF43926). If a future contributor accidentally swaps to IEEE CRC-32, this assertion
+    // fires.
     assert_eq!(crc32c::crc32c(b""), 0x0000_0000);
-    // 0xE3069283 is the canonical Castagnoli check value
-    // (CRC32C of ASCII "123456789"); the IEEE CRC-32 polynomial's
-    // check value over the same input is 0xCBF43926, so any
-    // accidental swap is caught here.
+    // 0xE3069283 is the canonical Castagnoli check value (CRC32C of ASCII "123456789"); the IEEE
+    // CRC-32 polynomial's check value over the same input is 0xCBF43926, so any accidental swap is
+    // caught here.
     assert_eq!(crc32c::crc32c(b"123456789"), 0xE306_9283);
     // Extra sentinels to broaden the trip-wire.
     assert_eq!(crc32c::crc32c(&[0x01, 0x02, 0x03, 0x04]), 0x2930_8CF4);

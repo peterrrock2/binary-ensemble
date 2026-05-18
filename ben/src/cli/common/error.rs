@@ -1,9 +1,9 @@
 //! Error type used by the top-level `run()` functions of every CLI binary.
 //!
-//! The shape is intentionally narrow: a few specific variants for cases where
-//! a caller (or test) might want to match the error type, plus an `Other`
-//! catch-all that preserves the older `Result<(), String>` ergonomic so the
-//! existing per-command runners still propagate cleanly via `?`.
+//! The shape is intentionally narrow: a few specific variants for cases where a caller (or test)
+//! might want to match the error type, plus an `Other` catch-all that preserves the older
+//! `Result<(), String>` ergonomic so the existing per-command runners still propagate cleanly via
+//! `?`.
 
 use std::fmt;
 use std::io;
@@ -16,8 +16,8 @@ pub enum CliError {
     Io(io::Error),
     /// The output path already existed and the user declined to overwrite.
     OverwriteRefused(PathBuf),
-    /// A free-form error message. Used as a catch-all so existing
-    /// `Result<(), String>` runners still flow through unchanged.
+    /// A free-form error message. Used as a catch-all so existing `Result<(), String>` runners
+    /// still flow through unchanged.
     Other(String),
 }
 

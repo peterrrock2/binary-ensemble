@@ -1,7 +1,6 @@
 use crate::common::{open_input, open_output, validate_input_output_paths};
 use binary_ensemble::codec::decode::{
-    decode_ben_to_jsonl as core_decode_ben_to_jsonl,
-    decode_xben_to_ben as core_decode_xben_to_ben,
+    decode_ben_to_jsonl as core_decode_ben_to_jsonl, decode_xben_to_ben as core_decode_xben_to_ben,
     decode_xben_to_jsonl as core_decode_xben_to_jsonl,
 };
 use pyo3::exceptions::PyIOError;
@@ -11,11 +10,7 @@ use std::path::PathBuf;
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
-pub fn decode_xben_to_ben(
-    in_file: PathBuf,
-    out_file: PathBuf,
-    overwrite: bool,
-) -> PyResult<()> {
+pub fn decode_xben_to_ben(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> PyResult<()> {
     validate_input_output_paths(&in_file, &out_file)?;
     let reader = open_input(&in_file)?;
     let writer = open_output(&out_file, overwrite)?;
@@ -34,11 +29,7 @@ pub fn decode_xben_to_ben(
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
-pub fn decode_xben_to_jsonl(
-    in_file: PathBuf,
-    out_file: PathBuf,
-    overwrite: bool,
-) -> PyResult<()> {
+pub fn decode_xben_to_jsonl(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> PyResult<()> {
     validate_input_output_paths(&in_file, &out_file)?;
     let reader = open_input(&in_file)?;
     let writer = open_output(&out_file, overwrite)?;
@@ -57,11 +48,7 @@ pub fn decode_xben_to_jsonl(
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
-pub fn decode_ben_to_jsonl(
-    in_file: PathBuf,
-    out_file: PathBuf,
-    overwrite: bool,
-) -> PyResult<()> {
+pub fn decode_ben_to_jsonl(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> PyResult<()> {
     validate_input_output_paths(&in_file, &out_file)?;
     let reader = open_input(&in_file)?;
     let writer = open_output(&out_file, overwrite)?;

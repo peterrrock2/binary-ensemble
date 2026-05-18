@@ -1,8 +1,7 @@
 use serde_json::Value;
 use std::io::{Error, ErrorKind, Result};
 
-/// Encode a JSON assignment record into the ben32 frame representation used by
-/// XBEN streams.
+/// Encode a JSON assignment record into the ben32 frame representation used by XBEN streams.
 ///
 /// Note: This is a helper function that is only used in the testing suite.
 ///
@@ -12,8 +11,7 @@ use std::io::{Error, ErrorKind, Result};
 ///
 /// # Returns
 ///
-/// Returns the encoded ben32 frame bytes terminated by the four-byte `0`
-/// sentinel.
+/// Returns the encoded ben32 frame bytes terminated by the four-byte `0` sentinel.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn encode_ben32_line(data: Value) -> Result<Vec<u8>> {
     let json_value_assign_vec = match data["assignment"].as_array() {

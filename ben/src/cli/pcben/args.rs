@@ -27,13 +27,11 @@ pub(super) struct Args {
     /// Input file to read from.
     #[arg(short, long)]
     pub(super) input_file: Option<String>,
-    /// Output file to write to. Optional.
-    /// If not provided, the output file will be determined
-    /// based on the input file and the mode of operation.
+    /// Output file to write to. Optional. If not provided, the output file will be determined based
+    /// on the input file and the mode of operation.
     #[arg(short, long)]
     pub(super) output_file: Option<String>,
-    /// If the output file already exists, this flag
-    /// will cause the program to overwrite it without
+    /// If the output file already exists, this flag will cause the program to overwrite it without
     /// asking the user for confirmation.
     #[arg(short = 'w', long)]
     pub(super) overwrite: bool,

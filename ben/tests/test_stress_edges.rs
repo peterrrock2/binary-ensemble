@@ -4,7 +4,6 @@ use binary_ensemble::codec::decode::{
 };
 use binary_ensemble::codec::encode::{encode_jsonl_to_xben, xz_compress};
 use binary_ensemble::codec::BenEncodeFrame;
-use binary_ensemble::BenVariant;
 use binary_ensemble::format::banners::{
     MKVCHAIN_BEN_BANNER, STANDARD_BEN_BANNER, TWODELTA_BEN_BANNER,
 };
@@ -20,6 +19,7 @@ use binary_ensemble::io::bundle::BendlReader;
 use binary_ensemble::io::reader::BenStreamReader;
 use binary_ensemble::io::writer::BenStreamWriter;
 use binary_ensemble::ops::relabel::{relabel_ben_file, RelabelOptions};
+use binary_ensemble::BenVariant;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
@@ -234,7 +234,9 @@ fn mkvchain_writer_splits_repetition_count_longer_than_u16_max() {
         writer.finish().unwrap();
     }
 
-    let mut reader = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
+    let mut reader = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .silent(true);
     let first = reader.next().unwrap().unwrap();
     let second = reader.next().unwrap().unwrap();
     assert!(reader.next().is_none());
@@ -286,7 +288,7 @@ fn xben_mkvchain_splits_repetition_count_longer_than_u16_max() {
         Some(1),
         Some(0),
         None,
-            None,
+        None,
     )
     .unwrap();
 
@@ -317,13 +319,14 @@ fn malformed_ben_bit_widths_return_invalid_data() {
 
 #[test]
 fn malformed_twodelta_bit_width_and_extra_runs_return_errors() {
-    let anchor =
-        BenEncodeFrame::from_assignment(vec![1u16, 2], BenVariant::MkvChain, Some(1));
+    let anchor = BenEncodeFrame::from_assignment(vec![1u16, 2], BenVariant::MkvChain, Some(1));
     let mut ben = TWODELTA_BEN_BANNER.to_vec();
     ben.extend_from_slice(anchor.as_slice());
     ben.extend_from_slice(&[0, 1, 0, 2, 0, 0, 0, 0, 0, 1]);
 
-    let mut reader = BenStreamReader::from_ben(ben.as_slice()).unwrap().silent(true);
+    let mut reader = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .silent(true);
     assert_eq!(reader.next().unwrap().unwrap(), (vec![1, 2], 1));
     let err = reader.next().unwrap().unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
@@ -344,7 +347,7 @@ fn direct_xben_helpers_propagate_corrupt_xz_errors() {
         Some(1),
         Some(0),
         None,
-            None,
+        None,
     )
     .unwrap();
     xben.truncate(xben.len() - 1);
@@ -464,7 +467,7 @@ fn xben_twodelta_huge_incomplete_chunk_errors_without_panicking() {
         &mut xben,
         Some(1),
         Some(0),
-            None,
+        None,
     )
     .unwrap();
 
@@ -495,7 +498,7 @@ fn zero_count_frames_are_rejected() {
         &mut xben,
         Some(1),
         Some(0),
-            None,
+        None,
     )
     .unwrap();
     let err = BenStreamReader::from_xben(xben.as_slice())
@@ -510,7 +513,8 @@ fn zero_count_frames_are_rejected() {
 fn seeded_malformed_ben_bytes_do_not_panic() {
     let mut valid_standard = Vec::new();
     {
-        let mut writer = BenStreamWriter::for_ben(&mut valid_standard, BenVariant::Standard).unwrap();
+        let mut writer =
+            BenStreamWriter::for_ben(&mut valid_standard, BenVariant::Standard).unwrap();
         writer.write_assignment(vec![1, 1, 2, 3]).unwrap();
         writer.write_assignment(vec![3, 3, 2, 1]).unwrap();
         writer.finish().unwrap();
@@ -527,7 +531,8 @@ fn seeded_malformed_ben_bytes_do_not_panic() {
 
     let mut valid_twodelta = Vec::new();
     {
-        let mut writer = BenStreamWriter::for_ben(&mut valid_twodelta, BenVariant::TwoDelta).unwrap();
+        let mut writer =
+            BenStreamWriter::for_ben(&mut valid_twodelta, BenVariant::TwoDelta).unwrap();
         writer.write_assignment(vec![1, 1, 2, 2]).unwrap();
         writer.write_assignment(vec![1, 2, 1, 2]).unwrap();
         writer.write_assignment(vec![2, 2, 1, 1]).unwrap();
@@ -572,7 +577,7 @@ fn seeded_malformed_xben_bytes_do_not_panic() {
             Some(1),
             Some(0),
             Some(32),
-                    None,
+            None,
         )
         .unwrap();
         seeds.push(xben);
@@ -598,7 +603,7 @@ fn seeded_malformed_xben_bytes_do_not_panic() {
         &mut unknown_tag_xben,
         Some(1),
         Some(0),
-            None,
+        None,
     )
     .unwrap();
     assert_xben_bytes_do_not_panic(unknown_tag_xben);

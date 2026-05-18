@@ -1,9 +1,9 @@
 //! Path-based convenience wrappers around the streaming decoders.
 //!
-//! Each wrapper opens a buffered reader on the input and a buffered writer on
-//! the output, then delegates to the corresponding streaming function. The
-//! wrappers exist so that CLI dispatch and library consumers do not have to
-//! repeat the `BufReader`/`BufWriter`/`File` plumbing at every callsite.
+//! Each wrapper opens a buffered reader on the input and a buffered writer on the output, then
+//! delegates to the corresponding streaming function. The wrappers exist so that CLI dispatch and
+//! library consumers do not have to repeat the `BufReader`/`BufWriter`/`File` plumbing at every
+//! callsite.
 
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Result};
@@ -53,6 +53,6 @@ mod tests {
         let _ = std::fs::remove_file(&out);
     }
 
-    // The happy-path round-trip tests for these decoders live alongside the
-    // matching encoders in `super::super::encode::path::tests`.
+    // The happy-path round-trip tests for these decoders live alongside the matching encoders in
+    // `super::super::encode::path::tests`.
 }

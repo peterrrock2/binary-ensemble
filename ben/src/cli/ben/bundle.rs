@@ -10,9 +10,9 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, Result};
 use std::path::Path;
 
-/// After a finalized `.bendl` has been written, reopen it in append mode
-/// and attach the graph asset in-place. This runs *after* the stream has
-/// finished, which is why we print "Adding graph..." at this point.
+/// After a finalized `.bendl` has been written, reopen it in append mode and attach the graph asset
+/// in-place. This runs *after* the stream has finished, which is why we print "Adding graph..." at
+/// this point.
 pub(super) fn append_graph_asset(out_path: &str, graph_path: &Path) -> Result<()> {
     eprintln!("Adding graph...");
     let graph_bytes = std::fs::read(graph_path).map_err(|e| {
@@ -44,16 +44,16 @@ pub(super) fn append_graph_asset(out_path: &str, graph_path: &Path) -> Result<()
     Ok(())
 }
 
-/// Encode `input_path` (JSONL) to BEN inside a fresh `.bendl` bundle at
-/// `out_path` and then append the graph as a post-stream asset.
+/// Encode `input_path` (JSONL) to BEN inside a fresh `.bendl` bundle at `out_path` and then append
+/// the graph as a post-stream asset.
 pub(super) fn run_encode_bundle_with_graph(
     input_path: &Path,
     out_path: &str,
     variant: BenVariant,
     graph_path: &Path,
 ) -> Result<()> {
-    // Validate the graph file is readable before we do any real work,
-    // so a bad --graph path doesn't leave a half-written bundle behind.
+    // Validate the graph file is readable before we do any real work, so a bad --graph path doesn't
+    // leave a half-written bundle behind.
     std::fs::metadata(graph_path).map_err(|e| {
         io::Error::new(
             io::ErrorKind::Other,
@@ -81,8 +81,8 @@ pub(super) fn run_encode_bundle_with_graph(
     append_graph_asset(out_path, graph_path)
 }
 
-/// Encode `input_path` (JSONL or `.ben`) to XBEN inside a fresh `.bendl`
-/// bundle at `out_path` and then append the graph as a post-stream asset.
+/// Encode `input_path` (JSONL or `.ben`) to XBEN inside a fresh `.bendl` bundle at `out_path` and
+/// then append the graph as a post-stream asset.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn run_xencode_bundle_with_graph(
     input_path: &Path,

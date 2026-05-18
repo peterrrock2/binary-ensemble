@@ -108,8 +108,8 @@ pub fn extract_assignment_xben<R: Read>(
     for frame in frame_iterator {
         let (decode_frame, count) = frame.map_err(SampleError::new_io_error)?;
         if current_sample == sample_number || current_sample + count as usize > sample_number {
-            // The frame iterator guarantees complete zero-sentinel ben32
-            // frames in the XBEN arm, so decode_ben32_line always succeeds.
+            // The frame iterator guarantees complete zero-sentinel ben32 frames in the XBEN arm, so
+            // decode_ben32_line always succeeds.
             let bytes = match &decode_frame {
                 crate::io::reader::DecodeFrame::XBen(b, _) => b,
                 crate::io::reader::DecodeFrame::Ben(_) => {

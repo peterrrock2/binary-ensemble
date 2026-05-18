@@ -14,22 +14,22 @@ use std::collections::BTreeMap;
 
 /// A single node in a [`PetxGraph`].
 ///
-/// All NetworkX node attributes are stored in `attrs`, including the original
-/// node id under the reserved key `"__networkx_id__"`.
+/// All NetworkX node attributes are stored in `attrs`, including the original node id under the
+/// reserved key `"__networkx_id__"`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct PetxNode {
-    /// Node attributes. Always contains `"__networkx_id__"` holding the
-    /// original (or current) NetworkX node id as a [`Value`].
+    /// Node attributes. Always contains `"__networkx_id__"` holding the original (or current)
+    /// NetworkX node id as a [`Value`].
     pub attrs: BTreeMap<String, Value>,
 }
 
 /// A petgraph-backed graph that mirrors a NetworkX adjacency-format graph.
 ///
-/// The type parameter `Ty` is either [`Directed`] or [`Undirected`] and
-/// determines the edge semantics of the underlying [`Graph`].
+/// The type parameter `Ty` is either [`Directed`] or [`Undirected`] and determines the edge
+/// semantics of the underlying [`Graph`].
 ///
-/// Graph-level attributes (the `"graph"` array in the NetworkX JSON) are
-/// stored alongside the petgraph [`Graph`] so they survive roundtrips.
+/// Graph-level attributes (the `"graph"` array in the NetworkX JSON) are stored alongside the
+/// petgraph [`Graph`] so they survive roundtrips.
 #[derive(Debug, Clone)]
 pub(crate) struct PetxGraph<Ty>
 where
@@ -37,8 +37,8 @@ where
 {
     /// Graph-level key/value attributes from the NetworkX JSON `"graph"` field.
     pub graph_attrs: Vec<(String, Value)>,
-    /// The underlying petgraph graph. Nodes carry [`PetxNode`] weights and
-    /// edges carry [`NxAdjEntry`] weights.
+    /// The underlying petgraph graph. Nodes carry [`PetxNode`] weights and edges carry
+    /// [`NxAdjEntry`] weights.
     pub graph: Graph<PetxNode, NxAdjEntry, Ty>,
 }
 

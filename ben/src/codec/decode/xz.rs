@@ -10,8 +10,7 @@ use xz2::read::XzDecoder;
 
 /// Decode an XBEN stream into an equivalent BEN stream.
 ///
-/// The output begins with the normal BEN banner followed by uncompressed BEN
-/// frames.
+/// The output begins with the normal BEN banner followed by uncompressed BEN frames.
 ///
 /// # Arguments
 ///
