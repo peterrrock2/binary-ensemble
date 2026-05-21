@@ -6,11 +6,9 @@ use crate::io::bundle::format::{
     encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlFormatError, BendlHeader,
     ASSET_FLAG_CHECKSUM, ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH,
     ASSET_TYPE_METADATA, ASSET_TYPE_NODE_PERMUTATION_MAP, BENDL_MAGIC, BENDL_MAJOR_VERSION,
-    BENDL_MINOR_VERSION, FINALIZED_NO, FINALIZED_YES, HEADER_SIZE,
+    BENDL_MINOR_VERSION, FINALIZED_NO, FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
 };
-use crate::io::bundle::reader::{
-    validate_directory_entries, BendlReader, BundleAssignmentReaderError, BundleValidationError,
-};
+use crate::io::bundle::reader::{validate_directory_entries, BendlReader, BundleValidationError};
 
 /// Stamp a valid CRC32C and `ASSET_FLAG_CHECKSUM` onto a hand-built directory entry whose on-disk
 /// payload bytes are `payload`. Use this in test fixtures so the entry round-trips through the
@@ -85,15 +83,17 @@ fn build_finalized_bundle() -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
     bundle.extend_from_slice(&directory_bytes);
     let directory_len = directory_bytes.len() as u64;
 
-    // Now patch the header.
+    // Now patch the header. Set HEADER_FLAG_STREAM_CHECKSUM so the finalized bundle supports the
+    // verified assignment_stream_reader() path in tests.
     let header = BendlHeader {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
-        flags: 0,
+        alignment_padding: 0,
+        flags: HEADER_FLAG_STREAM_CHECKSUM,
+        stream_checksum: crc32c::crc32c(&fake_stream),
         directory_offset,
         directory_len,
         stream_offset,
@@ -168,8 +168,9 @@ fn incomplete_bundle_reports_no_directory_and_stream_runs_to_eof() {
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_NO,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
+        alignment_padding: 0,
         flags: 0,
+        stream_checksum: 0,
         directory_offset: 0,
         directory_len: 0,
         stream_offset: HEADER_SIZE as u64,
@@ -190,7 +191,7 @@ fn incomplete_bundle_reports_no_directory_and_stream_runs_to_eof() {
 
     let mut buf = Vec::new();
     reader
-        .assignment_stream_reader()
+        .assignment_stream_reader_unverified()
         .unwrap()
         .read_to_end(&mut buf)
         .unwrap();
@@ -288,14 +289,17 @@ fn build_basic_finalized_bundle() -> Vec<u8> {
     bytes.extend_from_slice(&directory);
     let directory_len = directory.len() as u64;
 
+    // Set HEADER_FLAG_STREAM_CHECKSUM so open_assignment_reader() passes the checksum check.
+    // The stream is empty here so the CRC32C of zero bytes is 0x00000000.
     let header = BendlHeader {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
-        flags: 0,
+        alignment_padding: 0,
+        flags: HEADER_FLAG_STREAM_CHECKSUM,
+        stream_checksum: 0,
         directory_offset,
         directory_len,
         stream_offset,
@@ -431,8 +435,9 @@ fn incomplete_bundle_sample_count_is_none_even_if_header_value_is_nonzero() {
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_NO,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
+        alignment_padding: 0,
         flags: 0,
+        stream_checksum: 0,
         directory_offset: 0,
         directory_len: 0,
         stream_offset: HEADER_SIZE as u64,
@@ -465,7 +470,7 @@ fn open_assignment_reader_rejects_unknown_assignment_format() {
     bytes[13] = 42; // corrupt assignment format byte
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     match reader.open_assignment_reader() {
-        Err(BundleAssignmentReaderError::UnknownAssignmentFormat(42)) => {}
+        Err(BendlReadError::Format(BendlFormatError::UnknownAssignmentFormat(42))) => {}
         Err(other) => panic!("expected UnknownAssignmentFormat(42), got {other:?}"),
         Ok(_) => panic!("expected error, got Ok"),
     }
@@ -480,8 +485,9 @@ fn incomplete_bundle_stream_range_runs_to_eof_without_directory() {
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_NO,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
+        alignment_padding: 0,
         flags: 0,
+        stream_checksum: 0,
         directory_offset: 0,
         directory_len: 0,
         stream_offset: HEADER_SIZE as u64,
@@ -627,8 +633,9 @@ fn stress_thousand_custom_assets_round_trip() {
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
+        alignment_padding: 0,
         flags: 0,
+        stream_checksum: 0,
         directory_offset,
         directory_len,
         stream_offset,
@@ -682,8 +689,9 @@ fn xz_flagged_asset_with_corrupt_payload_surfaces_io_error() {
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
+        alignment_padding: 0,
         flags: 0,
+        stream_checksum: 0,
         directory_offset,
         directory_len: directory.len() as u64,
         stream_offset,
@@ -715,8 +723,9 @@ fn reader_scales_to_very_wide_stream_offset_field() {
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
+        alignment_padding: 0,
         flags: 0,
+        stream_checksum: 0,
         directory_offset,
         directory_len: directory_bytes.len() as u64,
         stream_offset: HEADER_SIZE as u64,
@@ -732,9 +741,9 @@ fn reader_scales_to_very_wide_stream_offset_field() {
     let mut buf = Vec::new();
     // Take will try to read `stream_len` bytes but the Cursor will just return however many bytes
     // remain from stream_offset to EOF. The reader must not panic; it must simply return what it
-    // got.
+    // got. Use the unverified reader since this bundle has no stream checksum.
     reader
-        .assignment_stream_reader()
+        .assignment_stream_reader_unverified()
         .unwrap()
         .read_to_end(&mut buf)
         .unwrap();
@@ -759,8 +768,9 @@ fn incomplete_bundle_with_nonzero_directory_offset_uses_it_as_stream_end() {
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_NO,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
+        alignment_padding: 0,
         flags: 0,
+        stream_checksum: 0,
         directory_offset: dir_offset,
         directory_len: 0,
         stream_offset: stream_start,
@@ -845,8 +855,9 @@ fn make_single_asset_bundle(name: &str, payload: &[u8]) -> (Vec<u8>, String, u64
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
+        alignment_padding: 0,
         flags: 0,
+        stream_checksum: 0,
         directory_offset,
         directory_len: directory.len() as u64,
         stream_offset,
@@ -893,8 +904,9 @@ fn make_single_xz_asset_bundle(name: &str, payload: &[u8]) -> (Vec<u8>, String, 
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
+        alignment_padding: 0,
         flags: 0,
+        stream_checksum: 0,
         directory_offset,
         directory_len: directory.len() as u64,
         stream_offset,
@@ -1019,8 +1031,9 @@ fn verify_asset_checksum_returns_unavailable_when_flag_clear() {
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
+        alignment_padding: 0,
         flags: 0,
+        stream_checksum: 0,
         directory_offset,
         directory_len: directory.len() as u64,
         stream_offset,
@@ -1143,8 +1156,9 @@ fn asset_bytes_returns_unavailable_when_flag_clear() {
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
+        alignment_padding: 0,
         flags: 0,
+        stream_checksum: 0,
         directory_offset,
         directory_len: directory.len() as u64,
         stream_offset: directory_offset,
@@ -1240,8 +1254,9 @@ fn verify_all_asset_checksums_reports_first_mismatch_in_directory_order() {
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
+        alignment_padding: 0,
         flags: 0,
+        stream_checksum: 0,
         directory_offset,
         directory_len: directory.len() as u64,
         stream_offset,
@@ -1285,4 +1300,181 @@ fn crc32c_polynomial_pin_against_known_vectors() {
     assert_eq!(crc32c::crc32c(b"123456789"), 0xE306_9283);
     // Extra sentinels to broaden the trip-wire.
     assert_eq!(crc32c::crc32c(&[0x01, 0x02, 0x03, 0x04]), 0x2930_8CF4);
+}
+
+// =====================================================================
+// Stream CRC32C verification — API surface tests
+// =====================================================================
+//
+// These tests cover the error cases for unfinalized bundles and unflagged bundles (hand-built
+// fixtures only). The round-trip correctness and corruption tests are in tests/writer.rs, which
+// has the writer infrastructure needed to produce real BEN streams.
+
+/// Build the smallest possible finalized bundle with a known non-empty fake stream and no stream
+/// checksum flag (simulates a foreign/pre-checksummed bundle).
+fn make_unflagged_stream_bundle() -> Vec<u8> {
+    let fake_stream = b"hello stream".to_vec();
+    let mut bytes = Vec::new();
+    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    let stream_offset = bytes.len() as u64;
+    bytes.extend_from_slice(&fake_stream);
+    let directory_offset = bytes.len() as u64;
+    let directory = encode_directory(&[]).unwrap();
+    bytes.extend_from_slice(&directory);
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_YES,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        alignment_padding: 0,
+        flags: 0,
+        stream_checksum: 0,
+        directory_offset,
+        directory_len: directory.len() as u64,
+        stream_offset,
+        stream_len: fake_stream.len() as u64,
+        sample_count: 0,
+    };
+    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    bytes
+}
+
+#[test]
+fn assignment_stream_reader_returns_unavailable_when_flag_clear() {
+    let bytes = make_unflagged_stream_bundle();
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let err = match reader.assignment_stream_reader() {
+        Err(e) => e,
+        Ok(_) => panic!("expected Err, got Ok"),
+    };
+    assert!(
+        matches!(
+            err,
+            BendlReadError::Checksum(ChecksumError::Unavailable {
+                target: ChecksumTarget::Stream
+            })
+        ),
+        "expected Unavailable(Stream), got {err:?}"
+    );
+    // The unverified path can still read the bytes.
+    let mut buf = Vec::new();
+    reader
+        .assignment_stream_reader_unverified()
+        .unwrap()
+        .read_to_end(&mut buf)
+        .unwrap();
+    assert_eq!(buf, b"hello stream");
+}
+
+#[test]
+fn assignment_stream_reader_returns_bundle_incomplete_for_unfinalized() {
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_NO,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        alignment_padding: 0,
+        flags: 0,
+        stream_checksum: 0,
+        directory_offset: 0,
+        directory_len: 0,
+        stream_offset: HEADER_SIZE as u64,
+        stream_len: 0,
+        sample_count: -1,
+    };
+    let mut bytes = vec![0u8; HEADER_SIZE];
+    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let err = match reader.assignment_stream_reader() {
+        Err(e) => e,
+        Ok(_) => panic!("expected Err, got Ok"),
+    };
+    assert!(
+        matches!(
+            err,
+            BendlReadError::Checksum(ChecksumError::BundleIncomplete {
+                target: ChecksumTarget::Stream
+            })
+        ),
+        "expected BundleIncomplete(Stream), got {err:?}"
+    );
+}
+
+#[test]
+fn open_assignment_reader_returns_bundle_incomplete_for_unfinalized() {
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_NO,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        alignment_padding: 0,
+        flags: 0,
+        stream_checksum: 0,
+        directory_offset: 0,
+        directory_len: 0,
+        stream_offset: HEADER_SIZE as u64,
+        stream_len: 0,
+        sample_count: -1,
+    };
+    let mut bytes = vec![0u8; HEADER_SIZE];
+    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    match reader.open_assignment_reader() {
+        Err(BendlReadError::Checksum(ChecksumError::BundleIncomplete {
+            target: ChecksumTarget::Stream,
+        })) => {}
+        Ok(_) => panic!("expected Err, got Ok"),
+        Err(e) => panic!("expected BundleIncomplete(Stream), got Err({e:?})"),
+    }
+}
+
+#[test]
+fn verify_stream_checksum_returns_unavailable_when_flag_clear() {
+    let bytes = make_unflagged_stream_bundle();
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let err = reader.verify_stream_checksum().unwrap_err();
+    assert!(
+        matches!(
+            err,
+            BendlReadError::Checksum(ChecksumError::Unavailable {
+                target: ChecksumTarget::Stream
+            })
+        ),
+        "expected Unavailable(Stream), got {err:?}"
+    );
+}
+
+#[test]
+fn verify_stream_checksum_returns_bundle_incomplete_for_unfinalized() {
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_NO,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        alignment_padding: 0,
+        flags: 0,
+        stream_checksum: 0,
+        directory_offset: 0,
+        directory_len: 0,
+        stream_offset: HEADER_SIZE as u64,
+        stream_len: 0,
+        sample_count: -1,
+    };
+    let mut bytes = vec![0u8; HEADER_SIZE];
+    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let err = reader.verify_stream_checksum().unwrap_err();
+    assert!(
+        matches!(
+            err,
+            BendlReadError::Checksum(ChecksumError::BundleIncomplete {
+                target: ChecksumTarget::Stream
+            })
+        ),
+        "expected BundleIncomplete(Stream), got {err:?}"
+    );
 }

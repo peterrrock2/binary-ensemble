@@ -22,5 +22,5 @@ pub mod writer;
 mod tests;
 
 pub use error::{BendlReadError, ChecksumError, ChecksumTarget};
-pub use reader::{BendlReader, BundleAssignmentReaderError, BundleValidationError};
+pub use reader::{BendlReader, BendlVerifiedStreamReader, BundleValidationError};
 pub use writer::{AddAssetOptions, BendlStreamSession, BendlWriteError, BendlWriter};

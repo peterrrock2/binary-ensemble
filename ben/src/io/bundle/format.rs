@@ -31,6 +31,15 @@ pub const FINALIZED_NO: u8 = 0;
 /// `finalized` flag value for finalized bundles.
 pub const FINALIZED_YES: u8 = 1;
 
+/// Header flag bit 0: the `stream_checksum` field contains a valid CRC32C over the on-disk
+/// assignment stream bytes (`stream_offset..stream_offset + stream_len`). For XBEN streams the CRC
+/// covers the compressed bytes, not the decompressed content. Bits 1..31 are reserved; writers set
+/// them to zero.
+///
+/// Library writers always set this flag and write a valid checksum. The clear-flag state exists
+/// only for adversarial reader fixtures and partial-recovery flows.
+pub const HEADER_FLAG_STREAM_CHECKSUM: u32 = 1 << 0;
+
 // ---------------------------------------------------------------------------
 // Assignment format identifiers
 // ---------------------------------------------------------------------------
@@ -180,12 +189,19 @@ pub struct BendlHeader {
     pub finalized: u8,
     /// Container format of the embedded assignment stream.
     pub assignment_format: u8,
-    /// Padding after `assignment_format`; writers set to zero, readers ignore.
-    pub reserved_0: u16,
-    /// Bundle-level feature flags.
-    pub flags: u64,
-    /// Absolute byte offset of the directory table, or `0` if no directory has been written yet. In
-    /// a finalized bundle the directory lives at the end of the file.
+    /// Alignment padding after `assignment_format` that keeps the following 8-byte fields at
+    /// offset ≥ 24 8-byte aligned. Writers set this to zero; readers ignore non-zero bytes.
+    /// This is not a forward-compat slot — new fields must live elsewhere.
+    pub alignment_padding: u16,
+    /// Bundle-level feature flags (32-bit). See `HEADER_FLAG_*` constants. Bits without a defined
+    /// constant are reserved; readers must ignore them and writers must set them to zero.
+    pub flags: u32,
+    /// CRC32C of the on-disk assignment stream bytes. Valid only when
+    /// `HEADER_FLAG_STREAM_CHECKSUM` is set in `flags`. Writers set this to zero while the
+    /// bundle is unfinalized and patch it on finalization.
+    pub stream_checksum: u32,
+    /// Absolute byte offset of the directory table, or `0` if no directory has been written yet.
+    /// In a finalized bundle the directory lives at the end of the file.
     pub directory_offset: u64,
     /// Byte length of the directory table, or `0` if absent.
     pub directory_len: u64,
@@ -206,14 +222,21 @@ impl BendlHeader {
             minor_version: BENDL_MINOR_VERSION,
             finalized: FINALIZED_NO,
             assignment_format: assignment_format.to_u8(),
-            reserved_0: 0,
+            alignment_padding: 0,
             flags: 0,
+            stream_checksum: 0,
             directory_offset: 0,
             directory_len: 0,
             stream_offset,
             stream_len: 0,
             sample_count: -1,
         }
+    }
+
+    /// Whether the `HEADER_FLAG_STREAM_CHECKSUM` bit is set, indicating the `stream_checksum` field
+    /// contains a valid CRC32C over the assignment stream bytes.
+    pub fn has_stream_checksum(&self) -> bool {
+        self.flags & HEADER_FLAG_STREAM_CHECKSUM != 0
     }
 
     /// Whether the bundle has been finalized.
@@ -234,8 +257,9 @@ impl BendlHeader {
         out[10..12].copy_from_slice(&self.minor_version.to_le_bytes());
         out[12] = self.finalized;
         out[13] = self.assignment_format;
-        out[14..16].copy_from_slice(&self.reserved_0.to_le_bytes());
-        out[16..24].copy_from_slice(&self.flags.to_le_bytes());
+        out[14..16].copy_from_slice(&self.alignment_padding.to_le_bytes());
+        out[16..20].copy_from_slice(&self.flags.to_le_bytes());
+        out[20..24].copy_from_slice(&self.stream_checksum.to_le_bytes());
         out[24..32].copy_from_slice(&self.directory_offset.to_le_bytes());
         out[32..40].copy_from_slice(&self.directory_len.to_le_bytes());
         out[40..48].copy_from_slice(&self.stream_offset.to_le_bytes());
@@ -267,8 +291,9 @@ impl BendlHeader {
             minor_version,
             finalized: bytes[12],
             assignment_format: bytes[13],
-            reserved_0: u16::from_le_bytes(bytes[14..16].try_into().unwrap()),
-            flags: u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
+            alignment_padding: u16::from_le_bytes(bytes[14..16].try_into().unwrap()),
+            flags: u32::from_le_bytes(bytes[16..20].try_into().unwrap()),
+            stream_checksum: u32::from_le_bytes(bytes[20..24].try_into().unwrap()),
             directory_offset: u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
             directory_len: u64::from_le_bytes(bytes[32..40].try_into().unwrap()),
             stream_offset: u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
@@ -494,6 +519,10 @@ pub enum BendlFormatError {
     /// A directory table violated bundle-level validation rules.
     #[error("malformed directory: {0}")]
     MalformedDirectory(String),
+
+    /// The header's `assignment_format` byte did not map to any known assignment format.
+    #[error("unknown assignment_format byte in bundle header: {0}")]
+    UnknownAssignmentFormat(u8),
 
     /// A directory entry's `ASSET_FLAG_CHECKSUM` bit and `checksum_len` disagree. The wire format
     /// requires `flag set iff checksum_len == 4` and `flag clear iff checksum_len == 0`.

@@ -2,15 +2,18 @@ use std::io::{Cursor, Read, Seek, Write};
 
 use xz2::write::XzEncoder;
 
+use crate::io::bundle::error::{BendlReadError, ChecksumError, ChecksumTarget};
 use crate::io::bundle::format::{
     AssignmentFormat, BendlFormatError, BendlHeader, ASSET_FLAG_CHECKSUM, ASSET_FLAG_XZ,
     ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA, BENDL_MAGIC, BENDL_MAJOR_VERSION,
-    BENDL_MINOR_VERSION, DEFAULT_XZ_PRESET, FINALIZED_NO, FINALIZED_YES, HEADER_SIZE,
+    BENDL_MINOR_VERSION, DEFAULT_XZ_PRESET, FINALIZED_NO, FINALIZED_YES,
+    HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
 };
 use crate::io::bundle::reader::BendlReader;
 use crate::io::bundle::writer::{AddAssetOptions, BendlAppender, BendlWriteError, BendlWriter};
 use crate::io::reader::BenWireFormat;
 use crate::io::writer::BenStreamWriter;
+use crate::BenVariant;
 
 fn make_buffer() -> Cursor<Vec<u8>> {
     Cursor::new(Vec::new())
@@ -381,8 +384,9 @@ fn append_rejects_incomplete_bundle() {
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_NO,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
+        alignment_padding: 0,
         flags: 0,
+        stream_checksum: 0,
         directory_offset: 0,
         directory_len: 0,
         stream_offset: HEADER_SIZE as u64,
@@ -409,8 +413,9 @@ fn append_rejects_complete_bundle_with_zero_directory() {
         minor_version: BENDL_MINOR_VERSION,
         finalized: FINALIZED_YES,
         assignment_format: AssignmentFormat::Ben.to_u8(),
-        reserved_0: 0,
+        alignment_padding: 0,
         flags: 0,
+        stream_checksum: 0,
         directory_offset: 0,
         directory_len: 0,
         stream_offset: HEADER_SIZE as u64,
@@ -1336,4 +1341,280 @@ fn stream_session_partial_writes_account_returned_bytes() {
     let mut bundle_buf = final_inner.cursor.into_inner();
     let header = BendlHeader::read_from(&mut Cursor::new(&mut bundle_buf)).unwrap();
     assert_eq!(header.stream_len, total_returned);
+}
+
+// =====================================================================
+// Stream CRC32C verification
+// =====================================================================
+//
+// Tests pin the writer→reader round-trip of stream_checksum and the behavioral contract of the
+// verified stream reader APIs across both the raw-copy path (assignment_stream_reader) and the
+// decoded path (open_assignment_reader / count_samples / write_all_jsonl). Each verified API
+// surfaces ChecksumError::Mismatch when the stored stream_checksum is corrupted in-place.
+
+/// Build a finalized bundle containing a small plain-BEN stream with `count` samples. Returns
+/// `(bundle_bytes, samples)`.
+fn make_ben_stream_bundle(count: usize) -> (Vec<u8>, Vec<Vec<u16>>) {
+    let samples: Vec<Vec<u16>> = (0..count).map(|i| vec![i as u16, (i + 1) as u16]).collect();
+    let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    let mut session = writer.into_stream_session().unwrap();
+    {
+        let mut ben = BenStreamWriter::for_ben(&mut session, BenVariant::Standard).unwrap();
+        for s in &samples {
+            ben.write_assignment(s.clone()).unwrap();
+        }
+        ben.finish().unwrap();
+    }
+    let writer = session.finish_into_writer(count as i64);
+    let buf = writer.finish().unwrap().into_inner();
+    (buf, samples)
+}
+
+/// Corrupt the stored `stream_checksum` field in-place by flipping a byte at header offset 20.
+fn corrupt_stream_checksum(bytes: &mut Vec<u8>) {
+    bytes[20] ^= 0xFF;
+}
+
+/// Flip a byte in the stream payload to corrupt the stream contents without changing its length.
+fn corrupt_stream_payload(bytes: &mut Vec<u8>, reader: &mut BendlReader<Cursor<Vec<u8>>>) {
+    let (offset, len) = reader.assignment_stream_range().unwrap();
+    assert!(len > 0, "stream must be non-empty to corrupt a payload byte");
+    // Flip the last byte of the stream region.
+    bytes[(offset + len - 1) as usize] ^= 0x01;
+}
+
+#[test]
+fn writer_sets_header_flag_stream_checksum_on_finalization() {
+    let (buf, _) = make_ben_stream_bundle(3);
+    let header = BendlHeader::read_from(&mut Cursor::new(&buf)).unwrap();
+    assert!(
+        header.flags & HEADER_FLAG_STREAM_CHECKSUM != 0,
+        "HEADER_FLAG_STREAM_CHECKSUM must be set after finalization"
+    );
+    assert_ne!(
+        header.stream_checksum, 0,
+        "stream_checksum must be non-zero for a non-empty stream"
+    );
+}
+
+#[test]
+fn writer_sets_stream_checksum_zero_for_empty_stream() {
+    // An empty stream has CRC32C(b"") = 0x00000000.
+    let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    let buf = writer.finish().unwrap().into_inner();
+    let header = BendlHeader::read_from(&mut Cursor::new(&buf)).unwrap();
+    assert!(header.flags & HEADER_FLAG_STREAM_CHECKSUM != 0);
+    assert_eq!(header.stream_checksum, 0);
+}
+
+#[test]
+fn assignment_stream_reader_verified_round_trips_stream_bytes() {
+    let (buf, _) = make_ben_stream_bundle(3);
+    // Capture the raw stream bytes first for comparison.
+    let mut r = BendlReader::open(Cursor::new(buf.clone())).unwrap();
+    let (off, len) = r.assignment_stream_range().unwrap();
+    let raw_stream: Vec<u8> = buf[off as usize..(off + len) as usize].to_vec();
+    drop(r);
+
+    let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+    let mut got = Vec::new();
+    reader
+        .assignment_stream_reader()
+        .unwrap()
+        .read_to_end(&mut got)
+        .unwrap();
+    assert_eq!(got, raw_stream);
+}
+
+#[test]
+fn assignment_stream_reader_detects_corrupt_stored_checksum() {
+    let (mut buf, _) = make_ben_stream_bundle(3);
+    corrupt_stream_checksum(&mut buf);
+    let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+    let mut sink = Vec::new();
+    let err = reader
+        .assignment_stream_reader()
+        .unwrap()
+        .read_to_end(&mut sink)
+        .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    let inner = err
+        .get_ref()
+        .and_then(|e| e.downcast_ref::<ChecksumError>())
+        .expect("inner ChecksumError");
+    assert!(
+        matches!(inner, ChecksumError::Mismatch { target: ChecksumTarget::Stream, .. }),
+        "expected Stream Mismatch, got {inner:?}"
+    );
+}
+
+#[test]
+fn verify_stream_checksum_passes_on_intact_bundle() {
+    let (buf, _) = make_ben_stream_bundle(3);
+    let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+    reader.verify_stream_checksum().unwrap();
+}
+
+#[test]
+fn verify_stream_checksum_fails_on_corrupt_stored_checksum() {
+    let (mut buf, _) = make_ben_stream_bundle(3);
+    corrupt_stream_checksum(&mut buf);
+    let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+    let err = reader.verify_stream_checksum().unwrap_err();
+    assert!(
+        matches!(
+            err,
+            BendlReadError::Checksum(ChecksumError::Mismatch {
+                target: ChecksumTarget::Stream,
+                ..
+            })
+        ),
+        "expected Mismatch(Stream), got {err:?}"
+    );
+}
+
+#[test]
+fn verify_stream_checksum_fails_on_corrupt_stream_payload() {
+    let (mut buf, _) = make_ben_stream_bundle(3);
+    {
+        let mut r = BendlReader::open(Cursor::new(buf.clone())).unwrap();
+        corrupt_stream_payload(&mut buf, &mut r);
+    }
+    let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+    let err = reader.verify_stream_checksum().unwrap_err();
+    assert!(
+        matches!(
+            err,
+            BendlReadError::Checksum(ChecksumError::Mismatch {
+                target: ChecksumTarget::Stream,
+                ..
+            })
+        ),
+        "expected Mismatch(Stream), got {err:?}"
+    );
+}
+
+#[test]
+fn open_assignment_reader_iterator_detects_corrupt_stored_checksum() {
+    let (mut buf, samples) = make_ben_stream_bundle(3);
+    corrupt_stream_checksum(&mut buf);
+    let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+    let mut decoder = reader.open_assignment_reader().unwrap();
+    // Consume all real records; then the next call should report Mismatch.
+    let mut decoded_count = 0usize;
+    loop {
+        match decoder.next() {
+            Some(Ok(_)) => {
+                decoded_count += 1;
+            }
+            Some(Err(e)) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::InvalidData);
+                let inner = e
+                    .get_ref()
+                    .and_then(|x| x.downcast_ref::<ChecksumError>())
+                    .expect("inner ChecksumError");
+                assert!(
+                    matches!(
+                        inner,
+                        ChecksumError::Mismatch {
+                            target: ChecksumTarget::Stream,
+                            ..
+                        }
+                    ),
+                    "expected Stream Mismatch, got {inner:?}"
+                );
+                break;
+            }
+            None => panic!("expected ChecksumMismatch before None, got None"),
+        }
+    }
+    // Subsequent calls must return None (not repeat the error).
+    assert!(decoder.next().is_none(), "expected None after mismatch reported");
+    assert_eq!(decoded_count, samples.len());
+}
+
+#[test]
+fn count_samples_detects_corrupt_stored_checksum() {
+    let (mut buf, _) = make_ben_stream_bundle(4);
+    corrupt_stream_checksum(&mut buf);
+    let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+    let decoder = reader.open_assignment_reader().unwrap();
+    let err = decoder.count_samples().unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    let inner = err
+        .get_ref()
+        .and_then(|x| x.downcast_ref::<ChecksumError>())
+        .expect("inner ChecksumError");
+    assert!(
+        matches!(
+            inner,
+            ChecksumError::Mismatch {
+                target: ChecksumTarget::Stream,
+                ..
+            }
+        ),
+        "expected Stream Mismatch, got {inner:?}"
+    );
+}
+
+#[test]
+fn write_all_jsonl_detects_corrupt_stored_checksum() {
+    let (mut buf, _) = make_ben_stream_bundle(3);
+    corrupt_stream_checksum(&mut buf);
+    let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+    let mut decoder = reader.open_assignment_reader().unwrap();
+    let err = decoder
+        .write_all_jsonl(std::io::sink())
+        .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    let inner = err
+        .get_ref()
+        .and_then(|x| x.downcast_ref::<ChecksumError>())
+        .expect("inner ChecksumError");
+    assert!(
+        matches!(
+            inner,
+            ChecksumError::Mismatch {
+                target: ChecksumTarget::Stream,
+                ..
+            }
+        ),
+        "expected Stream Mismatch, got {inner:?}"
+    );
+}
+
+#[test]
+fn for_each_assignment_detects_corrupt_stored_checksum_when_driven_to_eof() {
+    let (mut buf, _) = make_ben_stream_bundle(3);
+    corrupt_stream_checksum(&mut buf);
+    let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+    let mut decoder = reader.open_assignment_reader().unwrap();
+    // Callback always returns Ok(true) so it drives to natural EOF.
+    let err = decoder
+        .for_each_assignment(|_, _| Ok(true))
+        .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    let inner = err
+        .get_ref()
+        .and_then(|x| x.downcast_ref::<ChecksumError>())
+        .expect("inner ChecksumError");
+    assert!(
+        matches!(
+            inner,
+            ChecksumError::Mismatch {
+                target: ChecksumTarget::Stream,
+                ..
+            }
+        ),
+        "expected Stream Mismatch, got {inner:?}"
+    );
+}
+
+#[test]
+fn open_assignment_reader_intact_bundle_round_trips_count_samples() {
+    let (buf, samples) = make_ben_stream_bundle(5);
+    let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+    let decoder = reader.open_assignment_reader().unwrap();
+    let n = decoder.count_samples().unwrap();
+    assert_eq!(n, samples.len());
 }

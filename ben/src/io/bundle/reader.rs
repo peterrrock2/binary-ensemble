@@ -17,8 +17,13 @@
 //! - [`BendlReader::verify_asset_checksum`] and [`BendlReader::verify_all_asset_checksums`] are
 //!   explicit raw-bytes verifiers (no decoding) that do not return decoded payload bytes.
 
-use std::io::{self, Read, Seek, SeekFrom, Take};
+use std::io::{self, Read, Seek, SeekFrom, Take, Write};
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+};
 
+use serde_json::json;
 use xz2::read::XzDecoder;
 
 use super::error::{BendlReadError, ChecksumError, ChecksumTarget};
@@ -26,7 +31,8 @@ use super::format::{
     read_directory, standardized_name_for, AssignmentFormat, BendlDirectoryEntry, BendlFormatError,
     BendlHeader, ASSET_FLAG_XZ,
 };
-use crate::io::reader::{BenStreamReader, BenWireFormat};
+use crate::io::reader::{BenStreamFrameReader, BenStreamReader, BenWireFormat, SubsampleFrameDecoder};
+use crate::BenVariant;
 
 impl From<AssignmentFormat> for BenWireFormat {
     fn from(format: AssignmentFormat) -> Self {
@@ -136,36 +142,155 @@ impl<R: Read + Seek> BendlReader<R> {
         }
     }
 
-    /// Return a `Take` reader positioned at the start of the assignment stream and limited to its
-    /// declared length. The caller is expected to wrap the returned reader in a [`BenStreamReader`]
-    /// (via [`BendlReader::open_assignment_reader`] or directly) as appropriate for
-    /// [`BendlReader::assignment_format`].
-    pub fn assignment_stream_reader(&mut self) -> io::Result<Take<&mut R>> {
+    /// Return a verified reader for the assignment stream that checks the stored CRC32C at raw EOF.
+    ///
+    /// Returns `Err(ChecksumError::BundleIncomplete)` for unfinalized bundles (the stored
+    /// `stream_checksum` is not authoritative until the bundle is finalized).
+    /// Returns `Err(ChecksumError::Unavailable)` when `HEADER_FLAG_STREAM_CHECKSUM` is clear
+    /// (foreign or hand-built bytes; the library writer always sets this flag).
+    ///
+    /// On success, CRC mismatch surfaces from `Read::read` as
+    /// `io::Error::new(io::ErrorKind::InvalidData, ChecksumError::Mismatch)` on the call that
+    /// would otherwise return `Ok(0)` at raw EOF. For a raw copy that decodes nothing, driving the
+    /// returned reader to EOF is sufficient. For decoded access use
+    /// [`BendlReader::open_assignment_reader`].
+    pub fn assignment_stream_reader(
+        &mut self,
+    ) -> Result<Box<dyn Read + '_>, BendlReadError> {
+        if !self.header.is_finalized() {
+            return Err(BendlReadError::Checksum(ChecksumError::BundleIncomplete {
+                target: ChecksumTarget::Stream,
+            }));
+        }
+        if !self.header.has_stream_checksum() {
+            return Err(BendlReadError::Checksum(ChecksumError::Unavailable {
+                target: ChecksumTarget::Stream,
+            }));
+        }
+        let expected = self.header.stream_checksum;
+        let (offset, len) = self.assignment_stream_range()?;
+        self.inner.seek(SeekFrom::Start(offset))?;
+        let raw = (&mut self.inner).take(len);
+        Ok(Box::new(RawVerifyingReader {
+            inner: raw,
+            hasher: 0,
+            expected,
+            target: ChecksumTarget::Stream,
+            state: VerifyState::Reading,
+        }))
+    }
+
+    /// Return a raw bounded reader for the assignment stream **without** CRC verification.
+    ///
+    /// Works on both finalized and unfinalized bundles. Useful for recovery/debug flows and for
+    /// callers that need the raw bytes without the overhead of a CRC check.
+    pub fn assignment_stream_reader_unverified(&mut self) -> io::Result<Take<&mut R>> {
         let (offset, len) = self.assignment_stream_range()?;
         self.inner.seek(SeekFrom::Start(offset))?;
         Ok((&mut self.inner).take(len))
     }
 
-    /// Construct the appropriate assignment decoder for the bundle's declared `assignment_format`
-    /// and return it as a [`BenStreamReader`] over the bundle's bounded stream region.
+    /// Construct a verified decoded assignment reader that checks the stream CRC32C after the
+    /// codec reaches EOF. The returned [`BendlVerifiedStreamReader`] forwards the full
+    /// [`BenStreamReader`] API surface and folds the CRC check into consuming methods.
     ///
-    /// Returns an error if the header's `assignment_format` field is unrecognized or the embedded
-    /// banner is malformed.
+    /// Returns `Err(BundleIncomplete)` for unfinalized bundles and `Err(Unavailable)` when the
+    /// stream checksum flag is clear.
     pub fn open_assignment_reader(
         &mut self,
-    ) -> Result<BenStreamReader<Take<&mut R>>, BundleAssignmentReaderError> {
-        let format = self.assignment_format().ok_or(
-            BundleAssignmentReaderError::UnknownAssignmentFormat(self.header.assignment_format),
-        )?;
-        let stream = self.assignment_stream_reader()?;
-        match format {
-            AssignmentFormat::Ben => {
-                BenStreamReader::from_ben(stream).map_err(BundleAssignmentReaderError::Decoder)
-            }
-            AssignmentFormat::Xben => {
-                BenStreamReader::from_xben(stream).map_err(BundleAssignmentReaderError::Decoder)
-            }
+    ) -> Result<BendlVerifiedStreamReader<'_, R>, BendlReadError> {
+        // Finalization check must come first: if the bundle is unfinalized, stream_checksum is not
+        // authoritative and reporting Unavailable would be misleading.
+        if !self.header.is_finalized() {
+            return Err(BendlReadError::Checksum(ChecksumError::BundleIncomplete {
+                target: ChecksumTarget::Stream,
+            }));
         }
+        if !self.header.has_stream_checksum() {
+            return Err(BendlReadError::Checksum(ChecksumError::Unavailable {
+                target: ChecksumTarget::Stream,
+            }));
+        }
+        let expected = self.header.stream_checksum;
+
+        let format = self.assignment_format().ok_or_else(|| {
+            BendlReadError::Format(BendlFormatError::UnknownAssignmentFormat(
+                self.header.assignment_format,
+            ))
+        })?;
+        let (offset, len) = self.assignment_stream_range()?;
+        self.inner.seek(SeekFrom::Start(offset))?;
+        let raw = (&mut self.inner).take(len);
+
+        let arc_hasher = Arc::new(AtomicU32::new(0));
+        let shared_raw = ArcHasher {
+            inner: raw,
+            state: Arc::clone(&arc_hasher),
+        };
+
+        let inner = match format {
+            AssignmentFormat::Ben => BenStreamReader::from_ben(shared_raw)?,
+            AssignmentFormat::Xben => BenStreamReader::from_xben(shared_raw)?,
+        };
+
+        Ok(BendlVerifiedStreamReader {
+            inner,
+            expected,
+            arc_hasher,
+            state: StreamVerifyState::Running,
+        })
+    }
+
+    /// Verify the stored stream CRC32C by scanning the raw on-disk bytes of the assignment stream.
+    ///
+    /// This is the explicit full-scan verifier for callers that want to check integrity without
+    /// decoding the stream. For random-access extraction (which intentionally skips untouched
+    /// frames), call this separately to confirm the whole stream is intact.
+    ///
+    /// Returns `Err(BundleIncomplete)` for unfinalized bundles and `Err(Unavailable)` when the
+    /// stream checksum flag is clear.
+    pub fn verify_stream_checksum(&mut self) -> Result<(), BendlReadError> {
+        if !self.header.is_finalized() {
+            return Err(BendlReadError::Checksum(ChecksumError::BundleIncomplete {
+                target: ChecksumTarget::Stream,
+            }));
+        }
+        if !self.header.has_stream_checksum() {
+            return Err(BendlReadError::Checksum(ChecksumError::Unavailable {
+                target: ChecksumTarget::Stream,
+            }));
+        }
+        let expected = self.header.stream_checksum;
+        let (offset, len) = self.assignment_stream_range()?;
+        self.inner.seek(SeekFrom::Start(offset))?;
+
+        let mut remaining = len;
+        let mut buf = [0u8; 64 * 1024];
+        let mut hasher: u32 = 0;
+        while remaining > 0 {
+            let want = remaining.min(buf.len() as u64) as usize;
+            let n = self.inner.read(&mut buf[..want])?;
+            if n == 0 {
+                return Err(BendlReadError::Io(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    format!(
+                        "stream ended {} byte(s) before declared length",
+                        remaining
+                    ),
+                )));
+            }
+            hasher = crc32c::crc32c_append(hasher, &buf[..n]);
+            remaining -= n as u64;
+        }
+
+        if hasher != expected {
+            return Err(BendlReadError::Checksum(ChecksumError::Mismatch {
+                target: ChecksumTarget::Stream,
+                computed: hasher,
+                expected,
+            }));
+        }
+        Ok(())
     }
 
     /// Read the fully-decoded bytes of an asset by directory entry, verifying its CRC32C before
@@ -480,6 +605,233 @@ impl<R: Read + Seek> Read for DecodedVerifyingReader<'_, R> {
     }
 }
 
+/// CRC accumulator that shares its running hash via an `Arc<AtomicU32>`. Used as the source reader
+/// for [`BendlVerifiedStreamReader`]: the `Arc` lets the outer wrapper read the final hash after a
+/// consuming inner method (e.g. `count_samples`) moves ownership away from the wrapper.
+///
+/// Unlike `CrcTeeReader`, this type never substitutes a checksum error for raw EOF — it is always
+/// the outer [`BendlVerifiedStreamReader`] that decides when and whether to check. The type is
+/// exposed because it leaks through the return signatures of the wrapper's intentionally-partial
+/// APIs (`into_frames`, `into_subsample_by_*`); callers should treat it as an opaque reader.
+pub struct ArcHasher<R: Read> {
+    inner: R,
+    state: Arc<AtomicU32>,
+}
+
+impl<R: Read> Read for ArcHasher<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        if n > 0 {
+            let prev = self.state.load(Ordering::Relaxed);
+            self.state
+                .store(crc32c::crc32c_append(prev, &buf[..n]), Ordering::Relaxed);
+        }
+        Ok(n)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StreamVerifyState {
+    Running,
+    /// CRC mismatch was returned once as `Some(Err(...))`. Subsequent iterator calls return `None`.
+    MismatchReported,
+    /// CRC matched after natural EOF. Subsequent iterator calls return `None`.
+    Verified,
+}
+
+/// Verified decoded assignment reader returned by [`BendlReader::open_assignment_reader`].
+///
+/// Wraps a [`BenStreamReader`] over a CRC-accumulating source and checks the stored stream CRC32C
+/// after the codec reaches natural EOF. CRC mismatch surfaces from [`Iterator::next`] as
+/// `Some(Err(io::ErrorKind::InvalidData))` — returned once after the last decoded record, then
+/// `None`. Consuming methods (`count_samples`, `write_all_jsonl`, `for_each_assignment` when driven
+/// to natural EOF) also fold the CRC check into their return value.
+///
+/// **Intentionally partial APIs** (`into_frames`, `into_subsample_by_*`) are forwarded for
+/// ergonomics but do not automatically verify — the underlying reader is stopped short of raw EOF
+/// so the CRC tee is never finalized. Callers that need integrity for partial reads must call
+/// [`BendlReader::verify_stream_checksum`] separately.
+pub struct BendlVerifiedStreamReader<'a, R: Read + Seek> {
+    inner: BenStreamReader<ArcHasher<Take<&'a mut R>>>,
+    expected: u32,
+    arc_hasher: Arc<AtomicU32>,
+    state: StreamVerifyState,
+}
+
+impl<'a, R: Read + Seek> BendlVerifiedStreamReader<'a, R> {
+    /// Return the BEN variant detected from the stream banner.
+    pub fn variant(&self) -> BenVariant {
+        self.inner.variant()
+    }
+
+    /// Return the wire format (BEN vs XBEN) of this stream.
+    pub fn wire_format(&self) -> BenWireFormat {
+        self.inner.wire_format()
+    }
+
+    /// Suppress progress output from the decoder.
+    pub fn silent(mut self, silent: bool) -> Self {
+        self.inner = self.inner.silent(silent);
+        self
+    }
+
+    /// Count the number of samples in the stream and verify the stream CRC32C.
+    ///
+    /// Drives the decoder to raw EOF as a side effect, finalizing the CRC accumulator. If the
+    /// count succeeds but the CRC does not match, the CRC mismatch is returned instead of the
+    /// count.
+    pub fn count_samples(self) -> io::Result<usize> {
+        let arc = Arc::clone(&self.arc_hasher);
+        let expected = self.expected;
+        let count = self.inner.count_samples()?;
+        let computed = arc.load(Ordering::Relaxed);
+        if computed != expected {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                ChecksumError::Mismatch {
+                    target: ChecksumTarget::Stream,
+                    computed,
+                    expected,
+                },
+            ));
+        }
+        Ok(count)
+    }
+
+    /// Decode assignments and pass each one to a callback by reference.
+    ///
+    /// When the callback drives the reader to natural EOF, the stream CRC is verified and a
+    /// mismatch is returned as an error. When the callback stops early (`f` returns `Ok(false)`),
+    /// the CRC is not checked — only a full traversal can verify the whole stream.
+    pub fn for_each_assignment<F>(&mut self, mut f: F) -> io::Result<()>
+    where
+        F: FnMut(&[u16], u16) -> io::Result<bool>,
+    {
+        loop {
+            match self.next() {
+                Some(Ok((ref assignment, count))) => {
+                    if !f(assignment, count)? {
+                        return Ok(());
+                    }
+                }
+                Some(Err(e)) => return Err(e),
+                None => return Ok(()),
+            }
+        }
+    }
+
+    /// Decode the remaining stream, write it as JSONL, and verify the stream CRC32C.
+    ///
+    /// Each decoded sample is written as a JSON object containing an `assignment` vector and a
+    /// 1-based `sample` index. After all records are written, the stream CRC is checked; a
+    /// mismatch is returned instead of `Ok(())`.
+    pub fn write_all_jsonl(&mut self, mut writer: impl Write) -> io::Result<()> {
+        let mut sample_number = 0usize;
+        loop {
+            match self.next() {
+                Some(Ok((assignment, count))) => {
+                    for _ in 0..count {
+                        sample_number += 1;
+                        let line = json!({
+                            "assignment": assignment,
+                            "sample": sample_number,
+                        })
+                        .to_string()
+                            + "\n";
+                        writer.write_all(line.as_bytes())?;
+                    }
+                }
+                Some(Err(e)) => return Err(e),
+                None => return Ok(()),
+            }
+        }
+    }
+
+    /// Consume the wrapper and iterate over raw BEN/ben32 frames instead of materialized
+    /// assignments.
+    ///
+    /// Frame iteration is intentionally partial: callers typically stop short of EOF, so the CRC
+    /// tee is never finalized and the stream is **not verified** by this path. Callers needing
+    /// integrity for partial reads should call [`BendlReader::verify_stream_checksum`] separately.
+    pub fn into_frames(self) -> BenStreamFrameReader<ArcHasher<Take<&'a mut R>>> {
+        self.inner.into_frames()
+    }
+}
+
+impl<'a, R: Read + Seek + Send> BendlVerifiedStreamReader<'a, R> {
+    /// Convert into a subsampling iterator over explicit 1-based indices.
+    ///
+    /// Subsampling is intentionally partial: the underlying reader is stopped short of raw EOF, so
+    /// the CRC tee is never finalized and the stream is **not verified** by this path. Use
+    /// [`BendlReader::verify_stream_checksum`] for an explicit full-stream integrity check.
+    pub fn into_subsample_by_indices<T>(
+        self,
+        indices: T,
+    ) -> SubsampleFrameDecoder<BenStreamFrameReader<ArcHasher<Take<&'a mut R>>>>
+    where
+        T: IntoIterator<Item = usize>,
+    {
+        self.inner.into_subsample_by_indices(indices)
+    }
+
+    /// Convert into a subsampling iterator over the inclusive 1-based range `[start, end]`.
+    ///
+    /// Subsampling is intentionally partial and is **not verified** by this path; see
+    /// [`Self::into_subsample_by_indices`].
+    pub fn into_subsample_by_range(
+        self,
+        start: usize,
+        end: usize,
+    ) -> SubsampleFrameDecoder<BenStreamFrameReader<ArcHasher<Take<&'a mut R>>>> {
+        self.inner.into_subsample_by_range(start, end)
+    }
+
+    /// Convert into a subsampling iterator that selects every `step` samples from the 1-based
+    /// `offset`.
+    ///
+    /// Subsampling is intentionally partial and is **not verified** by this path; see
+    /// [`Self::into_subsample_by_indices`].
+    pub fn into_subsample_every(
+        self,
+        step: usize,
+        offset: usize,
+    ) -> SubsampleFrameDecoder<BenStreamFrameReader<ArcHasher<Take<&'a mut R>>>> {
+        self.inner.into_subsample_every(step, offset)
+    }
+}
+
+impl<'a, R: Read + Seek> Iterator for BendlVerifiedStreamReader<'a, R> {
+    type Item = io::Result<(Vec<u16>, u16)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.state {
+            StreamVerifyState::MismatchReported | StreamVerifyState::Verified => return None,
+            StreamVerifyState::Running => {}
+        }
+        match self.inner.next() {
+            Some(item) => Some(item),
+            None => {
+                // Inner reached natural EOF — finalize the CRC check.
+                let computed = self.arc_hasher.load(Ordering::Relaxed);
+                if computed == self.expected {
+                    self.state = StreamVerifyState::Verified;
+                    None
+                } else {
+                    self.state = StreamVerifyState::MismatchReported;
+                    Some(Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        ChecksumError::Mismatch {
+                            target: ChecksumTarget::Stream,
+                            computed,
+                            expected: self.expected,
+                        },
+                    )))
+                }
+            }
+        }
+    }
+}
+
 /// Map a `read_to_end`-time `io::Error` (or any `Read`-derived `io::Error`) into the right
 /// [`BendlReadError`] variant.
 ///
@@ -534,20 +886,6 @@ pub(crate) fn validate_directory_entries(
         }
     }
     Ok(())
-}
-
-/// Errors raised by [`BendlReader::open_assignment_reader`].
-#[derive(Debug, thiserror::Error)]
-pub enum BundleAssignmentReaderError {
-    /// The header's `assignment_format` byte did not map to a known format.
-    #[error("unknown assignment_format in bundle header: {0}")]
-    UnknownAssignmentFormat(u8),
-    /// The embedded BEN/XBEN decoder rejected the stream banner.
-    #[error(transparent)]
-    Decoder(#[from] crate::io::reader::DecoderInitError),
-    /// An underlying I/O error occurred while seeking to the stream.
-    #[error(transparent)]
-    Io(#[from] io::Error),
 }
 
 /// Errors raised when a directory violates the canonical-name or uniqueness rules.

@@ -33,7 +33,7 @@ use super::format::{
     default_compresses_by_type, encode_directory, read_directory, standardized_name_for,
     AssignmentFormat, BendlDirectoryEntry, BendlFormatError, BendlHeader, KnownAssetKind,
     ASSET_FLAG_CHECKSUM, ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, DEFAULT_XZ_PRESET,
-    FINALIZED_YES, HEADER_SIZE,
+    FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
 };
 
 /// Ability to truncate an underlying seekable target to a given length.
@@ -315,6 +315,7 @@ impl<W: Write + Seek> BendlWriter<W> {
             }),
             start_offset: stream_offset,
             bytes_written: 0,
+            hasher: 0,
         })
     }
 
@@ -329,6 +330,9 @@ impl<W: Write + Seek> BendlWriter<W> {
                 // No stream written; treat as empty stream located just after the asset region.
                 let stream_offset = self.inner.seek(SeekFrom::Current(0))?;
                 self.header.stream_offset = stream_offset;
+                // CRC32C of an empty byte sequence is 0x00000000.
+                self.header.stream_checksum = 0;
+                self.header.flags |= HEADER_FLAG_STREAM_CHECKSUM;
                 (0, 0)
             }
         };
@@ -383,6 +387,7 @@ pub struct BendlStreamSession<W: Write + Seek> {
     parent: Option<ParentState>,
     start_offset: u64,
     bytes_written: u64,
+    hasher: u32,
 }
 
 impl<W: Write + Seek> BendlStreamSession<W> {
@@ -405,7 +410,13 @@ impl<W: Write + Seek> BendlStreamSession<W> {
     /// method returns, the session's [`Drop`] impl observes `inner.is_none()` and skips the warn.
     pub fn finish_into_writer(mut self, sample_count: i64) -> BendlWriter<W> {
         let inner = self.inner.take().expect("session has not been finished");
-        let parent = self.parent.take().expect("session has not been finished");
+        let mut parent = self.parent.take().expect("session has not been finished");
+
+        // Patch the stream checksum into the in-memory header so BendlWriter::finish can write it
+        // to disk in a single header patch pass.
+        parent.header.stream_checksum = self.hasher;
+        parent.header.flags |= HEADER_FLAG_STREAM_CHECKSUM;
+
         BendlWriter {
             inner,
             header: parent.header,
@@ -424,7 +435,10 @@ impl<W: Write + Seek> Write for BendlStreamSession<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let inner = self.inner.as_mut().expect("session has not been finished");
         let n = inner.write(buf)?;
-        self.bytes_written += n as u64;
+        if n > 0 {
+            self.bytes_written += n as u64;
+            self.hasher = crc32c::crc32c_append(self.hasher, &buf[..n]);
+        }
         Ok(n)
     }
 
