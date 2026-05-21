@@ -852,6 +852,46 @@ fn writer_asset_round_trips_with_auto_computed_crc32c() {
 }
 
 #[test]
+fn writer_xz_asset_stores_crc_over_compressed_bytes_not_raw() {
+    // The CRC contract for xz-flagged assets is "CRC32C over the on-disk bytes" — i.e. the
+    // compressed bytes, not the raw input. Pin this directly: re-compress the same input, compute
+    // the CRC over the compressed result, and assert it matches the stored value. Asserting that
+    // the stored CRC does NOT equal `crc32c(raw_input)` is what catches the "writer accidentally
+    // hashed pre-compression bytes" regression.
+    let payload = b"the quick brown fox jumps over the lazy dog".to_vec();
+    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    writer
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "xz_asset",
+            &payload,
+            AddAssetOptions::defaults().compress(),
+        )
+        .unwrap();
+    let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
+    let buf = writer.finish().unwrap().into_inner();
+
+    let reader = BendlReader::open(Cursor::new(buf)).unwrap();
+    let entry = reader.find_asset_by_name("xz_asset").cloned().unwrap();
+    assert_ne!(entry.asset_flags & ASSET_FLAG_XZ, 0, "asset must be xz-flagged");
+    assert_ne!(entry.asset_flags & ASSET_FLAG_CHECKSUM, 0);
+
+    let mut encoder = XzEncoder::new(Vec::new(), DEFAULT_XZ_PRESET);
+    encoder.write_all(&payload).unwrap();
+    let compressed = encoder.finish().unwrap();
+    assert_eq!(
+        entry.checksum_u32(),
+        Some(crc32c::crc32c(&compressed)),
+        "stored CRC must be over compressed on-disk bytes"
+    );
+    assert_ne!(
+        entry.checksum_u32(),
+        Some(crc32c::crc32c(&payload)),
+        "stored CRC must NOT be over the raw pre-compression input"
+    );
+}
+
+#[test]
 fn finished_writer_rejects_further_operations() {
     let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);

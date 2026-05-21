@@ -1,4 +1,4 @@
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read, Seek, Write};
 
 use xz2::write::XzEncoder;
 
@@ -1445,6 +1445,116 @@ fn verify_stream_checksum_returns_unavailable_when_flag_clear() {
         ),
         "expected Unavailable(Stream), got {err:?}"
     );
+}
+
+#[test]
+fn asset_payload_reader_unverified_returns_compressed_bytes_for_xz_asset() {
+    // For an xz-flagged asset, `asset_payload_reader_unverified` is the raw on-disk byte
+    // accessor — it must NOT invoke the xz decoder. This is the distinction from
+    // `asset_reader_unverified`, which decompresses but skips CRC verification.
+    let raw = b"the quick brown fox jumps over the lazy dog".to_vec();
+    let (bytes, name, compressed, _, _) = make_single_xz_asset_bundle("xz_blob", &raw);
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name(&name).cloned().unwrap();
+
+    let mut payload_reader = reader.asset_payload_reader_unverified(&entry).unwrap();
+    let mut out = Vec::new();
+    payload_reader.read_to_end(&mut out).unwrap();
+    drop(payload_reader);
+    assert_eq!(out, compressed, "payload reader returns raw compressed bytes");
+    assert_ne!(out, raw, "payload reader did NOT decompress");
+
+    // For an uncompressed asset, the payload reader and the decoded unverified reader produce the
+    // same bytes — there is no codec to bypass.
+    let (bytes2, name2, _, _) = make_single_asset_bundle("raw_blob", b"plain payload");
+    let mut reader2 = BendlReader::open(Cursor::new(bytes2)).unwrap();
+    let entry2 = reader2.find_asset_by_name(&name2).cloned().unwrap();
+    let mut via_payload = Vec::new();
+    reader2
+        .asset_payload_reader_unverified(&entry2)
+        .unwrap()
+        .read_to_end(&mut via_payload)
+        .unwrap();
+    let mut via_unverified = Vec::new();
+    reader2
+        .asset_reader_unverified(&entry2)
+        .unwrap()
+        .read_to_end(&mut via_unverified)
+        .unwrap();
+    assert_eq!(via_payload, b"plain payload".to_vec());
+    assert_eq!(via_payload, via_unverified);
+}
+
+#[test]
+fn asset_bytes_surfaces_io_error_through_failing_reader() {
+    // Variant-discipline test: when the underlying Read+Seek fails after open, asset_bytes for an
+    // uncompressed asset must surface `BendlReadError::Io`, not `Decode`. There is no codec to
+    // blame on an uncompressed payload, so any io::Error reaching the wrapper must be classified
+    // as Io.
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    let (bytes, name, _, _) = make_single_asset_bundle("blob", b"never read me");
+    let fail_flag = Arc::new(AtomicBool::new(false));
+    let reader_inner = FailWhenArmed {
+        inner: Cursor::new(bytes),
+        armed: Arc::clone(&fail_flag),
+    };
+    let mut reader = BendlReader::open(reader_inner).unwrap();
+    // Arm AFTER open completes so header/directory reads succeed; the next read (issued by
+    // asset_bytes for the payload) hits the forced failure.
+    fail_flag.store(true, Ordering::SeqCst);
+    let entry = reader.find_asset_by_name(&name).cloned().unwrap();
+    let err = reader.asset_bytes(&entry).unwrap_err();
+    assert!(
+        matches!(err, BendlReadError::Io(ref e) if e.kind() == std::io::ErrorKind::Other),
+        "expected BendlReadError::Io(Other), got {err:?}"
+    );
+}
+
+#[test]
+fn open_assignment_reader_returns_decoder_init_on_bad_banner() {
+    // Variant-discipline test: corrupt the BEN banner so the BenStreamReader rejects it during
+    // construction. The error must surface as `BendlReadError::DecoderInit`, distinct from `Io`,
+    // `Format`, `Decode`, and `Checksum`. The banner is parsed before the CRC tee reaches EOF, so
+    // DecoderInit wins over any checksum mismatch the corrupted byte would otherwise produce.
+    let (mut bytes, _, _, _) = build_finalized_bundle();
+    let header = BendlHeader::from_bytes(bytes[..HEADER_SIZE].try_into().unwrap()).unwrap();
+    let banner_offset = header.stream_offset as usize;
+    // "STANDARD BEN FILE\x00" prefix is the banner; flip the first byte so it no longer matches.
+    bytes[banner_offset] ^= 0x01;
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    match reader.open_assignment_reader() {
+        Err(BendlReadError::DecoderInit(_)) => {}
+        Err(other) => panic!("expected DecoderInit, got {other:?}"),
+        Ok(_) => panic!("expected Err, got Ok"),
+    }
+}
+
+/// `Read + Seek` test double that returns a forced `io::Error` on every `read` call while the
+/// shared `armed` flag is true. Used to pin the `BendlReadError::Io` wrap site without depending
+/// on filesystem-specific behavior (a deleted file's open fd stays alive on Linux/macOS).
+struct FailWhenArmed<R> {
+    inner: R,
+    armed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl<R: Read> Read for FailWhenArmed<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.armed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "forced read failure",
+            ));
+        }
+        self.inner.read(buf)
+    }
+}
+
+impl<R: Seek> Seek for FailWhenArmed<R> {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.inner.seek(pos)
+    }
 }
 
 #[test]
