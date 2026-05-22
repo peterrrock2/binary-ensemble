@@ -1336,3 +1336,138 @@ fn ben32_encode_run_exceeding_u16_max_splits_correctly() {
     assert_eq!(second & 0xFFFF, 2u32); // remaining 2 elements
     assert_eq!(sentinel, 0u32); // always-present zero sentinel
 }
+
+// ---------------------------------------------------------------------------
+// Bit-packing boundary widths
+// ---------------------------------------------------------------------------
+
+/// Round-trip `assignment` through `BenStreamWriter::for_ben` + `BenStreamReader::from_ben`,
+/// asserting the decoded result matches the input. Used by the bit-packing boundary-width sweep
+/// below to confirm both encoder and decoder agree at every interesting width.
+fn assert_ben_round_trip(assignment: Vec<u16>, variant: BenVariant) {
+    use crate::io::reader::BenStreamReader;
+    use crate::io::writer::BenStreamWriter;
+    use std::io::Cursor;
+
+    let mut ben = Vec::new();
+    {
+        let mut writer = BenStreamWriter::for_ben(&mut ben, variant).unwrap();
+        writer.write_assignment(assignment.clone()).unwrap();
+        if matches!(variant, BenVariant::TwoDelta) {
+            // TwoDelta needs at least one delta frame after the anchor for the
+            // delta-frame bit-packing path to be exercised at all; otherwise the round-trip only
+            // tests the anchor frame (which is MkvChain-shaped).
+            writer.write_assignment(assignment.clone()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+    let reader = BenStreamReader::from_ben(Cursor::new(&ben)).unwrap();
+    let decoded: Vec<Vec<u16>> = reader
+        .silent(true)
+        .flat_map(|r| {
+            let (a, c) = r.unwrap();
+            std::iter::repeat(a).take(c as usize)
+        })
+        .collect();
+    let expected = if matches!(variant, BenVariant::TwoDelta) {
+        vec![assignment.clone(), assignment]
+    } else {
+        vec![assignment]
+    };
+    assert_eq!(
+        decoded, expected,
+        "BEN round-trip failed for variant {variant:?}"
+    );
+}
+
+/// For each `width` in {1, 7, 8, 9, 16} — single-bit, just-under and just-over byte-aligned,
+/// exactly byte-aligned, and the upper bound — exercise both the `mvb` and `mlb` sides of the
+/// bit-packing code by constructing assignments whose encoded frame is forced to that width. The
+/// encoder picks `max_val_bit_count = (16 - max_val.leading_zeros()).max(1)`, so a `max_val` of
+/// `2.pow(width - 1)` (or 1 for width=1) lands on the requested width exactly.
+///
+/// The upper bound of `17` is not tested here because the encoder cannot produce it — `u16`
+/// values cap bit widths at 16. Rejection of a hand-built frame with mvb=17 is already pinned by
+/// `malformed_ben_bit_widths_return_invalid_data` in `tests/test_stress_edges.rs`.
+///
+/// `width=1` is a degenerate case: the only valid `max_val` is 1, so the assignment must contain
+/// only the value 1, which collapses into a single run. mvb and mlb cannot be isolated
+/// independently at this width, so it appears once via the `[1]` single-element fixture (mvb=1
+/// and mlb=1 together).
+#[test]
+fn bit_packing_boundary_widths_round_trip() {
+    // width=1: max_val=1 means all values are 1; the only way to keep mlb=1 too is a single-
+    // element assignment. Both sides at width=1 are pinned by this one fixture.
+    for variant in [
+        BenVariant::Standard,
+        BenVariant::MkvChain,
+        BenVariant::TwoDelta,
+    ] {
+        assert_ben_round_trip(vec![1u16], variant);
+    }
+
+    for &width in &[7u8, 8, 9, 16] {
+        let peak = 1u16 << (width - 1);
+
+        // mvb sweep: alternating `1` and `peak` produces 4 runs of length 1, giving max_val=peak
+        // (so mvb=width) and max_len=1 (so mlb=1). TwoDelta uses only mlb (its label pair is not
+        // bit-packed against a max value), so it's skipped on this side.
+        let mvb_assignment = vec![1u16, peak, 1, peak];
+        for variant in [BenVariant::Standard, BenVariant::MkvChain] {
+            assert_ben_round_trip(mvb_assignment.clone(), variant);
+        }
+
+        // mlb sweep: a single run of length `peak` of value 1. max_val=1 (mvb=1), max_len=peak
+        // (mlb=width). All three variants exercise the run-length bit packing.
+        let mlb_assignment = vec![1u16; peak as usize];
+        for variant in [
+            BenVariant::Standard,
+            BenVariant::MkvChain,
+            BenVariant::TwoDelta,
+        ] {
+            assert_ben_round_trip(mlb_assignment.clone(), variant);
+        }
+    }
+}
+
+/// Independently verify that the encoder actually picks the bit width we expect for each fixture
+/// in `bit_packing_boundary_widths_round_trip`. If a future encoder change makes a different
+/// width choice for the same input, the round-trip test above can still pass — this guards
+/// against that drift.
+#[test]
+fn bit_packing_boundary_widths_pin_encoder_choice() {
+    fn standard_widths(assignment: Vec<u16>) -> (u8, u8) {
+        let frame = BenEncodeFrame::from_assignment(assignment, BenVariant::Standard, None);
+        if let BenEncodeFrame::Standard {
+            max_val_bit_count,
+            max_len_bit_count,
+            ..
+        } = frame
+        {
+            (max_val_bit_count, max_len_bit_count)
+        } else {
+            panic!("expected Standard frame");
+        }
+    }
+
+    // width=1: [1] → mvb=1, mlb=1.
+    assert_eq!(standard_widths(vec![1u16]), (1, 1), "width=1 drift");
+
+    for &width in &[7u8, 8, 9, 16] {
+        let peak = 1u16 << (width - 1);
+
+        // mvb side: [1, peak, 1, peak] → max_val=peak (mvb=width), max_len=1 (mlb=1).
+        assert_eq!(
+            standard_widths(vec![1u16, peak, 1, peak]),
+            (width, 1),
+            "mvb drift at width={width}"
+        );
+
+        // mlb side: [1; peak] → max_val=1 (mvb=1), max_len=peak (mlb=width).
+        assert_eq!(
+            standard_widths(vec![1u16; peak as usize]),
+            (1, width),
+            "mlb drift at width={width}"
+        );
+    }
+}
