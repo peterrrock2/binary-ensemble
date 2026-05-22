@@ -1,4 +1,4 @@
-use std::io::{Cursor, Read, Seek, Write};
+use std::io::{self, Cursor, Read, Seek, Write};
 
 use xz2::write::XzEncoder;
 
@@ -402,27 +402,24 @@ fn interleaved_reads_do_not_corrupt_each_other() {
 }
 
 #[test]
-fn asset_bytes_errors_when_declared_length_runs_past_eof() {
-    // Hand-construct a bundle where the metadata directory entry claims a payload_len that extends
-    // well past EOF.
+fn asset_bytes_errors_with_unexpected_eof_when_payload_len_runs_past_eof() {
+    // Strict-EOF contract: a directory entry whose payload_len claims more bytes than the backing
+    // file provides must surface as BendlReadError::Io wrapping io::ErrorKind::UnexpectedEof.
+    // Returning a short successful read on a corrupt bundle is exactly the silent-corruption
+    // failure mode this contract exists to prevent.
     let mut bytes = build_basic_finalized_bundle();
-    // Parse the directory offset to find where the entry lives.
     let directory_offset = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
-    // Skip the u32 entry count (4 bytes) and then the 16-byte fixed entry header up to
-    // `payload_len` (bytes 16..24 of the entry).
     let entry_start = directory_offset + 4;
     let payload_len_offset = entry_start + 16;
     bytes[payload_len_offset..payload_len_offset + 8].copy_from_slice(&u64::MAX.to_le_bytes());
 
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let entry = reader.find_asset_by_name("metadata.json").cloned().unwrap();
-    // The reader opens fine — the directory parses. But reading the asset bytes must surface an
-    // error eventually (short read vs declared length). xz would also trip on this, but this is the
-    // raw-asset path. Either returns an error or a slice shorter than u64::MAX.
-    reader
-        .asset_bytes(&entry)
-        .map(|b| assert!(b.len() < u64::MAX as usize))
-        .ok();
+    let err = reader.asset_bytes(&entry).unwrap_err();
+    match err {
+        BendlReadError::Io(io_err) => assert_eq!(io_err.kind(), io::ErrorKind::UnexpectedEof),
+        other => panic!("expected BendlReadError::Io(UnexpectedEof), got {other:?}"),
+    }
 }
 
 #[test]
@@ -707,14 +704,13 @@ fn xz_flagged_asset_with_corrupt_payload_surfaces_io_error() {
 }
 
 #[test]
-fn reader_scales_to_very_wide_stream_offset_field() {
-    // Confirm the `Take` bound clamps a stream reader even when the header's stream_len is much
-    // larger than the actual remaining bytes: the reader must return the shorter slice rather than
-    // loop forever or panic. This is a "short read" tolerance check.
+fn assignment_stream_reader_unverified_errors_when_stream_len_runs_past_eof() {
+    // Strict-EOF contract for the assignment stream: when stream_len claims more bytes than the
+    // backing file actually provides, the unverified stream reader must surface
+    // io::ErrorKind::UnexpectedEof rather than silently return a short slice.
     let fake_stream = b"STANDARD BEN FILE\x00\x01tiny".to_vec();
     let actual_len = fake_stream.len() as u64;
     let directory_offset = HEADER_SIZE as u64 + actual_len;
-    // Build a bundle that lies about stream_len: claims ten times what's actually present.
     let entries: Vec<BendlDirectoryEntry> = Vec::new();
     let directory_bytes = encode_directory(&entries).unwrap();
     let header = BendlHeader {
@@ -729,7 +725,7 @@ fn reader_scales_to_very_wide_stream_offset_field() {
         directory_offset,
         directory_len: directory_bytes.len() as u64,
         stream_offset: HEADER_SIZE as u64,
-        stream_len: actual_len * 10, // lie
+        stream_len: actual_len * 10, // claim ten times the actual length
         sample_count: 0,
     };
     let mut bytes = Vec::new();
@@ -739,18 +735,12 @@ fn reader_scales_to_very_wide_stream_offset_field() {
 
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let mut buf = Vec::new();
-    // Take will try to read `stream_len` bytes but the Cursor will just return however many bytes
-    // remain from stream_offset to EOF. The reader must not panic; it must simply return what it
-    // got. Use the unverified reader since this bundle has no stream checksum.
-    reader
+    let err = reader
         .assignment_stream_reader_unverified()
         .unwrap()
         .read_to_end(&mut buf)
-        .unwrap();
-    // Take includes the directory bytes in the window since they come after stream_offset and the
-    // claim exceeds file size — so we assert only that we got *at least* the real stream bytes as a
-    // prefix, which is the basic "no truncation of what exists" check.
-    assert!(buf.starts_with(&fake_stream));
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
 }
 
 #[test]
@@ -1587,4 +1577,269 @@ fn verify_stream_checksum_returns_bundle_incomplete_for_unfinalized() {
         ),
         "expected BundleIncomplete(Stream), got {err:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Strict payload_len / stream_len EOF enforcement
+// ---------------------------------------------------------------------------
+
+/// Returns a bundle whose `metadata.json` entry's `payload_len` has been corrupted to point past
+/// EOF, while the rest of the file remains structurally valid.
+fn build_bundle_with_overlong_metadata_payload_len() -> Vec<u8> {
+    let mut bytes = build_basic_finalized_bundle();
+    let directory_offset = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
+    let entry_start = directory_offset + 4;
+    let payload_len_offset = entry_start + 16;
+    bytes[payload_len_offset..payload_len_offset + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+    bytes
+}
+
+/// Returns a finalized BEN bundle whose declared `stream_len` is much longer than the bytes
+/// actually present in the file. Lays the file out as `[header | directory | stream | EOF]` so the
+/// stream is the last region; ExactLen-driven readers hit underlying EOF and surface
+/// `UnexpectedEof` rather than overshoot into unrelated trailing bytes.
+fn build_bundle_with_overlong_stream_len() -> Vec<u8> {
+    let fake_stream = b"STANDARD BEN FILE\x00\x01".to_vec();
+    let actual_stream_len = fake_stream.len() as u64;
+    let directory = encode_directory(&[]).unwrap();
+    let directory_offset = HEADER_SIZE as u64;
+    let stream_offset = directory_offset + directory.len() as u64;
+
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_YES,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        alignment_padding: 0,
+        flags: HEADER_FLAG_STREAM_CHECKSUM,
+        stream_checksum: crc32c::crc32c(&fake_stream),
+        directory_offset,
+        directory_len: directory.len() as u64,
+        stream_offset,
+        stream_len: actual_stream_len * 10, // claim ten times the actual length
+        sample_count: 0,
+    };
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&header.to_bytes());
+    bytes.extend_from_slice(&directory);
+    bytes.extend_from_slice(&fake_stream);
+    bytes
+}
+
+#[test]
+fn asset_bytes_unverified_errors_with_unexpected_eof_when_payload_len_runs_past_eof() {
+    let bytes = build_bundle_with_overlong_metadata_payload_len();
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name("metadata.json").cloned().unwrap();
+    let err = reader.asset_bytes_unverified(&entry).unwrap_err();
+    match err {
+        BendlReadError::Io(io_err) => assert_eq!(io_err.kind(), io::ErrorKind::UnexpectedEof),
+        other => panic!("expected BendlReadError::Io(UnexpectedEof), got {other:?}"),
+    }
+}
+
+#[test]
+fn asset_reader_returns_unexpected_eof_when_payload_len_runs_past_eof() {
+    let bytes = build_bundle_with_overlong_metadata_payload_len();
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name("metadata.json").cloned().unwrap();
+    let mut r = reader.asset_reader(&entry).unwrap();
+    let mut buf = Vec::new();
+    let err = r.read_to_end(&mut buf).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn asset_reader_unverified_returns_unexpected_eof_when_payload_len_runs_past_eof() {
+    let bytes = build_bundle_with_overlong_metadata_payload_len();
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name("metadata.json").cloned().unwrap();
+    let mut r = reader.asset_reader_unverified(&entry).unwrap();
+    let mut buf = Vec::new();
+    let err = r.read_to_end(&mut buf).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn asset_payload_reader_unverified_returns_unexpected_eof_when_payload_len_runs_past_eof() {
+    let bytes = build_bundle_with_overlong_metadata_payload_len();
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name("metadata.json").cloned().unwrap();
+    let mut r = reader.asset_payload_reader_unverified(&entry).unwrap();
+    let mut buf = Vec::new();
+    let err = r.read_to_end(&mut buf).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn asset_bytes_returns_unexpected_eof_for_xz_asset_with_overlong_payload_len() {
+    // For an xz-flagged asset whose payload_len claims more bytes than the backing file holds, the
+    // surface must be BendlReadError::Io(UnexpectedEof) — not BendlReadError::Decode — because the
+    // failure is a bundle-layer short range, not a codec failure. Layout the bundle as
+    // `[header | directory | compressed_payload | EOF]` so the compressed payload is the last
+    // region; otherwise xz would over-read into unrelated trailing bytes and report a corrupt-xz
+    // error instead of the short-range surface we want to assert.
+    let raw_payload = br#"{"hello":"world"}"#.to_vec();
+    let mut compressed = Vec::new();
+    let mut encoder = XzEncoder::new(&mut compressed, 6);
+    encoder.write_all(&raw_payload).unwrap();
+    encoder.finish().unwrap();
+
+    let directory_offset = HEADER_SIZE as u64;
+    let placeholder_payload_offset = 0u64;
+    let placeholder_entries = vec![with_crc(
+        BendlDirectoryEntry {
+            asset_type: ASSET_TYPE_GRAPH,
+            asset_flags: ASSET_FLAG_JSON | ASSET_FLAG_XZ,
+            name: "graph.json".to_string(),
+            payload_offset: placeholder_payload_offset,
+            payload_len: u64::MAX,
+            checksum: None,
+        },
+        &compressed,
+    )];
+    let placeholder_directory = encode_directory(&placeholder_entries).unwrap();
+    let payload_offset = directory_offset + placeholder_directory.len() as u64;
+
+    let entries = vec![with_crc(
+        BendlDirectoryEntry {
+            asset_type: ASSET_TYPE_GRAPH,
+            asset_flags: ASSET_FLAG_JSON | ASSET_FLAG_XZ,
+            name: "graph.json".to_string(),
+            payload_offset,
+            payload_len: u64::MAX, // claim far more than is present
+            checksum: None,
+        },
+        &compressed,
+    )];
+    let directory = encode_directory(&entries).unwrap();
+    assert_eq!(directory.len(), placeholder_directory.len());
+
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_YES,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        alignment_padding: 0,
+        flags: HEADER_FLAG_STREAM_CHECKSUM,
+        stream_checksum: 0,
+        directory_offset,
+        directory_len: directory.len() as u64,
+        stream_offset: HEADER_SIZE as u64,
+        stream_len: 0,
+        sample_count: 0,
+    };
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&header.to_bytes());
+    bytes.extend_from_slice(&directory);
+    bytes.extend_from_slice(&compressed);
+
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = reader.find_asset_by_name("graph.json").cloned().unwrap();
+    let err = reader.asset_bytes(&entry).unwrap_err();
+    match err {
+        BendlReadError::Io(io_err) => assert_eq!(io_err.kind(), io::ErrorKind::UnexpectedEof),
+        other => panic!("expected BendlReadError::Io(UnexpectedEof), got {other:?}"),
+    }
+}
+
+#[test]
+fn assignment_stream_reader_returns_unexpected_eof_when_stream_len_runs_past_eof() {
+    let bytes = build_bundle_with_overlong_stream_len();
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let mut r = reader.assignment_stream_reader().unwrap();
+    let mut buf = Vec::new();
+    let err = r.read_to_end(&mut buf).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn open_assignment_reader_returns_unexpected_eof_when_stream_len_runs_past_eof() {
+    let bytes = build_bundle_with_overlong_stream_len();
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let mut decoded = reader.open_assignment_reader().unwrap();
+    // Drive iteration; the underlying BEN decoder runs out of backing bytes before the declared
+    // stream_len, and the BENDL-owned wrapper surfaces that as UnexpectedEof rather than a codec
+    // error.
+    let final_item = loop {
+        match decoded.next() {
+            Some(Ok(_)) => continue,
+            Some(Err(e)) => break Some(e),
+            None => break None,
+        }
+    };
+    let err = final_item.expect("expected an error before natural EOF");
+    assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn verify_stream_checksum_returns_unexpected_eof_when_stream_len_runs_past_eof() {
+    let bytes = build_bundle_with_overlong_stream_len();
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let err = reader.verify_stream_checksum().unwrap_err();
+    match err {
+        BendlReadError::Io(io_err) => assert_eq!(io_err.kind(), io::ErrorKind::UnexpectedEof),
+        other => panic!("expected BendlReadError::Io(UnexpectedEof), got {other:?}"),
+    }
+}
+
+#[test]
+fn write_all_jsonl_returns_unexpected_eof_when_stream_len_runs_past_eof() {
+    // write_all_jsonl delegates to BendlVerifiedStreamReader::next, so the iterator's short-range
+    // translation must propagate through this consuming method too. Pin it explicitly so a future
+    // refactor that bypasses `next` (e.g. driving the inner reader directly) cannot quietly drop
+    // the UnexpectedEof surface in favor of a codec error.
+    let bytes = build_bundle_with_overlong_stream_len();
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let mut decoded = reader.open_assignment_reader().unwrap();
+    let err = decoded.write_all_jsonl(std::io::sink()).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn open_assignment_reader_returns_unexpected_eof_when_banner_falls_in_short_range() {
+    // Construction-time variant of the strict-EOF contract: if stream_len is so short that
+    // BenStreamReader can't even read its 17-byte banner, the surface must be a bundle-layer
+    // UnexpectedEof — not BendlReadError::DecoderInit. The banner read happens inside
+    // `from_ben`/`from_xben`, before any iterator step, so this catches the
+    // "codec-reclassification at construction" gap.
+    //
+    // Build a bundle whose declared stream_len claims 100 bytes but only provides 4 — fewer than
+    // the 17-byte banner needs.
+    let stream_bytes = b"STAN".to_vec();
+    let directory = encode_directory(&[]).unwrap();
+    let directory_offset = HEADER_SIZE as u64;
+    let stream_offset = directory_offset + directory.len() as u64;
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_YES,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        alignment_padding: 0,
+        flags: HEADER_FLAG_STREAM_CHECKSUM,
+        stream_checksum: 0,
+        directory_offset,
+        directory_len: directory.len() as u64,
+        stream_offset,
+        stream_len: 100, // claim far more than is present
+        sample_count: 0,
+    };
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&header.to_bytes());
+    bytes.extend_from_slice(&directory);
+    bytes.extend_from_slice(&stream_bytes);
+
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    match reader.open_assignment_reader() {
+        Err(BendlReadError::Io(io_err)) => {
+            assert_eq!(io_err.kind(), io::ErrorKind::UnexpectedEof);
+        }
+        Err(other) => panic!("expected BendlReadError::Io(UnexpectedEof), got {other:?}"),
+        Ok(_) => panic!("expected Err, got Ok"),
+    }
 }

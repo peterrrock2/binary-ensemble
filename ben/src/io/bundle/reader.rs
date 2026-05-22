@@ -17,9 +17,10 @@
 //! - [`BendlReader::verify_asset_checksum`] and [`BendlReader::verify_all_asset_checksums`] are
 //!   explicit raw-bytes verifiers (no decoding) that do not return decoded payload bytes.
 
-use std::io::{self, Read, Seek, SeekFrom, Take, Write};
+use std::fmt;
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::sync::{
-    atomic::{AtomicU32, Ordering},
+    atomic::{AtomicBool, AtomicU32, Ordering},
     Arc,
 };
 
@@ -170,7 +171,7 @@ impl<R: Read + Seek> BendlReader<R> {
         let expected = self.header.stream_checksum;
         let (offset, len) = self.assignment_stream_range()?;
         self.inner.seek(SeekFrom::Start(offset))?;
-        let raw = (&mut self.inner).take(len);
+        let raw = ExactLen::new(&mut self.inner, len, ShortRangeFlag::new());
         Ok(Box::new(RawVerifyingReader {
             inner: raw,
             hasher: 0,
@@ -184,10 +185,16 @@ impl<R: Read + Seek> BendlReader<R> {
     ///
     /// Works on both finalized and unfinalized bundles. Useful for recovery/debug flows and for
     /// callers that need the raw bytes without the overhead of a CRC check.
-    pub fn assignment_stream_reader_unverified(&mut self) -> io::Result<Take<&mut R>> {
+    pub fn assignment_stream_reader_unverified(
+        &mut self,
+    ) -> io::Result<Box<dyn Read + '_>> {
         let (offset, len) = self.assignment_stream_range()?;
         self.inner.seek(SeekFrom::Start(offset))?;
-        Ok((&mut self.inner).take(len))
+        Ok(Box::new(ExactLen::new(
+            &mut self.inner,
+            len,
+            ShortRangeFlag::new(),
+        )))
     }
 
     /// Construct a verified decoded assignment reader that checks the stream CRC32C after the
@@ -220,7 +227,8 @@ impl<R: Read + Seek> BendlReader<R> {
         })?;
         let (offset, len) = self.assignment_stream_range()?;
         self.inner.seek(SeekFrom::Start(offset))?;
-        let raw = (&mut self.inner).take(len);
+        let short_flag = ShortRangeFlag::new();
+        let raw = ExactLen::new(&mut self.inner, len, short_flag.clone());
 
         let arc_hasher = Arc::new(AtomicU32::new(0));
         let shared_raw = ArcHasher {
@@ -228,15 +236,31 @@ impl<R: Read + Seek> BendlReader<R> {
             state: Arc::clone(&arc_hasher),
         };
 
-        let inner = match format {
-            AssignmentFormat::Ben => BenStreamReader::from_ben(shared_raw)?,
-            AssignmentFormat::Xben => BenStreamReader::from_xben(shared_raw)?,
+        let init = match format {
+            AssignmentFormat::Ben => BenStreamReader::from_ben(shared_raw),
+            AssignmentFormat::Xben => BenStreamReader::from_xben(shared_raw),
+        };
+        let inner = match init {
+            Ok(inner) => inner,
+            Err(e) => {
+                // If the underlying ExactLen flagged a short range while the codec was reading its
+                // banner, surface a bundle-layer UnexpectedEof rather than a DecoderInit so callers
+                // see the structural truncation as the failure, not a banner parse error.
+                if short_flag.get() {
+                    return Err(BendlReadError::Io(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        ShortRangeMarker { remaining: 0 },
+                    )));
+                }
+                return Err(e.into());
+            }
         };
 
         Ok(BendlVerifiedStreamReader {
             inner,
             expected,
             arc_hasher,
+            short_flag,
             state: StreamVerifyState::Running,
         })
     }
@@ -273,10 +297,7 @@ impl<R: Read + Seek> BendlReader<R> {
             if n == 0 {
                 return Err(BendlReadError::Io(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
-                    format!(
-                        "stream ended {} byte(s) before declared length",
-                        remaining
-                    ),
+                    ShortRangeMarker { remaining },
                 )));
             }
             hasher = crc32c::crc32c_append(hasher, &buf[..n]);
@@ -360,7 +381,8 @@ impl<R: Read + Seek> BendlReader<R> {
         let target = ChecksumTarget::Asset(entry.name.clone());
 
         self.inner.seek(SeekFrom::Start(entry.payload_offset))?;
-        let raw = (&mut self.inner).take(entry.payload_len);
+        let short_flag = ShortRangeFlag::new();
+        let raw = ExactLen::new(&mut self.inner, entry.payload_len, short_flag.clone());
 
         if entry.asset_flags & ASSET_FLAG_XZ != 0 {
             // Compressed: CRC tee sits *inside* the XzDecoder so the tee accumulates over raw
@@ -372,6 +394,7 @@ impl<R: Read + Seek> BendlReader<R> {
                 decoder,
                 expected,
                 target,
+                short_flag,
                 state: VerifyState::Reading,
             }))
         } else {
@@ -395,9 +418,16 @@ impl<R: Read + Seek> BendlReader<R> {
         entry: &BendlDirectoryEntry,
     ) -> Result<Box<dyn Read + 'a>, BendlReadError> {
         self.inner.seek(SeekFrom::Start(entry.payload_offset))?;
-        let raw = (&mut self.inner).take(entry.payload_len);
+        let short_flag = ShortRangeFlag::new();
+        let raw = ExactLen::new(&mut self.inner, entry.payload_len, short_flag.clone());
         if entry.asset_flags & ASSET_FLAG_XZ != 0 {
-            Ok(Box::new(XzDecoder::new(raw)))
+            // Wrap the decoder so that if xz reports a runtime error while the underlying
+            // ExactLen has flagged a short read, the surface is a short-range UnexpectedEof
+            // rather than a codec error.
+            Ok(Box::new(ShortRangeAwareReader {
+                inner: XzDecoder::new(raw),
+                short_flag,
+            }))
         } else {
             Ok(Box::new(raw))
         }
@@ -415,7 +445,11 @@ impl<R: Read + Seek> BendlReader<R> {
         entry: &BendlDirectoryEntry,
     ) -> Result<Box<dyn Read + 'a>, BendlReadError> {
         self.inner.seek(SeekFrom::Start(entry.payload_offset))?;
-        Ok(Box::new((&mut self.inner).take(entry.payload_len)))
+        Ok(Box::new(ExactLen::new(
+            &mut self.inner,
+            entry.payload_len,
+            ShortRangeFlag::new(),
+        )))
     }
 
     /// Verify the stored CRC32C of a single asset without returning any decoded bytes.
@@ -449,10 +483,7 @@ impl<R: Read + Seek> BendlReader<R> {
                 // callers can distinguish a truncated bundle from a CRC mismatch.
                 return Err(BendlReadError::Io(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
-                    format!(
-                        "asset {:?} payload ended {} byte(s) before declared length",
-                        entry.name, remaining
-                    ),
+                    ShortRangeMarker { remaining },
                 )));
             }
             hasher = crc32c::crc32c_append(hasher, &buf[..n]);
@@ -495,6 +526,124 @@ impl<R: Read + Seek> BendlReader<R> {
 }
 
 // ---------------------------------------------------------------------------
+// Strict-length plumbing
+// ---------------------------------------------------------------------------
+
+/// Marker error attached to the `io::Error` returned when an [`ExactLen`] reader hits underlying
+/// EOF before consuming its declared length. Used by convenience APIs to recognise a bundle-layer
+/// short-range failure even when it has surfaced through a codec.
+#[derive(Debug)]
+pub(crate) struct ShortRangeMarker {
+    pub remaining: u64,
+}
+
+impl fmt::Display for ShortRangeMarker {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "bundle range ended {} byte(s) before declared length",
+            self.remaining
+        )
+    }
+}
+
+impl std::error::Error for ShortRangeMarker {}
+
+/// Shared flag set by an [`ExactLen`] reader when the underlying reader runs out of bytes before
+/// the declared length is reached. Clones share state so a wrapper above a codec can detect the
+/// short read even if the codec swallows the inner `UnexpectedEof` in favor of its own error.
+#[derive(Clone, Default)]
+pub struct ShortRangeFlag(Arc<AtomicBool>);
+
+impl ShortRangeFlag {
+    pub(crate) fn new() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+
+    pub(crate) fn set(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+
+    pub(crate) fn get(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
+/// Bounded reader that enforces an exact byte length. Behaves like [`std::io::Take`] for reads
+/// within the declared length, but returns
+/// `Err(io::Error::new(io::ErrorKind::UnexpectedEof, ShortRangeMarker))` (and sets the shared
+/// [`ShortRangeFlag`]) if the underlying reader signals EOF before the declared length is reached.
+///
+/// `ExactLen` is the BENDL-layer guarantee that `payload_len` and `stream_len` are exact byte
+/// counts of the on-disk range; a backing file shorter than declared is a corrupt bundle, not a
+/// short successful read.
+pub struct ExactLen<R: Read> {
+    inner: R,
+    remaining: u64,
+    flag: ShortRangeFlag,
+}
+
+impl<R: Read> ExactLen<R> {
+    pub(crate) fn new(inner: R, declared: u64, flag: ShortRangeFlag) -> Self {
+        Self {
+            inner,
+            remaining: declared,
+            flag,
+        }
+    }
+}
+
+impl<R: Read> Read for ExactLen<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.remaining == 0 || buf.is_empty() {
+            return Ok(0);
+        }
+        let max = (buf.len() as u64).min(self.remaining) as usize;
+        let n = self.inner.read(&mut buf[..max])?;
+        if n == 0 {
+            // Underlying reader hit EOF before our declared length. Set the shared flag so a
+            // wrapper above a codec can recognise this as a bundle-range failure, and surface as
+            // UnexpectedEof carrying the marker.
+            let remaining = self.remaining;
+            self.flag.set();
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                ShortRangeMarker { remaining },
+            ));
+        }
+        self.remaining -= n as u64;
+        Ok(n)
+    }
+}
+
+/// Wraps a reader sitting above an [`ExactLen`]-bounded source. If the underlying reader returns
+/// an error and the shared `ShortRangeFlag` is set, the error is replaced with an `UnexpectedEof`
+/// carrying a [`ShortRangeMarker`] so callers see a bundle-layer short-range failure rather than a
+/// codec-specific error message.
+struct ShortRangeAwareReader<R: Read> {
+    inner: R,
+    short_flag: ShortRangeFlag,
+}
+
+impl<R: Read> Read for ShortRangeAwareReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.inner.read(buf) {
+            Ok(n) => Ok(n),
+            Err(e) => {
+                if self.short_flag.get() {
+                    Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        ShortRangeMarker { remaining: 0 },
+                    ))
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Verifying reader plumbing
 // ---------------------------------------------------------------------------
 
@@ -514,7 +663,7 @@ enum VerifyState {
 /// as they fly past, and on raw EOF either confirms the checksum or returns
 /// [`ChecksumError::Mismatch`] in place of the usual `Ok(0)`.
 struct RawVerifyingReader<'a, R: Read + Seek> {
-    inner: Take<&'a mut R>,
+    inner: ExactLen<&'a mut R>,
     hasher: u32,
     expected: u32,
     target: ChecksumTarget,
@@ -574,9 +723,10 @@ impl<R: Read> Read for CrcTeeReader<R> {
 /// Verifying wrapper around an `XzDecoder<CrcTeeReader<…>>`. Lets the codec observe normal raw EOF
 /// before finalizing the CRC check at the decoded layer.
 struct DecodedVerifyingReader<'a, R: Read + Seek> {
-    decoder: XzDecoder<CrcTeeReader<Take<&'a mut R>>>,
+    decoder: XzDecoder<CrcTeeReader<ExactLen<&'a mut R>>>,
     expected: u32,
     target: ChecksumTarget,
+    short_flag: ShortRangeFlag,
     state: VerifyState,
 }
 
@@ -586,7 +736,21 @@ impl<R: Read + Seek> Read for DecodedVerifyingReader<'_, R> {
             VerifyState::EofChecked | VerifyState::Failed => return Ok(0),
             VerifyState::Reading => {}
         }
-        let n = self.decoder.read(buf)?;
+        let n = match self.decoder.read(buf) {
+            Ok(n) => n,
+            Err(e) => {
+                // If the underlying ExactLen flagged a short range, surface it as a bundle-layer
+                // UnexpectedEof rather than a codec error — the bytes were missing, not malformed.
+                self.state = VerifyState::Failed;
+                if self.short_flag.get() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        ShortRangeMarker { remaining: 0 },
+                    ));
+                }
+                return Err(e);
+            }
+        };
         if n == 0 {
             let computed = self.decoder.get_ref().hasher;
             if computed == self.expected {
@@ -633,8 +797,13 @@ impl<R: Read> Read for ArcHasher<R> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StreamVerifyState {
     Running,
-    /// CRC mismatch was returned once as `Some(Err(...))`. Subsequent iterator calls return `None`.
+    /// A CRC mismatch was returned once as `Some(Err(...))`. Subsequent iterator calls return
+    /// `None`.
     MismatchReported,
+    /// A non-CRC terminal error (codec failure, bundle-layer short range, etc.) was returned once
+    /// as `Some(Err(...))`. Subsequent iterator calls return `None`. Kept distinct from
+    /// `MismatchReported` so the state machine self-documents which class of failure tripped it.
+    Errored,
     /// CRC matched after natural EOF. Subsequent iterator calls return `None`.
     Verified,
 }
@@ -652,9 +821,10 @@ enum StreamVerifyState {
 /// so the CRC tee is never finalized. Callers that need integrity for partial reads must call
 /// [`BendlReader::verify_stream_checksum`] separately.
 pub struct BendlVerifiedStreamReader<'a, R: Read + Seek> {
-    inner: BenStreamReader<ArcHasher<Take<&'a mut R>>>,
+    inner: BenStreamReader<ArcHasher<ExactLen<&'a mut R>>>,
     expected: u32,
     arc_hasher: Arc<AtomicU32>,
+    short_flag: ShortRangeFlag,
     state: StreamVerifyState,
 }
 
@@ -683,7 +853,19 @@ impl<'a, R: Read + Seek> BendlVerifiedStreamReader<'a, R> {
     pub fn count_samples(self) -> io::Result<usize> {
         let arc = Arc::clone(&self.arc_hasher);
         let expected = self.expected;
-        let count = self.inner.count_samples()?;
+        let short_flag = self.short_flag.clone();
+        let count = match self.inner.count_samples() {
+            Ok(count) => count,
+            Err(e) => {
+                if short_flag.get() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        ShortRangeMarker { remaining: 0 },
+                    ));
+                }
+                return Err(e);
+            }
+        };
         let computed = arc.load(Ordering::Relaxed);
         if computed != expected {
             return Err(io::Error::new(
@@ -753,7 +935,7 @@ impl<'a, R: Read + Seek> BendlVerifiedStreamReader<'a, R> {
     /// Frame iteration is intentionally partial: callers typically stop short of EOF, so the CRC
     /// tee is never finalized and the stream is **not verified** by this path. Callers needing
     /// integrity for partial reads should call [`BendlReader::verify_stream_checksum`] separately.
-    pub fn into_frames(self) -> BenStreamFrameReader<ArcHasher<Take<&'a mut R>>> {
+    pub fn into_frames(self) -> BenStreamFrameReader<ArcHasher<ExactLen<&'a mut R>>> {
         self.inner.into_frames()
     }
 }
@@ -767,7 +949,7 @@ impl<'a, R: Read + Seek + Send> BendlVerifiedStreamReader<'a, R> {
     pub fn into_subsample_by_indices<T>(
         self,
         indices: T,
-    ) -> SubsampleFrameDecoder<BenStreamFrameReader<ArcHasher<Take<&'a mut R>>>>
+    ) -> SubsampleFrameDecoder<BenStreamFrameReader<ArcHasher<ExactLen<&'a mut R>>>>
     where
         T: IntoIterator<Item = usize>,
     {
@@ -782,7 +964,7 @@ impl<'a, R: Read + Seek + Send> BendlVerifiedStreamReader<'a, R> {
         self,
         start: usize,
         end: usize,
-    ) -> SubsampleFrameDecoder<BenStreamFrameReader<ArcHasher<Take<&'a mut R>>>> {
+    ) -> SubsampleFrameDecoder<BenStreamFrameReader<ArcHasher<ExactLen<&'a mut R>>>> {
         self.inner.into_subsample_by_range(start, end)
     }
 
@@ -795,7 +977,7 @@ impl<'a, R: Read + Seek + Send> BendlVerifiedStreamReader<'a, R> {
         self,
         step: usize,
         offset: usize,
-    ) -> SubsampleFrameDecoder<BenStreamFrameReader<ArcHasher<Take<&'a mut R>>>> {
+    ) -> SubsampleFrameDecoder<BenStreamFrameReader<ArcHasher<ExactLen<&'a mut R>>>> {
         self.inner.into_subsample_every(step, offset)
     }
 }
@@ -805,10 +987,24 @@ impl<'a, R: Read + Seek> Iterator for BendlVerifiedStreamReader<'a, R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.state {
-            StreamVerifyState::MismatchReported | StreamVerifyState::Verified => return None,
+            StreamVerifyState::MismatchReported
+            | StreamVerifyState::Errored
+            | StreamVerifyState::Verified => return None,
             StreamVerifyState::Running => {}
         }
         match self.inner.next() {
+            Some(Err(e)) => {
+                // Non-CRC terminal error: codec failure, bundle-layer short range, or anything else
+                // the inner reader returned. CRC mismatch lives in the `None` branch below.
+                self.state = StreamVerifyState::Errored;
+                if self.short_flag.get() {
+                    return Some(Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        ShortRangeMarker { remaining: 0 },
+                    )));
+                }
+                Some(Err(e))
+            }
             Some(item) => Some(item),
             None => {
                 // Inner reached natural EOF — finalize the CRC check.
@@ -840,6 +1036,11 @@ impl<'a, R: Read + Seek> Iterator for BendlVerifiedStreamReader<'a, R> {
 /// context. Codec-runtime errors from xz/BEN go to [`BendlReadError::Decode`] when the entry is
 /// xz-flagged; raw payload errors stay `Io`.
 fn classify_read_error(err: io::Error, entry: &BendlDirectoryEntry) -> BendlReadError {
+    // Bundle-layer short-range failures map to Io regardless of asset flags. A backing file
+    // shorter than payload_len is a structural bundle problem, not a codec error.
+    if err.get_ref().is_some_and(|e| e.is::<ShortRangeMarker>()) {
+        return BendlReadError::Io(err);
+    }
     if err.get_ref().is_some_and(|e| e.is::<ChecksumError>()) {
         match err
             .into_inner()
