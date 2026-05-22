@@ -143,6 +143,114 @@ fn writer_twodelta_chunk_size_1() {
     assert_eq!(results, assignments);
 }
 
+// ── Zero/one-sample edges ─────────────────────────────────────────────
+
+/// Round-trip an `assignments` list (possibly empty) through a BEN writer and reader for the
+/// given variant, asserting the decoded sequence equals the input. Used by the zero/one-sample
+/// matrix tests below.
+fn assert_ben_round_trip(assignments: &[Vec<u16>], variant: BenVariant) {
+    let mut ben = Vec::new();
+    {
+        let mut writer = BenStreamWriter::for_ben(&mut ben, variant).unwrap();
+        for a in assignments {
+            writer.write_assignment(a.clone()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+    let reader = BenStreamReader::from_ben(Cursor::new(&ben)).unwrap();
+    let decoded: Vec<Vec<u16>> = reader
+        .silent(true)
+        .flat_map(|r| {
+            let (a, c) = r.unwrap();
+            std::iter::repeat(a).take(c as usize)
+        })
+        .collect();
+    assert_eq!(
+        decoded, assignments,
+        "BEN round-trip failed for {variant:?}"
+    );
+}
+
+/// XBEN counterpart of [`assert_ben_round_trip`].
+fn assert_xben_round_trip(assignments: &[Vec<u16>], variant: BenVariant) {
+    let mut xben = Vec::new();
+    {
+        let mut writer = build_xben_writer(&mut xben, variant, None);
+        for a in assignments {
+            writer.write_assignment(a.clone()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+    let reader = BenStreamReader::from_xben(Cursor::new(&xben)).unwrap();
+    let decoded: Vec<Vec<u16>> = reader
+        .silent(true)
+        .flat_map(|r| {
+            let (a, c) = r.unwrap();
+            std::iter::repeat(a).take(c as usize)
+        })
+        .collect();
+    assert_eq!(
+        decoded, assignments,
+        "XBEN round-trip failed for {variant:?}"
+    );
+}
+
+/// Zero-sample (banner-only) BEN streams round-trip for every variant. Constructed by opening
+/// the writer and immediately finishing it without any `write_assignment` calls. Catches stream
+/// readers that assume at least one frame follows the banner.
+#[test]
+fn writer_ben_zero_sample_round_trip_per_variant() {
+    for variant in [
+        BenVariant::Standard,
+        BenVariant::MkvChain,
+        BenVariant::TwoDelta,
+    ] {
+        assert_ben_round_trip(&[], variant);
+    }
+}
+
+/// Zero-sample XBEN streams. XBEN adds an outer xz frame around the BEN content, so this also
+/// covers any reader path that expects at least one BEN frame inside the compressed payload.
+#[test]
+fn writer_xben_zero_sample_round_trip_per_variant() {
+    for variant in [
+        BenVariant::Standard,
+        BenVariant::MkvChain,
+        BenVariant::TwoDelta,
+    ] {
+        assert_xben_round_trip(&[], variant);
+    }
+}
+
+/// One-sample BEN streams. Each fixture contains a single first frame; for TwoDelta this is the
+/// MkvChain-shaped anchor frame (no delta frames follow, since there's no second sample).
+#[test]
+fn writer_ben_one_sample_round_trip_per_variant() {
+    let assignment = vec![1u16, 1, 2, 2];
+    for variant in [
+        BenVariant::Standard,
+        BenVariant::MkvChain,
+        BenVariant::TwoDelta,
+    ] {
+        assert_ben_round_trip(&[assignment.clone()], variant);
+    }
+}
+
+/// One-sample XBEN streams. Mirrors the BEN matrix above but through the xz-compressed wire
+/// format. For TwoDelta this exercises the XBEN columnar-chunk path when only an anchor exists
+/// and no chunk has accumulated.
+#[test]
+fn writer_xben_one_sample_round_trip_per_variant() {
+    let assignment = vec![1u16, 1, 2, 2];
+    for variant in [
+        BenVariant::Standard,
+        BenVariant::MkvChain,
+        BenVariant::TwoDelta,
+    ] {
+        assert_xben_round_trip(&[assignment.clone()], variant);
+    }
+}
+
 #[test]
 fn writer_twodelta_chunk_boundary_off_by_one_grid() {
     // Off-by-one bugs in the chunked TwoDelta path hide exactly at the boundaries between full
