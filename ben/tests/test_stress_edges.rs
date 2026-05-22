@@ -670,3 +670,261 @@ fn bendl_append_truncated_new_directory_is_rejected_on_reopen() {
     let err = expect_bendl_open_err(appended);
     assert!(err.to_string().contains("IO error"));
 }
+
+// ---------------------------------------------------------------------------
+// BENDL adversarial-bytes fuzz
+// ---------------------------------------------------------------------------
+
+/// Mint a valid BENDL bundle that exercises every public surface the no-panic harness will drive:
+/// a finalized header with `HEADER_FLAG_STREAM_CHECKSUM`, an xz-compressed graph asset, a raw JSON
+/// metadata asset, a raw custom asset, and an XBEN assignment stream. This is the seed used by
+/// `seeded_malformed_bendl_bytes_do_not_panic`.
+fn valid_bendl_seed() -> Vec<u8> {
+    let mut writer =
+        BendlWriter::new(Cursor::new(Vec::new()), AssignmentFormat::Xben).unwrap();
+    writer
+        .add_asset(
+            ASSET_TYPE_GRAPH,
+            "graph.json",
+            br#"{"nodes":4,"edges":[[0,1],[1,2],[2,3]]}"#,
+            AddAssetOptions::defaults().json().compress(),
+        )
+        .unwrap();
+    writer
+        .add_asset(
+            binary_ensemble::io::bundle::format::ASSET_TYPE_METADATA,
+            "metadata.json",
+            br#"{"variant":"standard","bundle_version":1}"#,
+            AddAssetOptions::defaults().json().raw(),
+        )
+        .unwrap();
+    writer
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "extra.bin",
+            b"trailing custom asset",
+            AddAssetOptions::defaults().raw(),
+        )
+        .unwrap();
+
+    let mut session = writer.into_stream_session().unwrap();
+    encode_jsonl_to_xben(
+        Cursor::new(b"{\"assignment\":[1,1,2,2],\"sample\":1}\n{\"assignment\":[1,2,1,2],\"sample\":2}\n".as_slice()),
+        &mut session,
+        BenVariant::Standard,
+        Some(1),
+        Some(1),
+        None,
+        None,
+    )
+    .unwrap();
+    let writer = session.finish_into_writer(2);
+    writer.finish().unwrap().into_inner()
+}
+
+/// Open the bundle and drive every public read accessor. Any panic from any reader path fails the
+/// test loudly. Errors are expected (the input is adversarial) and are silently discarded; only
+/// panics matter here.
+fn assert_bendl_bytes_do_not_panic(bytes: Vec<u8>) {
+    let outcome = std::panic::catch_unwind(|| {
+        let mut reader = match BendlReader::open(Cursor::new(bytes)) {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+
+        // Header / sample-count getters never read further bytes; they should always be safe.
+        let _ = reader.is_finalized();
+        let _ = reader.sample_count();
+        let _ = reader.assignment_format();
+
+        // Stream range computation; may seek to EOF on unfinalized bundles but never panics.
+        let _ = reader.assignment_stream_range();
+
+        // Drive each asset accessor with a bounded read so a wildly inflated payload_len cannot
+        // OOM the test process. We cap at 1 MiB per asset; legitimate fixtures here are well
+        // under that.
+        let entries: Vec<_> = reader.assets().to_vec();
+        for entry in &entries {
+            if let Ok(mut r) = reader.asset_reader(entry) {
+                let mut buf = [0u8; 1024];
+                for _ in 0..1024 {
+                    match r.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => {}
+                    }
+                }
+            }
+            if let Ok(mut r) = reader.asset_reader_unverified(entry) {
+                let mut buf = [0u8; 1024];
+                for _ in 0..1024 {
+                    match r.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => {}
+                    }
+                }
+            }
+            if let Ok(mut r) = reader.asset_payload_reader_unverified(entry) {
+                let mut buf = [0u8; 1024];
+                for _ in 0..1024 {
+                    match r.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => {}
+                    }
+                }
+            }
+            let _ = reader.verify_asset_checksum(entry);
+        }
+
+        // verify_all_asset_checksums short-circuits on first mismatch; bounded by directory size.
+        let _ = reader.verify_all_asset_checksums();
+
+        // Stream accessors. The verified raw path may surface ChecksumError; that's fine — we
+        // only care about absence of panics.
+        if let Ok(mut r) = reader.assignment_stream_reader() {
+            let mut buf = [0u8; 1024];
+            for _ in 0..1024 {
+                match r.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+            }
+        }
+        if let Ok(mut r) = reader.assignment_stream_reader_unverified() {
+            let mut buf = [0u8; 1024];
+            for _ in 0..1024 {
+                match r.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+            }
+        }
+        if let Ok(decoded) = reader.open_assignment_reader() {
+            // Take a bounded prefix of the iterator to avoid spinning on adversarial frame
+            // counts. The frame-payload cap in decode_ben_line already bounds per-frame work.
+            for record in decoded.silent(true).take(64) {
+                let _ = record;
+            }
+        }
+        let _ = reader.verify_stream_checksum();
+    });
+    assert!(outcome.is_ok(), "BENDL reader panicked on adversarial input");
+}
+
+/// Sanity cap used when fuzzing length fields. Inflating to `u32::MAX` would turn this into an OOM
+/// stress test; legitimate fixtures here are kilobytes at most. The cap is large enough that the
+/// inflated frames still exercise "value far past end of input" paths, but small enough that the
+/// resulting allocations are negligible.
+const ADVERSARIAL_LEN_CAP: u32 = 1 << 16; // 64 KiB
+
+#[test]
+fn seeded_malformed_bendl_bytes_do_not_panic() {
+    let seed = valid_bendl_seed();
+
+    // Truncation at every length, including zero and full size.
+    for len in 0..=seed.len() {
+        assert_bendl_bytes_do_not_panic(seed[..len].to_vec());
+    }
+
+    // Single-byte XOR mutations everywhere. This covers every byte of the header, directory, and
+    // payload regions — the same coverage pattern the BEN/XBEN fuzz tests use.
+    for idx in 0..seed.len() {
+        let mut mutated = seed.clone();
+        mutated[idx] ^= 0xA5;
+        assert_bendl_bytes_do_not_panic(mutated);
+    }
+
+    // Length-field inflation seeds. Header field offsets per the v1.0.0 spec:
+    //   bytes 16..20 : flags (u32)
+    //   bytes 20..24 : stream_checksum (u32)
+    //   bytes 24..32 : directory_offset (u64)
+    //   bytes 32..40 : directory_len (u64)
+    //   bytes 40..48 : stream_offset (u64)
+    //   bytes 48..56 : stream_len (u64)
+    let make_inflated = |range: std::ops::Range<usize>, value: u64| -> Vec<u8> {
+        let len = range.end - range.start;
+        let mut bytes = seed.clone();
+        bytes[range].copy_from_slice(&value.to_le_bytes()[..len]);
+        bytes
+    };
+
+    // directory_offset past EOF.
+    assert_bendl_bytes_do_not_panic(make_inflated(24..32, u64::MAX));
+    // directory_len past EOF (capped to avoid OOM if the implementation pre-allocates).
+    assert_bendl_bytes_do_not_panic(make_inflated(32..40, ADVERSARIAL_LEN_CAP as u64));
+    // stream_offset past EOF.
+    assert_bendl_bytes_do_not_panic(make_inflated(40..48, u64::MAX));
+    // stream_len past EOF (capped).
+    assert_bendl_bytes_do_not_panic(make_inflated(48..56, ADVERSARIAL_LEN_CAP as u64));
+    // stream_offset + stream_len overflowing u64.
+    let mut overflow_bundle = seed.clone();
+    overflow_bundle[40..48].copy_from_slice(&(u64::MAX - 1).to_le_bytes());
+    overflow_bundle[48..56].copy_from_slice(&u64::MAX.to_le_bytes());
+    assert_bendl_bytes_do_not_panic(overflow_bundle);
+    // Reserved header flag bits set.
+    assert_bendl_bytes_do_not_panic(make_inflated(16..20, u32::MAX as u64));
+    // Non-zero alignment_padding at bytes 14..16; we don't have a make_inflated for u16 so do it
+    // inline.
+    let mut padded = seed.clone();
+    padded[14..16].copy_from_slice(&u16::MAX.to_le_bytes());
+    assert_bendl_bytes_do_not_panic(padded);
+
+    // Directory-entry length-field inflation. The directory starts at directory_offset and begins
+    // with a u32 entry_count followed by the entries themselves. Each entry header is 28 bytes:
+    //   u16 asset_type | u16 asset_flags | u16 name_len | u16 reserved
+    //   u64 payload_offset | u64 payload_len | u32 checksum_len
+    let directory_offset = u64::from_le_bytes(seed[24..32].try_into().unwrap()) as usize;
+    let entry_count = u32::from_le_bytes(
+        seed[directory_offset..directory_offset + 4]
+            .try_into()
+            .unwrap(),
+    );
+    assert!(entry_count > 0, "valid_bendl_seed must contain entries");
+
+    // entry_count inflation (capped to keep test runtime bounded — the reader must not try to
+    // pre-allocate a Vec with u32::MAX capacity, but we don't want to find out the hard way here).
+    let mut inflated_entry_count = seed.clone();
+    inflated_entry_count[directory_offset..directory_offset + 4]
+        .copy_from_slice(&ADVERSARIAL_LEN_CAP.to_le_bytes());
+    assert_bendl_bytes_do_not_panic(inflated_entry_count);
+
+    // Walk each entry and inflate its per-entry length fields one at a time.
+    let mut entry_cursor = directory_offset + 4;
+    for _ in 0..entry_count {
+        let name_len =
+            u16::from_le_bytes(seed[entry_cursor + 4..entry_cursor + 6].try_into().unwrap())
+                as usize;
+        let checksum_len = u32::from_le_bytes(
+            seed[entry_cursor + 24..entry_cursor + 28]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let entry_size = 28 + name_len + checksum_len;
+
+        // name_len inflation (capped).
+        let mut inflated = seed.clone();
+        inflated[entry_cursor + 4..entry_cursor + 6]
+            .copy_from_slice(&(ADVERSARIAL_LEN_CAP as u16).to_le_bytes());
+        assert_bendl_bytes_do_not_panic(inflated);
+
+        // checksum_len inflation (capped).
+        let mut inflated = seed.clone();
+        inflated[entry_cursor + 24..entry_cursor + 28]
+            .copy_from_slice(&ADVERSARIAL_LEN_CAP.to_le_bytes());
+        assert_bendl_bytes_do_not_panic(inflated);
+
+        // payload_len inflation to u64::MAX. ExactLen at read time, plus the per-frame decode
+        // cap, prevent any actual allocation.
+        let mut inflated = seed.clone();
+        inflated[entry_cursor + 16..entry_cursor + 24]
+            .copy_from_slice(&u64::MAX.to_le_bytes());
+        assert_bendl_bytes_do_not_panic(inflated);
+
+        // payload_offset past EOF.
+        let mut inflated = seed.clone();
+        inflated[entry_cursor + 8..entry_cursor + 16]
+            .copy_from_slice(&u64::MAX.to_le_bytes());
+        assert_bendl_bytes_do_not_panic(inflated);
+
+        entry_cursor += entry_size;
+    }
+}
