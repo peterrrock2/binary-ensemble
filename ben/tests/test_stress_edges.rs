@@ -8,14 +8,14 @@ use binary_ensemble::format::banners::{
     MKVCHAIN_BEN_BANNER, STANDARD_BEN_BANNER, TWODELTA_BEN_BANNER,
 };
 use binary_ensemble::io::bundle::format::{
-    encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlHeader, ASSET_TYPE_CUSTOM,
-    ASSET_TYPE_GRAPH, BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, FINALIZED_YES,
-    HEADER_SIZE,
+    encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlFormatError, BendlHeader,
+    ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION,
+    FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
 };
 use binary_ensemble::io::bundle::writer::{
     AddAssetOptions, BendlAppender, BendlTruncate, BendlWriter,
 };
-use binary_ensemble::io::bundle::BendlReader;
+use binary_ensemble::io::bundle::{BendlReadError, BendlReader, ChecksumError, ChecksumTarget};
 use binary_ensemble::io::reader::BenStreamReader;
 use binary_ensemble::io::writer::BenStreamWriter;
 use binary_ensemble::ops::relabel::{relabel_ben_file, RelabelOptions};
@@ -680,8 +680,7 @@ fn bendl_append_truncated_new_directory_is_rejected_on_reopen() {
 /// metadata asset, a raw custom asset, and an XBEN assignment stream. This is the seed used by
 /// `seeded_malformed_bendl_bytes_do_not_panic`.
 fn valid_bendl_seed() -> Vec<u8> {
-    let mut writer =
-        BendlWriter::new(Cursor::new(Vec::new()), AssignmentFormat::Xben).unwrap();
+    let mut writer = BendlWriter::new(Cursor::new(Vec::new()), AssignmentFormat::Xben).unwrap();
     writer
         .add_asset(
             ASSET_TYPE_GRAPH,
@@ -709,7 +708,10 @@ fn valid_bendl_seed() -> Vec<u8> {
 
     let mut session = writer.into_stream_session().unwrap();
     encode_jsonl_to_xben(
-        Cursor::new(b"{\"assignment\":[1,1,2,2],\"sample\":1}\n{\"assignment\":[1,2,1,2],\"sample\":2}\n".as_slice()),
+        Cursor::new(
+            b"{\"assignment\":[1,1,2,2],\"sample\":1}\n{\"assignment\":[1,2,1,2],\"sample\":2}\n"
+                .as_slice(),
+        ),
         &mut session,
         BenVariant::Standard,
         Some(1),
@@ -807,7 +809,10 @@ fn assert_bendl_bytes_do_not_panic(bytes: Vec<u8>) {
         }
         let _ = reader.verify_stream_checksum();
     });
-    assert!(outcome.is_ok(), "BENDL reader panicked on adversarial input");
+    assert!(
+        outcome.is_ok(),
+        "BENDL reader panicked on adversarial input"
+    );
 }
 
 /// Sanity cap used when fuzzing length fields. Inflating to `u32::MAX` would turn this into an OOM
@@ -915,16 +920,259 @@ fn seeded_malformed_bendl_bytes_do_not_panic() {
         // payload_len inflation to u64::MAX. ExactLen at read time, plus the per-frame decode
         // cap, prevent any actual allocation.
         let mut inflated = seed.clone();
-        inflated[entry_cursor + 16..entry_cursor + 24]
-            .copy_from_slice(&u64::MAX.to_le_bytes());
+        inflated[entry_cursor + 16..entry_cursor + 24].copy_from_slice(&u64::MAX.to_le_bytes());
         assert_bendl_bytes_do_not_panic(inflated);
 
         // payload_offset past EOF.
         let mut inflated = seed.clone();
-        inflated[entry_cursor + 8..entry_cursor + 16]
-            .copy_from_slice(&u64::MAX.to_le_bytes());
+        inflated[entry_cursor + 8..entry_cursor + 16].copy_from_slice(&u64::MAX.to_le_bytes());
         assert_bendl_bytes_do_not_panic(inflated);
 
         entry_cursor += entry_size;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Open-rejected variant-pinning. Each fixture must fail BendlReader::open
+// with a specific BendlFormatError variant, not just an unspecified Err.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bendl_open_rejects_directory_offset_past_eof() {
+    // directory_offset claims a position well past the actual file. Cursor seek succeeds (its
+    // position is u64) but the subsequent read returns Ok(0); read_directory's read_exact for the
+    // entry count fails with UnexpectedEof, which becomes BendlFormatError::Io.
+    let mut bytes = valid_bendl_seed();
+    let past_eof = (bytes.len() as u64) + 4096;
+    bytes[24..32].copy_from_slice(&past_eof.to_le_bytes());
+    let err = expect_bendl_open_err(bytes);
+    assert!(
+        matches!(err, BendlFormatError::Io(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof),
+        "expected BendlFormatError::Io(UnexpectedEof), got {err:?}"
+    );
+}
+
+#[test]
+fn bendl_open_rejects_directory_offset_plus_directory_len_overflow() {
+    // directory_offset + directory_len overflows u64. The reader has no chance to read anything at
+    // u64::MAX - 4; the failure surface is the same UnexpectedEof from the bounded read attempt.
+    let mut bytes = valid_bendl_seed();
+    bytes[24..32].copy_from_slice(&(u64::MAX - 4).to_le_bytes());
+    bytes[32..40].copy_from_slice(&100u64.to_le_bytes());
+    let err = expect_bendl_open_err(bytes);
+    assert!(
+        matches!(err, BendlFormatError::Io(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof),
+        "expected BendlFormatError::Io(UnexpectedEof), got {err:?}"
+    );
+}
+
+#[test]
+fn bendl_open_rejects_name_len_longer_than_remaining_directory_bytes() {
+    // Build a one-entry directory by hand whose name_len field claims more bytes than the
+    // directory range provides. The bounded Take in BendlReader::open prevents the read from
+    // escaping into the asset region; read_exact for the name buffer then fails inside the bound.
+    let entries = vec![BendlDirectoryEntry {
+        asset_type: ASSET_TYPE_CUSTOM,
+        asset_flags: 0,
+        name: "ab".to_string(),
+        payload_offset: HEADER_SIZE as u64,
+        payload_len: 0,
+        checksum: None,
+    }];
+    let mut bytes = minimal_bendl_with_entries(entries, 0);
+
+    // Directory layout in the bundle starts at HEADER_SIZE: [u32 count][entry_header (28 bytes)
+    // including u16 name_len at offset +4][name bytes][checksum bytes].
+    // Patch name_len from 2 to a huge value that exceeds the directory's declared length.
+    let name_len_offset = HEADER_SIZE + 4 + 4;
+    bytes[name_len_offset..name_len_offset + 2].copy_from_slice(&u16::MAX.to_le_bytes());
+
+    let err = expect_bendl_open_err(bytes);
+    assert!(
+        matches!(err, BendlFormatError::Io(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof),
+        "expected BendlFormatError::Io(UnexpectedEof), got {err:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Openable behavioral pins. Each fixture must let BendlReader::open succeed and then
+// surface the documented behavior through the accessors.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bendl_unknown_header_flag_bits_are_ignored() {
+    // Forward-compat contract: bits 1..31 of `flags` are reserved. Setting them on a finalized
+    // bundle must not change anything observable — open succeeds, directory entries are intact,
+    // verify_stream_checksum passes, asset access works.
+    let mut bytes = valid_bendl_seed();
+    let flags_offset = 16;
+    let original_flags =
+        u32::from_le_bytes(bytes[flags_offset..flags_offset + 4].try_into().unwrap());
+    assert!(
+        original_flags & HEADER_FLAG_STREAM_CHECKSUM != 0,
+        "seed must have STREAM_CHECKSUM set; otherwise this test is testing the wrong contract"
+    );
+    let polluted_flags = original_flags | (1u32 << 5) | (1u32 << 31);
+    bytes[flags_offset..flags_offset + 4].copy_from_slice(&polluted_flags.to_le_bytes());
+
+    let mut reader =
+        BendlReader::open(Cursor::new(bytes)).expect("unknown flag bits must not block open");
+    assert!(reader.is_finalized());
+    assert_eq!(
+        reader.assets().len(),
+        3,
+        "all three seed assets must be present"
+    );
+
+    // Stream CRC must still pass — the verifier doesn't inspect reserved bits.
+    reader
+        .verify_stream_checksum()
+        .expect("stream CRC must still verify with unknown flag bits set");
+
+    // Asset access must work for both compressed and uncompressed entries.
+    for entry in reader.assets().to_vec() {
+        reader.asset_bytes(&entry).unwrap_or_else(|e| {
+            panic!(
+                "asset {} read failed with unknown flags set: {e:?}",
+                entry.name
+            )
+        });
+    }
+}
+
+#[test]
+fn bendl_clear_stream_checksum_flag_with_nonzero_bytes_returns_unavailable_not_mismatch() {
+    // Plan-mandated contract: when HEADER_FLAG_STREAM_CHECKSUM is clear, verified stream APIs
+    // must return Unavailable regardless of what's in bytes 20..24. Pin this by clearing the flag
+    // but leaving non-zero garbage in the stream_checksum slot — a buggy reader that interpreted
+    // bytes 20..24 unconditionally would return Mismatch (since the garbage would not match the
+    // actual CRC).
+    let mut bytes = valid_bendl_seed();
+    let flags_offset = 16;
+    let cleared_flags =
+        u32::from_le_bytes(bytes[flags_offset..flags_offset + 4].try_into().unwrap())
+            & !HEADER_FLAG_STREAM_CHECKSUM;
+    bytes[flags_offset..flags_offset + 4].copy_from_slice(&cleared_flags.to_le_bytes());
+    bytes[20..24].copy_from_slice(&0xDEADBEEFu32.to_le_bytes());
+
+    let mut reader = BendlReader::open(Cursor::new(bytes)).expect("open must succeed");
+
+    let expect_unavailable = |result: Result<_, BendlReadError>| match result {
+        Err(BendlReadError::Checksum(ChecksumError::Unavailable {
+            target: ChecksumTarget::Stream,
+        })) => {}
+        Err(other) => panic!("expected Unavailable(Stream), got {other:?}"),
+        Ok(_) => panic!("expected Err, got Ok"),
+    };
+
+    expect_unavailable(reader.assignment_stream_reader().map(|_| ()));
+    expect_unavailable(reader.open_assignment_reader().map(|_| ()));
+    expect_unavailable(reader.verify_stream_checksum());
+
+    // Asset access is an independent checksum domain and must still verify normally.
+    for entry in reader.assets().to_vec() {
+        reader
+            .asset_bytes(&entry)
+            .unwrap_or_else(|e| panic!("asset {} read failed: {e:?}", entry.name));
+    }
+}
+
+#[test]
+fn bendl_nonzero_alignment_padding_is_ignored() {
+    // alignment_padding occupies bytes 14..16. Writers zero it; readers must ignore non-zero bytes
+    // there. Forward-compat insurance: a future writer that accidentally stamps something into the
+    // padding region must not break readers.
+    let mut bytes = valid_bendl_seed();
+    bytes[14..16].copy_from_slice(&u16::MAX.to_le_bytes());
+
+    let mut reader = BendlReader::open(Cursor::new(bytes))
+        .expect("non-zero alignment_padding must not block open");
+    reader
+        .verify_stream_checksum()
+        .expect("stream CRC must still verify with non-zero alignment_padding");
+    for entry in reader.assets().to_vec() {
+        reader
+            .asset_bytes(&entry)
+            .unwrap_or_else(|e| panic!("asset {} read failed: {e:?}", entry.name));
+    }
+}
+
+#[test]
+fn bendl_stream_offset_plus_stream_len_overflow_surfaces_short_range() {
+    // stream_offset + stream_len overflows u64. BendlReader::open does not validate stream range
+    // (intentional — keeps metadata inspection cheap), so open succeeds. Each accessor must
+    // surface the strict-EOF contract: the verified raw stream reader returns UnexpectedEof from
+    // read; verify_stream_checksum returns BendlReadError::Io(UnexpectedEof);
+    // open_assignment_reader either fails at construction or surfaces UnexpectedEof during
+    // iteration; assignment_stream_reader_unverified surfaces UnexpectedEof on read.
+    let mut bytes = valid_bendl_seed();
+    bytes[40..48].copy_from_slice(&(u64::MAX - 5).to_le_bytes());
+    bytes[48..56].copy_from_slice(&u64::MAX.to_le_bytes());
+
+    let mut reader = BendlReader::open(Cursor::new(bytes)).expect("open must succeed");
+
+    match reader.verify_stream_checksum() {
+        Err(BendlReadError::Io(ref e)) => assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof),
+        other => panic!("expected BendlReadError::Io(UnexpectedEof), got {other:?}"),
+    }
+
+    let mut buf = [0u8; 64];
+    let mut raw = reader
+        .assignment_stream_reader()
+        .expect("constructor must succeed");
+    let err = raw.read(&mut buf).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+    drop(raw);
+
+    let mut raw_unverified = reader
+        .assignment_stream_reader_unverified()
+        .expect("constructor must succeed");
+    let err = raw_unverified.read(&mut buf).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+    drop(raw_unverified);
+
+    // open_assignment_reader either fails at construction (banner read into short range) or fails
+    // during iteration. Both surfaces are acceptable per the 0.1c contract; both must be Io-not-
+    // Decode.
+    match reader.open_assignment_reader() {
+        Err(BendlReadError::Io(ref e)) => assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof),
+        Err(other) => panic!("expected Io(UnexpectedEof) at construction, got {other:?}"),
+        Ok(mut decoded) => {
+            let mut saw_unexpected_eof = false;
+            for record in (&mut decoded).take(64) {
+                if let Err(e) = record {
+                    assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof);
+                    saw_unexpected_eof = true;
+                    break;
+                }
+            }
+            assert!(
+                saw_unexpected_eof,
+                "decoded iterator must surface UnexpectedEof"
+            );
+        }
+    }
+}
+
+#[test]
+fn bendl_stream_offset_past_eof_surfaces_short_range() {
+    // stream_offset alone points past EOF. Same surface contract as the overflow case — open
+    // succeeds; every stream accessor reports UnexpectedEof on read.
+    let mut bytes = valid_bendl_seed();
+    let past_eof = (bytes.len() as u64) + 4096;
+    bytes[40..48].copy_from_slice(&past_eof.to_le_bytes());
+
+    let mut reader = BendlReader::open(Cursor::new(bytes)).expect("open must succeed");
+
+    match reader.verify_stream_checksum() {
+        Err(BendlReadError::Io(ref e)) => assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof),
+        other => panic!("expected BendlReadError::Io(UnexpectedEof), got {other:?}"),
+    }
+
+    let mut buf = [0u8; 64];
+    let mut raw_unverified = reader
+        .assignment_stream_reader_unverified()
+        .expect("constructor must succeed");
+    let err = raw_unverified.read(&mut buf).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
 }
