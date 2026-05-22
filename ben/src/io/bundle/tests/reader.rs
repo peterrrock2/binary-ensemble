@@ -1843,3 +1843,67 @@ fn open_assignment_reader_returns_unexpected_eof_when_banner_falls_in_short_rang
         Ok(_) => panic!("expected Err, got Ok"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Forward-compat: unknown asset-flag bits
+// ---------------------------------------------------------------------------
+
+#[test]
+fn asset_with_unknown_flag_bit_opens_and_verifies_checksum() {
+    // Hand-build a directory entry with the known ASSET_FLAG_CHECKSUM bit set AND a reserved
+    // bit (bit 7) also set, plus a valid CRC32C over the payload bytes. Reader must:
+    //   1. Open the bundle cleanly (no rejection on unknown flags).
+    //   2. Verify the asset's CRC successfully (the unknown bit must not interfere with the
+    //      verifier's flag handling).
+    //   3. Return the decoded payload bytes from asset_bytes.
+    const RESERVED_BIT_7: u16 = 1 << 7;
+    let payload = b"asset bytes with reserved bit".to_vec();
+
+    let mut bytes = Vec::new();
+    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    let payload_offset = bytes.len() as u64;
+    bytes.extend_from_slice(&payload);
+
+    let directory_offset = bytes.len() as u64;
+    let crc = crc32c::crc32c(&payload).to_le_bytes().to_vec();
+    let entries = vec![BendlDirectoryEntry {
+        asset_type: ASSET_TYPE_CUSTOM,
+        asset_flags: ASSET_FLAG_CHECKSUM | RESERVED_BIT_7,
+        name: "custom.bin".to_string(),
+        payload_offset,
+        payload_len: payload.len() as u64,
+        checksum: Some(crc),
+    }];
+    let directory = encode_directory(&entries).unwrap();
+    bytes.extend_from_slice(&directory);
+
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_YES,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        alignment_padding: 0,
+        flags: HEADER_FLAG_STREAM_CHECKSUM,
+        stream_checksum: 0,
+        directory_offset,
+        directory_len: directory.len() as u64,
+        stream_offset: HEADER_SIZE as u64,
+        stream_len: 0,
+        sample_count: 0,
+    };
+    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+
+    let mut reader = BendlReader::open(Cursor::new(bytes)).expect("open succeeds");
+    let entry = reader.find_asset_by_name("custom.bin").cloned().unwrap();
+    assert_ne!(
+        entry.asset_flags & RESERVED_BIT_7,
+        0,
+        "reserved bit must be preserved through the read path"
+    );
+    reader
+        .verify_asset_checksum(&entry)
+        .expect("CRC verifies despite unknown flag bit");
+    let got = reader.asset_bytes(&entry).expect("asset_bytes succeeds");
+    assert_eq!(got, payload);
+}

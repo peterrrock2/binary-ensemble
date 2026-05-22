@@ -4,10 +4,10 @@ use xz2::write::XzEncoder;
 
 use crate::io::bundle::error::{BendlReadError, ChecksumError, ChecksumTarget};
 use crate::io::bundle::format::{
-    AssignmentFormat, BendlFormatError, BendlHeader, ASSET_FLAG_CHECKSUM, ASSET_FLAG_XZ,
-    ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA, BENDL_MAGIC, BENDL_MAJOR_VERSION,
-    BENDL_MINOR_VERSION, DEFAULT_XZ_PRESET, FINALIZED_NO, FINALIZED_YES,
-    HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
+    encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlFormatError, BendlHeader,
+    ASSET_FLAG_CHECKSUM, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA,
+    BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, DEFAULT_XZ_PRESET, FINALIZED_NO,
+    FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
 };
 use crate::io::bundle::reader::BendlReader;
 use crate::io::bundle::writer::{AddAssetOptions, BendlAppender, BendlWriteError, BendlWriter};
@@ -1657,4 +1657,89 @@ fn open_assignment_reader_intact_bundle_round_trips_count_samples() {
     let decoder = reader.open_assignment_reader().unwrap();
     let n = decoder.count_samples().unwrap();
     assert_eq!(n, samples.len());
+}
+
+// ---------------------------------------------------------------------------
+// Forward-compat: appender preserves unknown asset-flag bits on existing entries
+// ---------------------------------------------------------------------------
+
+/// Build a finalized BENDL bundle with a single custom asset whose `asset_flags` carries a
+/// reserved (unknown-in-v1.0.0) bit alongside the known `ASSET_FLAG_CHECKSUM` bit. Used to
+/// confirm that `BendlAppender::commit` clones the existing entry verbatim, preserving the
+/// reserved bit so future readers that grow the spec are not silently downgraded by today's
+/// appender.
+fn bundle_with_reserved_asset_flag_bit() -> (Vec<u8>, u16) {
+    const RESERVED_BIT_7: u16 = 1 << 7;
+    let payload = b"forward-compat asset".to_vec();
+    let mut bytes = Vec::new();
+    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    let payload_offset = bytes.len() as u64;
+    bytes.extend_from_slice(&payload);
+
+    let directory_offset = bytes.len() as u64;
+    let crc = crc32c::crc32c(&payload).to_le_bytes().to_vec();
+    let entries = vec![BendlDirectoryEntry {
+        asset_type: ASSET_TYPE_CUSTOM,
+        asset_flags: ASSET_FLAG_CHECKSUM | RESERVED_BIT_7,
+        name: "forward.bin".to_string(),
+        payload_offset,
+        payload_len: payload.len() as u64,
+        checksum: Some(crc),
+    }];
+    let directory = encode_directory(&entries).unwrap();
+    bytes.extend_from_slice(&directory);
+
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_YES,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        alignment_padding: 0,
+        flags: HEADER_FLAG_STREAM_CHECKSUM,
+        stream_checksum: 0,
+        directory_offset,
+        directory_len: directory.len() as u64,
+        stream_offset: HEADER_SIZE as u64,
+        stream_len: 0,
+        sample_count: 0,
+    };
+    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    (bytes, RESERVED_BIT_7)
+}
+
+#[test]
+fn appender_preserves_unknown_asset_flag_bits_on_existing_entries() {
+    // Open a bundle whose pre-existing entry has a reserved bit set; commit a new asset; reopen
+    // and assert the reserved bit is still set on the original entry. The new entry must not
+    // pick up any reserved bits.
+    let (initial_bytes, reserved_bit) = bundle_with_reserved_asset_flag_bit();
+    let known_v1_bits: u16 = ASSET_FLAG_CHECKSUM | ASSET_FLAG_XZ | crate::io::bundle::format::ASSET_FLAG_JSON;
+
+    let mut appender = BendlAppender::open(Cursor::new(initial_bytes)).unwrap();
+    appender
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "new.bin",
+            b"new asset bytes",
+            AddAssetOptions::defaults().raw(),
+        )
+        .unwrap();
+    let final_bytes = appender.commit().unwrap().into_inner();
+
+    let reader = BendlReader::open(Cursor::new(final_bytes)).unwrap();
+
+    let original = reader.find_asset_by_name("forward.bin").unwrap();
+    assert_ne!(
+        original.asset_flags & reserved_bit,
+        0,
+        "appender must not clear reserved bits on existing entries"
+    );
+
+    let new_entry = reader.find_asset_by_name("new.bin").unwrap();
+    assert_eq!(
+        new_entry.asset_flags & !known_v1_bits,
+        0,
+        "appender must not set any unknown bits on newly written entries"
+    );
 }

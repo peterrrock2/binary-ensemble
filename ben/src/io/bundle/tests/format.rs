@@ -105,6 +105,41 @@ fn header_rejects_unsupported_major_version() {
 }
 
 #[test]
+fn header_accepts_higher_minor_version() {
+    // Minor-version bumps are additive and backwards-compatible: a v1.0 reader must accept a
+    // v1.999 header (same major version, higher minor) and round-trip the field cleanly.
+    let mut bytes = BendlHeader::provisional(AssignmentFormat::Ben, 64).to_bytes();
+    bytes[10..12].copy_from_slice(&999u16.to_le_bytes());
+    let decoded = BendlHeader::from_bytes(&bytes).expect("higher minor version should read");
+    assert_eq!(decoded.minor_version, 999);
+}
+
+#[test]
+fn header_accepts_nonzero_alignment_padding() {
+    // alignment_padding (bytes 14..16) is reserved for header byte-alignment, not as a
+    // forward-compat slot. Writers must zero it, but readers must tolerate non-zero values for
+    // foreign or adversarial bundles. The field itself round-trips through the struct.
+    let mut bytes = BendlHeader::provisional(AssignmentFormat::Ben, 64).to_bytes();
+    bytes[14..16].copy_from_slice(&u16::MAX.to_le_bytes());
+    let decoded = BendlHeader::from_bytes(&bytes).expect("non-zero padding should read");
+    assert_eq!(decoded.alignment_padding, u16::MAX);
+}
+
+#[test]
+fn header_accepts_reserved_flag_bits() {
+    // Bits 1..31 of the header `flags` field are reserved in v1.0.0; readers must ignore them
+    // (i.e., open the header cleanly and surface the full u32 value to callers, who in turn must
+    // only act on bit 0).
+    let mut bytes = BendlHeader::provisional(AssignmentFormat::Ben, 64).to_bytes();
+    let reserved_bits: u32 = 0xFFFF_FFFE;
+    bytes[16..20].copy_from_slice(&reserved_bits.to_le_bytes());
+    let decoded = BendlHeader::from_bytes(&bytes).expect("reserved flag bits should read");
+    assert_eq!(decoded.flags, reserved_bits);
+    // has_stream_checksum() only inspects bit 0; reserved bits must not flip that.
+    assert!(!decoded.has_stream_checksum());
+}
+
+#[test]
 fn directory_entry_round_trip_no_checksum() {
     let entry = BendlDirectoryEntry {
         asset_type: ASSET_TYPE_GRAPH,
