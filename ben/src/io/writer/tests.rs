@@ -144,6 +144,63 @@ fn writer_twodelta_chunk_size_1() {
 }
 
 #[test]
+fn writer_twodelta_chunk_boundary_off_by_one_grid() {
+    // Off-by-one bugs in the chunked TwoDelta path hide exactly at the boundaries between full
+    // chunks and partial trailing chunks: a flush that runs one short of the chunk boundary, a
+    // flush that exactly fills it, and a flush that spills one past. Sweep both the first chunk
+    // (samples = chunk - 1, chunk, chunk + 1) and the second chunk (samples = 2*chunk - 1,
+    // 2*chunk, 2*chunk + 1) for every plausible chunk size, including the default 10_000.
+    //
+    // Each test generates assignments that strictly alternate between an anchor pattern and a
+    // delta pattern so the writer is forced through both the anchor-frame and delta-frame paths;
+    // a writer that miscounts chunk boundaries would either drop the final partial chunk, write
+    // a stale anchor for the next chunk, or scramble the delta chain.
+    let anchor = vec![1u16, 1, 2, 2];
+    let delta = vec![2u16, 2, 1, 1];
+
+    for &chunk_size in &[2usize, 7, 64, 10_000] {
+        for &n_samples in &[
+            chunk_size.saturating_sub(1),
+            chunk_size,
+            chunk_size + 1,
+            2 * chunk_size - 1,
+            2 * chunk_size,
+            2 * chunk_size + 1,
+        ] {
+            if n_samples == 0 {
+                continue;
+            }
+            let assignments: Vec<Vec<u16>> = (0..n_samples)
+                .map(|i| if i % 2 == 0 { anchor.clone() } else { delta.clone() })
+                .collect();
+
+            let mut xben = Vec::new();
+            {
+                let mut writer =
+                    build_xben_writer(&mut xben, BenVariant::TwoDelta, Some(chunk_size));
+                for a in &assignments {
+                    writer.write_assignment(a.clone()).unwrap();
+                }
+                writer.finish().unwrap();
+            }
+
+            let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
+            let decoded: Vec<Vec<u16>> = reader
+                .flat_map(|r| {
+                    let (a, count) = r.unwrap();
+                    std::iter::repeat(a).take(count as usize)
+                })
+                .collect();
+            assert_eq!(
+                decoded, assignments,
+                "TwoDelta chunk-boundary round-trip failed for chunk_size={chunk_size}, \
+                 n_samples={n_samples}"
+            );
+        }
+    }
+}
+
+#[test]
 fn writer_twodelta_chunk_size_larger_than_stream() {
     let a = vec![1u16, 1, 2, 2];
     let b = vec![2u16, 2, 1, 1];
