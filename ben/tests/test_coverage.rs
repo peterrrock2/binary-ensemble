@@ -10,7 +10,7 @@ use binary_ensemble::codec::encode::{
 };
 use binary_ensemble::codec::BenEncodeFrame;
 use binary_ensemble::format::banners::{
-    banner_for_variant, has_known_banner_prefix, variant_from_banner, BANNER_LEN,
+    banner_for_variant, has_known_banner_prefix, variant_from_banner,
     MKVCHAIN_BEN_BANNER, STANDARD_BEN_BANNER, TWODELTA_BEN_BANNER,
 };
 use binary_ensemble::io::reader::{
@@ -82,21 +82,6 @@ fn make_ring_graph_json(n: usize) -> String {
 
 // ────────────────────────────────────────────────────────────────────────────── format::banners
 // ──────────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn banner_constants_have_correct_length() {
-    assert_eq!(STANDARD_BEN_BANNER.len(), BANNER_LEN);
-    assert_eq!(MKVCHAIN_BEN_BANNER.len(), BANNER_LEN);
-    assert_eq!(TWODELTA_BEN_BANNER.len(), BANNER_LEN);
-    assert_eq!(BANNER_LEN, 17);
-}
-
-#[test]
-fn banner_constants_have_correct_content() {
-    assert_eq!(STANDARD_BEN_BANNER, b"STANDARD BEN FILE");
-    assert_eq!(MKVCHAIN_BEN_BANNER, b"MKVCHAIN BEN FILE");
-    assert_eq!(TWODELTA_BEN_BANNER, b"TWODELTA BEN FILE");
-}
 
 #[test]
 fn banner_for_variant_returns_correct_banners() {
@@ -174,64 +159,6 @@ fn has_known_banner_prefix_rejects_garbage() {
 
 // ────────────────────────────────────────────────────────────────────────────── util::rle
 // ──────────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn assign_to_rle_empty_vec() {
-    let v: Vec<u16> = vec![];
-    assert_eq!(assign_to_rle(&v), vec![]);
-}
-
-#[test]
-fn rle_to_vec_empty_vec() {
-    let rle: Vec<(u16, u16)> = vec![];
-    assert_eq!(rle_to_vec(rle), Vec::<u16>::new());
-}
-
-#[test]
-fn assign_to_rle_single_element() {
-    assert_eq!(assign_to_rle(&[42u16]), vec![(42, 1)]);
-}
-
-#[test]
-fn assign_to_rle_all_same() {
-    let v = vec![7u16; 100];
-    assert_eq!(assign_to_rle(&v), vec![(7, 100)]);
-}
-
-#[test]
-fn assign_to_rle_all_different() {
-    let v = vec![1u16, 2, 3, 4, 5];
-    let expected = vec![(1, 1), (2, 1), (3, 1), (4, 1), (5, 1)];
-    assert_eq!(assign_to_rle(&v), expected);
-}
-
-#[test]
-fn assign_to_rle_alternating() {
-    let v = vec![1u16, 2, 1, 2, 1, 2];
-    let expected = vec![(1, 1), (2, 1), (1, 1), (2, 1), (1, 1), (2, 1)];
-    assert_eq!(assign_to_rle(&v), expected);
-}
-
-#[test]
-fn assign_to_rle_with_zero_values() {
-    let v = vec![0u16, 0, 1, 0, 0];
-    let expected = vec![(0, 2), (1, 1), (0, 2)];
-    assert_eq!(assign_to_rle(&v), expected);
-}
-
-#[test]
-fn assign_to_rle_max_u16_value() {
-    let v = vec![65535u16; 3];
-    assert_eq!(assign_to_rle(&v), vec![(65535, 3)]);
-}
-
-#[test]
-fn rle_to_vec_single_long_run() {
-    let rle = vec![(99u16, 1000u16)];
-    let result = rle_to_vec(rle);
-    assert_eq!(result.len(), 1000);
-    assert!(result.iter().all(|&v| v == 99));
-}
 
 #[test]
 fn rle_roundtrip_preserves_data() {
@@ -1595,51 +1522,8 @@ fn encode_twodelta_frame_single_value_swap() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// TwoDeltaEncodeFrame accessors
+// TwoDeltaEncodeFrame round-trip
 // ──────────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn twodelta_frame_pair_accessor() {
-    let pair = (3u16, 7u16);
-    let run_lengths = vec![2u16, 3, 1];
-    let frame = BenEncodeFrame::from_run_lengths(pair, run_lengths, None);
-    assert_eq!(frame.pair().unwrap(), pair);
-}
-
-#[test]
-fn twodelta_frame_max_len_bits_accessor() {
-    // max run length = 4 = 0b100 → 3 bits
-    let pair = (1u16, 2u16);
-    let run_lengths = vec![4u16, 4];
-    let frame = BenEncodeFrame::from_run_lengths(pair, run_lengths, None);
-    assert_eq!(frame.max_len_bit_count(), 3);
-}
-
-#[test]
-fn twodelta_frame_n_bytes_and_payload_consistent() {
-    let pair = (5u16, 10u16);
-    let run_lengths = vec![1u16, 2, 3];
-    let frame = BenEncodeFrame::from_run_lengths(pair, run_lengths, None);
-    assert_eq!(frame.n_bytes() as usize, frame.payload().len());
-}
-
-#[test]
-fn twodelta_frame_to_bytes_and_as_slice_same() {
-    let pair = (1u16, 2u16);
-    let run_lengths = vec![3u16, 2];
-    let frame = BenEncodeFrame::from_run_lengths(pair, run_lengths, None);
-    assert_eq!(frame.to_bytes(), frame.as_slice());
-}
-
-#[test]
-fn twodelta_frame_into_bytes_consumes() {
-    let pair = (1u16, 2u16);
-    let run_lengths = vec![3u16, 2];
-    let frame = BenEncodeFrame::from_run_lengths(pair, run_lengths, None);
-    let expected = frame.to_bytes();
-    let actual = frame.into_bytes();
-    assert_eq!(actual, expected);
-}
 
 #[test]
 fn twodelta_frame_from_parts_round_trip() {
@@ -1662,87 +1546,9 @@ fn twodelta_frame_from_parts_round_trip() {
     assert_eq!(original.count(), reconstructed.count());
 }
 
-#[test]
-fn twodelta_frame_asref_and_deref() {
-    let pair = (1u16, 2u16);
-    let run_lengths = vec![3u16];
-    let frame = BenEncodeFrame::from_run_lengths(pair, run_lengths, None);
-    let as_ref: &[u8] = frame.as_ref();
-    let deref: &[u8] = &*frame;
-    assert_eq!(as_ref, deref);
-    assert_eq!(as_ref, frame.as_slice());
-}
-
-// ────────────────────────────────────────────────────────────────────────────── EncodeBenFrame
-// (BenFrame from codec::encode) accessors
 // ──────────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn encode_ben_frame_from_rle_runs_accessor() {
-    let runs = vec![(3u16, 2u16), (5u16, 4u16)];
-    let frame = BenEncodeFrame::from_rle(runs.clone(), BenVariant::Standard, None);
-    assert_eq!(frame.runs().unwrap().as_slice(), runs.as_slice());
-}
-
-#[test]
-fn encode_ben_frame_max_val_bits() {
-    // max value = 5 = 0b101 → 3 bits
-    let runs = vec![(1u16, 3u16), (5u16, 2u16)];
-    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
-    assert_eq!(frame.max_val_bit_count(), Some(3));
-}
-
-#[test]
-fn encode_ben_frame_max_len_bits() {
-    // max run length = 7 = 0b111 → 3 bits
-    let runs = vec![(1u16, 7u16), (2u16, 1u16)];
-    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
-    assert_eq!(frame.max_len_bit_count(), 3);
-}
-
-#[test]
-fn encode_ben_frame_n_bytes_consistent() {
-    // Frame layout: 1 byte (max_val_bits) + 1 byte (max_len_bits) + 4 bytes (n_bytes header) +
-    // n_bytes payload
-    let runs = vec![(1u16, 5u16), (2u16, 3u16)];
-    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
-    assert_eq!(frame.n_bytes() as usize + 6, frame.as_slice().len());
-}
-
-#[test]
-fn encode_ben_frame_to_bytes_and_as_slice_same() {
-    let runs = vec![(1u16, 2u16), (3u16, 4u16)];
-    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
-    assert_eq!(frame.to_bytes(), frame.as_slice());
-}
-
-#[test]
-fn encode_ben_frame_into_bytes_consumes() {
-    let runs = vec![(1u16, 2u16), (3u16, 4u16)];
-    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
-    let expected = frame.to_bytes();
-    let actual = frame.into_bytes();
-    assert_eq!(actual, expected);
-}
-
-#[test]
-fn encode_ben_frame_eq_with_vec_u8() {
-    let runs = vec![(1u16, 2u16)];
-    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
-    let bytes = frame.to_bytes();
-    assert!(frame == bytes);
-    assert!(bytes == frame);
-}
-
-#[test]
-fn encode_ben_frame_asref_and_deref() {
-    let runs = vec![(1u16, 1u16)];
-    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
-    let as_ref: &[u8] = frame.as_ref();
-    let deref: &[u8] = &*frame;
-    assert_eq!(as_ref, deref);
-    assert_eq!(as_ref, frame.as_slice());
-}
+// EncodeBenFrame: from_assignment matches the RLE entrypoint
+// ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn encode_ben_frame_from_assignment() {
@@ -1995,126 +1801,8 @@ fn ben_frame_decoder_twodelta_yields_standard_frames() {
     assert_eq!(frames.len(), 2);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// SubsampleFrameDecoder — BenStreamReader subsample methods
-// ──────────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn ben_decoder_subsample_by_indices() {
-    let assignments: Vec<Vec<u16>> = (0u16..10).map(|i| vec![i; 4]).collect();
-    let ben = encode_standard_ben(&assignments);
-    let decoder = BenStreamReader::from_ben(Cursor::new(ben))
-        .unwrap()
-        .silent(true);
-    // 1-based indices: 2, 5, 8
-    let selected: Vec<Vec<u16>> = decoder
-        .into_subsample_by_indices(vec![2usize, 5, 8])
-        .map(|r| r.unwrap().0)
-        .collect();
-    assert_eq!(selected.len(), 3);
-    assert_eq!(selected[0], assignments[1]); // 1-based 2 = 0-based 1
-    assert_eq!(selected[1], assignments[4]); // 1-based 5 = 0-based 4
-    assert_eq!(selected[2], assignments[7]); // 1-based 8 = 0-based 7
-}
-
-#[test]
-fn ben_decoder_subsample_by_range() {
-    let assignments: Vec<Vec<u16>> = (0u16..10).map(|i| vec![i; 3]).collect();
-    let ben = encode_standard_ben(&assignments);
-    let decoder = BenStreamReader::from_ben(Cursor::new(ben))
-        .unwrap()
-        .silent(true);
-    // Inclusive 1-based range [3, 6]
-    let selected: Vec<Vec<u16>> = decoder
-        .into_subsample_by_range(3, 6)
-        .map(|r| r.unwrap().0)
-        .collect();
-    assert_eq!(selected.len(), 4);
-    assert_eq!(selected[0], assignments[2]); // 3rd sample
-    assert_eq!(selected[3], assignments[5]); // 6th sample
-}
-
-#[test]
-fn ben_decoder_subsample_every_nth() {
-    let assignments: Vec<Vec<u16>> = (0u16..10).map(|i| vec![i; 2]).collect();
-    let ben = encode_standard_ben(&assignments);
-    let decoder = BenStreamReader::from_ben(Cursor::new(ben))
-        .unwrap()
-        .silent(true);
-    // Every 3rd sample starting at 1-based offset 1: samples 1, 4, 7, 10
-    let selected: Vec<Vec<u16>> = decoder
-        .into_subsample_every(3, 1)
-        .map(|r| r.unwrap().0)
-        .collect();
-    assert_eq!(selected.len(), 4);
-    assert_eq!(selected[0], assignments[0]);
-    assert_eq!(selected[1], assignments[3]);
-    assert_eq!(selected[2], assignments[6]);
-    assert_eq!(selected[3], assignments[9]);
-}
-
-#[test]
-fn ben_decoder_subsample_by_indices_dedup() {
-    let assignments: Vec<Vec<u16>> = (0u16..5).map(|i| vec![i; 2]).collect();
-    let ben = encode_standard_ben(&assignments);
-    let decoder = BenStreamReader::from_ben(Cursor::new(ben))
-        .unwrap()
-        .silent(true);
-    // Duplicate index 2 → after dedup only samples 2 and 3 are selected
-    let selected: Vec<Vec<u16>> = decoder
-        .into_subsample_by_indices(vec![2usize, 2, 3])
-        .map(|r| r.unwrap().0)
-        .collect();
-    assert_eq!(selected.len(), 2);
-    assert_eq!(selected[0], assignments[1]);
-    assert_eq!(selected[1], assignments[2]);
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// SubsampleFrameDecoder — BenStreamReader subsample methods
-// ──────────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn xben_decoder_subsample_by_indices() {
-    let assignments: Vec<Vec<u16>> = (1u16..=5).map(|i| vec![i; 4]).collect();
-    let xben = encode_xben(&assignments, BenVariant::Standard);
-    let decoder = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
-    let selected: Vec<Vec<u16>> = decoder
-        .into_subsample_by_indices(vec![1usize, 3, 5])
-        .map(|r| r.unwrap().0)
-        .collect();
-    assert_eq!(selected.len(), 3);
-    assert_eq!(selected[0], assignments[0]);
-    assert_eq!(selected[1], assignments[2]);
-    assert_eq!(selected[2], assignments[4]);
-}
-
-#[test]
-fn xben_decoder_subsample_by_range() {
-    let assignments: Vec<Vec<u16>> = (0u16..6).map(|i| vec![i; 3]).collect();
-    let xben = encode_xben(&assignments, BenVariant::Standard);
-    let decoder = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
-    let selected: Vec<Vec<u16>> = decoder
-        .into_subsample_by_range(2, 4)
-        .map(|r| r.unwrap().0)
-        .collect();
-    assert_eq!(selected.len(), 3);
-    assert_eq!(selected[0], assignments[1]);
-    assert_eq!(selected[2], assignments[3]);
-}
-
-#[test]
-fn xben_decoder_subsample_every() {
-    let assignments: Vec<Vec<u16>> = (0u16..6).map(|i| vec![i; 2]).collect();
-    let xben = encode_xben(&assignments, BenVariant::Standard);
-    let decoder = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
-    // Every 2nd sample starting from offset 1: samples 1, 3, 5
-    let selected: Vec<Vec<u16>> = decoder
-        .into_subsample_every(2, 1)
-        .map(|r| r.unwrap().0)
-        .collect();
-    assert_eq!(selected.len(), 3);
-    assert_eq!(selected[0], assignments[0]);
-    assert_eq!(selected[1], assignments[2]);
-    assert_eq!(selected[2], assignments[4]);
-}
+// Subsample-method single-case tests were deleted in the suite-audit deletion pass:
+// `fuzz_subsample_by_indices`, `fuzz_subsample_every`, `fuzz_subsample_range`, and
+// `fuzz_subsample_by_indices_twodelta` in `tests/test_impls_pipeline.rs` exercise these methods
+// over random sequences with random indices/ranges/strides for both BEN and XBEN, subsuming the
+// per-method single-case checks formerly here.
