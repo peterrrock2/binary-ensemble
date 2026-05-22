@@ -569,3 +569,143 @@ fn run_ben_mode_with_output_variant_derives_name() {
     fs::remove_file(&input).unwrap();
     result.unwrap();
 }
+
+// ---------------------------------------------------------------------------
+// --key / --ordering happy paths and rejection guards
+// ---------------------------------------------------------------------------
+
+/// Minimal 3-node adjacency-style graph JSON, matching the shape `sort_json_file_by_*` accepts.
+const SHAPE_JSON: &[u8] = br#"{"nodes":[{"id":0,"GEOID20":"B"},{"id":1,"GEOID20":"A"},{"id":2,"GEOID20":"C"}],"adjacency":[[{"id":1}],[{"id":0},{"id":2}],[{"id":1}]]}"#;
+
+#[test]
+fn run_json_mode_with_key_happy_path() {
+    // Exercise the `if let Some(key)` arm of run_json_mode (sort_json_file_by_key path). The
+    // existing `run_json_mode_with_ordering_derives_output_name` test only covers the ordering
+    // arm; this companion pins the key arm.
+    let shape = unique_path("json_mode_key_shape.json");
+    fs::write(&shape, SHAPE_JSON).unwrap();
+    let args = Args::try_parse_from([
+        "reben",
+        shape.to_str().unwrap(),
+        "--mode",
+        "json",
+        "--key",
+        "GEOID20",
+    ])
+    .unwrap();
+    let result = run_json_mode(args);
+    let stem = shape.to_str().unwrap().trim_end_matches(".json").to_owned();
+    let derived_map = stem.clone() + "_sorted_by_GEOID20_map.json";
+    let derived_sorted = stem + "_sorted_by_GEOID20.json";
+    let _ = fs::remove_file(&derived_map);
+    let _ = fs::remove_file(&derived_sorted);
+    let _ = fs::remove_file(&shape);
+    result.unwrap();
+}
+
+#[test]
+fn run_ben_mode_with_key_and_shape_happy_path() {
+    // Exercise the --key + --shape-file branch of run_ben_mode (lines 76-123 of ben_mode.rs):
+    // sort by key, generate a map file, then permute the BEN stream by that map. The existing
+    // tests cover the no-map/no-key path and the --map-file path; this is the gap.
+    let input = write_temp_ben("ben_mode_key_input.jsonl.ben");
+    let shape = unique_path("ben_mode_key_shape.json");
+    fs::write(&shape, SHAPE_JSON).unwrap();
+    let out = unique_path("ben_mode_key_output.jsonl.ben");
+    let args = Args::try_parse_from([
+        "reben",
+        input.to_str().unwrap(),
+        "--mode",
+        "ben",
+        "--key",
+        "GEOID20",
+        "--shape-file",
+        shape.to_str().unwrap(),
+        "--output-file",
+        out.to_str().unwrap(),
+    ])
+    .unwrap();
+    let result = run_ben_mode(args);
+
+    let shape_stem = shape.to_str().unwrap().trim_end_matches(".json").to_owned();
+    let _ = fs::remove_file(shape_stem.clone() + "_sorted_by_GEOID20_map.json");
+    let _ = fs::remove_file(shape_stem + "_sorted_by_GEOID20.json");
+    let _ = fs::remove_file(&shape);
+    let _ = fs::remove_file(&input);
+    let _ = fs::remove_file(&out);
+    result.unwrap();
+}
+
+#[test]
+fn run_ben_mode_with_ordering_and_shape_happy_path() {
+    // The complement of the --key test: --ordering instead. Exercises
+    // `sort_json_file_by_ordering` + `to_graph_ordering`.
+    let input = write_temp_ben("ben_mode_ord_input.jsonl.ben");
+    let shape = unique_path("ben_mode_ord_shape.json");
+    fs::write(&shape, SHAPE_JSON).unwrap();
+    let out = unique_path("ben_mode_ord_output.jsonl.ben");
+    let args = Args::try_parse_from([
+        "reben",
+        input.to_str().unwrap(),
+        "--mode",
+        "ben",
+        "--ordering",
+        "reverse-cuthill-mckee",
+        "--shape-file",
+        shape.to_str().unwrap(),
+        "--output-file",
+        out.to_str().unwrap(),
+    ])
+    .unwrap();
+    let result = run_ben_mode(args);
+
+    let shape_stem = shape.to_str().unwrap().trim_end_matches(".json").to_owned();
+    let _ = fs::remove_file(shape_stem.clone() + "_sorted_by_reverse-cuthill-mckee_map.json");
+    let _ = fs::remove_file(shape_stem + "_sorted_by_reverse-cuthill-mckee.json");
+    let _ = fs::remove_file(&shape);
+    let _ = fs::remove_file(&input);
+    let _ = fs::remove_file(&out);
+    result.unwrap();
+}
+
+#[test]
+fn run_ben_mode_rejects_map_file_combined_with_key() {
+    // The map-file + key/ordering conflict guard (ben_mode.rs lines 67-74). The check fires
+    // after the input file is opened, so we provide a valid BEN input to reach the guard.
+    let input = write_temp_ben("map_plus_key_input.jsonl.ben");
+    let args = Args::try_parse_from([
+        "reben",
+        input.to_str().unwrap(),
+        "--mode",
+        "ben",
+        "--map-file",
+        "m.json",
+        "--key",
+        "k",
+    ])
+    .unwrap();
+    let err = run_ben_mode(args).unwrap_err();
+    let _ = fs::remove_file(&input);
+    assert!(
+        err.contains("map file") || err.contains("sorting option"),
+        "expected map+sort conflict error, got: {err}"
+    );
+}
+
+#[test]
+fn run_ben_mode_rejects_key_without_shape_file() {
+    // The shape-file presence guard (ben_mode.rs line 78-80).
+    let input = write_temp_ben("key_no_shape_input.jsonl.ben");
+    let args = Args::try_parse_from([
+        "reben",
+        input.to_str().unwrap(),
+        "--mode",
+        "ben",
+        "--key",
+        "GEOID20",
+    ])
+    .unwrap();
+    let err = run_ben_mode(args).unwrap_err();
+    let _ = fs::remove_file(&input);
+    assert!(err.contains("shape file"), "got: {err}");
+}

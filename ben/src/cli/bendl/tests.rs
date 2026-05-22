@@ -472,3 +472,108 @@ fn run_append_errors_on_missing_custom_asset_file() {
     assert!(err.contains("failed to read"));
     let _ = std::fs::remove_file(&bendl);
 }
+
+// ---------------------------------------------------------------------------
+// extract --stream + inspect display branches
+// ---------------------------------------------------------------------------
+
+#[test]
+fn run_extract_stream_writes_raw_assignment_bytes() {
+    // The existing run_extract_asset_by_name test covers --asset; this companion exercises
+    // --stream (lines 27-31 of extract.rs).
+    let known_stream = b"STANDARD BEN FILE\x00\x01known stream bytes";
+    let bendl = unique_path("extract_stream.bendl");
+    let buf = sample_bendl_bytes(known_stream, AssignmentFormat::Ben);
+    std::fs::write(&bendl, &buf).unwrap();
+
+    let out = unique_path("extract_stream_out.bin");
+    let args = ExtractArgs::try_parse_from([
+        "extract",
+        "--stream",
+        "--output",
+        out.to_str().unwrap(),
+        bendl.to_str().unwrap(),
+    ])
+    .unwrap();
+    run_extract(args).unwrap();
+    assert_eq!(std::fs::read(&out).unwrap(), known_stream);
+
+    let _ = std::fs::remove_file(&bendl);
+    let _ = std::fs::remove_file(&out);
+}
+
+#[test]
+fn run_extract_asset_with_unknown_name_errors_cleanly() {
+    // Pin the no-asset-named-X branch of extract.rs — find_asset_by_name returns None and the
+    // caller surfaces a clear "no asset named ..." error.
+    let bendl = write_temp_bendl("extract_unknown_asset.bendl", AssignmentFormat::Ben);
+    let out = unique_path("extract_unknown_out.bin");
+    let args = ExtractArgs::try_parse_from([
+        "extract",
+        "--asset",
+        "does-not-exist.txt",
+        "--output",
+        out.to_str().unwrap(),
+        bendl.to_str().unwrap(),
+    ])
+    .unwrap();
+    let err = run_extract(args).unwrap_err();
+    assert!(
+        err.contains("no asset") && err.contains("does-not-exist"),
+        "expected no-asset error mentioning the name, got: {err}"
+    );
+    let _ = std::fs::remove_file(&bendl);
+    let _ = std::fs::remove_file(&out);
+}
+
+#[test]
+fn run_inspect_displays_asset_with_no_flags_as_dash() {
+    // Pin inspect.rs line 60 — the `"-".to_string()` fallback for an asset whose asset_flags
+    // bitmap has no known bits set. Reaching it requires hand-building a directory entry with
+    // asset_flags=0 (the library writer always sets ASSET_FLAG_CHECKSUM).
+    use crate::io::bundle::format::{
+        encode_directory, BendlDirectoryEntry, BendlHeader, ASSET_TYPE_CUSTOM, BENDL_MAGIC,
+        BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM,
+        HEADER_SIZE,
+    };
+
+    let payload = b"raw bytes";
+    let mut bytes = vec![0u8; HEADER_SIZE];
+    let payload_offset = bytes.len() as u64;
+    bytes.extend_from_slice(payload);
+
+    let directory_offset = bytes.len() as u64;
+    let entries = vec![BendlDirectoryEntry {
+        asset_type: ASSET_TYPE_CUSTOM,
+        asset_flags: 0,
+        name: "flagless.bin".to_string(),
+        payload_offset,
+        payload_len: payload.len() as u64,
+        checksum: None,
+    }];
+    let directory = encode_directory(&entries).unwrap();
+    bytes.extend_from_slice(&directory);
+
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_YES,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        alignment_padding: 0,
+        flags: HEADER_FLAG_STREAM_CHECKSUM,
+        stream_checksum: 0,
+        directory_offset,
+        directory_len: directory.len() as u64,
+        stream_offset: HEADER_SIZE as u64,
+        stream_len: 0,
+        sample_count: 0,
+    };
+    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+
+    let bendl = unique_path("inspect_flagless.bendl");
+    std::fs::write(&bendl, &bytes).unwrap();
+    let args = InspectArgs::try_parse_from(["inspect", bendl.to_str().unwrap()]).unwrap();
+    run_inspect(args).unwrap();
+    let _ = std::fs::remove_file(&bendl);
+}
