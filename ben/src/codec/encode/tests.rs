@@ -1338,6 +1338,119 @@ fn ben32_encode_run_exceeding_u16_max_splits_correctly() {
 }
 
 // ---------------------------------------------------------------------------
+// Label-value 0 round-trips for MkvChain and TwoDelta
+// ---------------------------------------------------------------------------
+
+/// MkvChain round-trip with label `0` in the assignment. The existing
+/// `encode_jsonl_to_ben_single_zero` test covers Standard; MkvChain is structurally similar but
+/// the count-byte plumbing and run-length code paths are distinct enough to warrant their own
+/// pin.
+#[test]
+fn mkvchain_round_trip_with_label_zero() {
+    use crate::io::reader::BenStreamReader;
+    use crate::io::writer::BenStreamWriter;
+    use std::io::Cursor;
+
+    let assignments = vec![vec![0u16, 0, 1], vec![0u16, 1, 1], vec![0u16, 0, 0]];
+    let mut ben = Vec::new();
+    {
+        let mut writer = BenStreamWriter::for_ben(&mut ben, BenVariant::MkvChain).unwrap();
+        for a in &assignments {
+            writer.write_assignment(a.clone()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+    let decoded: Vec<Vec<u16>> = BenStreamReader::from_ben(Cursor::new(ben))
+        .unwrap()
+        .silent(true)
+        .flat_map(|r| {
+            let (a, c) = r.unwrap();
+            std::iter::repeat(a).take(c as usize)
+        })
+        .collect();
+    assert_eq!(decoded, assignments);
+}
+
+/// TwoDelta round-trips with delta-frame pairs that contain `0`. The pair `(first, second)` is
+/// computed by `twodelta_repeat_runs` from the first distinct values it sees; these fixtures
+/// force both orderings — `(0, 1)` and `(1, 0)` — to confirm the bit-packing and unpacking
+/// handle a zero-valued label on either side of the pair. Each fixture pairs an anchor with at
+/// least one delta so the delta-frame path is exercised, not just the anchor.
+///
+/// The degenerate `(0, 0)` case is not testable through this writer path: `twodelta_repeat_runs`
+/// guarantees `second != first` via a `first + 1` fallback when only one distinct value is
+/// present, so an assignment of `[0, 0, 0, 0]` yields the pair `(0, 1)` rather than `(0, 0)`.
+/// The all-identical case is covered by `writer_twodelta_all_identical_values` in
+/// `io/writer/tests.rs` (using `vec![3u16; 8]`); the only zero-specific aspect missing there is
+/// `vec![0u16; 8]`, which would exercise the same code path with the value field cleared.
+#[test]
+fn twodelta_round_trip_with_label_zero_pairs() {
+    use crate::io::reader::BenStreamReader;
+    use crate::io::writer::BenStreamWriter;
+    use std::io::Cursor;
+
+    let fixtures = vec![
+        ("pair (0, 1)", vec![vec![0u16, 0, 1, 1], vec![0u16, 1, 0, 1]]),
+        ("pair (1, 0)", vec![vec![1u16, 1, 0, 0], vec![1u16, 0, 1, 0]]),
+    ];
+
+    for (label, assignments) in fixtures {
+        let mut ben = Vec::new();
+        {
+            let mut writer = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
+            for a in &assignments {
+                writer.write_assignment(a.clone()).unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        let decoded: Vec<Vec<u16>> = BenStreamReader::from_ben(Cursor::new(ben))
+            .unwrap()
+            .silent(true)
+            .flat_map(|r| {
+                let (a, c) = r.unwrap();
+                std::iter::repeat(a).take(c as usize)
+            })
+            .collect();
+        assert_eq!(
+            decoded, assignments,
+            "TwoDelta round-trip failed for fixture: {label}"
+        );
+    }
+}
+
+/// All-zero assignment in TwoDelta: exercises the repeat/anchor-only path on the value `0`. The
+/// existing `writer_twodelta_all_identical_values` test in `io/writer/tests.rs` already covers
+/// this shape with value `3`; this companion confirms value `0` survives the same path,
+/// guarding against any future code path that uses `0` as a sentinel.
+#[test]
+fn twodelta_round_trip_all_zero_assignment() {
+    use crate::io::reader::BenStreamReader;
+    use crate::io::writer::BenStreamWriter;
+    use std::io::Cursor;
+
+    let assign = vec![0u16; 4];
+    let assignments: Vec<Vec<u16>> = (0..5).map(|_| assign.clone()).collect();
+
+    let mut ben = Vec::new();
+    {
+        let mut writer = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
+        for a in &assignments {
+            writer.write_assignment(a.clone()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+    let decoded: Vec<Vec<u16>> = BenStreamReader::from_ben(Cursor::new(ben))
+        .unwrap()
+        .silent(true)
+        .flat_map(|r| {
+            let (a, c) = r.unwrap();
+            std::iter::repeat(a).take(c as usize)
+        })
+        .collect();
+    assert_eq!(decoded, assignments);
+}
+
+// ---------------------------------------------------------------------------
 // Bit-packing boundary widths
 // ---------------------------------------------------------------------------
 
