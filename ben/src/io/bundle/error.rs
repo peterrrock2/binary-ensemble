@@ -140,3 +140,57 @@ impl From<DecoderInitError> for BendlReadError {
         BendlReadError::DecoderInit(e)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checksum_target_display_includes_asset_name() {
+        let t = ChecksumTarget::Asset("graph.json".to_string());
+        let s = format!("{t}");
+        // Quote-wrapped via Debug; pin the meaningful substring rather than exact bytes.
+        assert!(s.contains("graph.json"), "got: {s}");
+        assert!(s.contains("asset"), "got: {s}");
+    }
+
+    #[test]
+    fn checksum_target_display_for_stream_is_human_readable() {
+        assert_eq!(format!("{}", ChecksumTarget::Stream), "assignment stream");
+    }
+
+    #[test]
+    fn from_io_error_wraps_as_io_variant() {
+        let inner = io::Error::new(io::ErrorKind::BrokenPipe, "pipe broke");
+        let err: BendlReadError = inner.into();
+        match err {
+            BendlReadError::Io(io_err) => assert_eq!(io_err.kind(), io::ErrorKind::BrokenPipe),
+            other => panic!("expected Io, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_bendl_format_error_unwraps_io_arm() {
+        // The From impl is contractual: a format-layer Io error must surface as
+        // BendlReadError::Io, NOT as BendlReadError::Format(BendlFormatError::Io(_)).
+        let inner = io::Error::new(io::ErrorKind::UnexpectedEof, "truncated");
+        let fmt_err = BendlFormatError::Io(inner);
+        let err: BendlReadError = fmt_err.into();
+        match err {
+            BendlReadError::Io(io_err) => assert_eq!(io_err.kind(), io::ErrorKind::UnexpectedEof),
+            other => panic!("expected Io, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_bendl_format_error_passes_through_non_io_variants() {
+        let fmt_err = BendlFormatError::MalformedDirectory("broken".to_string());
+        let err: BendlReadError = fmt_err.into();
+        match err {
+            BendlReadError::Format(BendlFormatError::MalformedDirectory(msg)) => {
+                assert_eq!(msg, "broken")
+            }
+            other => panic!("expected Format(MalformedDirectory), got {other:?}"),
+        }
+    }
+}

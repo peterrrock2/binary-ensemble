@@ -973,3 +973,125 @@ fn ben_writer_failed_state_after_underlying_writer_error() {
     let err = w.finish().unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
 }
+
+// ── stream_writer/mod.rs coverage ─────────────────────────────────────
+
+use crate::io::reader::BenWireFormat;
+use crate::io::writer::XzEncodeOptions;
+
+#[test]
+fn for_xben_top_level_constructor_round_trips_per_variant() {
+    // The internal codec plumbing builds XBEN writers through `for_xben_with_encoder` with a
+    // pre-built XzEncoder; the public `for_xben` constructor (which takes XzEncodeOptions and
+    // builds the encoder internally) is the path external callers use. Exercise it directly so
+    // the encoder-construction branch isn't only covered indirectly.
+    let assignment = vec![1u16, 1, 2, 2];
+    for variant in [
+        BenVariant::Standard,
+        BenVariant::MkvChain,
+        BenVariant::TwoDelta,
+    ] {
+        let mut buf = Vec::new();
+        {
+            let opts = XzEncodeOptions::new()
+                .with_n_threads(1)
+                .with_compression_level(1);
+            let mut writer = BenStreamWriter::for_xben(&mut buf, variant, opts).unwrap();
+            writer.write_assignment(assignment.clone()).unwrap();
+            writer.finish().unwrap();
+        }
+        let decoded: Vec<Vec<u16>> = BenStreamReader::from_xben(Cursor::new(&buf))
+            .unwrap()
+            .silent(true)
+            .flat_map(|r| {
+                let (a, c) = r.unwrap();
+                std::iter::repeat(a).take(c as usize)
+            })
+            .collect();
+        assert_eq!(decoded, vec![assignment.clone()], "variant={variant:?}");
+    }
+}
+
+#[test]
+fn writer_variant_and_wire_format_accessors_reflect_construction() {
+    // The variant() and wire_format() accessors are zero-cost getters but easy to regress —
+    // a future refactor that adds a third inner variant must keep these in sync. Pin both.
+    for variant in [
+        BenVariant::Standard,
+        BenVariant::MkvChain,
+        BenVariant::TwoDelta,
+    ] {
+        let mut buf = Vec::new();
+        let ben_writer = BenStreamWriter::for_ben(&mut buf, variant).unwrap();
+        assert_eq!(ben_writer.variant(), variant);
+        assert_eq!(ben_writer.wire_format(), BenWireFormat::Ben);
+        drop(ben_writer); // BEN writer drop is a no-op-flush.
+
+        let mut buf = Vec::new();
+        let xben_writer = build_xben_writer(&mut buf, variant, None);
+        assert_eq!(xben_writer.variant(), variant);
+        assert_eq!(xben_writer.wire_format(), BenWireFormat::XBen);
+    }
+}
+
+#[test]
+fn finish_into_inner_returns_underlying_buffer_for_ben_open_state() {
+    // `finish_into_inner` from the Open state must flush pending state and hand back the inner
+    // writer. Pins the BEN-Open branch (lines 303-307).
+    let buf = Vec::new();
+    let mut writer = BenStreamWriter::for_ben(buf, BenVariant::Standard).unwrap();
+    writer.write_assignment(vec![1u16, 2]).unwrap();
+    let inner = writer.finish_into_inner().unwrap();
+    // Inner must contain at least the banner; concrete bytes are pinned by other tests.
+    assert!(inner.starts_with(b"STANDARD BEN FILE"));
+}
+
+#[test]
+fn finish_into_inner_returns_underlying_buffer_for_xben_open_state() {
+    // Pins the XBEN-Open branch (lines 309-315): finish the xz encoder and return the inner
+    // buffer.
+    let buf = Vec::new();
+    let encoder = XzEncoder::new(buf, 1);
+    let mut writer =
+        BenStreamWriter::for_xben_with_encoder(encoder, BenVariant::Standard, None).unwrap();
+    writer.write_assignment(vec![1u16, 2]).unwrap();
+    let inner = writer.finish_into_inner().unwrap();
+    // The inner buffer should be a complete xz stream (decompresses to the BEN stream). We
+    // don't pin exact bytes; just confirm the writer handed back a non-empty buffer.
+    assert!(!inner.is_empty());
+}
+
+#[test]
+fn finish_into_inner_from_complete_state_returns_buffer_without_double_flush() {
+    // After `finish()` succeeds the writer is Complete; `finish_into_inner` must accept this
+    // state and return the inner writer without trying to flush again.
+    let buf = Vec::new();
+    let mut writer = BenStreamWriter::for_ben(buf, BenVariant::Standard).unwrap();
+    writer.write_assignment(vec![1u16, 2]).unwrap();
+    writer.finish().unwrap();
+    let inner = writer.finish_into_inner().unwrap();
+    assert!(inner.starts_with(b"STANDARD BEN FILE"));
+}
+
+#[test]
+fn write_json_value_with_malformed_assignment_field_does_not_poison() {
+    // The JSON-parse step in write_json_value is preflight: a malformed input must error but
+    // leave the writer in Open so subsequent valid writes still work. This pins the contract
+    // that JSON validation happens before any stateful encode work.
+    use serde_json::json;
+    let mut buf = Vec::new();
+    {
+        let mut writer = BenStreamWriter::for_ben(&mut buf, BenVariant::Standard).unwrap();
+        // Missing the "assignment" field -> rejected by parse_json_assignment, NOT a stateful
+        // write -> writer stays Open.
+        let bad = json!({"sample": 1});
+        let err = writer.write_json_value(bad).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        // Writer must still accept a valid sample after the preflight rejection.
+        writer
+            .write_json_value(json!({"assignment": [1, 2], "sample": 1}))
+            .unwrap();
+        writer.finish().unwrap();
+    }
+    assert!(buf.starts_with(b"STANDARD BEN FILE"));
+}

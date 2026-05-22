@@ -873,7 +873,11 @@ fn writer_xz_asset_stores_crc_over_compressed_bytes_not_raw() {
 
     let reader = BendlReader::open(Cursor::new(buf)).unwrap();
     let entry = reader.find_asset_by_name("xz_asset").cloned().unwrap();
-    assert_ne!(entry.asset_flags & ASSET_FLAG_XZ, 0, "asset must be xz-flagged");
+    assert_ne!(
+        entry.asset_flags & ASSET_FLAG_XZ,
+        0,
+        "asset must be xz-flagged"
+    );
     assert_ne!(entry.asset_flags & ASSET_FLAG_CHECKSUM, 0);
 
     let mut encoder = XzEncoder::new(Vec::new(), DEFAULT_XZ_PRESET);
@@ -1418,7 +1422,10 @@ fn corrupt_stream_checksum(bytes: &mut Vec<u8>) {
 /// Flip a byte in the stream payload to corrupt the stream contents without changing its length.
 fn corrupt_stream_payload(bytes: &mut Vec<u8>, reader: &mut BendlReader<Cursor<Vec<u8>>>) {
     let (offset, len) = reader.assignment_stream_range().unwrap();
-    assert!(len > 0, "stream must be non-empty to corrupt a payload byte");
+    assert!(
+        len > 0,
+        "stream must be non-empty to corrupt a payload byte"
+    );
     // Flip the last byte of the stream region.
     bytes[(offset + len - 1) as usize] ^= 0x01;
 }
@@ -1483,7 +1490,13 @@ fn assignment_stream_reader_detects_corrupt_stored_checksum() {
         .and_then(|e| e.downcast_ref::<ChecksumError>())
         .expect("inner ChecksumError");
     assert!(
-        matches!(inner, ChecksumError::Mismatch { target: ChecksumTarget::Stream, .. }),
+        matches!(
+            inner,
+            ChecksumError::Mismatch {
+                target: ChecksumTarget::Stream,
+                ..
+            }
+        ),
         "expected Stream Mismatch, got {inner:?}"
     );
 }
@@ -1569,7 +1582,10 @@ fn open_assignment_reader_iterator_detects_corrupt_stored_checksum() {
         }
     }
     // Subsequent calls must return None (not repeat the error).
-    assert!(decoder.next().is_none(), "expected None after mismatch reported");
+    assert!(
+        decoder.next().is_none(),
+        "expected None after mismatch reported"
+    );
     assert_eq!(decoded_count, samples.len());
 }
 
@@ -1603,9 +1619,7 @@ fn write_all_jsonl_detects_corrupt_stored_checksum() {
     corrupt_stream_checksum(&mut buf);
     let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
     let mut decoder = reader.open_assignment_reader().unwrap();
-    let err = decoder
-        .write_all_jsonl(std::io::sink())
-        .unwrap_err();
+    let err = decoder.write_all_jsonl(std::io::sink()).unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
     let inner = err
         .get_ref()
@@ -1630,9 +1644,7 @@ fn for_each_assignment_detects_corrupt_stored_checksum_when_driven_to_eof() {
     let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
     let mut decoder = reader.open_assignment_reader().unwrap();
     // Callback always returns Ok(true) so it drives to natural EOF.
-    let err = decoder
-        .for_each_assignment(|_, _| Ok(true))
-        .unwrap_err();
+    let err = decoder.for_each_assignment(|_, _| Ok(true)).unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
     let inner = err
         .get_ref()
@@ -1800,7 +1812,8 @@ fn appender_preserves_unknown_asset_flag_bits_on_existing_entries() {
     // and assert the reserved bit is still set on the original entry. The new entry must not
     // pick up any reserved bits.
     let (initial_bytes, reserved_bit) = bundle_with_reserved_asset_flag_bit();
-    let known_v1_bits: u16 = ASSET_FLAG_CHECKSUM | ASSET_FLAG_XZ | crate::io::bundle::format::ASSET_FLAG_JSON;
+    let known_v1_bits: u16 =
+        ASSET_FLAG_CHECKSUM | ASSET_FLAG_XZ | crate::io::bundle::format::ASSET_FLAG_JSON;
 
     let mut appender = BendlAppender::open(Cursor::new(initial_bytes)).unwrap();
     appender
@@ -1828,4 +1841,115 @@ fn appender_preserves_unknown_asset_flag_bits_on_existing_entries() {
         0,
         "appender must not set any unknown bits on newly written entries"
     );
+}
+
+// ---------------------------------------------------------------------------
+// rollback paths and accessors
+// ---------------------------------------------------------------------------
+
+#[test]
+fn stream_session_start_offset_returns_recorded_value() {
+    // `BendlStreamSession::start_offset` records the file position at session-construction time so
+    // a caller can later size the stream region. The getter is a one-line method but is the only
+    // way to read this value, so pin it explicitly.
+    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    writer
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "blob.bin",
+            b"abcdef",
+            AddAssetOptions::defaults().raw(),
+        )
+        .unwrap();
+    let session = writer.into_stream_session().unwrap();
+    // Header is 64 bytes; one 6-byte asset payload follows → start_offset = 70.
+    assert_eq!(session.start_offset(), HEADER_SIZE as u64 + 6);
+}
+
+#[test]
+fn writer_duplicate_name_after_singleton_insert_rolls_back_singleton_state() {
+    // Trigger the rare DuplicateName-after-canonical-singleton-insert branch in BendlWriter::
+    // add_asset (the `singleton_types.remove(&asset_type)` rollback path). Reach it by adding a
+    // custom asset that happens to take the canonical name of a known singleton type, then
+    // attempting to add the actual singleton: the canonical-name check passes, singleton_types
+    // accepts the new type, then names.insert fails because the custom asset already claimed
+    // that name. The rollback keeps the writer state consistent for a future retry.
+    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    writer
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "graph.json",
+            b"squatting on the canonical name",
+            AddAssetOptions::defaults().raw(),
+        )
+        .unwrap();
+    let err = writer
+        .add_asset(
+            ASSET_TYPE_GRAPH,
+            "graph.json",
+            b"the real graph",
+            AddAssetOptions::defaults().json().compress(),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(err, BendlWriteError::DuplicateName(ref n) if n == "graph.json"),
+        "expected DuplicateName, got {err:?}"
+    );
+
+    // The rollback contract: a second attempt at adding ASSET_TYPE_GRAPH must NOT see a stale
+    // entry in singleton_types from the previous attempt. The writer is also expected to
+    // remain usable for non-conflicting additions.
+    writer
+        .add_asset(
+            ASSET_TYPE_METADATA,
+            "metadata.json",
+            br#"{"v":1}"#,
+            AddAssetOptions::defaults().json().raw(),
+        )
+        .unwrap();
+}
+
+#[test]
+fn appender_duplicate_name_after_singleton_insert_rolls_back_pending_state() {
+    // Same rollback contract for BendlAppender (rather than BendlWriter): a successful canonical-
+    // name singleton insert into pending_singleton_types must be undone if the name collides
+    // with an existing entry. Reach it by appending a custom asset that takes a canonical name,
+    // committing, then opening the appender and attempting the singleton add.
+    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    writer
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "graph.json",
+            b"squatter",
+            AddAssetOptions::defaults().raw(),
+        )
+        .unwrap();
+    let session = writer.into_stream_session().unwrap();
+    let writer = session.finish_into_writer(0);
+    let bundle = writer.finish().unwrap().into_inner();
+
+    let mut appender = BendlAppender::open(Cursor::new(bundle)).unwrap();
+    let err = appender
+        .add_asset(
+            ASSET_TYPE_GRAPH,
+            "graph.json",
+            b"the real graph",
+            AddAssetOptions::defaults().json().compress(),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(err, BendlWriteError::DuplicateName(ref n) if n == "graph.json"),
+        "expected DuplicateName, got {err:?}"
+    );
+
+    // After the rejection, the appender must still be usable for non-conflicting additions
+    // (the rollback removed the stale pending_singleton_types entry).
+    appender
+        .add_asset(
+            ASSET_TYPE_METADATA,
+            "metadata.json",
+            br#"{"v":1}"#,
+            AddAssetOptions::defaults().json().raw(),
+        )
+        .unwrap();
 }

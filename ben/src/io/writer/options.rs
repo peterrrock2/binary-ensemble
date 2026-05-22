@@ -59,3 +59,82 @@ impl Default for XzEncodeOptions {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_equals_default() {
+        let a = XzEncodeOptions::new();
+        let b = XzEncodeOptions::default();
+        assert_eq!(a.n_threads, b.n_threads);
+        assert_eq!(a.compression_level, b.compression_level);
+        assert_eq!(a.block_size, b.block_size);
+        assert_eq!(a.twodelta_chunk_size, b.twodelta_chunk_size);
+    }
+
+    #[test]
+    fn defaults_are_none_and_default_chunk_size() {
+        let o = XzEncodeOptions::default();
+        assert_eq!(o.n_threads, None);
+        assert_eq!(o.compression_level, None);
+        assert_eq!(o.block_size, None);
+        assert_eq!(o.twodelta_chunk_size, DEFAULT_TWODELTA_CHUNK_SIZE);
+    }
+
+    #[test]
+    fn with_n_threads_clamps_zero_to_one() {
+        // The clamp is part of the contract — the underlying xz mt encoder requires ≥1.
+        assert_eq!(XzEncodeOptions::new().with_n_threads(0).n_threads, Some(1));
+        assert_eq!(XzEncodeOptions::new().with_n_threads(8).n_threads, Some(8));
+    }
+
+    #[test]
+    fn with_compression_level_clamps_to_nine() {
+        assert_eq!(
+            XzEncodeOptions::new().with_compression_level(99).compression_level,
+            Some(9)
+        );
+        // Level 0 (store-mode) is a legitimate setting and must be preserved as-is.
+        assert_eq!(
+            XzEncodeOptions::new().with_compression_level(0).compression_level,
+            Some(0)
+        );
+        assert_eq!(
+            XzEncodeOptions::new().with_compression_level(6).compression_level,
+            Some(6)
+        );
+    }
+
+    #[test]
+    fn with_block_size_round_trips_any_value() {
+        let o = XzEncodeOptions::new().with_block_size(64 * 1024 * 1024);
+        assert_eq!(o.block_size, Some(64 * 1024 * 1024));
+    }
+
+    #[test]
+    fn with_twodelta_chunk_size_clamps_zero_to_one() {
+        assert_eq!(
+            XzEncodeOptions::new().with_twodelta_chunk_size(0).twodelta_chunk_size,
+            1
+        );
+        assert_eq!(
+            XzEncodeOptions::new().with_twodelta_chunk_size(7).twodelta_chunk_size,
+            7
+        );
+    }
+
+    #[test]
+    fn chained_builder_composes_all_fields() {
+        let o = XzEncodeOptions::new()
+            .with_n_threads(4)
+            .with_compression_level(3)
+            .with_block_size(1024)
+            .with_twodelta_chunk_size(128);
+        assert_eq!(o.n_threads, Some(4));
+        assert_eq!(o.compression_level, Some(3));
+        assert_eq!(o.block_size, Some(1024));
+        assert_eq!(o.twodelta_chunk_size, 128);
+    }
+}
