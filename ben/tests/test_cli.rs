@@ -1744,3 +1744,391 @@ fn bendl_cli_create_inspect_extract_append_roundtrip() {
     );
     assert_failure(&append_duplicate);
 }
+
+// ---------------------------------------------------------------------------
+// `ben encode --graph` and `ben x-encode --graph`
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ben_encode_graph_requires_input_file_not_stdin() {
+    // `--graph` is structurally incompatible with stdin input because the output container has
+    // to seek to patch the header. The CLI must reject the bad combination explicitly.
+    let temp = TempDir::new("ben-encode-graph-stdin");
+    let graph_path = temp.path().join("graph.json");
+    fs::write(&graph_path, sample_graph()).unwrap();
+
+    let out = run(
+        "ben",
+        &[
+            "--mode",
+            "encode",
+            "--graph",
+            graph_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_failure(&out);
+    let msg = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        msg.contains("--graph") && msg.contains("input file"),
+        "expected '--graph requires an input file' error, got stderr: {msg}"
+    );
+}
+
+#[test]
+fn ben_encode_graph_rejects_combination_with_print() {
+    // `--print` writes to stdout; bendl output requires a seekable file. Combination is invalid
+    // and must be rejected explicitly.
+    let temp = TempDir::new("ben-encode-graph-print");
+    let jsonl_path = temp.path().join("samples.jsonl");
+    fs::write(&jsonl_path, sample_jsonl()).unwrap();
+    let graph_path = temp.path().join("graph.json");
+    fs::write(&graph_path, sample_graph()).unwrap();
+
+    let out = run(
+        "ben",
+        &[
+            "--mode",
+            "encode",
+            jsonl_path.to_str().unwrap(),
+            "--graph",
+            graph_path.to_str().unwrap(),
+            "--print",
+        ],
+        temp.path(),
+    );
+    assert_failure(&out);
+    let msg = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        msg.contains("--graph") && msg.contains("--print"),
+        "expected '--graph is incompatible with --print' error, got stderr: {msg}"
+    );
+}
+
+#[test]
+fn ben_encode_graph_happy_path_produces_bendl() {
+    // Happy path for `ben --mode encode --graph`: produces a finalized .bendl whose decoded
+    // stream round-trips the input JSONL and whose graph asset matches the source.
+    let temp = TempDir::new("ben-encode-graph-happy");
+    let jsonl_path = temp.path().join("samples.jsonl");
+    fs::write(&jsonl_path, sample_jsonl()).unwrap();
+    let graph_path = temp.path().join("graph.json");
+    fs::write(&graph_path, sample_graph()).unwrap();
+    let out_path = temp.path().join("out.bendl");
+
+    let encode = run(
+        "ben",
+        &[
+            "--mode",
+            "encode",
+            jsonl_path.to_str().unwrap(),
+            "--output-file",
+            out_path.to_str().unwrap(),
+            "--graph",
+            graph_path.to_str().unwrap(),
+            "--save-all",
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_success(&encode);
+    assert!(out_path.exists());
+
+    // Recover the embedded BEN stream and confirm it decodes back to the canonical JSONL.
+    let stream_path = temp.path().join("recovered.ben");
+    let extract_stream = run(
+        "bendl",
+        &[
+            "extract",
+            out_path.to_str().unwrap(),
+            "--stream",
+            "--output",
+            stream_path.to_str().unwrap(),
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_success(&extract_stream);
+
+    let decoded_path = temp.path().join("decoded.jsonl");
+    let decode = run(
+        "ben",
+        &[
+            "--mode",
+            "decode",
+            stream_path.to_str().unwrap(),
+            "--output-file",
+            decoded_path.to_str().unwrap(),
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_success(&decode);
+    assert_eq!(fs::read_to_string(&decoded_path).unwrap(), sample_jsonl());
+
+    // The graph asset should be embedded byte-equal.
+    let recovered_graph = temp.path().join("recovered-graph.json");
+    let extract_graph = run(
+        "bendl",
+        &[
+            "extract",
+            out_path.to_str().unwrap(),
+            "--asset",
+            "graph.json",
+            "--output",
+            recovered_graph.to_str().unwrap(),
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_success(&extract_graph);
+    assert_eq!(fs::read_to_string(&recovered_graph).unwrap(), sample_graph());
+}
+
+#[test]
+fn ben_xencode_graph_requires_input_file_not_stdin() {
+    let temp = TempDir::new("ben-xencode-graph-stdin");
+    let graph_path = temp.path().join("graph.json");
+    fs::write(&graph_path, sample_graph()).unwrap();
+
+    let out = run(
+        "ben",
+        &[
+            "--mode",
+            "x-encode",
+            "--graph",
+            graph_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_failure(&out);
+    let msg = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        msg.contains("--graph") && msg.contains("input file"),
+        "expected '--graph requires an input file' error, got stderr: {msg}"
+    );
+}
+
+#[test]
+fn ben_xencode_graph_rejects_combination_with_print() {
+    let temp = TempDir::new("ben-xencode-graph-print");
+    let jsonl_path = temp.path().join("samples.jsonl");
+    fs::write(&jsonl_path, sample_jsonl()).unwrap();
+    let graph_path = temp.path().join("graph.json");
+    fs::write(&graph_path, sample_graph()).unwrap();
+
+    let out = run(
+        "ben",
+        &[
+            "--mode",
+            "x-encode",
+            jsonl_path.to_str().unwrap(),
+            "--graph",
+            graph_path.to_str().unwrap(),
+            "--print",
+        ],
+        temp.path(),
+    );
+    assert_failure(&out);
+    let msg = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        msg.contains("--graph") && msg.contains("--print"),
+        "expected '--graph is incompatible with --print' error, got stderr: {msg}"
+    );
+}
+
+#[test]
+fn ben_xencode_graph_with_ben_input_round_trips() {
+    // The `--graph` xencode handler dispatches on input extension: a `.ben` input takes the
+    // `encode_ben_to_xben` path (cli/ben/bundle.rs line 127), a `.jsonl` input takes the
+    // `encode_jsonl_to_xben` path. The happy-path test below only covers the `.jsonl` arm;
+    // this companion exercises the `.ben` arm.
+    let temp = TempDir::new("ben-xencode-graph-ben-input");
+    let jsonl_path = temp.path().join("samples.jsonl");
+    fs::write(&jsonl_path, sample_jsonl()).unwrap();
+
+    // Encode JSONL to a BEN file first; this is what we'll feed into --mode x-encode.
+    let ben_path = temp.path().join("samples.ben");
+    let encode_ben = run(
+        "ben",
+        &[
+            "--mode",
+            "encode",
+            jsonl_path.to_str().unwrap(),
+            "--output-file",
+            ben_path.to_str().unwrap(),
+            "--save-all",
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_success(&encode_ben);
+
+    let graph_path = temp.path().join("graph.json");
+    fs::write(&graph_path, sample_graph()).unwrap();
+    let out_path = temp.path().join("out.bendl");
+
+    let xencode = run(
+        "ben",
+        &[
+            "--mode",
+            "x-encode",
+            ben_path.to_str().unwrap(),
+            "--output-file",
+            out_path.to_str().unwrap(),
+            "--graph",
+            graph_path.to_str().unwrap(),
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_success(&xencode);
+    assert!(out_path.exists());
+
+    // Round-trip: extract the XBEN stream, decode it back to JSONL, compare to the original.
+    let recovered_xben = temp.path().join("recovered.xben");
+    let extract = run(
+        "bendl",
+        &[
+            "extract",
+            out_path.to_str().unwrap(),
+            "--stream",
+            "--output",
+            recovered_xben.to_str().unwrap(),
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_success(&extract);
+
+    let decoded_path = temp.path().join("decoded.jsonl");
+    let decode = run(
+        "ben",
+        &[
+            "--mode",
+            "x-decode",
+            recovered_xben.to_str().unwrap(),
+            "--output-file",
+            decoded_path.to_str().unwrap(),
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_success(&decode);
+    assert_eq!(fs::read_to_string(&decoded_path).unwrap(), sample_jsonl());
+}
+
+#[test]
+fn ben_encode_graph_rejects_missing_graph_file() {
+    // A graph path that does not exist must surface a clean error, not a panic.
+    let temp = TempDir::new("ben-encode-graph-missing-file");
+    let jsonl_path = temp.path().join("samples.jsonl");
+    fs::write(&jsonl_path, sample_jsonl()).unwrap();
+    let nonexistent_graph = temp.path().join("does-not-exist.json");
+    let out_path = temp.path().join("out.bendl");
+
+    let out = run(
+        "ben",
+        &[
+            "--mode",
+            "encode",
+            jsonl_path.to_str().unwrap(),
+            "--output-file",
+            out_path.to_str().unwrap(),
+            "--graph",
+            nonexistent_graph.to_str().unwrap(),
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_failure(&out);
+}
+
+#[test]
+fn ben_encode_graph_refuses_to_overwrite_existing_file_without_flag() {
+    // Without --overwrite, an existing output path must be preserved.
+    let temp = TempDir::new("ben-encode-graph-overwrite-guard");
+    let jsonl_path = temp.path().join("samples.jsonl");
+    fs::write(&jsonl_path, sample_jsonl()).unwrap();
+    let graph_path = temp.path().join("graph.json");
+    fs::write(&graph_path, sample_graph()).unwrap();
+    let out_path = temp.path().join("out.bendl");
+    fs::write(&out_path, b"prior contents").unwrap();
+
+    let out = run(
+        "ben",
+        &[
+            "--mode",
+            "encode",
+            jsonl_path.to_str().unwrap(),
+            "--output-file",
+            out_path.to_str().unwrap(),
+            "--graph",
+            graph_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_failure(&out);
+    // The prior file must remain untouched.
+    assert_eq!(fs::read(&out_path).unwrap(), b"prior contents");
+}
+
+#[test]
+fn ben_xencode_graph_happy_path_produces_bendl() {
+    let temp = TempDir::new("ben-xencode-graph-happy");
+    let jsonl_path = temp.path().join("samples.jsonl");
+    fs::write(&jsonl_path, sample_jsonl()).unwrap();
+    let graph_path = temp.path().join("graph.json");
+    fs::write(&graph_path, sample_graph()).unwrap();
+    let out_path = temp.path().join("out.bendl");
+
+    let encode = run(
+        "ben",
+        &[
+            "--mode",
+            "x-encode",
+            jsonl_path.to_str().unwrap(),
+            "--output-file",
+            out_path.to_str().unwrap(),
+            "--graph",
+            graph_path.to_str().unwrap(),
+            "--save-all",
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_success(&encode);
+    assert!(out_path.exists());
+
+    // Recover the embedded XBEN stream and decode it to confirm round-trip.
+    let stream_path = temp.path().join("recovered.xben");
+    let extract_stream = run(
+        "bendl",
+        &[
+            "extract",
+            out_path.to_str().unwrap(),
+            "--stream",
+            "--output",
+            stream_path.to_str().unwrap(),
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_success(&extract_stream);
+
+    let decoded_path = temp.path().join("decoded.jsonl");
+    let decode = run(
+        "ben",
+        &[
+            "--mode",
+            "x-decode",
+            stream_path.to_str().unwrap(),
+            "--output-file",
+            decoded_path.to_str().unwrap(),
+            "--overwrite",
+        ],
+        temp.path(),
+    );
+    assert_success(&decode);
+    assert_eq!(fs::read_to_string(&decoded_path).unwrap(), sample_jsonl());
+}
