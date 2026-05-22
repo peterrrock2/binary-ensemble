@@ -319,6 +319,68 @@ proptest! {
         prop_assert_eq!(direct, via);
     }
 
+    // Two-path equivalence for Standard: direct XBEN->JSONL must equal XBEN->BEN->JSONL.
+    // Pins the same invariant as `fuzz_decode_xben_direct_equals_via_ben` for the Standard
+    // variant, whose XBEN frame layout is structurally different from MkvChain (no outer
+    // repetition count) and so deserves its own coverage.
+    #[test]
+    fn fuzz_decode_xben_direct_equals_via_ben_standard(seq in strat_assignment_seq(), params in strat_threads_levels()) {
+        let (threads, level) = params;
+        let jsonl = jsonl_from_assignments(&seq);
+
+        let mut xben = Vec::new();
+        encode_jsonl_to_xben(
+            BufReader::new(jsonl.as_slice()),
+            &mut xben,
+            BenVariant::Standard,
+            Some(threads),
+            Some(level),
+            None,
+            None,
+        ).unwrap();
+
+        let mut direct = Vec::new();
+        decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut direct).unwrap();
+
+        let mut ben = Vec::new();
+        decode_xben_to_ben(BufReader::new(xben.as_slice()), &mut ben).unwrap();
+        let mut via = Vec::new();
+        decode_ben_to_jsonl(ben.as_slice(), &mut via).unwrap();
+
+        prop_assert_eq!(direct, via);
+    }
+
+    // Two-path equivalence for TwoDelta: the most distinct of the three variants because XBEN
+    // TwoDelta uses columnar chunk frames that bear no resemblance to BEN TwoDelta's per-sample
+    // delta frames. The XBEN->JSONL direct decoder and the XBEN->BEN->JSONL pipeline must still
+    // agree byte-for-byte.
+    #[test]
+    fn fuzz_decode_xben_direct_equals_via_ben_twodelta(seq in strat_twodelta_seq(), params in strat_threads_levels()) {
+        let (threads, level) = params;
+        let jsonl = jsonl_from_assignments(&seq);
+
+        let mut xben = Vec::new();
+        encode_jsonl_to_xben(
+            BufReader::new(jsonl.as_slice()),
+            &mut xben,
+            BenVariant::TwoDelta,
+            Some(threads),
+            Some(level),
+            None,
+            None,
+        ).unwrap();
+
+        let mut direct = Vec::new();
+        decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut direct).unwrap();
+
+        let mut ben = Vec::new();
+        decode_xben_to_ben(BufReader::new(xben.as_slice()), &mut ben).unwrap();
+        let mut via = Vec::new();
+        decode_ben_to_jsonl(ben.as_slice(), &mut via).unwrap();
+
+        prop_assert_eq!(direct, via);
+    }
+
     // Iterator surface: BenStreamReader -> records matches direct JSONL
     #[test]
     fn fuzz_xbendecoder_iterator_matches_jsonl(seq in strat_assignment_seq(), params in strat_threads_levels()) {
