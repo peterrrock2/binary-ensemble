@@ -1,5 +1,11 @@
 use std::io::{self, Read};
 
+/// Upper bound on `n_bytes` accepted by [`decode_ben_line`]. A frame larger than this is rejected
+/// without allocating, so malformed or adversarial input cannot OOM the process during fuzzing or
+/// stream decoding. The cap is well above any legitimate BEN frame: at 64 MiB of packed RLE data
+/// it would hold tens of millions of run pairs.
+const MAX_FRAME_PAYLOAD_BYTES: u32 = 1 << 26;
+
 /// Decode a single BEN frame payload into run-length encoded assignments.
 ///
 /// This function expects only the packed payload bytes for one BEN frame, not the leading per-frame
@@ -15,6 +21,18 @@ use std::io::{self, Read};
 /// # Returns
 ///
 /// Returns the decoded run-length encoded assignment vector as `(value, count)` pairs.
+///
+/// # Errors
+///
+/// Returns [`io::ErrorKind::InvalidData`] for the following corrupt-frame conditions, which the
+/// library writers never produce:
+///
+/// - `max_val_bits` or `max_len_bits` outside `1..=16`.
+/// - `n_bytes` larger than [`MAX_FRAME_PAYLOAD_BYTES`].
+/// - A decoded pair with a zero-length run before the trailing padding region.
+/// - `n_bytes` not equal to `ceil(real_pairs * (mvb + mlb) / 8)` after decoding (the encoder uses
+///   `div_ceil` to compute `n_bytes`, so any other value indicates a malformed or maliciously
+///   crafted frame).
 pub fn decode_ben_line<R: Read>(
     mut reader: R,
     max_val_bits: u8,
@@ -30,12 +48,26 @@ pub fn decode_ben_line<R: Read>(
         ));
     }
 
+    if n_bytes > MAX_FRAME_PAYLOAD_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "BEN frame payload of {n_bytes} bytes exceeds {MAX_FRAME_PAYLOAD_BYTES}; \
+                 refusing to allocate"
+            ),
+        ));
+    }
+
     let mut assign_bits: Vec<u8> = vec![0; n_bytes as usize];
     reader.read_exact(&mut assign_bits)?;
 
-    let n_assignments: usize =
-        (n_bytes as f64 / ((max_val_bits + max_len_bits) as f64 / 8.0)) as usize;
-    let mut output_rle: Vec<(u16, u16)> = Vec::with_capacity(n_assignments);
+    // Bit-width invariants the encoder maintains. Width values themselves are bounded by 16 each
+    // (checked above), so the sum fits in u32 trivially and the per-pair extraction below stays
+    // within the 32-bit shift register.
+    let bit_width = u64::from(max_val_bits) + u64::from(max_len_bits);
+    let total_bits = u64::from(n_bytes) * 8;
+    let n_assignments_upper_bound = (total_bits / bit_width) as usize;
+    let mut output_rle: Vec<(u16, u16)> = Vec::with_capacity(n_assignments_upper_bound);
 
     let mut buffer: u32 = 0;
     let mut n_bits_in_buff: u16 = 0;
@@ -44,6 +76,13 @@ pub fn decode_ben_line<R: Read>(
     let mut val_set = false;
     let mut len = 0;
     let mut len_set = false;
+
+    // Tracks zero-length pairs seen since the last real (len > 0) pair. The encoder never emits
+    // zero-length runs, so any zero-length pair in the decoded stream is either trailing padding
+    // (for narrow bit widths, where padding bits may form a complete pair) or a corrupt-frame
+    // signal. We accumulate them until either (a) the frame ends — accepted as padding — or
+    // (b) a real pair follows — rejected as interior corruption.
+    let mut pending_zero_pairs: usize = 0;
 
     for &byte in &assign_bits {
         buffer |= (byte as u32).to_be() >> n_bits_in_buff;
@@ -65,7 +104,12 @@ pub fn decode_ben_line<R: Read>(
         }
 
         if val_set && len_set {
-            if len > 0 {
+            if len == 0 {
+                pending_zero_pairs += 1;
+            } else {
+                if pending_zero_pairs > 0 {
+                    return Err(interior_zero_length_run_error());
+                }
                 output_rle.push((val, len));
             }
             val_set = false;
@@ -86,14 +130,42 @@ pub fn decode_ben_line<R: Read>(
             buffer <<= max_len_bits;
             n_bits_in_buff -= max_len_bits as u16;
 
-            if len > 0 {
+            if len == 0 {
+                pending_zero_pairs += 1;
+            } else {
+                if pending_zero_pairs > 0 {
+                    return Err(interior_zero_length_run_error());
+                }
                 output_rle.push((val, len));
             }
             val_set = false;
         }
     }
 
+    // n_bytes consistency: the encoder writes `n_bytes = ceil(real_pairs * bit_width / 8)`. Any
+    // other relationship between n_bytes and the number of real pairs we recovered is a
+    // corrupt-frame signal (n_bytes overstated → extra "phantom" capacity the encoder wouldn't
+    // allocate; n_bytes understated → real pairs would have been truncated).
+    let real_pairs = output_rle.len() as u64;
+    let expected_bytes = (real_pairs * bit_width).div_ceil(8);
+    if u64::from(n_bytes) != expected_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "inconsistent BEN frame size: n_bytes={n_bytes} but {real_pairs} pair(s) at \
+                 {bit_width} bit(s)/pair require {expected_bytes} byte(s)"
+            ),
+        ));
+    }
+
     Ok(output_rle)
+}
+
+fn interior_zero_length_run_error() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        "BEN frame contains an interior zero-length run; the encoder never emits zero-length runs",
+    )
 }
 
 #[cfg(test)]
@@ -102,11 +174,55 @@ mod tests {
     use std::io::Cursor;
 
     #[test]
-    fn decode_ben_line_skips_zero_length_run() {
-        // max_val_bits=1, max_len_bits=1, 1 byte payload = 0x80. Bit layout: [val=1][len=0] → run
-        // with len=0 is not pushed.
-        let result = decode_ben_line(Cursor::new(&[0x80u8]), 1, 1, 1).unwrap();
-        assert!(result.is_empty());
+    fn decode_ben_line_rejects_zero_length_run_when_trailing_real_pair_present() {
+        // Hand-built frame: mvb=4, mlb=4 (bit_width=8 = one full byte per pair). First byte
+        // 0x10 = (val=1, len=0) — zero-length, should not exist. Second byte 0x23 = (val=2,
+        // len=3). The trailing real pair makes the leading zero-length pair "interior", which is
+        // rejected.
+        let err =
+            decode_ben_line(Cursor::new(&[0x10u8, 0x23u8]), 4, 4, 2).expect_err("must reject");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("interior zero-length"));
+    }
+
+    #[test]
+    fn decode_ben_line_rejects_inconsistent_n_bytes() {
+        // Plan's headline case: mvb=8, mlb=8 → 16 bits/pair = 2 bytes/pair. n_bytes=3 should
+        // decode 1 pair but leaves a full byte of "padding" — the encoder uses div_ceil(2*16/8)=2,
+        // never 3. The post-decode consistency check rejects this.
+        let err = decode_ben_line(Cursor::new(&[0x01u8, 0x03u8, 0xff]), 8, 8, 3)
+            .expect_err("must reject");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("inconsistent"));
+    }
+
+    #[test]
+    fn decode_ben_line_rejects_oversized_n_bytes_without_allocating() {
+        // n_bytes way above the sanity cap must error before allocating. We don't supply any
+        // bytes here because the cap check fires first; read_exact would otherwise try to fill
+        // ~4GiB.
+        let err = decode_ben_line(Cursor::new(&[][..]), 8, 8, u32::MAX).expect_err("must reject");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("exceeds"));
+    }
+
+    #[test]
+    fn decode_ben_line_accepts_narrow_bit_width_with_trailing_zero_padding() {
+        // mvb=1, mlb=1, n_bytes=1, single real pair (1, 1) at the high bits. The remaining 6 bits
+        // are zero, which the decoder reads as three trailing (0, 0) "phantom" pairs. These are
+        // padding artifacts of the byte-aligned wire format and must be accepted.
+        let result = decode_ben_line(Cursor::new(&[0b11_00_00_00u8]), 1, 1, 1).unwrap();
+        assert_eq!(result, vec![(1u16, 1u16)]);
+    }
+
+    #[test]
+    #[allow(clippy::unusual_byte_groupings)]
+    fn decode_ben_line_accepts_non_byte_aligned_frame() {
+        // mvb=2, mlb=3 (bit_width=5), n_bytes=2 (16 bits = 3 real pairs + 1 padding bit). Encoder
+        // produces this layout for RLE [(1,4),(2,1),(3,3)]; the consistency check must accept it.
+        let result =
+            decode_ben_line(Cursor::new(&[0b01100_100u8, 0b01_11011_0u8]), 2, 3, 2).unwrap();
+        assert_eq!(result, vec![(1u16, 4u16), (2, 1), (3, 3)]);
     }
 
     #[test]

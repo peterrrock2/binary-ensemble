@@ -558,6 +558,20 @@ fn seeded_malformed_ben_bytes_do_not_panic() {
             assert_ben_bytes_do_not_panic(inflated_frame_len);
         }
     }
+
+    // Explicit no-panic seed: misaligned frame size. mvb=8, mlb=8 means a pair is 2 bytes; this
+    // frame claims n_bytes=3 with 2 real-pair bytes plus 1 phantom byte. The decoder must reject
+    // (InvalidData) without panicking.
+    let mut misaligned_standard = STANDARD_BEN_BANNER.to_vec();
+    misaligned_standard.extend_from_slice(&[8u8, 8, 0, 0, 0, 3, 0x01, 0x03, 0xff]);
+    assert_ben_bytes_do_not_panic(misaligned_standard);
+
+    // Explicit no-panic seed: interior zero-length run. mvb=4, mlb=4 → 1 pair per byte. Byte 1 =
+    // (val=1, len=0) (zero-length pair), byte 2 = (val=2, len=3) (real pair). The decoder must
+    // reject (InvalidData) for the interior zero-length run without panicking.
+    let mut interior_zero_standard = STANDARD_BEN_BANNER.to_vec();
+    interior_zero_standard.extend_from_slice(&[4u8, 4, 0, 0, 0, 2, 0x10, 0x23]);
+    assert_ben_bytes_do_not_panic(interior_zero_standard);
 }
 
 #[test]
