@@ -1708,6 +1708,92 @@ fn bundle_with_reserved_asset_flag_bit() -> (Vec<u8>, u16) {
     (bytes, RESERVED_BIT_7)
 }
 
+// ---------------------------------------------------------------------------
+// Concurrent reader access
+// ---------------------------------------------------------------------------
+
+#[test]
+fn two_parallel_readers_against_the_same_bundle_agree() {
+    // Two `BendlReader`s opened from independent `Cursor`s over an `Arc<Vec<u8>>` shared
+    // buffer must produce identical results across the full accessor surface. The bundle
+    // bytes are immutable for the duration of the test — this pins that the reader holds no
+    // shared mutable state internally (e.g., no static caches, no thread-local position
+    // tracking) that would let one thread's reads scramble the other's.
+    //
+    // Reader-during-append is intentionally not covered here: today's append path truncates
+    // the old trailing directory before writing the new one, while the header still points at
+    // the old directory offset until the final patch. A concurrent reader during that window
+    // would observe a torn state. Whether the contract should weaken to "errors cleanly
+    // during torn states" or strengthen to "snapshot-style readers" is a design decision
+    // (see the coverage plan tier 0.12 for the design question), and the right pin here is
+    // not a test against the current behavior.
+    use std::sync::Arc;
+    use std::thread;
+
+    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    writer
+        .add_asset(
+            ASSET_TYPE_GRAPH,
+            "graph.json",
+            br#"{"nodes":4,"edges":[[0,1],[1,2],[2,3]]}"#,
+            AddAssetOptions::defaults().json().compress(),
+        )
+        .unwrap();
+    writer
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "extra.bin",
+            b"a bit of custom payload",
+            AddAssetOptions::defaults().raw(),
+        )
+        .unwrap();
+    let mut session = writer.into_stream_session().unwrap();
+    session.write_all(b"STANDARD BEN FILE\x00\x01\x02").unwrap();
+    let writer = session.finish_into_writer(1);
+    let bytes = writer.finish().unwrap().into_inner();
+    let shared = Arc::new(bytes);
+
+    // Pre-compute the expected (asset_name, decoded_bytes) pairs on the main thread so each
+    // worker has a stable oracle to compare against without re-deriving it from the same
+    // reader API under test.
+    let oracle: Vec<(String, Vec<u8>)> = {
+        let mut reader = BendlReader::open(Cursor::new(shared.as_slice())).unwrap();
+        let entries: Vec<_> = reader.assets().to_vec();
+        entries
+            .iter()
+            .map(|e| (e.name.clone(), reader.asset_bytes(e).unwrap()))
+            .collect()
+    };
+
+    let mut handles = Vec::new();
+    for _ in 0..4 {
+        let shared = Arc::clone(&shared);
+        let oracle = oracle.clone();
+        handles.push(thread::spawn(move || {
+            for _ in 0..16 {
+                let mut reader = BendlReader::open(Cursor::new(shared.as_slice())).unwrap();
+                assert!(reader.is_finalized());
+                assert!(reader.header().has_stream_checksum());
+                reader
+                    .verify_all_asset_checksums()
+                    .expect("asset checksums must verify under concurrent readers");
+                reader
+                    .verify_stream_checksum()
+                    .expect("stream checksum must verify under concurrent readers");
+                let entries: Vec<_> = reader.assets().to_vec();
+                for (entry, (expected_name, expected_bytes)) in entries.iter().zip(oracle.iter()) {
+                    assert_eq!(&entry.name, expected_name);
+                    let got = reader.asset_bytes(entry).unwrap();
+                    assert_eq!(&got, expected_bytes);
+                }
+            }
+        }));
+    }
+    for h in handles {
+        h.join().expect("worker thread panicked");
+    }
+}
+
 #[test]
 fn appender_preserves_unknown_asset_flag_bits_on_existing_entries() {
     // Open a bundle whose pre-existing entry has a reserved bit set; commit a new asset; reopen
