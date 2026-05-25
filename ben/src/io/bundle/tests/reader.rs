@@ -253,9 +253,9 @@ fn validate_directory_catches_wrong_canonical_name() {
     ));
 }
 
-// -----------------------------------------------------------------------
+// =====================================================================
 // Robustness tests
-// -----------------------------------------------------------------------
+// =====================================================================
 
 /// Build a small finalized bundle with a known graph asset, metadata asset, empty stream, and no
 /// validation pitfalls. Useful as a base that tests can mutate byte-by-byte.
@@ -923,7 +923,9 @@ fn stored_checksum_offset(directory_offset: u64, name: &str) -> usize {
     entry_start + 28 + name.len()
 }
 
-// ----- Explicit verify_asset_checksum -------------------------------
+// =====================================================================
+// Explicit verify_asset_checksum
+// =====================================================================
 
 #[test]
 fn verify_asset_checksum_uncompressed_passes_on_intact_bundle() {
@@ -1046,7 +1048,9 @@ fn verify_asset_checksum_returns_unavailable_when_flag_clear() {
     assert_eq!(got, payload);
 }
 
-// ----- Verify-on-touch via asset_bytes ------------------------------
+// =====================================================================
+// Verify-on-touch via asset_bytes
+// =====================================================================
 
 #[test]
 fn asset_bytes_uncompressed_corrupt_payload_returns_checksum_mismatch() {
@@ -1166,7 +1170,9 @@ fn asset_bytes_returns_unavailable_when_flag_clear() {
     ));
 }
 
-// ----- asset_reader EOF semantics ----------------------------------
+// =====================================================================
+// asset_reader EOF semantics
+// =====================================================================
 
 #[test]
 fn asset_reader_uncompressed_surfaces_mismatch_on_final_read() {
@@ -1198,7 +1204,9 @@ fn asset_reader_uncompressed_surfaces_mismatch_on_final_read() {
     assert_eq!(total_ok, b"abcdef".len());
 }
 
-// ----- Bulk verifier -------------------------------------------------
+// =====================================================================
+// Bulk verifier
+// =====================================================================
 
 #[test]
 fn verify_all_asset_checksums_reports_first_mismatch_in_directory_order() {
@@ -1267,7 +1275,9 @@ fn verify_all_asset_checksums_reports_first_mismatch_in_directory_order() {
     assert!(matches!(&target, ChecksumTarget::Asset(n) if n == "first"));
 }
 
-// ----- Polynomial pin ------------------------------------------------
+// =====================================================================
+// Polynomial pin
+// =====================================================================
 
 #[test]
 fn crc32c_polynomial_pin_against_known_vectors() {
@@ -1579,9 +1589,9 @@ fn verify_stream_checksum_returns_bundle_incomplete_for_unfinalized() {
     );
 }
 
-// ---------------------------------------------------------------------------
+// =====================================================================
 // Strict payload_len / stream_len EOF enforcement
-// ---------------------------------------------------------------------------
+// =====================================================================
 
 /// Returns a bundle whose `metadata.json` entry's `payload_len` has been corrupted to point past
 /// EOF, while the rest of the file remains structurally valid.
@@ -1844,9 +1854,9 @@ fn open_assignment_reader_returns_unexpected_eof_when_banner_falls_in_short_rang
     }
 }
 
-// ---------------------------------------------------------------------------
+// =====================================================================
 // Forward-compat: unknown asset-flag bits
-// ---------------------------------------------------------------------------
+// =====================================================================
 
 #[test]
 fn asset_with_unknown_flag_bit_opens_and_verifies_checksum() {

@@ -525,9 +525,9 @@ impl<R: Read + Seek> BendlReader<R> {
     }
 }
 
-// ---------------------------------------------------------------------------
+// =====================================================================
 // Strict-length plumbing
-// ---------------------------------------------------------------------------
+// =====================================================================
 
 /// Marker error attached to the `io::Error` returned when an [`ExactLen`] reader hits underlying
 /// EOF before consuming its declared length. Used by convenience APIs to recognise a bundle-layer
@@ -643,9 +643,9 @@ impl<R: Read> Read for ShortRangeAwareReader<R> {
     }
 }
 
-// ---------------------------------------------------------------------------
+// =====================================================================
 // Verifying reader plumbing
-// ---------------------------------------------------------------------------
+// =====================================================================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VerifyState {

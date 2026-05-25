@@ -48,9 +48,9 @@ fn normalize(format: &mut NxGraphAdjFormat) {
     }
 }
 
-// ================================================================
-// == Fixtures (generated with `uv run --with networkx python3`) ==
-// ================================================================
+// =====================================================================
+// Fixtures (generated with `uv run --with networkx python3`)
+// =====================================================================
 
 const KARATE_JSON: &str = r#"{"directed": false, "multigraph": false, "graph": [["name", "Zachary's Karate Club"]], "nodes": [{"club": "Mr. Hi", "id": 0}, {"club": "Mr. Hi", "id": 1}, {"club": "Mr. Hi", "id": 2}, {"club": "Mr. Hi", "id": 3}, {"club": "Mr. Hi", "id": 4}, {"club": "Mr. Hi", "id": 5}, {"club": "Mr. Hi", "id": 6}, {"club": "Mr. Hi", "id": 7}, {"club": "Mr. Hi", "id": 8}, {"club": "Officer", "id": 9}, {"club": "Mr. Hi", "id": 10}, {"club": "Mr. Hi", "id": 11}, {"club": "Mr. Hi", "id": 12}, {"club": "Mr. Hi", "id": 13}, {"club": "Officer", "id": 14}, {"club": "Officer", "id": 15}, {"club": "Mr. Hi", "id": 16}, {"club": "Mr. Hi", "id": 17}, {"club": "Officer", "id": 18}, {"club": "Mr. Hi", "id": 19}, {"club": "Officer", "id": 20}, {"club": "Mr. Hi", "id": 21}, {"club": "Officer", "id": 22}, {"club": "Officer", "id": 23}, {"club": "Officer", "id": 24}, {"club": "Officer", "id": 25}, {"club": "Officer", "id": 26}, {"club": "Officer", "id": 27}, {"club": "Officer", "id": 28}, {"club": "Officer", "id": 29}, {"club": "Officer", "id": 30}, {"club": "Officer", "id": 31}, {"club": "Officer", "id": 32}, {"club": "Officer", "id": 33}], "adjacency": [[{"weight": 4, "id": 1}, {"weight": 5, "id": 2}, {"weight": 3, "id": 3}, {"weight": 3, "id": 4}, {"weight": 3, "id": 5}, {"weight": 3, "id": 6}, {"weight": 2, "id": 7}, {"weight": 2, "id": 8}, {"weight": 2, "id": 10}, {"weight": 3, "id": 11}, {"weight": 1, "id": 12}, {"weight": 3, "id": 13}, {"weight": 2, "id": 17}, {"weight": 2, "id": 19}, {"weight": 2, "id": 21}, {"weight": 2, "id": 31}], [{"weight": 4, "id": 0}, {"weight": 6, "id": 2}, {"weight": 3, "id": 3}, {"weight": 4, "id": 7}, {"weight": 5, "id": 13}, {"weight": 1, "id": 17}, {"weight": 2, "id": 19}, {"weight": 2, "id": 21}, {"weight": 2, "id": 30}], [{"weight": 5, "id": 0}, {"weight": 6, "id": 1}, {"weight": 3, "id": 3}, {"weight": 4, "id": 7}, {"weight": 5, "id": 8}, {"weight": 1, "id": 9}, {"weight": 3, "id": 13}, {"weight": 2, "id": 27}, {"weight": 2, "id": 28}, {"weight": 2, "id": 32}], [{"weight": 3, "id": 0}, {"weight": 3, "id": 1}, {"weight": 3, "id": 2}, {"weight": 3, "id": 7}, {"weight": 3, "id": 12}, {"weight": 3, "id": 13}], [{"weight": 3, "id": 0}, {"weight": 2, "id": 6}, {"weight": 3, "id": 10}], [{"weight": 3, "id": 0}, {"weight": 5, "id": 6}, {"weight": 3, "id": 10}, {"weight": 3, "id": 16}], [{"weight": 3, "id": 0}, {"weight": 2, "id": 4}, {"weight": 5, "id": 5}, {"weight": 3, "id": 16}], [{"weight": 2, "id": 0}, {"weight": 4, "id": 1}, {"weight": 4, "id": 2}, {"weight": 3, "id": 3}], [{"weight": 2, "id": 0}, {"weight": 5, "id": 2}, {"weight": 3, "id": 30}, {"weight": 3, "id": 32}, {"weight": 4, "id": 33}], [{"weight": 1, "id": 2}, {"weight": 2, "id": 33}], [{"weight": 2, "id": 0}, {"weight": 3, "id": 4}, {"weight": 3, "id": 5}], [{"weight": 3, "id": 0}], [{"weight": 1, "id": 0}, {"weight": 3, "id": 3}], [{"weight": 3, "id": 0}, {"weight": 5, "id": 1}, {"weight": 3, "id": 2}, {"weight": 3, "id": 3}, {"weight": 3, "id": 33}], [{"weight": 3, "id": 32}, {"weight": 2, "id": 33}], [{"weight": 3, "id": 32}, {"weight": 4, "id": 33}], [{"weight": 3, "id": 5}, {"weight": 3, "id": 6}], [{"weight": 2, "id": 0}, {"weight": 1, "id": 1}], [{"weight": 1, "id": 32}, {"weight": 2, "id": 33}], [{"weight": 2, "id": 0}, {"weight": 2, "id": 1}, {"weight": 1, "id": 33}], [{"weight": 3, "id": 32}, {"weight": 1, "id": 33}], [{"weight": 2, "id": 0}, {"weight": 2, "id": 1}], [{"weight": 2, "id": 32}, {"weight": 3, "id": 33}], [{"weight": 5, "id": 25}, {"weight": 4, "id": 27}, {"weight": 3, "id": 29}, {"weight": 5, "id": 32}, {"weight": 4, "id": 33}], [{"weight": 2, "id": 25}, {"weight": 3, "id": 27}, {"weight": 2, "id": 31}], [{"weight": 5, "id": 23}, {"weight": 2, "id": 24}, {"weight": 7, "id": 31}], [{"weight": 4, "id": 29}, {"weight": 2, "id": 33}], [{"weight": 2, "id": 2}, {"weight": 4, "id": 23}, {"weight": 3, "id": 24}, {"weight": 4, "id": 33}], [{"weight": 2, "id": 2}, {"weight": 2, "id": 31}, {"weight": 2, "id": 33}], [{"weight": 3, "id": 23}, {"weight": 4, "id": 26}, {"weight": 4, "id": 32}, {"weight": 2, "id": 33}], [{"weight": 2, "id": 1}, {"weight": 3, "id": 8}, {"weight": 3, "id": 32}, {"weight": 3, "id": 33}], [{"weight": 2, "id": 0}, {"weight": 2, "id": 24}, {"weight": 7, "id": 25}, {"weight": 2, "id": 28}, {"weight": 4, "id": 32}, {"weight": 4, "id": 33}], [{"weight": 2, "id": 2}, {"weight": 3, "id": 8}, {"weight": 3, "id": 14}, {"weight": 3, "id": 15}, {"weight": 1, "id": 18}, {"weight": 3, "id": 20}, {"weight": 2, "id": 22}, {"weight": 5, "id": 23}, {"weight": 4, "id": 29}, {"weight": 3, "id": 30}, {"weight": 4, "id": 31}, {"weight": 5, "id": 33}], [{"weight": 4, "id": 8}, {"weight": 2, "id": 9}, {"weight": 3, "id": 13}, {"weight": 2, "id": 14}, {"weight": 4, "id": 15}, {"weight": 2, "id": 18}, {"weight": 1, "id": 19}, {"weight": 1, "id": 20}, {"weight": 4, "id": 23}, {"weight": 2, "id": 26}, {"weight": 4, "id": 27}, {"weight": 2, "id": 28}, {"weight": 2, "id": 29}, {"weight": 3, "id": 30}, {"weight": 4, "id": 31}, {"weight": 5, "id": 32}, {"weight": 3, "id": 22}]]}"#;
 
@@ -72,9 +72,9 @@ const SELF_LOOP_JSON: &str = r#"{"directed": false, "multigraph": false, "graph"
 
 const EMPTY_EDGES_JSON: &str = r#"{"directed": false, "multigraph": false, "graph": [], "nodes": [{"id": 0}, {"id": 1}, {"id": 2}], "adjacency": [[], [], []]}"#;
 
-// =============================
-// == Karate club graph tests ==
-// =============================
+// =====================================================================
+// Karate club graph tests
+// =====================================================================
 
 #[test]
 fn karate_club_node_and_edge_counts() {
@@ -143,9 +143,9 @@ fn karate_club_roundtrip() {
     }
 }
 
-// =======================
-// == Complete graph K5 ==
-// =======================
+// =====================================================================
+// Complete graph K5
+// =====================================================================
 
 #[test]
 fn k5_node_and_edge_counts() {
@@ -180,9 +180,9 @@ fn k5_roundtrip() {
     assert_eq!(nx_roundtrip, nx_expected);
 }
 
-// ===================
-// == Path graph P4 ==
-// ===================
+// =====================================================================
+// Path graph P4
+// =====================================================================
 
 #[test]
 fn p4_structure() {
@@ -206,9 +206,9 @@ fn p4_roundtrip() {
     assert_eq!(nx_roundtrip, nx_expected);
 }
 
-// =====================
-// == Directed graphs ==
-// =====================
+// =====================================================================
+// Directed graphs
+// =====================================================================
 
 #[test]
 fn small_directed_structure() {
@@ -254,9 +254,9 @@ fn directed_cycle_roundtrip() {
     assert_eq!(nx_roundtrip, nx_expected);
 }
 
-// ================
-// == Edge cases ==
-// ================
+// =====================================================================
+// Edge cases
+// =====================================================================
 
 #[test]
 fn single_node_no_edges() {
@@ -335,9 +335,9 @@ fn two_triangles_roundtrip() {
     assert_eq!(nx_roundtrip, nx_expected);
 }
 
-// =========================================
-// == String node IDs and edge attributes ==
-// =========================================
+// =====================================================================
+// String node IDs and edge attributes
+// =====================================================================
 
 #[test]
 fn string_ids_structure() {
@@ -379,9 +379,9 @@ fn string_ids_roundtrip() {
     }
 }
 
-// ==============================
-// == graph_has_parallel_edges ==
-// ==============================
+// =====================================================================
+// graph_has_parallel_edges
+// =====================================================================
 
 #[test]
 fn no_parallel_edges_simple_graph() {
@@ -456,9 +456,9 @@ fn antiparallel_not_parallel_in_directed() {
     assert!(!graph_has_parallel_edges(&graph));
 }
 
-// ======================================
-// == nx_node <-> petx_node conversion ==
-// ======================================
+// =====================================================================
+// nx_node <-> petx_node conversion
+// =====================================================================
 
 #[test]
 fn nx_to_petx_node_stores_id_in_attrs() {
@@ -500,9 +500,9 @@ fn petx_to_nx_node_missing_id_errors() {
     );
 }
 
-// =================
-// == Error cases ==
-// =================
+// =====================================================================
+// Error cases
+// =====================================================================
 
 #[test]
 fn directedness_mismatch_undirected_to_directed() {
@@ -606,9 +606,9 @@ fn missing_neighbor_node_error() {
     );
 }
 
-// ============================================================
-// == Type alias smoke tests (ensures they compile and work) ==
-// ============================================================
+// =====================================================================
+// Type alias smoke tests (ensures they compile and work)
+// =====================================================================
 
 #[test]
 fn type_aliases_work() {
@@ -623,9 +623,9 @@ fn type_aliases_work() {
     let _inner_di: &PetxDiInnerGraph = &_petx_di.graph;
 }
 
-// ===================================
-// == Undirected edge deduplication ==
-// ===================================
+// =====================================================================
+// Undirected edge deduplication
+// =====================================================================
 
 #[test]
 fn undirected_dedup_produces_correct_edge_count() {
@@ -657,9 +657,9 @@ fn construct_nx_from_petx_restores_both_directions() {
     assert_eq!(nx_roundtrip.adjacency[1].len(), 2);
 }
 
-// ============================================
-// == multigraph flag detection on roundtrip ==
-// ============================================
+// =====================================================================
+// multigraph flag detection on roundtrip
+// =====================================================================
 
 #[test]
 fn simple_graph_roundtrip_multigraph_false() {
@@ -695,9 +695,9 @@ fn graph_with_parallel_edges_sets_multigraph_true() {
     assert!(nx.multigraph);
 }
 
-// =============================
-// == JSON roundtrip fidelity ==
-// =============================
+// =====================================================================
+// JSON roundtrip fidelity
+// =====================================================================
 //
 // These tests verify that the full pipeline
 //   JSON string → NxGraphAdjFormat → PetxGraph → NxGraphAdjFormat → JSON string

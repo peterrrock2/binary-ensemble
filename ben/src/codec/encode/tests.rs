@@ -1337,9 +1337,9 @@ fn ben32_encode_run_exceeding_u16_max_splits_correctly() {
     assert_eq!(sentinel, 0u32); // always-present zero sentinel
 }
 
-// ---------------------------------------------------------------------------
+// =====================================================================
 // Label-value 0 round-trips for MkvChain and TwoDelta
-// ---------------------------------------------------------------------------
+// =====================================================================
 
 /// MkvChain round-trip with label `0` in the assignment. The existing
 /// `encode_jsonl_to_ben_single_zero` test covers Standard; MkvChain is structurally similar but
@@ -1450,9 +1450,9 @@ fn twodelta_round_trip_all_zero_assignment() {
     assert_eq!(decoded, assignments);
 }
 
-// ---------------------------------------------------------------------------
+// =====================================================================
 // Bit-packing boundary widths
-// ---------------------------------------------------------------------------
+// =====================================================================
 
 /// Round-trip `assignment` through `BenStreamWriter::for_ben` + `BenStreamReader::from_ben`,
 /// asserting the decoded result matches the input. Used by the bit-packing boundary-width sweep

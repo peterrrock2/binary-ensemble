@@ -26,7 +26,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 mod common;
 use common::{expand_rle, jsonl_from_assignments};
 
-// ---------- Helpers ----------
+// =====================================================================
+// Helpers
+// =====================================================================
 
 /// From a decoded `(assignment, count)` stream, reconstitute JSONL.
 fn jsonl_from_records(records: &[(Vec<u16>, u16)], start_at: usize) -> Vec<u8> {
@@ -65,7 +67,9 @@ where
     Ok(out)
 }
 
-// ---------- proptest strategies ----------
+// =====================================================================
+// proptest strategies
+// =====================================================================
 
 /// Strategy for a single assignment vector: Generate as RLE runs (value in [1, max_val], length in
 /// [1, max_run]), expand to a bounded length.
@@ -168,7 +172,9 @@ fn strat_threads_levels() -> impl Strategy<Value = (u32, u32)> {
     (1u32..=4, 0u32..=9)
 }
 
-// ---------- Tests ----------
+// =====================================================================
+// Tests
+// =====================================================================
 
 proptest! {
     // JSONL -> BEN(Standard) -> JSONL round-trip via BenEncoder/BenStreamReader entry points.
@@ -631,7 +637,9 @@ proptest! {
     }
 }
 
-// ---------- Non-proptest unit checks for headers/validation ----------
+// =====================================================================
+// Non-proptest unit checks for headers/validation
+// =====================================================================
 
 #[test]
 fn invalid_ben_header_yields_error() {

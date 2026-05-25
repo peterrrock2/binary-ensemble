@@ -570,9 +570,9 @@ fn run_ben_mode_with_output_variant_derives_name() {
     result.unwrap();
 }
 
-// ---------------------------------------------------------------------------
+// =====================================================================
 // --key / --ordering happy paths and rejection guards
-// ---------------------------------------------------------------------------
+// =====================================================================
 
 /// Minimal 3-node adjacency-style graph JSON, matching the shape `sort_json_file_by_*` accepts.
 const SHAPE_JSON: &[u8] = br#"{"nodes":[{"id":0,"GEOID20":"B"},{"id":1,"GEOID20":"A"},{"id":2,"GEOID20":"C"}],"adjacency":[[{"id":1}],[{"id":0},{"id":2}],[{"id":1}]]}"#;

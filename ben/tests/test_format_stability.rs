@@ -238,9 +238,9 @@ fn unknown_flags_bendl_v1_0_0_opens_and_decodes_cleanly() {
     );
 }
 
-// ---------------------------------------------------------------------------
+// =====================================================================
 // Fixture generation
-// ---------------------------------------------------------------------------
+// =====================================================================
 //
 // IMPORTANT: this is intentionally `#[ignore]`. Once v1.0.0 fixtures are committed, they MUST NOT
 // be regenerated in place — see `docs/format-stability.md`. If a future format change requires

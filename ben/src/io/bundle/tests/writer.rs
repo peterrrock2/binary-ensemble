@@ -209,9 +209,9 @@ fn finalized_directory_lives_at_eof() {
     );
 }
 
-// -----------------------------------------------------------------------
+// =====================================================================
 // Append-path tests
-// -----------------------------------------------------------------------
+// =====================================================================
 
 /// Build a finalized bundle with a single `metadata.json` asset and a short fake stream, then
 /// return both the bytes and the byte range (offset, len) occupied by the stream region.
@@ -498,7 +498,9 @@ fn append_rejects_conflicting_pending_additions() {
     assert_eq!(buf, bundle_before);
 }
 
-// -------- Phase 4: assignment-stream integration tests --------
+// =====================================================================
+// Phase 4: assignment-stream integration tests
+// =====================================================================
 
 #[test]
 fn bundle_ben_stream_round_trips_through_assignment_reader() {
@@ -649,9 +651,9 @@ fn open_assignment_reader_reports_ben_wire_format() {
     assert_eq!(decoder.wire_format(), BenWireFormat::Ben);
 }
 
-// -----------------------------------------------------------------------
+// =====================================================================
 // Robustness tests
-// -----------------------------------------------------------------------
+// =====================================================================
 
 #[test]
 fn fully_empty_bundle_finalizes_and_round_trips() {
@@ -982,9 +984,9 @@ fn append_rejects_duplicate_name_across_existing_and_pending() {
     assert!(reader.find_asset_by_name("blob").is_some());
 }
 
-// -----------------------------------------------------------------------
+// =====================================================================
 // Randomized / stress tests
-// -----------------------------------------------------------------------
+// =====================================================================
 
 /// Build a bundle from a random set of custom assets (plus an optional metadata asset) and fully
 /// round-trip it through the reader. Repeated with a seeded ChaCha PRNG so the sequence is
@@ -1671,9 +1673,9 @@ fn open_assignment_reader_intact_bundle_round_trips_count_samples() {
     assert_eq!(n, samples.len());
 }
 
-// ---------------------------------------------------------------------------
+// =====================================================================
 // Forward-compat: appender preserves unknown asset-flag bits on existing entries
-// ---------------------------------------------------------------------------
+// =====================================================================
 
 /// Build a finalized BENDL bundle with a single custom asset whose `asset_flags` carries a
 /// reserved (unknown-in-v1.0.0) bit alongside the known `ASSET_FLAG_CHECKSUM` bit. Used to
@@ -1720,9 +1722,9 @@ fn bundle_with_reserved_asset_flag_bit() -> (Vec<u8>, u16) {
     (bytes, RESERVED_BIT_7)
 }
 
-// ---------------------------------------------------------------------------
+// =====================================================================
 // Concurrent reader access
-// ---------------------------------------------------------------------------
+// =====================================================================
 
 #[test]
 fn two_parallel_readers_against_the_same_bundle_agree() {
@@ -1843,9 +1845,9 @@ fn appender_preserves_unknown_asset_flag_bits_on_existing_entries() {
     );
 }
 
-// ---------------------------------------------------------------------------
+// =====================================================================
 // rollback paths and accessors
-// ---------------------------------------------------------------------------
+// =====================================================================
 
 #[test]
 fn stream_session_start_offset_returns_recorded_value() {

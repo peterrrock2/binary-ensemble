@@ -671,9 +671,9 @@ fn bendl_append_truncated_new_directory_is_rejected_on_reopen() {
     assert!(err.to_string().contains("IO error"));
 }
 
-// ---------------------------------------------------------------------------
+// =====================================================================
 // BENDL adversarial-bytes fuzz
-// ---------------------------------------------------------------------------
+// =====================================================================
 
 /// Mint a valid BENDL bundle that exercises every public surface the no-panic harness will drive:
 /// a finalized header with `HEADER_FLAG_STREAM_CHECKSUM`, an xz-compressed graph asset, a raw JSON
@@ -932,10 +932,10 @@ fn seeded_malformed_bendl_bytes_do_not_panic() {
     }
 }
 
-// ---------------------------------------------------------------------------
+// =====================================================================
 // Open-rejected variant-pinning. Each fixture must fail BendlReader::open
 // with a specific BendlFormatError variant, not just an unspecified Err.
-// ---------------------------------------------------------------------------
+// =====================================================================
 
 #[test]
 fn bendl_open_rejects_directory_offset_past_eof() {
@@ -994,10 +994,10 @@ fn bendl_open_rejects_name_len_longer_than_remaining_directory_bytes() {
     );
 }
 
-// ---------------------------------------------------------------------------
+// =====================================================================
 // Openable behavioral pins. Each fixture must let BendlReader::open succeed and then
 // surface the documented behavior through the accessors.
-// ---------------------------------------------------------------------------
+// =====================================================================
 
 #[test]
 fn bendl_unknown_header_flag_bits_are_ignored() {
