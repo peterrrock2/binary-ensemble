@@ -12,9 +12,7 @@ use binary_ensemble::io::bundle::format::{
     ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION,
     FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
 };
-use binary_ensemble::io::bundle::writer::{
-    AddAssetOptions, BendlAppender, BendlTruncate, BendlWriter,
-};
+use binary_ensemble::io::bundle::writer::{AddAssetOptions, BendlAppender, BendlWriter};
 use binary_ensemble::io::bundle::{BendlReadError, BendlReader, ChecksumError, ChecksumTarget};
 use binary_ensemble::io::reader::BenStreamReader;
 use binary_ensemble::io::writer::BenStreamWriter;
@@ -78,7 +76,7 @@ fn expect_bendl_open_err(bytes: Vec<u8>) -> binary_ensemble::io::bundle::format:
 struct CrashState {
     bytes: Vec<u8>,
     pos: u64,
-    truncated: bool,
+    initial_len: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -89,9 +87,9 @@ struct HeaderPatchCrashCursor {
 impl HeaderPatchCrashCursor {
     fn new(bytes: Vec<u8>) -> (Self, Rc<RefCell<CrashState>>) {
         let state = Rc::new(RefCell::new(CrashState {
+            initial_len: bytes.len(),
             bytes,
             pos: 0,
-            truncated: false,
         }));
         (
             Self {
@@ -119,7 +117,7 @@ impl Read for HeaderPatchCrashCursor {
 impl Write for HeaderPatchCrashCursor {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let mut state = self.state.borrow_mut();
-        if state.truncated && state.pos < HEADER_SIZE as u64 {
+        if state.bytes.len() > state.initial_len && state.pos < HEADER_SIZE as u64 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "simulated crash while patching bundle header",
@@ -156,18 +154,6 @@ impl Seek for HeaderPatchCrashCursor {
         }
         state.pos = next as u64;
         Ok(state.pos)
-    }
-}
-
-impl BendlTruncate for HeaderPatchCrashCursor {
-    fn truncate_at(&mut self, len: u64) -> std::io::Result<()> {
-        let mut state = self.state.borrow_mut();
-        state.truncated = true;
-        state.bytes.truncate(len as usize);
-        if state.pos > len {
-            state.pos = len;
-        }
-        Ok(())
     }
 }
 
@@ -625,7 +611,7 @@ fn seeded_malformed_xben_bytes_do_not_panic() {
 }
 
 #[test]
-fn bendl_append_header_patch_crash_is_rejected_on_reopen() {
+fn bendl_append_header_patch_crash_preserves_old_directory() {
     let base = tiny_bendl_bundle();
     assert!(BendlReader::open(Cursor::new(base.clone())).is_ok());
 
@@ -647,8 +633,10 @@ fn bendl_append_header_patch_crash_is_rejected_on_reopen() {
     assert!(err.to_string().contains("simulated crash"));
 
     let damaged = state.borrow().bytes.clone();
-    assert!(BendlReader::open(Cursor::new(damaged.clone())).is_err());
-    assert!(BendlAppender::open(Cursor::new(damaged)).is_err());
+    let reader = BendlReader::open(Cursor::new(damaged.clone())).unwrap();
+    assert!(reader.find_asset_by_name("base.bin").is_some());
+    assert!(reader.find_asset_by_name("after-crash.bin").is_none());
+    assert!(BendlAppender::open(Cursor::new(damaged)).is_ok());
 }
 
 #[test]

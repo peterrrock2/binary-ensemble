@@ -130,9 +130,9 @@ impl<R: Read + Seek> BendlReader<R> {
     ///
     /// Returns `Err(BundleIncomplete)` for unfinalized bundles (the stored `stream_checksum` is not
     /// authoritative until the bundle is finalized) and `Err(Unavailable)` when
-    /// `HEADER_FLAG_STREAM_CHECKSUM` is clear (foreign or hand-built bytes; the library writer always
-    /// sets this flag). The finalization check comes first by design: reporting `Unavailable` for an
-    /// unfinalized bundle would be misleading.
+    /// `HEADER_FLAG_STREAM_CHECKSUM` is clear (foreign or hand-built bytes; the library writer
+    /// always sets this flag). The finalization check comes first by design: reporting
+    /// `Unavailable` for an unfinalized bundle would be misleading.
     fn require_stream_checksum(&self) -> Result<u32, BendlReadError> {
         if !self.header.is_finalized() {
             return Err(BendlReadError::Checksum(ChecksumError::BundleIncomplete {
@@ -205,8 +205,8 @@ impl<R: Read + Seek> BendlReader<R> {
     }
 
     /// Construct a verified decoded assignment reader that checks the stream CRC32C after the
-    /// codec reaches EOF. The returned [`BendlVerifiedStreamReader`] forwards the full
-    /// [`BenStreamReader`] API surface and folds the CRC check into consuming methods.
+    /// codec reaches EOF. The returned [`BendlVerifiedStreamReader`] exposes only full-consumption
+    /// APIs, because partial frame/subsample iteration cannot prove the whole stream checksum.
     ///
     /// Returns `Err(BundleIncomplete)` for unfinalized bundles and `Err(Unavailable)` when the
     /// stream checksum flag is clear.
@@ -228,6 +228,33 @@ impl<R: Read + Seek> BendlReader<R> {
             AssignmentFormat::Ben => BenStreamReader::from_ben(source).map_err(Into::into),
             AssignmentFormat::Xben => BenStreamReader::from_xben(source).map_err(Into::into),
         })
+    }
+
+    /// Construct a decoded assignment reader without CRC verification.
+    ///
+    /// This is the explicit escape hatch for partial/random-access decode paths such as
+    /// `into_frames` and `into_subsample_by_*`: those operations intentionally stop before raw EOF,
+    /// so they cannot verify the whole stream checksum. Call [`Self::verify_stream_checksum`]
+    /// separately when whole-stream integrity matters.
+    pub fn open_assignment_reader_unverified(
+        &mut self,
+    ) -> Result<BenStreamReader<Box<dyn Read + Send + '_>>, BendlReadError>
+    where
+        R: Send,
+    {
+        let format = self.assignment_format().ok_or_else(|| {
+            BendlReadError::Format(BendlFormatError::UnknownAssignmentFormat(
+                self.header.assignment_format,
+            ))
+        })?;
+        let (offset, len) = self.assignment_stream_range()?;
+        self.inner.seek(SeekFrom::Start(offset))?;
+        let raw: Box<dyn Read + Send + '_> =
+            Box::new(ExactLen::new(&mut self.inner, len, ShortRangeFlag::new()));
+        match format {
+            AssignmentFormat::Ben => BenStreamReader::from_ben(raw).map_err(Into::into),
+            AssignmentFormat::Xben => BenStreamReader::from_xben(raw).map_err(Into::into),
+        }
     }
 
     /// Verify the stored stream CRC32C by scanning the raw on-disk bytes of the assignment stream.

@@ -8,12 +8,13 @@
 //! - [`CrcTeeReader`] accumulates a CRC32C over the bytes that flow through it, without ever
 //!   substituting an error for raw EOF.
 //! - [`VerifyingReader`] wraps a CRC-accumulating byte source and, at the source's natural EOF,
-//!   either confirms the stored CRC32C or surfaces [`ChecksumError::Mismatch`] in place of the usual
-//!   `Ok(0)`. The same wrapper serves uncompressed assets (source = `CrcTeeReader<ExactLen<…>>`) and
-//!   xz-compressed assets (source = `XzDecoder<CrcTeeReader<ExactLen<…>>>`): the only difference is
-//!   *where* the tee sits, which the [`CrcSource`] trait abstracts.
-//! - [`BendlVerifiedStreamReader`] folds the same verify-at-EOF discipline into the assignment-stream
-//!   iterator API.
+//!   either confirms the stored CRC32C or surfaces [`ChecksumError::Mismatch`] in place of the
+//!   usual `Ok(0)`. The same wrapper serves uncompressed assets (source =
+//!   `CrcTeeReader<ExactLen<…>>`) and xz-compressed assets (source =
+//!   `XzDecoder<CrcTeeReader<ExactLen<…>>>`): the only difference is *where* the tee sits, which
+//!   the [`CrcSource`] trait abstracts.
+//! - [`BendlVerifiedStreamReader`] folds the same verify-at-EOF discipline into full-consumption
+//!   assignment-stream APIs.
 
 use std::fmt;
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -26,7 +27,7 @@ use serde_json::json;
 use xz2::read::XzDecoder;
 
 use super::error::{BendlReadError, ChecksumError, ChecksumTarget};
-use crate::io::reader::{BenStreamFrameReader, BenStreamReader, BenWireFormat, SubsampleFrameDecoder};
+use crate::io::reader::{BenStreamReader, BenWireFormat};
 use crate::BenVariant;
 
 // =====================================================================
@@ -192,7 +193,11 @@ pub(crate) fn scan_range_crc32c<R: Read + Seek>(
 /// Build the `io::Error` used to surface a CRC mismatch through a `Read` or `Iterator` boundary.
 /// The single definition keeps the kind (`InvalidData`) and inner [`ChecksumError`] shape identical
 /// across every verify path.
-pub(crate) fn crc_mismatch_error(target: ChecksumTarget, computed: u32, expected: u32) -> io::Error {
+pub(crate) fn crc_mismatch_error(
+    target: ChecksumTarget,
+    computed: u32,
+    expected: u32,
+) -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidData,
         ChecksumError::Mismatch {
@@ -228,9 +233,9 @@ impl<R: Read> Read for CrcTeeReader<R> {
 }
 
 /// A byte source that can report the CRC32C accumulated over the raw on-disk payload bytes it has
-/// passed through so far. Implemented for both the uncompressed source (`CrcTeeReader` directly) and
-/// the xz-compressed source (`XzDecoder` over a `CrcTeeReader`), so a single [`VerifyingReader`]
-/// serves both.
+/// passed through so far. Implemented for both the uncompressed source (`CrcTeeReader` directly)
+/// and the xz-compressed source (`XzDecoder` over a `CrcTeeReader`), so a single
+/// [`VerifyingReader`] serves both.
 pub(crate) trait CrcSource {
     /// CRC32C of the raw on-disk bytes consumed so far.
     fn crc(&self) -> u32;
@@ -325,7 +330,9 @@ impl<S: Read + CrcSource> Read for VerifyingReader<S> {
                 // through untouched. Otherwise, if the source (e.g. an xz decoder) swallowed the
                 // short read in favor of its own error, the shared flag lets us still surface the
                 // structural truncation.
-                if e.get_ref().is_some_and(|inner| inner.is::<ShortRangeMarker>()) {
+                if e.get_ref()
+                    .is_some_and(|inner| inner.is::<ShortRangeMarker>())
+                {
                     Err(e)
                 } else if self.short_flag.get() {
                     Err(io::Error::new(
@@ -349,10 +356,8 @@ impl<S: Read + CrcSource> Read for VerifyingReader<S> {
 /// consuming inner method (e.g. `count_samples`) moves ownership away from the wrapper.
 ///
 /// Unlike [`CrcTeeReader`], this type never substitutes a checksum error for raw EOF — it is always
-/// the outer [`BendlVerifiedStreamReader`] that decides when and whether to check. The type is
-/// exposed because it leaks through the return signatures of the wrapper's intentionally-partial
-/// APIs (`into_frames`, `into_subsample_by_*`); callers should treat it as an opaque reader.
-pub struct ArcHasher<R: Read> {
+/// the outer [`BendlVerifiedStreamReader`] that decides when and whether to check.
+pub(crate) struct ArcHasher<R: Read> {
     inner: R,
     state: Arc<AtomicU32>,
 }
@@ -394,11 +399,6 @@ pub(crate) type VerifiedStreamSource<'a, R> = ArcHasher<ExactLen<&'a mut R>>;
 /// `Some(Err(io::ErrorKind::InvalidData))` — returned once after the last decoded record, then
 /// `None`. Consuming methods (`count_samples`, `write_all_jsonl`, `for_each_assignment` when driven
 /// to natural EOF) also fold the CRC check into their return value.
-///
-/// **Intentionally partial APIs** (`into_frames`, `into_subsample_by_*`) are forwarded for
-/// ergonomics but do not automatically verify — the underlying reader is stopped short of raw EOF
-/// so the CRC tee is never finalized. Callers that need integrity for partial reads must call
-/// [`super::reader::BendlReader::verify_stream_checksum`] separately.
 pub struct BendlVerifiedStreamReader<'a, R: Read + Seek> {
     inner: BenStreamReader<VerifiedStreamSource<'a, R>>,
     expected: u32,
@@ -485,7 +485,10 @@ impl<'a, R: Read + Seek> BendlVerifiedStreamReader<'a, R> {
     /// the shared flag fired, otherwise pass it through.
     fn map_terminal_error(&self, e: io::Error) -> io::Error {
         if self.short_flag.get() {
-            io::Error::new(io::ErrorKind::UnexpectedEof, ShortRangeMarker { remaining: 0 })
+            io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                ShortRangeMarker { remaining: 0 },
+            )
         } else {
             e
         }
@@ -516,7 +519,11 @@ impl<'a, R: Read + Seek> BendlVerifiedStreamReader<'a, R> {
         if computed == expected {
             Ok(count)
         } else {
-            Err(crc_mismatch_error(ChecksumTarget::Stream, computed, expected))
+            Err(crc_mismatch_error(
+                ChecksumTarget::Stream,
+                computed,
+                expected,
+            ))
         }
     }
 
@@ -562,60 +569,6 @@ impl<'a, R: Read + Seek> BendlVerifiedStreamReader<'a, R> {
             }
             Ok(true)
         })
-    }
-
-    /// Consume the wrapper and iterate over raw BEN/ben32 frames instead of materialized
-    /// assignments.
-    ///
-    /// Frame iteration is intentionally partial: callers typically stop short of EOF, so the CRC
-    /// tee is never finalized and the stream is **not verified** by this path. Callers needing
-    /// integrity for partial reads should call
-    /// [`super::reader::BendlReader::verify_stream_checksum`] separately.
-    pub fn into_frames(self) -> BenStreamFrameReader<VerifiedStreamSource<'a, R>> {
-        self.inner.into_frames()
-    }
-}
-
-impl<'a, R: Read + Seek + Send> BendlVerifiedStreamReader<'a, R> {
-    /// Convert into a subsampling iterator over explicit 1-based indices.
-    ///
-    /// Subsampling is intentionally partial: the underlying reader is stopped short of raw EOF, so
-    /// the CRC tee is never finalized and the stream is **not verified** by this path. Use
-    /// [`super::reader::BendlReader::verify_stream_checksum`] for an explicit full-stream integrity
-    /// check.
-    pub fn into_subsample_by_indices<T>(
-        self,
-        indices: T,
-    ) -> SubsampleFrameDecoder<BenStreamFrameReader<VerifiedStreamSource<'a, R>>>
-    where
-        T: IntoIterator<Item = usize>,
-    {
-        self.inner.into_subsample_by_indices(indices)
-    }
-
-    /// Convert into a subsampling iterator over the inclusive 1-based range `[start, end]`.
-    ///
-    /// Subsampling is intentionally partial and is **not verified** by this path; see
-    /// [`Self::into_subsample_by_indices`].
-    pub fn into_subsample_by_range(
-        self,
-        start: usize,
-        end: usize,
-    ) -> SubsampleFrameDecoder<BenStreamFrameReader<VerifiedStreamSource<'a, R>>> {
-        self.inner.into_subsample_by_range(start, end)
-    }
-
-    /// Convert into a subsampling iterator that selects every `step` samples from the 1-based
-    /// `offset`.
-    ///
-    /// Subsampling is intentionally partial and is **not verified** by this path; see
-    /// [`Self::into_subsample_by_indices`].
-    pub fn into_subsample_every(
-        self,
-        step: usize,
-        offset: usize,
-    ) -> SubsampleFrameDecoder<BenStreamFrameReader<VerifiedStreamSource<'a, R>>> {
-        self.inner.into_subsample_every(step, offset)
     }
 }
 

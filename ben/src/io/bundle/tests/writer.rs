@@ -405,8 +405,8 @@ fn append_rejects_incomplete_bundle() {
 }
 
 #[test]
-fn append_rejects_complete_bundle_with_zero_directory() {
-    // Header claims complete but has directory_offset=0 — hits the second BundleIncomplete check.
+fn append_rejects_finalized_bundle_with_zero_directory() {
+    // Header claims finalized but has directory_offset=0 — hits the second BundleIncomplete check.
     let header = BendlHeader {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
@@ -1138,7 +1138,7 @@ fn five_successive_appends_preserve_everything() {
 #[test]
 fn randomized_append_sequence_preserves_all_prior_entries() {
     // Independent coverage for append: random number of rounds, random payload sizes. Catches any
-    // bookkeeping drift in the appender's directory-rewrite path.
+    // bookkeeping drift in the appender's append-only replacement-directory path.
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
@@ -1734,13 +1734,10 @@ fn two_parallel_readers_against_the_same_bundle_agree() {
     // shared mutable state internally (e.g., no static caches, no thread-local position
     // tracking) that would let one thread's reads scramble the other's.
     //
-    // Reader-during-append is intentionally not covered here: today's append path truncates
-    // the old trailing directory before writing the new one, while the header still points at
-    // the old directory offset until the final patch. A concurrent reader during that window
-    // would observe a torn state. Whether the contract should weaken to "errors cleanly
-    // during torn states" or strengthen to "snapshot-style readers" is a design decision
-    // (see the coverage plan tier 0.12 for the design question), and the right pin here is
-    // not a test against the current behavior.
+    // Reader-during-append is intentionally not covered here. The append path preserves the old
+    // authoritative directory until the final header patch, so payload/directory writes alone do
+    // not create a torn reader state; concurrent access to the same mutable file handle is still an
+    // integration-level filesystem contract rather than a property of immutable reader state.
     use std::sync::Arc;
     use std::thread;
 
@@ -1846,7 +1843,7 @@ fn appender_preserves_unknown_asset_flag_bits_on_existing_entries() {
 }
 
 // =====================================================================
-// rollback paths and accessors
+// validation-failure paths and accessors
 // =====================================================================
 
 #[test]
@@ -1869,13 +1866,70 @@ fn stream_session_start_offset_returns_recorded_value() {
 }
 
 #[test]
-fn writer_duplicate_name_after_singleton_insert_rolls_back_singleton_state() {
-    // Trigger the rare DuplicateName-after-canonical-singleton-insert branch in BendlWriter::
-    // add_asset (the `singleton_types.remove(&asset_type)` rollback path). Reach it by adding a
-    // custom asset that happens to take the canonical name of a known singleton type, then
-    // attempting to add the actual singleton: the canonical-name check passes, singleton_types
-    // accepts the new type, then names.insert fails because the custom asset already claimed
-    // that name. The rollback keeps the writer state consistent for a future retry.
+fn writer_failed_asset_write_does_not_poison_registry() {
+    struct FailOnceAfterHeader {
+        inner: Cursor<Vec<u8>>,
+        failed: bool,
+    }
+
+    impl FailOnceAfterHeader {
+        fn new() -> Self {
+            Self {
+                inner: Cursor::new(Vec::new()),
+                failed: false,
+            }
+        }
+    }
+
+    impl Write for FailOnceAfterHeader {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if !self.failed && self.inner.position() >= HEADER_SIZE as u64 {
+                self.failed = true;
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "simulated payload write failure",
+                ));
+            }
+            self.inner.write(buf)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.inner.flush()
+        }
+    }
+
+    impl Seek for FailOnceAfterHeader {
+        fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+            self.inner.seek(pos)
+        }
+    }
+
+    let mut writer = BendlWriter::new(FailOnceAfterHeader::new(), AssignmentFormat::Ben).unwrap();
+    let err = writer
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "retry.bin",
+            b"payload",
+            AddAssetOptions::defaults().raw(),
+        )
+        .unwrap_err();
+    assert!(matches!(err, BendlWriteError::Io(_)));
+
+    writer
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "retry.bin",
+            b"payload",
+            AddAssetOptions::defaults().raw(),
+        )
+        .unwrap();
+}
+
+#[test]
+fn writer_duplicate_name_after_singleton_check_leaves_writer_usable() {
+    // A custom asset can claim the standardized name of a known singleton type. A later attempt to
+    // add the actual singleton must fail cleanly during validation, without reserving any
+    // singleton state or making the writer unusable for unrelated additions.
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     writer
         .add_asset(
@@ -1898,9 +1952,6 @@ fn writer_duplicate_name_after_singleton_insert_rolls_back_singleton_state() {
         "expected DuplicateName, got {err:?}"
     );
 
-    // The rollback contract: a second attempt at adding ASSET_TYPE_GRAPH must NOT see a stale
-    // entry in singleton_types from the previous attempt. The writer is also expected to
-    // remain usable for non-conflicting additions.
     writer
         .add_asset(
             ASSET_TYPE_METADATA,
@@ -1912,11 +1963,9 @@ fn writer_duplicate_name_after_singleton_insert_rolls_back_singleton_state() {
 }
 
 #[test]
-fn appender_duplicate_name_after_singleton_insert_rolls_back_pending_state() {
-    // Same rollback contract for BendlAppender (rather than BendlWriter): a successful canonical-
-    // name singleton insert into pending_singleton_types must be undone if the name collides
-    // with an existing entry. Reach it by appending a custom asset that takes a canonical name,
-    // committing, then opening the appender and attempting the singleton add.
+fn appender_duplicate_name_after_singleton_check_leaves_appender_usable() {
+    // Same validation contract for BendlAppender: a singleton-name collision must fail without
+    // reserving pending singleton state, so the appender remains usable for unrelated additions.
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     writer
         .add_asset(
@@ -1944,8 +1993,6 @@ fn appender_duplicate_name_after_singleton_insert_rolls_back_pending_state() {
         "expected DuplicateName, got {err:?}"
     );
 
-    // After the rejection, the appender must still be usable for non-conflicting additions
-    // (the rollback removed the stale pending_singleton_types entry).
     appender
         .add_asset(
             ASSET_TYPE_METADATA,

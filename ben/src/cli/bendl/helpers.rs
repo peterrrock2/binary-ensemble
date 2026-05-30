@@ -41,9 +41,7 @@ pub(super) fn add_custom_file_asset<W: Write + Seek>(
         .map_err(|e: BendlWriteError| format!("failed to add asset {name:?}: {e}"))
 }
 
-pub(super) fn append_known_file_asset<
-    W: Read + Write + Seek + crate::io::bundle::writer::BendlTruncate,
->(
+pub(super) fn append_known_file_asset<W: Read + Write + Seek>(
     appender: &mut BendlAppender<W>,
     kind: KnownAssetKind,
     path: &Path,
@@ -56,9 +54,7 @@ pub(super) fn append_known_file_asset<
         .map_err(|e: BendlWriteError| format!("failed to add asset {name:?}: {e}"))
 }
 
-pub(super) fn append_custom_file_asset<
-    W: Read + Write + Seek + crate::io::bundle::writer::BendlTruncate,
->(
+pub(super) fn append_custom_file_asset<W: Read + Write + Seek>(
     appender: &mut BendlAppender<W>,
     name: &str,
     path: &Path,

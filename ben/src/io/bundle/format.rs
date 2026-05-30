@@ -200,8 +200,10 @@ pub struct BendlHeader {
     /// `HEADER_FLAG_STREAM_CHECKSUM` is set in `flags`. Writers set this to zero while the
     /// bundle is unfinalized and patch it on finalization.
     pub stream_checksum: u32,
-    /// Absolute byte offset of the directory table, or `0` if no directory has been written yet.
-    /// In a finalized bundle the directory lives at the end of the file.
+    /// Absolute byte offset of the authoritative directory table, or `0` if no directory has been
+    /// written yet. Successful finalization writes this directory after the assignment stream; a
+    /// failed post-finalize append may leave newer orphaned bytes after the old authoritative
+    /// directory until the header is patched.
     pub directory_offset: u64,
     /// Byte length of the directory table, or `0` if absent.
     pub directory_len: u64,

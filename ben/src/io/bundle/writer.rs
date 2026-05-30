@@ -19,9 +19,9 @@
 //! 3. **finalize phase** — [`BendlWriter::finish`] writes the trailing directory and patches the
 //!    header.
 //!
-//! The writer requires `Write + Seek` because the header is patched twice: once with the stream
-//! offset (implicitly, by having reserved its slot at construction) and once with the finalized
-//! stream length, sample count, directory offset, directory length, and `complete` flag.
+//! The writer requires `Write + Seek` because the header is written provisionally at construction
+//! and patched on finalization with the stream checksum, stream length, sample count, directory
+//! offset, directory length, and `finalized` flag.
 
 use std::collections::HashSet;
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -35,31 +35,6 @@ use super::format::{
     ASSET_FLAG_CHECKSUM, ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, DEFAULT_XZ_PRESET,
     FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
 };
-
-/// Ability to truncate an underlying seekable target to a given length.
-///
-/// This is not part of `std::io`, so `BendlAppender` takes a trait bound that abstracts it and is
-/// implemented below for `std::fs::File` and `std::io::Cursor<Vec<u8>>`.
-pub trait BendlTruncate {
-    /// Truncate or extend the underlying target to exactly `len` bytes.
-    fn truncate_at(&mut self, len: u64) -> io::Result<()>;
-}
-
-impl BendlTruncate for std::fs::File {
-    fn truncate_at(&mut self, len: u64) -> io::Result<()> {
-        self.set_len(len)
-    }
-}
-
-impl BendlTruncate for std::io::Cursor<Vec<u8>> {
-    fn truncate_at(&mut self, len: u64) -> io::Result<()> {
-        let target = len as usize;
-        let vec = self.get_mut();
-        debug_assert!(vec.len() >= target, "truncate_at called past end of buffer");
-        vec.truncate(target);
-        Ok(())
-    }
-}
 
 /// Options passed alongside each [`BendlWriter::add_asset`] call.
 ///
@@ -115,9 +90,13 @@ struct EncodedAsset {
 /// This is the single encode path shared by [`BendlWriter::add_asset`] and
 /// [`BendlAppender::commit`], so the create and append routes can never drift on compression, flag
 /// assembly, or CRC coverage. It is pure (in-memory), so a failure leaves any backing file
-/// untouched. The CRC32C is over the **on-disk** bytes — the compressed bytes when xz is applied, so
-/// verification happens before decompression (see [`ASSET_FLAG_CHECKSUM`]).
-fn encode_asset_payload(payload: Vec<u8>, compress: bool, is_json: bool) -> io::Result<EncodedAsset> {
+/// untouched. The CRC32C is over the **on-disk** bytes — the compressed bytes when xz is applied,
+/// so verification happens before decompression (see [`ASSET_FLAG_CHECKSUM`]).
+fn encode_asset_payload(
+    payload: Vec<u8>,
+    compress: bool,
+    is_json: bool,
+) -> io::Result<EncodedAsset> {
     let bytes = if compress {
         let mut encoder = XzEncoder::new(Vec::new(), DEFAULT_XZ_PRESET);
         encoder.write_all(&payload)?;
@@ -145,8 +124,8 @@ fn encode_asset_payload(payload: Vec<u8>, compress: bool, is_json: bool) -> io::
 /// Tracks the asset names and singleton asset-types already claimed in a bundle, and enforces the
 /// canonical-name + uniqueness rules shared by the create and append paths.
 ///
-/// [`Self::claim`] validates fully before mutating, so a rejected asset never leaves the registry in
-/// a half-updated state — there is nothing to roll back.
+/// [`Self::claim`] validates fully before mutating, so a rejected asset never leaves the registry
+/// in a half-updated state — there is nothing to roll back.
 #[derive(Default)]
 struct AssetNameRegistry {
     names: HashSet<String>,
@@ -267,8 +246,10 @@ impl<W: Write + Seek> BendlWriter<W> {
             return Err(BendlWriteError::AssetsAfterStream);
         }
 
-        // Validate and reserve the name/type up front, so a rejected asset writes no bytes.
-        self.registry.claim(asset_type, name)?;
+        // Validate before any expensive work, but do not reserve the name/type until the fallible
+        // encoding and write have both succeeded. A failed compression or write should not poison
+        // the in-memory registry and make a retry look like a duplicate.
+        self.registry.check(asset_type, name)?;
 
         let compress = options
             .compress
@@ -279,6 +260,7 @@ impl<W: Write + Seek> BendlWriter<W> {
         let payload_offset = self.inner.seek(SeekFrom::Current(0))?;
         self.inner.write_all(&encoded.bytes)?;
 
+        self.registry.claim(asset_type, name)?;
         self.entries.push(BendlDirectoryEntry {
             asset_type,
             asset_flags: encoded.asset_flags,
@@ -539,7 +521,7 @@ pub enum BendlWriteError {
     AssetsAfterStream,
 
     /// Tried to append to a bundle that is not finalized.
-    #[error("cannot append to a bundle whose header does not have complete == 1")]
+    #[error("cannot append to a bundle whose header does not have finalized == 1")]
     BundleIncomplete,
 
     /// The writer was asked to perform an operation in the wrong state.
@@ -573,13 +555,14 @@ pub enum BendlWriteError {
 /// 2. [`BendlAppender::add_asset`] (or [`BendlAppender::add_json_asset`]) validates and buffers
 ///    each new asset. Validation happens up front, so duplicate singletons or names are rejected
 ///    **before** any file mutation, and a rejected add_asset leaves the file unchanged.
-/// 3. [`BendlAppender::commit`] compresses the buffered assets (if any), truncates the file at the
-///    old directory offset, writes the new asset payloads, writes a new directory at the new EOF,
-///    and patches the header.
+/// 3. [`BendlAppender::commit`] compresses the buffered assets (if any), appends the new asset
+///    payloads after the old EOF, writes a new directory, and patches the header. The old directory
+///    is left in place as orphaned bytes until a future compact/rewrite operation; this keeps the
+///    old header valid until the final header patch.
 ///
 /// A [`BendlAppender`] that is dropped without calling `commit` leaves the underlying file
 /// unchanged.
-pub struct BendlAppender<W: Read + Write + Seek + BendlTruncate> {
+pub struct BendlAppender<W: Read + Write + Seek> {
     inner: W,
     header: BendlHeader,
     existing_entries: Vec<BendlDirectoryEntry>,
@@ -600,10 +583,10 @@ struct PendingAsset {
     is_json: bool,
 }
 
-impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
+impl<W: Read + Write + Seek> BendlAppender<W> {
     /// Open a finalized bundle for append.
     ///
-    /// Returns [`BendlWriteError::BundleIncomplete`] if the header's `complete` flag is not set —
+    /// Returns [`BendlWriteError::BundleIncomplete`] if the header's `finalized` flag is not set —
     /// append is unsafe on unfinalized bundles because the stream region has no authoritative end.
     pub fn open(mut inner: W) -> Result<Self, BendlWriteError> {
         inner.seek(SeekFrom::Start(0))?;
@@ -714,8 +697,8 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
     /// Commit all pending appends.
     ///
     /// This compresses any buffered payloads that need it (entirely in memory), then performs the
-    /// file mutation in a single burst: truncate at the old directory offset, write new payloads,
-    /// write a new directory, and patch the header.
+    /// file mutation in one append-only burst: seek to old EOF, write new payloads, write a new
+    /// directory, and patch the header.
     ///
     /// If compression fails, the file is left unchanged.
     pub fn commit(mut self) -> Result<W, BendlWriteError> {
@@ -733,15 +716,21 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
             encoded.push((asset.asset_type, asset.name, enc));
         }
 
-        // Phase 2: file mutation. From this point forward, a failure leaves the bundle in a damaged
-        // state. We do everything in the order (truncate, write payloads, write directory, patch
-        // header) so that even if we crash mid-way, the header still points at the old directory
-        // until the very last write.
-        let old_directory_offset = self.header.directory_offset;
+        // Phase 2: append-only file mutation. Until the final header patch, the old header still
+        // points at the old directory, which remains intact. A crash before the patch leaves the
+        // previous bundle readable with trailing orphaned bytes.
+        let old_directory_end = self
+            .header
+            .directory_offset
+            .checked_add(self.header.directory_len)
+            .ok_or_else(|| {
+                BendlWriteError::Io(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "directory_offset + directory_len overflowed while appending",
+                ))
+            })?;
 
-        // Truncate at the old directory offset.
-        self.inner.truncate_at(old_directory_offset)?;
-        self.inner.seek(SeekFrom::Start(old_directory_offset))?;
+        self.inner.seek(SeekFrom::Start(old_directory_end))?;
 
         // Compute new entries with real offsets as we write.
         let mut new_entries: Vec<BendlDirectoryEntry> =
