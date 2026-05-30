@@ -6,6 +6,9 @@
 //! likewise exposed as a byte range the caller can plumb into a [`BenStreamReader`] without this
 //! module reinterpreting any BEN/XBEN internals.
 //!
+//! The byte-level read adapters (bounded ranges, CRC tees, verifying wrappers) live in
+//! [`super::verify`]; this module composes them behind the public API.
+//!
 //! ## Verification surface
 //!
 //! - [`BendlReader::asset_bytes`] and [`BendlReader::asset_reader`] are **verify-on-touch**: the
@@ -17,14 +20,8 @@
 //! - [`BendlReader::verify_asset_checksum`] and [`BendlReader::verify_all_asset_checksums`] are
 //!   explicit raw-bytes verifiers (no decoding) that do not return decoded payload bytes.
 
-use std::fmt;
-use std::io::{self, Read, Seek, SeekFrom, Write};
-use std::sync::{
-    atomic::{AtomicBool, AtomicU32, Ordering},
-    Arc,
-};
+use std::io::{self, Read, Seek, SeekFrom};
 
-use serde_json::json;
 use xz2::read::XzDecoder;
 
 use super::error::{BendlReadError, ChecksumError, ChecksumTarget};
@@ -32,8 +29,13 @@ use super::format::{
     read_directory, standardized_name_for, AssignmentFormat, BendlDirectoryEntry, BendlFormatError,
     BendlHeader, ASSET_FLAG_XZ,
 };
-use crate::io::reader::{BenStreamFrameReader, BenStreamReader, BenWireFormat, SubsampleFrameDecoder};
-use crate::BenVariant;
+use super::verify::{
+    scan_range_crc32c, CrcTeeReader, ExactLen, ShortRangeAwareReader, ShortRangeFlag,
+    ShortRangeMarker, VerifyingReader,
+};
+use crate::io::reader::{BenStreamReader, BenWireFormat};
+
+pub use super::verify::BendlVerifiedStreamReader;
 
 impl From<AssignmentFormat> for BenWireFormat {
     fn from(format: AssignmentFormat) -> Self {
@@ -124,6 +126,27 @@ impl<R: Read + Seek> BendlReader<R> {
         self.directory.iter().find(|e| e.asset_type == asset_type)
     }
 
+    /// Resolve the stored stream CRC32C, enforcing the stream-checksum precondition once.
+    ///
+    /// Returns `Err(BundleIncomplete)` for unfinalized bundles (the stored `stream_checksum` is not
+    /// authoritative until the bundle is finalized) and `Err(Unavailable)` when
+    /// `HEADER_FLAG_STREAM_CHECKSUM` is clear (foreign or hand-built bytes; the library writer always
+    /// sets this flag). The finalization check comes first by design: reporting `Unavailable` for an
+    /// unfinalized bundle would be misleading.
+    fn require_stream_checksum(&self) -> Result<u32, BendlReadError> {
+        if !self.header.is_finalized() {
+            return Err(BendlReadError::Checksum(ChecksumError::BundleIncomplete {
+                target: ChecksumTarget::Stream,
+            }));
+        }
+        if !self.header.has_stream_checksum() {
+            return Err(BendlReadError::Checksum(ChecksumError::Unavailable {
+                target: ChecksumTarget::Stream,
+            }));
+        }
+        Ok(self.header.stream_checksum)
+    }
+
     /// Return the byte range occupied by the assignment stream.
     ///
     /// For finalized bundles this is `(stream_offset, stream_len)` as recorded in the header. For
@@ -145,49 +168,33 @@ impl<R: Read + Seek> BendlReader<R> {
 
     /// Return a verified reader for the assignment stream that checks the stored CRC32C at raw EOF.
     ///
-    /// Returns `Err(ChecksumError::BundleIncomplete)` for unfinalized bundles (the stored
-    /// `stream_checksum` is not authoritative until the bundle is finalized).
-    /// Returns `Err(ChecksumError::Unavailable)` when `HEADER_FLAG_STREAM_CHECKSUM` is clear
-    /// (foreign or hand-built bytes; the library writer always sets this flag).
+    /// Returns `Err(ChecksumError::BundleIncomplete)` for unfinalized bundles and
+    /// `Err(ChecksumError::Unavailable)` when `HEADER_FLAG_STREAM_CHECKSUM` is clear.
     ///
     /// On success, CRC mismatch surfaces from `Read::read` as
     /// `io::Error::new(io::ErrorKind::InvalidData, ChecksumError::Mismatch)` on the call that
     /// would otherwise return `Ok(0)` at raw EOF. For a raw copy that decodes nothing, driving the
     /// returned reader to EOF is sufficient. For decoded access use
     /// [`BendlReader::open_assignment_reader`].
-    pub fn assignment_stream_reader(
-        &mut self,
-    ) -> Result<Box<dyn Read + '_>, BendlReadError> {
-        if !self.header.is_finalized() {
-            return Err(BendlReadError::Checksum(ChecksumError::BundleIncomplete {
-                target: ChecksumTarget::Stream,
-            }));
-        }
-        if !self.header.has_stream_checksum() {
-            return Err(BendlReadError::Checksum(ChecksumError::Unavailable {
-                target: ChecksumTarget::Stream,
-            }));
-        }
-        let expected = self.header.stream_checksum;
+    pub fn assignment_stream_reader(&mut self) -> Result<Box<dyn Read + '_>, BendlReadError> {
+        let expected = self.require_stream_checksum()?;
         let (offset, len) = self.assignment_stream_range()?;
         self.inner.seek(SeekFrom::Start(offset))?;
-        let raw = ExactLen::new(&mut self.inner, len, ShortRangeFlag::new());
-        Ok(Box::new(RawVerifyingReader {
-            inner: raw,
-            hasher: 0,
+        let short_flag = ShortRangeFlag::new();
+        let raw = ExactLen::new(&mut self.inner, len, short_flag.clone());
+        Ok(Box::new(VerifyingReader::new(
+            CrcTeeReader::new(raw),
             expected,
-            target: ChecksumTarget::Stream,
-            state: VerifyState::Reading,
-        }))
+            ChecksumTarget::Stream,
+            short_flag,
+        )))
     }
 
     /// Return a raw bounded reader for the assignment stream **without** CRC verification.
     ///
     /// Works on both finalized and unfinalized bundles. Useful for recovery/debug flows and for
     /// callers that need the raw bytes without the overhead of a CRC check.
-    pub fn assignment_stream_reader_unverified(
-        &mut self,
-    ) -> io::Result<Box<dyn Read + '_>> {
+    pub fn assignment_stream_reader_unverified(&mut self) -> io::Result<Box<dyn Read + '_>> {
         let (offset, len) = self.assignment_stream_range()?;
         self.inner.seek(SeekFrom::Start(offset))?;
         Ok(Box::new(ExactLen::new(
@@ -206,20 +213,7 @@ impl<R: Read + Seek> BendlReader<R> {
     pub fn open_assignment_reader(
         &mut self,
     ) -> Result<BendlVerifiedStreamReader<'_, R>, BendlReadError> {
-        // Finalization check must come first: if the bundle is unfinalized, stream_checksum is not
-        // authoritative and reporting Unavailable would be misleading.
-        if !self.header.is_finalized() {
-            return Err(BendlReadError::Checksum(ChecksumError::BundleIncomplete {
-                target: ChecksumTarget::Stream,
-            }));
-        }
-        if !self.header.has_stream_checksum() {
-            return Err(BendlReadError::Checksum(ChecksumError::Unavailable {
-                target: ChecksumTarget::Stream,
-            }));
-        }
-        let expected = self.header.stream_checksum;
-
+        let expected = self.require_stream_checksum()?;
         let format = self.assignment_format().ok_or_else(|| {
             BendlReadError::Format(BendlFormatError::UnknownAssignmentFormat(
                 self.header.assignment_format,
@@ -230,38 +224,9 @@ impl<R: Read + Seek> BendlReader<R> {
         let short_flag = ShortRangeFlag::new();
         let raw = ExactLen::new(&mut self.inner, len, short_flag.clone());
 
-        let arc_hasher = Arc::new(AtomicU32::new(0));
-        let shared_raw = ArcHasher {
-            inner: raw,
-            state: Arc::clone(&arc_hasher),
-        };
-
-        let init = match format {
-            AssignmentFormat::Ben => BenStreamReader::from_ben(shared_raw),
-            AssignmentFormat::Xben => BenStreamReader::from_xben(shared_raw),
-        };
-        let inner = match init {
-            Ok(inner) => inner,
-            Err(e) => {
-                // If the underlying ExactLen flagged a short range while the codec was reading its
-                // banner, surface a bundle-layer UnexpectedEof rather than a DecoderInit so callers
-                // see the structural truncation as the failure, not a banner parse error.
-                if short_flag.get() {
-                    return Err(BendlReadError::Io(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        ShortRangeMarker { remaining: 0 },
-                    )));
-                }
-                return Err(e.into());
-            }
-        };
-
-        Ok(BendlVerifiedStreamReader {
-            inner,
-            expected,
-            arc_hasher,
-            short_flag,
-            state: StreamVerifyState::Running,
+        BendlVerifiedStreamReader::new(raw, short_flag, expected, |source| match format {
+            AssignmentFormat::Ben => BenStreamReader::from_ben(source).map_err(Into::into),
+            AssignmentFormat::Xben => BenStreamReader::from_xben(source).map_err(Into::into),
         })
     }
 
@@ -274,40 +239,13 @@ impl<R: Read + Seek> BendlReader<R> {
     /// Returns `Err(BundleIncomplete)` for unfinalized bundles and `Err(Unavailable)` when the
     /// stream checksum flag is clear.
     pub fn verify_stream_checksum(&mut self) -> Result<(), BendlReadError> {
-        if !self.header.is_finalized() {
-            return Err(BendlReadError::Checksum(ChecksumError::BundleIncomplete {
-                target: ChecksumTarget::Stream,
-            }));
-        }
-        if !self.header.has_stream_checksum() {
-            return Err(BendlReadError::Checksum(ChecksumError::Unavailable {
-                target: ChecksumTarget::Stream,
-            }));
-        }
-        let expected = self.header.stream_checksum;
+        let expected = self.require_stream_checksum()?;
         let (offset, len) = self.assignment_stream_range()?;
-        self.inner.seek(SeekFrom::Start(offset))?;
-
-        let mut remaining = len;
-        let mut buf = [0u8; 64 * 1024];
-        let mut hasher: u32 = 0;
-        while remaining > 0 {
-            let want = remaining.min(buf.len() as u64) as usize;
-            let n = self.inner.read(&mut buf[..want])?;
-            if n == 0 {
-                return Err(BendlReadError::Io(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    ShortRangeMarker { remaining },
-                )));
-            }
-            hasher = crc32c::crc32c_append(hasher, &buf[..n]);
-            remaining -= n as u64;
-        }
-
-        if hasher != expected {
+        let computed = scan_range_crc32c(&mut self.inner, offset, len)?;
+        if computed != expected {
             return Err(BendlReadError::Checksum(ChecksumError::Mismatch {
                 target: ChecksumTarget::Stream,
-                computed: hasher,
+                computed,
                 expected,
             }));
         }
@@ -384,27 +322,23 @@ impl<R: Read + Seek> BendlReader<R> {
         let short_flag = ShortRangeFlag::new();
         let raw = ExactLen::new(&mut self.inner, entry.payload_len, short_flag.clone());
 
+        // The CRC tee always sits at the raw on-disk layer (over the compressed bytes for xz
+        // assets, so verification happens before decompression). For xz assets the decoder sits
+        // above the tee; the verifying wrapper finalizes the check once the source reaches EOF.
         if entry.asset_flags & ASSET_FLAG_XZ != 0 {
-            // Compressed: CRC tee sits *inside* the XzDecoder so the tee accumulates over raw
-            // compressed bytes; the BENDL-owned wrapper around the decoder finalizes the check
-            // after the codec reaches its own EOF.
-            let tee = CrcTeeReader::new(raw);
-            let decoder = XzDecoder::new(tee);
-            Ok(Box::new(DecodedVerifyingReader {
-                decoder,
+            Ok(Box::new(VerifyingReader::new(
+                XzDecoder::new(CrcTeeReader::new(raw)),
                 expected,
                 target,
                 short_flag,
-                state: VerifyState::Reading,
-            }))
+            )))
         } else {
-            Ok(Box::new(RawVerifyingReader {
-                inner: raw,
-                hasher: 0,
+            Ok(Box::new(VerifyingReader::new(
+                CrcTeeReader::new(raw),
                 expected,
                 target,
-                state: VerifyState::Reading,
-            }))
+                short_flag,
+            )))
         }
     }
 
@@ -424,10 +358,10 @@ impl<R: Read + Seek> BendlReader<R> {
             // Wrap the decoder so that if xz reports a runtime error while the underlying
             // ExactLen has flagged a short read, the surface is a short-range UnexpectedEof
             // rather than a codec error.
-            Ok(Box::new(ShortRangeAwareReader {
-                inner: XzDecoder::new(raw),
+            Ok(Box::new(ShortRangeAwareReader::new(
+                XzDecoder::new(raw),
                 short_flag,
-            }))
+            )))
         } else {
             Ok(Box::new(raw))
         }
@@ -471,29 +405,11 @@ impl<R: Read + Seek> BendlReader<R> {
             }
         };
 
-        self.inner.seek(SeekFrom::Start(entry.payload_offset))?;
-        let mut remaining = entry.payload_len;
-        let mut buf = [0u8; 64 * 1024];
-        let mut hasher: u32 = 0;
-        while remaining > 0 {
-            let want = remaining.min(buf.len() as u64) as usize;
-            let n = self.inner.read(&mut buf[..want])?;
-            if n == 0 {
-                // Short read against the declared payload length — surface as an I/O error so
-                // callers can distinguish a truncated bundle from a CRC mismatch.
-                return Err(BendlReadError::Io(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    ShortRangeMarker { remaining },
-                )));
-            }
-            hasher = crc32c::crc32c_append(hasher, &buf[..n]);
-            remaining -= n as u64;
-        }
-
-        if hasher != expected {
+        let computed = scan_range_crc32c(&mut self.inner, entry.payload_offset, entry.payload_len)?;
+        if computed != expected {
             return Err(BendlReadError::Checksum(ChecksumError::Mismatch {
                 target: ChecksumTarget::Asset(entry.name.clone()),
-                computed: hasher,
+                computed,
                 expected,
             }));
         }
@@ -517,514 +433,9 @@ impl<R: Read + Seek> BendlReader<R> {
     /// rules.
     ///
     /// Returns [`BundleValidationError`] if any entry violates the rules. This is called
-    /// automatically by [`BendlReader::open`] when the `strict` constructor is used in tests; in
-    /// normal reads, the writer is already expected to enforce these rules and a malformed bundle
-    /// is a program bug somewhere else.
+    /// automatically by [`BendlReader::open`].
     pub fn validate_directory(&self) -> Result<(), BundleValidationError> {
         validate_directory_entries(&self.directory)
-    }
-}
-
-// =====================================================================
-// Strict-length plumbing
-// =====================================================================
-
-/// Marker error attached to the `io::Error` returned when an [`ExactLen`] reader hits underlying
-/// EOF before consuming its declared length. Used by convenience APIs to recognise a bundle-layer
-/// short-range failure even when it has surfaced through a codec.
-#[derive(Debug)]
-pub(crate) struct ShortRangeMarker {
-    pub remaining: u64,
-}
-
-impl fmt::Display for ShortRangeMarker {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "bundle range ended {} byte(s) before declared length",
-            self.remaining
-        )
-    }
-}
-
-impl std::error::Error for ShortRangeMarker {}
-
-/// Shared flag set by an [`ExactLen`] reader when the underlying reader runs out of bytes before
-/// the declared length is reached. Clones share state so a wrapper above a codec can detect the
-/// short read even if the codec swallows the inner `UnexpectedEof` in favor of its own error.
-#[derive(Clone, Default)]
-pub struct ShortRangeFlag(Arc<AtomicBool>);
-
-impl ShortRangeFlag {
-    pub(crate) fn new() -> Self {
-        Self(Arc::new(AtomicBool::new(false)))
-    }
-
-    pub(crate) fn set(&self) {
-        self.0.store(true, Ordering::Relaxed);
-    }
-
-    pub(crate) fn get(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
-    }
-}
-
-/// Bounded reader that enforces an exact byte length. Behaves like [`std::io::Take`] for reads
-/// within the declared length, but returns
-/// `Err(io::Error::new(io::ErrorKind::UnexpectedEof, ShortRangeMarker))` (and sets the shared
-/// [`ShortRangeFlag`]) if the underlying reader signals EOF before the declared length is reached.
-///
-/// `ExactLen` is the BENDL-layer guarantee that `payload_len` and `stream_len` are exact byte
-/// counts of the on-disk range; a backing file shorter than declared is a corrupt bundle, not a
-/// short successful read.
-pub struct ExactLen<R: Read> {
-    inner: R,
-    remaining: u64,
-    flag: ShortRangeFlag,
-}
-
-impl<R: Read> ExactLen<R> {
-    pub(crate) fn new(inner: R, declared: u64, flag: ShortRangeFlag) -> Self {
-        Self {
-            inner,
-            remaining: declared,
-            flag,
-        }
-    }
-}
-
-impl<R: Read> Read for ExactLen<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if self.remaining == 0 || buf.is_empty() {
-            return Ok(0);
-        }
-        let max = (buf.len() as u64).min(self.remaining) as usize;
-        let n = self.inner.read(&mut buf[..max])?;
-        if n == 0 {
-            // Underlying reader hit EOF before our declared length. Set the shared flag so a
-            // wrapper above a codec can recognise this as a bundle-range failure, and surface as
-            // UnexpectedEof carrying the marker.
-            let remaining = self.remaining;
-            self.flag.set();
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                ShortRangeMarker { remaining },
-            ));
-        }
-        self.remaining -= n as u64;
-        Ok(n)
-    }
-}
-
-/// Wraps a reader sitting above an [`ExactLen`]-bounded source. If the underlying reader returns
-/// an error and the shared `ShortRangeFlag` is set, the error is replaced with an `UnexpectedEof`
-/// carrying a [`ShortRangeMarker`] so callers see a bundle-layer short-range failure rather than a
-/// codec-specific error message.
-struct ShortRangeAwareReader<R: Read> {
-    inner: R,
-    short_flag: ShortRangeFlag,
-}
-
-impl<R: Read> Read for ShortRangeAwareReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self.inner.read(buf) {
-            Ok(n) => Ok(n),
-            Err(e) => {
-                if self.short_flag.get() {
-                    Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        ShortRangeMarker { remaining: 0 },
-                    ))
-                } else {
-                    Err(e)
-                }
-            }
-        }
-    }
-}
-
-// =====================================================================
-// Verifying reader plumbing
-// =====================================================================
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum VerifyState {
-    /// Still feeding bytes from the underlying reader.
-    Reading,
-    /// Underlying reader returned EOF and the CRC matched. Subsequent reads return `Ok(0)`
-    /// (normal EOF).
-    EofChecked,
-    /// CRC mismatch was reported to the caller. Subsequent reads return `Ok(0)` so the reader stays
-    /// well-behaved if the caller re-polls after the error.
-    Failed,
-}
-
-/// Uncompressed-asset verifying reader: forwards bytes from the bounded payload, accumulates CRC32C
-/// as they fly past, and on raw EOF either confirms the checksum or returns
-/// [`ChecksumError::Mismatch`] in place of the usual `Ok(0)`.
-struct RawVerifyingReader<'a, R: Read + Seek> {
-    inner: ExactLen<&'a mut R>,
-    hasher: u32,
-    expected: u32,
-    target: ChecksumTarget,
-    state: VerifyState,
-}
-
-impl<R: Read + Seek> Read for RawVerifyingReader<'_, R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self.state {
-            VerifyState::EofChecked | VerifyState::Failed => return Ok(0),
-            VerifyState::Reading => {}
-        }
-        let n = self.inner.read(buf)?;
-        if n == 0 {
-            if self.hasher == self.expected {
-                self.state = VerifyState::EofChecked;
-                return Ok(0);
-            }
-            let err = ChecksumError::Mismatch {
-                target: self.target.clone(),
-                computed: self.hasher,
-                expected: self.expected,
-            };
-            self.state = VerifyState::Failed;
-            return Err(io::Error::new(io::ErrorKind::InvalidData, err));
-        }
-        self.hasher = crc32c::crc32c_append(self.hasher, &buf[..n]);
-        Ok(n)
-    }
-}
-
-/// CRC accumulator that sits *inside* an [`XzDecoder`] for compressed assets. It must never
-/// substitute a checksum error for raw EOF — the codec needs to see the natural `Ok(0)` so it can
-/// flush pending output. The post-decoder wrapper ([`DecodedVerifyingReader`]) inspects this
-/// struct's accumulated hash after codec EOF.
-struct CrcTeeReader<R: Read> {
-    inner: R,
-    hasher: u32,
-}
-
-impl<R: Read> CrcTeeReader<R> {
-    fn new(inner: R) -> Self {
-        Self { inner, hasher: 0 }
-    }
-}
-
-impl<R: Read> Read for CrcTeeReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = self.inner.read(buf)?;
-        if n > 0 {
-            self.hasher = crc32c::crc32c_append(self.hasher, &buf[..n]);
-        }
-        Ok(n)
-    }
-}
-
-/// Verifying wrapper around an `XzDecoder<CrcTeeReader<…>>`. Lets the codec observe normal raw EOF
-/// before finalizing the CRC check at the decoded layer.
-struct DecodedVerifyingReader<'a, R: Read + Seek> {
-    decoder: XzDecoder<CrcTeeReader<ExactLen<&'a mut R>>>,
-    expected: u32,
-    target: ChecksumTarget,
-    short_flag: ShortRangeFlag,
-    state: VerifyState,
-}
-
-impl<R: Read + Seek> Read for DecodedVerifyingReader<'_, R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self.state {
-            VerifyState::EofChecked | VerifyState::Failed => return Ok(0),
-            VerifyState::Reading => {}
-        }
-        let n = match self.decoder.read(buf) {
-            Ok(n) => n,
-            Err(e) => {
-                // If the underlying ExactLen flagged a short range, surface it as a bundle-layer
-                // UnexpectedEof rather than a codec error — the bytes were missing, not malformed.
-                self.state = VerifyState::Failed;
-                if self.short_flag.get() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        ShortRangeMarker { remaining: 0 },
-                    ));
-                }
-                return Err(e);
-            }
-        };
-        if n == 0 {
-            let computed = self.decoder.get_ref().hasher;
-            if computed == self.expected {
-                self.state = VerifyState::EofChecked;
-                return Ok(0);
-            }
-            let err = ChecksumError::Mismatch {
-                target: self.target.clone(),
-                computed,
-                expected: self.expected,
-            };
-            self.state = VerifyState::Failed;
-            return Err(io::Error::new(io::ErrorKind::InvalidData, err));
-        }
-        Ok(n)
-    }
-}
-
-/// CRC accumulator that shares its running hash via an `Arc<AtomicU32>`. Used as the source reader
-/// for [`BendlVerifiedStreamReader`]: the `Arc` lets the outer wrapper read the final hash after a
-/// consuming inner method (e.g. `count_samples`) moves ownership away from the wrapper.
-///
-/// Unlike `CrcTeeReader`, this type never substitutes a checksum error for raw EOF — it is always
-/// the outer [`BendlVerifiedStreamReader`] that decides when and whether to check. The type is
-/// exposed because it leaks through the return signatures of the wrapper's intentionally-partial
-/// APIs (`into_frames`, `into_subsample_by_*`); callers should treat it as an opaque reader.
-pub struct ArcHasher<R: Read> {
-    inner: R,
-    state: Arc<AtomicU32>,
-}
-
-impl<R: Read> Read for ArcHasher<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = self.inner.read(buf)?;
-        if n > 0 {
-            let prev = self.state.load(Ordering::Relaxed);
-            self.state
-                .store(crc32c::crc32c_append(prev, &buf[..n]), Ordering::Relaxed);
-        }
-        Ok(n)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StreamVerifyState {
-    Running,
-    /// A CRC mismatch was returned once as `Some(Err(...))`. Subsequent iterator calls return
-    /// `None`.
-    MismatchReported,
-    /// A non-CRC terminal error (codec failure, bundle-layer short range, etc.) was returned once
-    /// as `Some(Err(...))`. Subsequent iterator calls return `None`. Kept distinct from
-    /// `MismatchReported` so the state machine self-documents which class of failure tripped it.
-    Errored,
-    /// CRC matched after natural EOF. Subsequent iterator calls return `None`.
-    Verified,
-}
-
-/// Verified decoded assignment reader returned by [`BendlReader::open_assignment_reader`].
-///
-/// Wraps a [`BenStreamReader`] over a CRC-accumulating source and checks the stored stream CRC32C
-/// after the codec reaches natural EOF. CRC mismatch surfaces from [`Iterator::next`] as
-/// `Some(Err(io::ErrorKind::InvalidData))` — returned once after the last decoded record, then
-/// `None`. Consuming methods (`count_samples`, `write_all_jsonl`, `for_each_assignment` when driven
-/// to natural EOF) also fold the CRC check into their return value.
-///
-/// **Intentionally partial APIs** (`into_frames`, `into_subsample_by_*`) are forwarded for
-/// ergonomics but do not automatically verify — the underlying reader is stopped short of raw EOF
-/// so the CRC tee is never finalized. Callers that need integrity for partial reads must call
-/// [`BendlReader::verify_stream_checksum`] separately.
-pub struct BendlVerifiedStreamReader<'a, R: Read + Seek> {
-    inner: BenStreamReader<ArcHasher<ExactLen<&'a mut R>>>,
-    expected: u32,
-    arc_hasher: Arc<AtomicU32>,
-    short_flag: ShortRangeFlag,
-    state: StreamVerifyState,
-}
-
-impl<'a, R: Read + Seek> BendlVerifiedStreamReader<'a, R> {
-    /// Return the BEN variant detected from the stream banner.
-    pub fn variant(&self) -> BenVariant {
-        self.inner.variant()
-    }
-
-    /// Return the wire format (BEN vs XBEN) of this stream.
-    pub fn wire_format(&self) -> BenWireFormat {
-        self.inner.wire_format()
-    }
-
-    /// Suppress progress output from the decoder.
-    pub fn silent(mut self, silent: bool) -> Self {
-        self.inner = self.inner.silent(silent);
-        self
-    }
-
-    /// Count the number of samples in the stream and verify the stream CRC32C.
-    ///
-    /// Drives the decoder to raw EOF as a side effect, finalizing the CRC accumulator. If the
-    /// count succeeds but the CRC does not match, the CRC mismatch is returned instead of the
-    /// count.
-    pub fn count_samples(self) -> io::Result<usize> {
-        let arc = Arc::clone(&self.arc_hasher);
-        let expected = self.expected;
-        let short_flag = self.short_flag.clone();
-        let count = match self.inner.count_samples() {
-            Ok(count) => count,
-            Err(e) => {
-                if short_flag.get() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        ShortRangeMarker { remaining: 0 },
-                    ));
-                }
-                return Err(e);
-            }
-        };
-        let computed = arc.load(Ordering::Relaxed);
-        if computed != expected {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                ChecksumError::Mismatch {
-                    target: ChecksumTarget::Stream,
-                    computed,
-                    expected,
-                },
-            ));
-        }
-        Ok(count)
-    }
-
-    /// Decode assignments and pass each one to a callback by reference.
-    ///
-    /// When the callback drives the reader to natural EOF, the stream CRC is verified and a
-    /// mismatch is returned as an error. When the callback stops early (`f` returns `Ok(false)`),
-    /// the CRC is not checked — only a full traversal can verify the whole stream.
-    pub fn for_each_assignment<F>(&mut self, mut f: F) -> io::Result<()>
-    where
-        F: FnMut(&[u16], u16) -> io::Result<bool>,
-    {
-        loop {
-            match self.next() {
-                Some(Ok((ref assignment, count))) => {
-                    if !f(assignment, count)? {
-                        return Ok(());
-                    }
-                }
-                Some(Err(e)) => return Err(e),
-                None => return Ok(()),
-            }
-        }
-    }
-
-    /// Decode the remaining stream, write it as JSONL, and verify the stream CRC32C.
-    ///
-    /// Each decoded sample is written as a JSON object containing an `assignment` vector and a
-    /// 1-based `sample` index. After all records are written, the stream CRC is checked; a
-    /// mismatch is returned instead of `Ok(())`.
-    pub fn write_all_jsonl(&mut self, mut writer: impl Write) -> io::Result<()> {
-        let mut sample_number = 0usize;
-        loop {
-            match self.next() {
-                Some(Ok((assignment, count))) => {
-                    for _ in 0..count {
-                        sample_number += 1;
-                        let line = json!({
-                            "assignment": assignment,
-                            "sample": sample_number,
-                        })
-                        .to_string()
-                            + "\n";
-                        writer.write_all(line.as_bytes())?;
-                    }
-                }
-                Some(Err(e)) => return Err(e),
-                None => return Ok(()),
-            }
-        }
-    }
-
-    /// Consume the wrapper and iterate over raw BEN/ben32 frames instead of materialized
-    /// assignments.
-    ///
-    /// Frame iteration is intentionally partial: callers typically stop short of EOF, so the CRC
-    /// tee is never finalized and the stream is **not verified** by this path. Callers needing
-    /// integrity for partial reads should call [`BendlReader::verify_stream_checksum`] separately.
-    pub fn into_frames(self) -> BenStreamFrameReader<ArcHasher<ExactLen<&'a mut R>>> {
-        self.inner.into_frames()
-    }
-}
-
-impl<'a, R: Read + Seek + Send> BendlVerifiedStreamReader<'a, R> {
-    /// Convert into a subsampling iterator over explicit 1-based indices.
-    ///
-    /// Subsampling is intentionally partial: the underlying reader is stopped short of raw EOF, so
-    /// the CRC tee is never finalized and the stream is **not verified** by this path. Use
-    /// [`BendlReader::verify_stream_checksum`] for an explicit full-stream integrity check.
-    pub fn into_subsample_by_indices<T>(
-        self,
-        indices: T,
-    ) -> SubsampleFrameDecoder<BenStreamFrameReader<ArcHasher<ExactLen<&'a mut R>>>>
-    where
-        T: IntoIterator<Item = usize>,
-    {
-        self.inner.into_subsample_by_indices(indices)
-    }
-
-    /// Convert into a subsampling iterator over the inclusive 1-based range `[start, end]`.
-    ///
-    /// Subsampling is intentionally partial and is **not verified** by this path; see
-    /// [`Self::into_subsample_by_indices`].
-    pub fn into_subsample_by_range(
-        self,
-        start: usize,
-        end: usize,
-    ) -> SubsampleFrameDecoder<BenStreamFrameReader<ArcHasher<ExactLen<&'a mut R>>>> {
-        self.inner.into_subsample_by_range(start, end)
-    }
-
-    /// Convert into a subsampling iterator that selects every `step` samples from the 1-based
-    /// `offset`.
-    ///
-    /// Subsampling is intentionally partial and is **not verified** by this path; see
-    /// [`Self::into_subsample_by_indices`].
-    pub fn into_subsample_every(
-        self,
-        step: usize,
-        offset: usize,
-    ) -> SubsampleFrameDecoder<BenStreamFrameReader<ArcHasher<ExactLen<&'a mut R>>>> {
-        self.inner.into_subsample_every(step, offset)
-    }
-}
-
-impl<'a, R: Read + Seek> Iterator for BendlVerifiedStreamReader<'a, R> {
-    type Item = io::Result<(Vec<u16>, u16)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.state {
-            StreamVerifyState::MismatchReported
-            | StreamVerifyState::Errored
-            | StreamVerifyState::Verified => return None,
-            StreamVerifyState::Running => {}
-        }
-        match self.inner.next() {
-            Some(Err(e)) => {
-                // Non-CRC terminal error: codec failure, bundle-layer short range, or anything else
-                // the inner reader returned. CRC mismatch lives in the `None` branch below.
-                self.state = StreamVerifyState::Errored;
-                if self.short_flag.get() {
-                    return Some(Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        ShortRangeMarker { remaining: 0 },
-                    )));
-                }
-                Some(Err(e))
-            }
-            Some(item) => Some(item),
-            None => {
-                // Inner reached natural EOF — finalize the CRC check.
-                let computed = self.arc_hasher.load(Ordering::Relaxed);
-                if computed == self.expected {
-                    self.state = StreamVerifyState::Verified;
-                    None
-                } else {
-                    self.state = StreamVerifyState::MismatchReported;
-                    Some(Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        ChecksumError::Mismatch {
-                            target: ChecksumTarget::Stream,
-                            computed,
-                            expected: self.expected,
-                        },
-                    )))
-                }
-            }
-        }
     }
 }
 
