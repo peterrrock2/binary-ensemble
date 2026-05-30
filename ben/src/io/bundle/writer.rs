@@ -102,13 +102,115 @@ impl AddAssetOptions {
     }
 }
 
+/// An asset payload prepared for on-disk storage: the (optionally xz-compressed) bytes, the
+/// directory-entry flags describing them, and the CRC32C over those exact bytes.
+struct EncodedAsset {
+    bytes: Vec<u8>,
+    asset_flags: u16,
+    checksum: Vec<u8>,
+}
+
+/// Compress (if requested), checksum, and assemble the directory-entry flags for one asset payload.
+///
+/// This is the single encode path shared by [`BendlWriter::add_asset`] and
+/// [`BendlAppender::commit`], so the create and append routes can never drift on compression, flag
+/// assembly, or CRC coverage. It is pure (in-memory), so a failure leaves any backing file
+/// untouched. The CRC32C is over the **on-disk** bytes — the compressed bytes when xz is applied, so
+/// verification happens before decompression (see [`ASSET_FLAG_CHECKSUM`]).
+fn encode_asset_payload(payload: Vec<u8>, compress: bool, is_json: bool) -> io::Result<EncodedAsset> {
+    let bytes = if compress {
+        let mut encoder = XzEncoder::new(Vec::new(), DEFAULT_XZ_PRESET);
+        encoder.write_all(&payload)?;
+        encoder.finish()?
+    } else {
+        payload
+    };
+
+    let mut asset_flags: u16 = ASSET_FLAG_CHECKSUM;
+    if is_json {
+        asset_flags |= ASSET_FLAG_JSON;
+    }
+    if compress {
+        asset_flags |= ASSET_FLAG_XZ;
+    }
+
+    let checksum = crc32c::crc32c(&bytes).to_le_bytes().to_vec();
+    Ok(EncodedAsset {
+        bytes,
+        asset_flags,
+        checksum,
+    })
+}
+
+/// Tracks the asset names and singleton asset-types already claimed in a bundle, and enforces the
+/// canonical-name + uniqueness rules shared by the create and append paths.
+///
+/// [`Self::claim`] validates fully before mutating, so a rejected asset never leaves the registry in
+/// a half-updated state — there is nothing to roll back.
+#[derive(Default)]
+struct AssetNameRegistry {
+    names: HashSet<String>,
+    singleton_types: HashSet<u16>,
+}
+
+impl AssetNameRegistry {
+    /// An empty registry, for a fresh bundle.
+    fn new() -> Self {
+        Self::default()
+    }
+
+    /// Seed a registry from the directory entries of an existing finalized bundle (append path).
+    fn from_entries(entries: &[BendlDirectoryEntry]) -> Self {
+        let mut registry = Self::new();
+        for entry in entries {
+            registry.names.insert(entry.name.clone());
+            if standardized_name_for(entry.asset_type).is_some() {
+                registry.singleton_types.insert(entry.asset_type);
+            }
+        }
+        registry
+    }
+
+    /// Validate the canonical-name and uniqueness rules for a candidate asset **without** mutating
+    /// state. A known singleton type must use its standardized name and may appear only once; every
+    /// asset name must be unique.
+    fn check(&self, asset_type: u16, name: &str) -> Result<(), BendlWriteError> {
+        if let Some(canonical) = standardized_name_for(asset_type) {
+            if name != canonical {
+                return Err(BendlWriteError::WrongCanonicalName {
+                    asset_type,
+                    expected: canonical.to_string(),
+                    found: name.to_string(),
+                });
+            }
+            if self.singleton_types.contains(&asset_type) {
+                return Err(BendlWriteError::DuplicateSingletonType(asset_type));
+            }
+        }
+        if self.names.contains(name) {
+            return Err(BendlWriteError::DuplicateName(name.to_string()));
+        }
+        Ok(())
+    }
+
+    /// Validate via [`Self::check`] and, on success, reserve the name and (for singleton types) the
+    /// asset-type so subsequent claims see it as taken.
+    fn claim(&mut self, asset_type: u16, name: &str) -> Result<(), BendlWriteError> {
+        self.check(asset_type, name)?;
+        self.names.insert(name.to_string());
+        if standardized_name_for(asset_type).is_some() {
+            self.singleton_types.insert(asset_type);
+        }
+        Ok(())
+    }
+}
+
 /// Writer for a single `.bendl` file.
 pub struct BendlWriter<W: Write + Seek> {
     inner: W,
     header: BendlHeader,
     entries: Vec<BendlDirectoryEntry>,
-    names: HashSet<String>,
-    singleton_types: HashSet<u16>,
+    registry: AssetNameRegistry,
     state: WriterState,
 }
 
@@ -141,8 +243,7 @@ impl<W: Write + Seek> BendlWriter<W> {
             inner,
             header,
             entries: Vec::new(),
-            names: HashSet::new(),
-            singleton_types: HashSet::new(),
+            registry: AssetNameRegistry::new(),
             state: WriterState::Assets,
         })
     }
@@ -166,72 +267,25 @@ impl<W: Write + Seek> BendlWriter<W> {
             return Err(BendlWriteError::AssetsAfterStream);
         }
 
-        // Canonical-name rule for known singleton types.
-        if let Some(canonical) = standardized_name_for(asset_type) {
-            if name != canonical {
-                return Err(BendlWriteError::WrongCanonicalName {
-                    asset_type,
-                    expected: canonical.to_string(),
-                    found: name.to_string(),
-                });
-            }
-            if !self.singleton_types.insert(asset_type) {
-                return Err(BendlWriteError::DuplicateSingletonType(asset_type));
-            }
-        }
+        // Validate and reserve the name/type up front, so a rejected asset writes no bytes.
+        self.registry.claim(asset_type, name)?;
 
-        // Unique name rule.
-        if !self.names.insert(name.to_string()) {
-            // Roll back the singleton insertion before returning, so the writer remains in a
-            // consistent state. (Only known singleton types would have been inserted above.)
-            if standardized_name_for(asset_type).is_some() {
-                self.singleton_types.remove(&asset_type);
-            }
-            return Err(BendlWriteError::DuplicateName(name.to_string()));
-        }
-
-        // Decide compression.
         let compress = options
             .compress
             .unwrap_or_else(|| default_compresses_by_type(asset_type));
-
-        // Compute final payload bytes.
-        let payload_bytes: Vec<u8> = if compress {
-            let mut encoder = XzEncoder::new(Vec::new(), DEFAULT_XZ_PRESET);
-            encoder.write_all(payload).map_err(BendlWriteError::Io)?;
-            encoder.finish().map_err(BendlWriteError::Io)?
-        } else {
-            payload.to_vec()
-        };
-
-        // CRC32C over the on-disk payload bytes. For compressed assets this is the compressed bytes
-        // (verification happens before decompression). See ASSET_FLAG_CHECKSUM for the wire-format
-        // pin.
-        let crc = crc32c::crc32c(&payload_bytes);
-        let checksum_bytes = crc.to_le_bytes().to_vec();
-
-        let mut asset_flags: u16 = ASSET_FLAG_CHECKSUM;
-        if options.is_json {
-            asset_flags |= ASSET_FLAG_JSON;
-        }
-        if compress {
-            asset_flags |= ASSET_FLAG_XZ;
-        }
+        let encoded = encode_asset_payload(payload.to_vec(), compress, options.is_json)?;
 
         // Write at current file position.
         let payload_offset = self.inner.seek(SeekFrom::Current(0))?;
-        self.inner
-            .write_all(&payload_bytes)
-            .map_err(BendlWriteError::Io)?;
-        let payload_len = payload_bytes.len() as u64;
+        self.inner.write_all(&encoded.bytes)?;
 
         self.entries.push(BendlDirectoryEntry {
             asset_type,
-            asset_flags,
+            asset_flags: encoded.asset_flags,
             name: name.to_string(),
             payload_offset,
-            payload_len,
-            checksum: Some(checksum_bytes),
+            payload_len: encoded.bytes.len() as u64,
+            checksum: Some(encoded.checksum),
         });
 
         Ok(())
@@ -310,8 +364,7 @@ impl<W: Write + Seek> BendlWriter<W> {
             parent: Some(ParentState {
                 header: self.header,
                 entries: self.entries,
-                names: self.names,
-                singleton_types: self.singleton_types,
+                registry: self.registry,
             }),
             start_offset: stream_offset,
             bytes_written: 0,
@@ -370,8 +423,7 @@ impl<W: Write + Seek> BendlWriter<W> {
 struct ParentState {
     header: BendlHeader,
     entries: Vec<BendlDirectoryEntry>,
-    names: HashSet<String>,
-    singleton_types: HashSet<u16>,
+    registry: AssetNameRegistry,
 }
 
 /// Owned stream-phase session. Holds the underlying writer and the parent [`BendlWriter`]'s
@@ -421,8 +473,7 @@ impl<W: Write + Seek> BendlStreamSession<W> {
             inner,
             header: parent.header,
             entries: parent.entries,
-            names: parent.names,
-            singleton_types: parent.singleton_types,
+            registry: parent.registry,
             state: WriterState::StreamWritten {
                 stream_len: self.bytes_written,
                 sample_count,
@@ -532,11 +583,10 @@ pub struct BendlAppender<W: Read + Write + Seek + BendlTruncate> {
     inner: W,
     header: BendlHeader,
     existing_entries: Vec<BendlDirectoryEntry>,
-    existing_names: HashSet<String>,
-    existing_singleton_types: HashSet<u16>,
     pending: Vec<PendingAsset>,
-    pending_names: HashSet<String>,
-    pending_singleton_types: HashSet<u16>,
+    /// Names and singleton types claimed by the existing directory plus any pending adds. Seeded
+    /// from the existing entries at open time, then extended as each pending asset is enqueued.
+    registry: AssetNameRegistry,
 }
 
 /// An asset queued for append but not yet written to disk.
@@ -578,24 +628,14 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
             BendlWriteError::Format(BendlFormatError::MalformedDirectory(e.to_string()))
         })?;
 
-        let mut existing_names = HashSet::new();
-        let mut existing_singleton_types = HashSet::new();
-        for entry in &existing_entries {
-            existing_names.insert(entry.name.clone());
-            if standardized_name_for(entry.asset_type).is_some() {
-                existing_singleton_types.insert(entry.asset_type);
-            }
-        }
+        let registry = AssetNameRegistry::from_entries(&existing_entries);
 
         Ok(BendlAppender {
             inner,
             header,
             existing_entries,
-            existing_names,
-            existing_singleton_types,
             pending: Vec::new(),
-            pending_names: HashSet::new(),
-            pending_singleton_types: HashSet::new(),
+            registry,
         })
     }
 
@@ -611,35 +651,14 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
         payload: &[u8],
         options: AddAssetOptions,
     ) -> Result<(), BendlWriteError> {
-        // Canonical-name rule.
-        if let Some(canonical) = standardized_name_for(asset_type) {
-            if name != canonical {
-                return Err(BendlWriteError::WrongCanonicalName {
-                    asset_type,
-                    expected: canonical.to_string(),
-                    found: name.to_string(),
-                });
-            }
-            if self.existing_singleton_types.contains(&asset_type)
-                || self.pending_singleton_types.contains(&asset_type)
-            {
-                return Err(BendlWriteError::DuplicateSingletonType(asset_type));
-            }
-        }
-
-        // Uniqueness rule against both existing and pending assets.
-        if self.existing_names.contains(name) || self.pending_names.contains(name) {
-            return Err(BendlWriteError::DuplicateName(name.to_string()));
-        }
+        // Validate against both the loaded directory and previously-enqueued pending assets, and
+        // reserve the name/type on success. Nothing is buffered if validation fails.
+        self.registry.claim(asset_type, name)?;
 
         let compress = options
             .compress
             .unwrap_or_else(|| default_compresses_by_type(asset_type));
 
-        self.pending_names.insert(name.to_string());
-        if standardized_name_for(asset_type).is_some() {
-            self.pending_singleton_types.insert(asset_type);
-        }
         self.pending.push(PendingAsset {
             asset_type,
             name: name.to_string(),
@@ -705,45 +724,13 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
             return Ok(self.inner);
         }
 
-        // Phase 1: compress any pending payloads and build new entries with placeholder offsets. Do
-        // this entirely in memory so failures here leave the file untouched.
-        struct EncodedPending {
-            asset_type: u16,
-            name: String,
-            bytes: Vec<u8>,
-            asset_flags: u16,
-            checksum: Option<Vec<u8>>,
-        }
-
-        let mut encoded: Vec<EncodedPending> = Vec::with_capacity(self.pending.len());
+        // Phase 1: compress any pending payloads through the shared encode path and pair each with
+        // its identifying name/type. Done entirely in memory so failures here leave the file
+        // untouched.
+        let mut encoded: Vec<(u16, String, EncodedAsset)> = Vec::with_capacity(self.pending.len());
         for asset in self.pending.drain(..) {
-            let bytes = if asset.compress {
-                let mut encoder = XzEncoder::new(Vec::new(), DEFAULT_XZ_PRESET);
-                encoder.write_all(&asset.raw_payload)?;
-                encoder.finish()?
-            } else {
-                asset.raw_payload
-            };
-
-            // CRC32C over on-disk payload bytes (compressed if XZ).
-            let crc = crc32c::crc32c(&bytes);
-            let checksum_bytes = crc.to_le_bytes().to_vec();
-
-            let mut asset_flags: u16 = ASSET_FLAG_CHECKSUM;
-            if asset.is_json {
-                asset_flags |= ASSET_FLAG_JSON;
-            }
-            if asset.compress {
-                asset_flags |= ASSET_FLAG_XZ;
-            }
-
-            encoded.push(EncodedPending {
-                asset_type: asset.asset_type,
-                name: asset.name,
-                bytes,
-                asset_flags,
-                checksum: Some(checksum_bytes),
-            });
+            let enc = encode_asset_payload(asset.raw_payload, asset.compress, asset.is_json)?;
+            encoded.push((asset.asset_type, asset.name, enc));
         }
 
         // Phase 2: file mutation. From this point forward, a failure leaves the bundle in a damaged
@@ -761,16 +748,16 @@ impl<W: Read + Write + Seek + BendlTruncate> BendlAppender<W> {
             Vec::with_capacity(self.existing_entries.len() + encoded.len());
         new_entries.extend(self.existing_entries.iter().cloned());
 
-        for enc in encoded {
+        for (asset_type, name, enc) in encoded {
             let payload_offset = self.inner.seek(SeekFrom::Current(0))?;
             self.inner.write_all(&enc.bytes)?;
             new_entries.push(BendlDirectoryEntry {
-                asset_type: enc.asset_type,
+                asset_type,
                 asset_flags: enc.asset_flags,
-                name: enc.name,
+                name,
                 payload_offset,
                 payload_len: enc.bytes.len() as u64,
-                checksum: enc.checksum,
+                checksum: Some(enc.checksum),
             });
         }
 
