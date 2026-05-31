@@ -1,3 +1,8 @@
+// Binary literals here are grouped by BEN bit-field boundaries (e.g. `0b01100_100` is a 5-bit
+// value followed by a 3-bit value), not by even nibbles, so the grouping documents the packed
+// layout under test.
+#![allow(clippy::unusual_byte_groupings)]
+
 use crate::codec::decode::jsonl_decode_ben32;
 use crate::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl};
 use crate::codec::encode::xz_compress;

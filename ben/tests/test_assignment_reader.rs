@@ -77,7 +77,7 @@ mod mkvchain {
     #[test]
     fn single_assignment_round_trip() {
         let assignment = vec![3u16, 3, 1, 2, 2, 1];
-        let ben = encode_ben(&[assignment.clone()], BenVariant::MkvChain);
+        let ben = encode_ben(std::slice::from_ref(&assignment), BenVariant::MkvChain);
 
         let mut decoder = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
@@ -429,7 +429,7 @@ mod mkvchain {
     #[test]
     fn frame_reader_bytes_decode_back_to_original_assignment() {
         let assignment = vec![3u16, 3, 1, 2];
-        let ben = encode_ben(&[assignment.clone()], BenVariant::MkvChain);
+        let ben = encode_ben(std::slice::from_ref(&assignment), BenVariant::MkvChain);
 
         let (frame, _count) = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
@@ -650,7 +650,7 @@ mod twodelta {
     fn single_anchor_frame_round_trip() {
         // A stream with only one assignment contains just the anchor frame.
         let assignment = vec![1u16, 1, 2, 2, 3, 3];
-        let ben = encode_twodelta(&[assignment.clone()]);
+        let ben = encode_twodelta(std::slice::from_ref(&assignment));
         assert_eq!(expand_assignments(&ben), vec![assignment]);
     }
 
@@ -839,7 +839,7 @@ mod twodelta {
     #[test]
     fn write_all_jsonl_single_anchor() {
         let assignment = vec![1u16, 2, 3];
-        let ben = encode_twodelta(&[assignment.clone()]);
+        let ben = encode_twodelta(std::slice::from_ref(&assignment));
 
         let mut out = Vec::new();
         BenStreamReader::from_ben(ben.as_slice())

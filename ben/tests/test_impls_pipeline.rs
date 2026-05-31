@@ -838,9 +838,9 @@ fn xben_truncated_frame_reports_unexpected_eof() {
     // Trim the last byte to force partial frame after decompress
     let trimmed = &xz[..xz.len() - 1];
     // Iterating should surface UnexpectedEof (partial frame)
-    let mut it = BenStreamReader::from_xben(trimmed).unwrap();
+    let it = BenStreamReader::from_xben(trimmed).unwrap();
     // Drain until error
-    while let Some(res) = it.next() {
+    for res in it {
         if let Err(e) = res {
             assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof);
             return;
@@ -864,7 +864,7 @@ fn encode_decode_ben32_odd_bit_packing_roundtrip() {
     assert_eq!(
         decoded,
         rle.into_iter()
-            .flat_map(|(v, c)| std::iter::repeat((v, 1)).take(c as usize))
+            .flat_map(|(v, c)| std::iter::repeat_n((v, 1), c as usize))
             .fold(Vec::<(u16, u16)>::new(), |mut acc, (v, _)| {
                 if let Some(last) = acc.last_mut() {
                     if last.0 == v {
@@ -889,8 +889,7 @@ fn encode_jsonl_to_ben_rejects_bad_assignment_shapes() {
     for s in bads {
         let mut out = Vec::new();
         let err = encode_jsonl_to_ben(BufReader::new(s.as_bytes()), &mut out, BenVariant::Standard)
-            .err()
-            .expect("expected invalid data");
+            .expect_err("expected invalid data");
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
     }
 }
@@ -898,7 +897,7 @@ fn encode_jsonl_to_ben_rejects_bad_assignment_shapes() {
 #[test]
 fn subsample_by_indices_sorts_and_dedups() {
     // Build 5 distinct samples 1..=5
-    let seq = vec![vec![1u16], vec![2], vec![3], vec![4], vec![5]];
+    let seq = [vec![1u16], vec![2], vec![3], vec![4], vec![5]];
     let jsonl = {
         let mut b = Vec::new();
         for (i, a) in seq.iter().enumerate() {

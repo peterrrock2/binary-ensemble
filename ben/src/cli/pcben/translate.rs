@@ -57,7 +57,7 @@ pub(super) fn assignment_encode_ben<R: Read + BufRead, W: Write>(
         let assignment: Vec<u16> = serde_json::from_str::<Vec<u16>>(&line.unwrap())
             .unwrap()
             .into_iter()
-            .map(|x| x as u16 + 1)
+            .map(|x| x + 1)
             .collect();
         ben_writer.write_assignment(assignment)?;
     }
@@ -78,7 +78,7 @@ pub(super) fn assignment_encode_xben<R: Read + BufRead, W: Write>(
         let assignment: Vec<u16> = serde_json::from_str::<Vec<u16>>(&line.unwrap())
             .unwrap()
             .into_iter()
-            .map(|x| x as u16 + 1)
+            .map(|x| x + 1)
             .collect();
         xben_writer.write_json_value(json!({ "assignment": assignment }))?;
     }

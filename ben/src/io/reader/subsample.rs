@@ -161,9 +161,7 @@ where
                 }
             }
             if let Selection::Indices(ref mut it) = self.selection {
-                if it.peek().is_none() {
-                    return None;
-                }
+                it.peek()?;
             }
 
             let (frame, count) = match self.inner.next()? {

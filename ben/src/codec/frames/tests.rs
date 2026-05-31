@@ -78,7 +78,11 @@ fn unwrap_encode_standard(frame: BenEncodeFrame) -> (Vec<(u16, u16)>, u8, u8, u3
     }
 }
 
-fn unwrap_encode_mkv(frame: BenEncodeFrame) -> (Vec<(u16, u16)>, u8, u8, u32, Vec<u8>, u16) {
+/// The destructured fields of a [`BenEncodeFrame::MkvChain`] arm: `(runs, max_val_bit_count,
+/// max_len_bit_count, n_bytes, raw_bytes, count)`.
+type MkvChainEncodeFields = (Vec<(u16, u16)>, u8, u8, u32, Vec<u8>, u16);
+
+fn unwrap_encode_mkv(frame: BenEncodeFrame) -> MkvChainEncodeFields {
     match frame {
         BenEncodeFrame::MkvChain {
             runs,
@@ -621,7 +625,7 @@ fn encode_partial_eq_vec_both_directions() {
 #[test]
 fn decode_expand_standard_assignment() {
     // An assignment of [1, 1, 2, 2, 3] becomes RLE [(1,2),(2,2),(3,1)].
-    let encoded = BenEncodeFrame::from_assignment(&[1u16, 1, 2, 2, 3], BenVariant::Standard, None);
+    let encoded = BenEncodeFrame::from_assignment([1u16, 1, 2, 2, 3], BenVariant::Standard, None);
     let mut cursor = io::Cursor::new(encoded.into_bytes());
     let decoded = BenDecodeFrame::from_reader(&mut cursor, BenVariant::Standard)
         .unwrap()

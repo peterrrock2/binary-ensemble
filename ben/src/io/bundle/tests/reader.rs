@@ -42,7 +42,7 @@ fn build_finalized_bundle() -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
     //   [directory_offset .. EOF) directory
     let mut bundle = Vec::new();
     // Reserve space for header; fill later.
-    bundle.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    bundle.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
 
     let graph_offset = bundle.len() as u64;
     bundle.extend_from_slice(&compressed_graph);
@@ -262,7 +262,7 @@ fn validate_directory_catches_wrong_canonical_name() {
 /// validation pitfalls. Useful as a base that tests can mutate byte-by-byte.
 fn build_basic_finalized_bundle() -> Vec<u8> {
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
 
     // One raw metadata asset right after the header.
     let metadata_payload = br#"{"k":"v"}"#.to_vec();
@@ -614,7 +614,7 @@ fn stress_many_custom_assets_round_trip() {
     const N: usize = 200;
 
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
 
     let mut entries = Vec::with_capacity(N);
     let mut expected = Vec::with_capacity(N);
@@ -679,7 +679,7 @@ fn xz_flagged_asset_with_corrupt_payload_surfaces_io_error() {
     // Hand-build a bundle with a single asset flagged ASSET_FLAG_XZ whose payload bytes are not a
     // valid xz container. `asset_bytes` must surface an io::Error rather than panicking.
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
 
     let bad_payload = vec![0xFFu8, 0xFE, 0xFD, 0xFC, 0xFB];
     let payload_offset = bytes.len() as u64;
@@ -839,7 +839,7 @@ use crate::io::bundle::error::{BendlReadError, ChecksumError, ChecksumTarget};
 /// Returns `(bundle_bytes, asset_name, directory_offset, payload_offset)` for hand-patching tests.
 fn make_single_asset_bundle(name: &str, payload: &[u8]) -> (Vec<u8>, String, u64, u64) {
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
 
     let payload_offset = bytes.len() as u64;
     bytes.extend_from_slice(payload);
@@ -888,7 +888,7 @@ fn make_single_xz_asset_bundle(name: &str, payload: &[u8]) -> (Vec<u8>, String, 
     let compressed = encoder.finish().unwrap();
 
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
 
     let payload_offset = bytes.len() as u64;
     bytes.extend_from_slice(&compressed);
@@ -1023,7 +1023,7 @@ fn verify_asset_checksum_returns_unavailable_when_flag_clear() {
     // Hand-build a foreign bundle whose entry has the flag clear.
     let payload = b"orphan".to_vec();
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
     let payload_offset = bytes.len() as u64;
     bytes.extend_from_slice(&payload);
     let stream_offset = bytes.len() as u64;
@@ -1151,7 +1151,7 @@ fn asset_bytes_returns_unavailable_when_flag_clear() {
     // Same hand-built foreign bundle as in the verifier test.
     let payload = b"orphan".to_vec();
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
     let payload_offset = bytes.len() as u64;
     bytes.extend_from_slice(&payload);
     let directory_offset = bytes.len() as u64;
@@ -1236,7 +1236,7 @@ fn verify_all_asset_checksums_reports_first_mismatch_in_directory_order() {
     let p1 = b"first".to_vec();
     let p2 = b"second".to_vec();
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
     let off1 = bytes.len() as u64;
     bytes.extend_from_slice(&p1);
     let off2 = bytes.len() as u64;
@@ -1336,7 +1336,7 @@ fn crc32c_polynomial_pin_against_known_vectors() {
 fn make_unflagged_stream_bundle() -> Vec<u8> {
     let fake_stream = b"hello stream".to_vec();
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
     let stream_offset = bytes.len() as u64;
     bytes.extend_from_slice(&fake_stream);
     let directory_offset = bytes.len() as u64;
@@ -1566,8 +1566,7 @@ struct FailWhenArmed<R> {
 impl<R: Read> Read for FailWhenArmed<R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.armed.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 "forced read failure",
             ));
         }
@@ -1894,7 +1893,7 @@ fn asset_with_unknown_flag_bit_opens_and_verifies_checksum() {
     let payload = b"asset bytes with reserved bit".to_vec();
 
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
     let payload_offset = bytes.len() as u64;
     bytes.extend_from_slice(&payload);
 

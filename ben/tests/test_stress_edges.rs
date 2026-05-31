@@ -30,7 +30,7 @@ fn expand_ben(bytes: &[u8]) -> Vec<Vec<u16>> {
         .silent(true)
         .flat_map(|record| {
             let (assignment, count) = record.unwrap();
-            std::iter::repeat(assignment).take(count as usize)
+            std::iter::repeat_n(assignment, count as usize)
         })
         .collect()
 }
@@ -43,7 +43,7 @@ fn minimal_bendl_with_entries(
     let directory_offset = bytes.len() as u64;
     let mut directory = encode_directory(&entries).unwrap();
     if directory_len_adjustment > 0 {
-        directory.extend(std::iter::repeat(0u8).take(directory_len_adjustment as usize));
+        directory.extend(std::iter::repeat_n(0u8, directory_len_adjustment as usize));
     }
     bytes.extend_from_slice(&directory);
 
@@ -121,8 +121,7 @@ impl Write for HeaderPatchCrashCursor {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let mut state = self.state.borrow_mut();
         if state.bytes.len() > state.initial_len && state.pos < HEADER_SIZE as u64 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 "simulated crash while patching bundle header",
             ));
         }
@@ -352,12 +351,12 @@ fn xz_compress_propagates_input_reader_errors() {
     struct FailingReader;
     impl std::io::Read for FailingReader {
         fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "boom"))
+            Err(std::io::Error::other("boom"))
         }
     }
     impl std::io::BufRead for FailingReader {
         fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "boom"))
+            Err(std::io::Error::other("boom"))
         }
         fn consume(&mut self, _amt: usize) {}
     }

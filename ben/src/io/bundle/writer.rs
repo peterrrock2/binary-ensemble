@@ -257,7 +257,7 @@ impl<W: Write + Seek> BendlWriter<W> {
         let encoded = encode_asset_payload(payload.to_vec(), compress, options.is_json)?;
 
         // Write at current file position.
-        let payload_offset = self.inner.seek(SeekFrom::Current(0))?;
+        let payload_offset = self.inner.stream_position()?;
         self.inner.write_all(&encoded.bytes)?;
 
         self.registry.claim(asset_type, name)?;
@@ -338,7 +338,7 @@ impl<W: Write + Seek> BendlWriter<W> {
             }
         }
 
-        let stream_offset = self.inner.seek(SeekFrom::Current(0))?;
+        let stream_offset = self.inner.stream_position()?;
         self.header.stream_offset = stream_offset;
 
         Ok(BendlStreamSession {
@@ -363,7 +363,7 @@ impl<W: Write + Seek> BendlWriter<W> {
             } => (stream_len, sample_count),
             WriterState::Assets => {
                 // No stream written; treat as empty stream located just after the asset region.
-                let stream_offset = self.inner.seek(SeekFrom::Current(0))?;
+                let stream_offset = self.inner.stream_position()?;
                 self.header.stream_offset = stream_offset;
                 // CRC32C of an empty byte sequence is 0x00000000.
                 self.header.stream_checksum = 0;
@@ -765,7 +765,7 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
 
         for prepared in encoded {
             let enc = prepared.encoded_asset;
-            let payload_offset = self.inner.seek(SeekFrom::Current(0))?;
+            let payload_offset = self.inner.stream_position()?;
             self.inner.write_all(&enc.bytes)?;
             new_entries.push(BendlDirectoryEntry {
                 asset_type: prepared.asset_type,
@@ -778,7 +778,7 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
         }
 
         // Write the new directory at the new EOF.
-        let new_directory_offset = self.inner.seek(SeekFrom::Current(0))?;
+        let new_directory_offset = self.inner.stream_position()?;
         let directory_bytes = encode_directory(&new_entries).map_err(BendlWriteError::Format)?;
         self.inner.write_all(&directory_bytes)?;
         let new_directory_len = directory_bytes.len() as u64;

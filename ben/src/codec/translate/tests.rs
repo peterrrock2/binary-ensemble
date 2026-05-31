@@ -75,9 +75,8 @@ fn test_simple_translation_ben32_to_ben() {
     let mut output: Vec<u8> = Vec::new();
     let mut writer = &mut output;
 
-    if let Err(_) = translate_ben32_to_ben_file(&mut reader, &mut writer) {
-        assert!(false)
-    }
+    translate_ben32_to_ben_file(&mut reader, &mut writer)
+        .expect("ben32-to-ben translation should succeed");
 
     let mut buffer: Vec<u8> = Vec::new();
     let writer2 = &mut buffer;
@@ -129,9 +128,8 @@ fn test_random_translation_ben32_to_ben() {
     let mut output: Vec<u8> = Vec::new();
     let mut writer = &mut output;
 
-    if let Err(_) = translate_ben32_to_ben_file(&mut reader, &mut writer) {
-        assert!(false)
-    }
+    translate_ben32_to_ben_file(&mut reader, &mut writer)
+        .expect("ben32-to-ben translation should succeed");
 
     let mut buffer: Vec<u8> = Vec::new();
     let writer2 = &mut buffer;
@@ -167,10 +165,8 @@ fn test_simple_translation_ben_to_ben32() {
     let mut output: Vec<u8> = Vec::new();
     let mut writer = &mut output;
 
-    if let Err(e) = translate_ben_to_ben32_file(&mut reader, &mut writer) {
-        eprintln!("{:?}", e);
-        assert!(false)
-    }
+    translate_ben_to_ben32_file(&mut reader, &mut writer)
+        .expect("ben-to-ben32 translation should succeed");
 
     let mut buffer: Vec<u8> = Vec::new();
     let writer2 = &mut buffer;
@@ -222,9 +218,8 @@ fn test_random_translation_ben_to_ben32() {
     let mut output: Vec<u8> = Vec::new();
     let mut writer = &mut output;
 
-    if let Err(_) = translate_ben_to_ben32_file(&mut reader, &mut writer) {
-        assert!(false)
-    }
+    translate_ben_to_ben32_file(&mut reader, &mut writer)
+        .expect("ben-to-ben32 translation should succeed");
 
     let mut buffer: Vec<u8> = Vec::new();
     let writer2 = &mut buffer;

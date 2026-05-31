@@ -537,7 +537,7 @@ fn bundle_ben_stream_round_trips_through_assignment_reader() {
         .silent(true)
         .flat_map(|r| {
             let (assign, count) = r.unwrap();
-            std::iter::repeat(assign).take(count as usize)
+            std::iter::repeat_n(assign, count as usize)
         })
         .collect();
     assert_eq!(decoded, samples);
@@ -579,7 +579,7 @@ fn bundle_xben_stream_round_trips_through_assignment_reader() {
         .silent(true)
         .flat_map(|r| {
             let (assign, count) = r.unwrap();
-            std::iter::repeat(assign).take(count as usize)
+            std::iter::repeat_n(assign, count as usize)
         })
         .collect();
     assert_eq!(decoded, samples);
@@ -626,7 +626,7 @@ fn bundle_ben_stream_alongside_front_loaded_asset() {
         .silent(true)
         .flat_map(|r| {
             let (assign, count) = r.unwrap();
-            std::iter::repeat(assign).take(count as usize)
+            std::iter::repeat_n(assign, count as usize)
         })
         .collect();
     assert_eq!(decoded, samples);
@@ -1419,12 +1419,12 @@ fn make_ben_stream_bundle(count: usize) -> (Vec<u8>, Vec<Vec<u16>>) {
 }
 
 /// Corrupt the stored `stream_checksum` field in-place by flipping a byte at header offset 20.
-fn corrupt_stream_checksum(bytes: &mut Vec<u8>) {
+fn corrupt_stream_checksum(bytes: &mut [u8]) {
     bytes[20] ^= 0xFF;
 }
 
 /// Flip a byte in the stream payload to corrupt the stream contents without changing its length.
-fn corrupt_stream_payload(bytes: &mut Vec<u8>, reader: &mut BendlReader<Cursor<Vec<u8>>>) {
+fn corrupt_stream_payload(bytes: &mut [u8], reader: &mut BendlReader<Cursor<Vec<u8>>>) {
     let (offset, len) = reader.assignment_stream_range().unwrap();
     assert!(
         len > 0,
@@ -1688,7 +1688,7 @@ fn bundle_with_reserved_asset_flag_bit() -> (Vec<u8>, u16) {
     const RESERVED_BIT_7: u16 = 1 << 7;
     let payload = b"forward-compat asset".to_vec();
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
     let payload_offset = bytes.len() as u64;
     bytes.extend_from_slice(&payload);
 
@@ -1887,8 +1887,7 @@ fn writer_failed_asset_write_does_not_poison_registry() {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             if !self.failed && self.inner.position() >= HEADER_SIZE as u64 {
                 self.failed = true;
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                return Err(std::io::Error::other(
                     "simulated payload write failure",
                 ));
             }

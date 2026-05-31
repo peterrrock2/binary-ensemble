@@ -284,7 +284,7 @@ fn ben_decoder_rejects_xz_data_with_helpful_message() {
 #[test]
 fn ben_decoder_standard_single_assignment_round_trip() {
     let assignment = vec![1u16, 1, 2, 3, 3, 3];
-    let ben = encode_standard_ben(&[assignment.clone()]);
+    let ben = encode_standard_ben(std::slice::from_ref(&assignment));
 
     let mut decoder = BenStreamReader::from_ben(ben.as_slice()).unwrap();
     let (decoded, count) = decoder.next().unwrap().unwrap();
@@ -501,8 +501,7 @@ fn ben_encoder_finish_is_idempotent() {
         let mut enc = BenStreamWriter::for_ben(&mut out, BenVariant::MkvChain).unwrap();
         enc.write_assignment(vec![1u16, 2]).unwrap();
         enc.finish().unwrap();
-        let len_after_first_finish = enc.finish().unwrap(); // second call
-        let _ = len_after_first_finish;
+        enc.finish().unwrap(); // second call
     }
     // The output should decode to exactly one sample (not duplicated).
     let mut decoded = Vec::new();
@@ -638,7 +637,7 @@ fn encode_ben_vec_from_assign_and_rle_are_equivalent() {
 
 #[test]
 fn encode_ben_vec_from_assign_single_element() {
-    let frame = BenEncodeFrame::from_assignment(&[42u16], BenVariant::Standard, None);
+    let frame = BenEncodeFrame::from_assignment([42u16], BenVariant::Standard, None);
     assert!(!frame.as_slice().is_empty());
 }
 
@@ -1136,7 +1135,7 @@ fn encode_and_decode_empty_assignment_standard() {
 #[test]
 fn encode_and_decode_max_u16_values_standard() {
     let assignment = vec![0u16, 65535, 32768, 1, 65534];
-    let ben = encode_standard_ben(&[assignment.clone()]);
+    let ben = encode_standard_ben(std::slice::from_ref(&assignment));
     let decoded_str = decode_ben_to_string(&ben);
     assert!(
         decoded_str.contains("\"assignment\":[0,65535,32768,1,65534]"),
@@ -1151,7 +1150,7 @@ fn encode_and_decode_max_u16_values_standard() {
 #[test]
 fn single_sample_standard_round_trip() {
     let assignment = vec![42u16; 1000];
-    let ben = encode_standard_ben(&[assignment.clone()]);
+    let ben = encode_standard_ben(std::slice::from_ref(&assignment));
     let decoded_str = decode_ben_to_string(&ben);
     assert_eq!(decoded_str.lines().count(), 1);
     assert!(decoded_str.contains("\"sample\":1"));
@@ -1395,7 +1394,7 @@ fn relabel_ben_file_standard_is_idempotent() {
 #[test]
 fn single_unique_label_assignment_round_trips() {
     let assignment = vec![42u16; 50];
-    let ben = encode_standard_ben(&[assignment.clone()]);
+    let ben = encode_standard_ben(std::slice::from_ref(&assignment));
     let decoded_str = decode_ben_to_string(&ben);
     assert!(
         decoded_str.contains("\"assignment\":[42,42,42"),
@@ -1427,7 +1426,7 @@ fn single_unique_label_relabeled_to_one() {
 fn encode_decode_max_run_length_standard() {
     // A run of 65535 identical values.
     let assignment = vec![7u16; 65535];
-    let ben = encode_standard_ben(&[assignment.clone()]);
+    let ben = encode_standard_ben(std::slice::from_ref(&assignment));
 
     let decoded_str = decode_ben_to_string(&ben);
     assert!(decoded_str.contains("\"sample\":1"));
@@ -1447,7 +1446,7 @@ fn encode_decode_max_run_length_standard() {
 fn ben_variant_clone_and_copy() {
     let v = BenVariant::MkvChain;
     let v2 = v; // Copy
-    let v3 = v.clone(); // Clone
+    let v3 = v; // Clone
     assert_eq!(v2, v3);
     assert_eq!(v, BenVariant::MkvChain);
 }
@@ -1465,7 +1464,7 @@ fn ben_variant_debug() {
 #[test]
 fn ben_decoder_accepts_cursor_reader() {
     let assignment = vec![1u16, 2, 3];
-    let ben = encode_standard_ben(&[assignment.clone()]);
+    let ben = encode_standard_ben(std::slice::from_ref(&assignment));
     let cursor = Cursor::new(ben);
     let mut decoder = BenStreamReader::from_ben(cursor).unwrap().silent(true);
     let (decoded, _) = decoder.next().unwrap().unwrap();
@@ -1555,7 +1554,7 @@ fn encode_ben_frame_from_assignment() {
     let assignment = vec![1u16, 1, 2, 2, 3];
     let frame = BenEncodeFrame::from_assignment(&assignment, BenVariant::Standard, None);
     // Frame from assignment should produce runs
-    let runs = &frame.runs().unwrap()[..];
+    let runs = frame.runs().unwrap();
     assert_eq!(runs, &[(1u16, 2u16), (2u16, 2u16), (3u16, 1u16)]);
 }
 

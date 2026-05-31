@@ -25,9 +25,7 @@ pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io:
 
     let mut first_buffer = [0u8; BANNER_LEN];
 
-    if let Err(e) = decoder.read_exact(&mut first_buffer) {
-        return Err(e);
-    }
+    decoder.read_exact(&mut first_buffer)?;
 
     let variant: XBenVariant = match variant_from_banner(&first_buffer) {
         Some(BenVariant::Standard) => {

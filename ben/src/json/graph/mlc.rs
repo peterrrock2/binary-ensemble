@@ -88,11 +88,9 @@ impl MlcProgress {
 
     fn refresh(&self, depth: usize) {
         let depth_bar = &self.depths[depth];
-        let percent_complete = if depth_bar.total == 0 {
-            0
-        } else {
-            depth_bar.done * 100 / depth_bar.total
-        };
+        let percent_complete = (depth_bar.done * 100)
+            .checked_div(depth_bar.total)
+            .unwrap_or(0);
         depth_bar.bar.set_message(format!(
             "MLC phase {}: {}/{} {} ({}%)",
             depth + 1,

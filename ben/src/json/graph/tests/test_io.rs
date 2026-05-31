@@ -476,12 +476,12 @@ fn petx_to_nx_node_restores_id() {
     let petx = PetxNode {
         attrs: BTreeMap::from([
             ("__networkx_id__".into(), json!("node_a")),
-            ("weight".into(), json!(3.14)),
+            ("weight".into(), json!(1.5)),
         ]),
     };
     let nx = petx_node_to_nx_node(&petx).unwrap();
     assert_eq!(nx.id, json!("node_a"));
-    assert_eq!(nx.attrs.get("weight"), Some(&json!(3.14)));
+    assert_eq!(nx.attrs.get("weight"), Some(&json!(1.5)));
     assert!(!nx.attrs.contains_key("__networkx_id__"));
 }
 

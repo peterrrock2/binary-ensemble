@@ -576,8 +576,7 @@ fn xz_reader_for_each_assignment_callback_error_propagates() {
     let mut reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let err = reader
         .for_each_assignment(|_assignment, _count| {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(std::io::Error::other(
                 "callback failed",
             ))
         })
@@ -591,7 +590,7 @@ fn xz_reader_for_each_assignment_callback_error_propagates() {
 #[test]
 fn xz_reader_large_assignment_roundtrip() {
     let big_assign: Vec<u16> = (1..=1000).collect();
-    let xben = make_xben_from_assignments(&[big_assign.clone()], BenVariant::Standard);
+    let xben = make_xben_from_assignments(std::slice::from_ref(&big_assign), BenVariant::Standard);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
     assert_eq!(results.len(), 1);
@@ -783,11 +782,11 @@ fn xz_twodelta_chunk_boundary_roundtrip() {
     let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
     assert_eq!(results.len(), 21);
     assert_eq!(results[0], anchor);
-    for i in 1..=20 {
+    for (i, sample) in results.iter().enumerate().skip(1) {
         if i % 2 == 1 {
-            assert_eq!(results[i], delta);
+            assert_eq!(*sample, delta);
         } else {
-            assert_eq!(results[i], anchor);
+            assert_eq!(*sample, anchor);
         }
     }
 }

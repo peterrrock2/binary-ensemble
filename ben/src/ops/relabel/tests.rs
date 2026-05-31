@@ -26,12 +26,12 @@ impl Read for ErrorAfterOneByte {
     }
 }
 
-fn shuffle_with_mapping<T>(vec: &mut Vec<T>) -> HashMap<usize, usize>
+fn shuffle_with_mapping<T>(vec: &mut [T]) -> HashMap<usize, usize>
 where
     T: Clone + std::cmp::PartialEq,
 {
     let mut rng = ChaCha8Rng::seed_from_u64(42);
-    let original_vec = vec.clone();
+    let original_vec = vec.to_vec();
     vec.shuffle(&mut rng);
 
     let mut map = HashMap::new();
@@ -318,7 +318,7 @@ fn test_relabel_ben_line_with_large_shuffle() {
         .collect::<Vec<u16>>();
     let mut out_assign = in_assign.clone();
 
-    let in_rle = assign_to_rle(in_assign.to_vec());
+    let in_rle = assign_to_rle(&in_assign);
     let input = BenEncodeFrame::from_rle(in_rle, BenVariant::Standard, None);
 
     let new_to_old_map = shuffle_with_mapping(&mut out_assign);
@@ -1231,8 +1231,8 @@ fn run_policy_pins_frame_preservation_and_collapse() {
     {
         let banner = crate::format::banners::MKVCHAIN_BEN_BANNER;
         input.extend_from_slice(banner);
-        let frame_a = BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(5));
-        let frame_b = BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(7));
+        let frame_a = BenEncodeFrame::from_assignment([1u16, 2, 3], BenVariant::MkvChain, Some(5));
+        let frame_b = BenEncodeFrame::from_assignment([1u16, 2, 3], BenVariant::MkvChain, Some(7));
         input.extend_from_slice(frame_a.as_slice());
         input.extend_from_slice(frame_b.as_slice());
     }
@@ -1307,8 +1307,8 @@ fn standard_target_cross_policy_byte_identity() {
     {
         let banner = crate::format::banners::MKVCHAIN_BEN_BANNER;
         input.extend_from_slice(banner);
-        let frame_a = BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(5));
-        let frame_b = BenEncodeFrame::from_assignment(&[1u16, 2, 3], BenVariant::MkvChain, Some(7));
+        let frame_a = BenEncodeFrame::from_assignment([1u16, 2, 3], BenVariant::MkvChain, Some(5));
+        let frame_b = BenEncodeFrame::from_assignment([1u16, 2, 3], BenVariant::MkvChain, Some(7));
         input.extend_from_slice(frame_a.as_slice());
         input.extend_from_slice(frame_b.as_slice());
     }

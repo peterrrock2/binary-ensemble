@@ -234,7 +234,7 @@ fn run_inspect_unknown_format_and_no_sample_count() {
     header[56..64].copy_from_slice(&sample_count.to_le_bytes());
 
     let path = unique_path("inspect_unknown.bendl");
-    std::fs::write(&path, &header).unwrap();
+    std::fs::write(&path, header).unwrap();
     run_inspect(InspectArgs {
         input: path.clone(),
     })

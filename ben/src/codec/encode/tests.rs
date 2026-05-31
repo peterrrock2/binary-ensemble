@@ -1,3 +1,8 @@
+// Binary literals here are grouped by BEN bit-field boundaries (e.g. `0b01100_100` is a 5-bit
+// value followed by a 3-bit value), not by even nibbles, so the grouping documents the packed
+// layout under test.
+#![allow(clippy::unusual_byte_groupings)]
+
 use super::*;
 use crate::codec::frames::BenEncodeFrame;
 use crate::util::rle::rle_to_vec;
@@ -1365,7 +1370,7 @@ fn mkvchain_round_trip_with_label_zero() {
         .silent(true)
         .flat_map(|r| {
             let (a, c) = r.unwrap();
-            std::iter::repeat(a).take(c as usize)
+            std::iter::repeat_n(a, c as usize)
         })
         .collect();
     assert_eq!(decoded, assignments);
@@ -1414,7 +1419,7 @@ fn twodelta_round_trip_with_label_zero_pairs() {
             .silent(true)
             .flat_map(|r| {
                 let (a, c) = r.unwrap();
-                std::iter::repeat(a).take(c as usize)
+                std::iter::repeat_n(a, c as usize)
             })
             .collect();
         assert_eq!(
@@ -1450,7 +1455,7 @@ fn twodelta_round_trip_all_zero_assignment() {
         .silent(true)
         .flat_map(|r| {
             let (a, c) = r.unwrap();
-            std::iter::repeat(a).take(c as usize)
+            std::iter::repeat_n(a, c as usize)
         })
         .collect();
     assert_eq!(decoded, assignments);
@@ -1485,7 +1490,7 @@ fn assert_ben_round_trip(assignment: Vec<u16>, variant: BenVariant) {
         .silent(true)
         .flat_map(|r| {
             let (a, c) = r.unwrap();
-            std::iter::repeat(a).take(c as usize)
+            std::iter::repeat_n(a, c as usize)
         })
         .collect();
     let expected = if matches!(variant, BenVariant::TwoDelta) {

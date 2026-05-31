@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn io_source_propagates() {
         use std::error::Error;
-        let original = io::Error::new(io::ErrorKind::Other, "deep");
+        let original = io::Error::other("deep");
         let cli = CliError::Io(original);
         assert!(cli.source().is_some());
     }

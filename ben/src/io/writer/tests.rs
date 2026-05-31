@@ -6,11 +6,11 @@ use xz2::write::XzEncoder;
 
 /// Build a `BenStreamWriter` over an explicit single-thread XZ encoder so the resulting xben byte
 /// stream is deterministic and small.
-fn build_xben_writer<'a>(
-    out: &'a mut Vec<u8>,
+fn build_xben_writer(
+    out: &mut Vec<u8>,
     variant: BenVariant,
     chunk_size: Option<usize>,
-) -> BenStreamWriter<&'a mut Vec<u8>> {
+) -> BenStreamWriter<&mut Vec<u8>> {
     let encoder = XzEncoder::new(out, 1);
     BenStreamWriter::for_xben_with_encoder(encoder, variant, chunk_size).unwrap()
 }
@@ -162,7 +162,7 @@ fn assert_ben_round_trip(assignments: &[Vec<u16>], variant: BenVariant) {
         .silent(true)
         .flat_map(|r| {
             let (a, c) = r.unwrap();
-            std::iter::repeat(a).take(c as usize)
+            std::iter::repeat_n(a, c as usize)
         })
         .collect();
     assert_eq!(
@@ -186,7 +186,7 @@ fn assert_xben_round_trip(assignments: &[Vec<u16>], variant: BenVariant) {
         .silent(true)
         .flat_map(|r| {
             let (a, c) = r.unwrap();
-            std::iter::repeat(a).take(c as usize)
+            std::iter::repeat_n(a, c as usize)
         })
         .collect();
     assert_eq!(
@@ -232,7 +232,7 @@ fn writer_ben_one_sample_round_trip_per_variant() {
         BenVariant::MkvChain,
         BenVariant::TwoDelta,
     ] {
-        assert_ben_round_trip(&[assignment.clone()], variant);
+        assert_ben_round_trip(std::slice::from_ref(&assignment), variant);
     }
 }
 
@@ -247,7 +247,7 @@ fn writer_xben_one_sample_round_trip_per_variant() {
         BenVariant::MkvChain,
         BenVariant::TwoDelta,
     ] {
-        assert_xben_round_trip(&[assignment.clone()], variant);
+        assert_xben_round_trip(std::slice::from_ref(&assignment), variant);
     }
 }
 
@@ -302,7 +302,7 @@ fn writer_twodelta_chunk_boundary_off_by_one_grid() {
             let decoded: Vec<Vec<u16>> = reader
                 .flat_map(|r| {
                     let (a, count) = r.unwrap();
-                    std::iter::repeat(a).take(count as usize)
+                    std::iter::repeat_n(a, count as usize)
                 })
                 .collect();
             assert_eq!(
@@ -1011,7 +1011,7 @@ fn for_xben_top_level_constructor_round_trips_per_variant() {
             .silent(true)
             .flat_map(|r| {
                 let (a, c) = r.unwrap();
-                std::iter::repeat(a).take(c as usize)
+                std::iter::repeat_n(a, c as usize)
             })
             .collect();
         assert_eq!(decoded, vec![assignment.clone()], "variant={variant:?}");

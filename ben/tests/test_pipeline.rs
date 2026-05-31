@@ -245,7 +245,7 @@ fn test_xben_pipeline() {
         .to_string()
             + "\n";
 
-        sample_writer.write_all(&line.as_bytes()).unwrap();
+        sample_writer.write_all(line.as_bytes()).unwrap();
     }
     eprintln!();
 

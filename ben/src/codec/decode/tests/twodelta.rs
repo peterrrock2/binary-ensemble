@@ -1,3 +1,8 @@
+// Binary literals here are grouped by BEN bit-field boundaries (e.g. `0b01100_100` is a 5-bit
+// value followed by a 3-bit value), not by even nibbles, so the grouping documents the packed
+// layout under test.
+#![allow(clippy::unusual_byte_groupings)]
+
 use crate::codec::decode::{
     apply_twodelta_runs_to_assignment, decode_ben_to_jsonl, decode_twodelta_frame,
     decode_xben_to_jsonl,
@@ -480,7 +485,7 @@ fn decode_ben_to_jsonl_three_frames_byte_level() {
 #[test]
 fn decode_xben_to_jsonl_twodelta_anchor_only() {
     let anchor = vec![1u16, 2, 1, 2];
-    let ben = make_twodelta_ben(&[anchor.clone()]);
+    let ben = make_twodelta_ben(std::slice::from_ref(&anchor));
     let mut xben = Vec::new();
     encode_ben_to_xben(
         BufReader::new(ben.as_slice()),

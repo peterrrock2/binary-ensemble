@@ -214,7 +214,7 @@ impl<R: Read + Seek> BendlReader<R> {
         &mut self,
     ) -> Result<BendlVerifiedStreamReader<'_, R>, BendlReadError> {
         let expected = self.require_stream_checksum()?;
-        let format = self.assignment_format().ok_or_else(|| {
+        let format = self.assignment_format().ok_or({
             BendlReadError::Format(BendlFormatError::UnknownAssignmentFormat(
                 self.header.assignment_format,
             ))
@@ -242,7 +242,7 @@ impl<R: Read + Seek> BendlReader<R> {
     where
         R: Send,
     {
-        let format = self.assignment_format().ok_or_else(|| {
+        let format = self.assignment_format().ok_or({
             BendlReadError::Format(BendlFormatError::UnknownAssignmentFormat(
                 self.header.assignment_format,
             ))

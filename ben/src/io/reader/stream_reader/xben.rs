@@ -14,10 +14,10 @@ use crate::BenVariant;
 ///
 /// Scans `overflow` for a four-byte zero sentinel that terminates a ben32 frame and, for MkvChain
 /// streams, reads the trailing repetition count.
-pub(super) fn pop_frame_from_overflow<'a>(
+pub(super) fn pop_frame_from_overflow(
     variant: BenVariant,
-    overflow: &'a [u8],
-) -> Option<(&'a [u8], usize, u16)> {
+    overflow: &[u8],
+) -> Option<(&[u8], usize, u16)> {
     if variant == BenVariant::Standard {
         if overflow.len() < 4 {
             return None;
@@ -48,10 +48,12 @@ pub(super) fn pop_frame_from_overflow<'a>(
     }
 }
 
+/// A TwoDelta frame popped from the overflow buffer: its `(value, run_length)` pairs, the number of
+/// overflow bytes the frame consumed, and its repetition count.
+type PoppedTwoDeltaFrame = (Vec<(u16, u16)>, usize, u16);
+
 /// Try to extract one complete TwoDelta frame from the buffered overflow.
-fn pop_twodelta_frame_from_overflow(
-    overflow: &[u8],
-) -> Option<io::Result<(Vec<(u16, u16)>, usize, u16)>> {
+fn pop_twodelta_frame_from_overflow(overflow: &[u8]) -> Option<io::Result<PoppedTwoDeltaFrame>> {
     let tag = *overflow.first()?;
     match tag {
         XBEN_TWODELTA_FULL_TAG => {
@@ -140,7 +142,7 @@ fn try_parse_twodelta_chunk<R: Read>(inner: &mut XBenInner<R>) -> bool {
     let run_data_start = run_counts_start + run_counts_len;
 
     let mut run_cursor = run_data_start;
-    for i in 0..n_frames {
+    for (i, &rc) in run_counts.iter().enumerate() {
         let po = pairs_start + i * 4;
         let pair = (
             u16::from_be_bytes([inner.overflow[po], inner.overflow[po + 1]]),
@@ -149,7 +151,6 @@ fn try_parse_twodelta_chunk<R: Read>(inner: &mut XBenInner<R>) -> bool {
         let co = counts_start + i * 2;
         let count = u16::from_be_bytes([inner.overflow[co], inner.overflow[co + 1]]);
 
-        let rc = run_counts[i];
         let mut run_lengths = Vec::with_capacity(rc);
         for _ in 0..rc {
             run_lengths.push(u16::from_be_bytes([

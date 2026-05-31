@@ -75,11 +75,10 @@ pub(crate) fn encode_twodelta_frame_with_hint(
         }));
     }
 
-    if delta_pair.is_some() {
+    if let Some(pair) = delta_pair {
         if previous_masks.is_none() {
             return Err(Error::from(EncodeError::TwoDeltaHintWithoutMasks));
         }
-        let pair = delta_pair.unwrap();
         if pair.0 == pair.1 {
             return Err(Error::from(EncodeError::TwoDeltaIdenticalPairHint {
                 value: pair.0,
@@ -377,7 +376,7 @@ fn construct_twodelta_frame_from_mask_hint(
         }
     }
 
-    return Err(Error::from(EncodeError::TwoDeltaIdentical));
+    Err(Error::from(EncodeError::TwoDeltaIdentical))
 }
 
 /// Build a TwoDelta frame by scanning both assignment vectors from scratch, with no hints from the

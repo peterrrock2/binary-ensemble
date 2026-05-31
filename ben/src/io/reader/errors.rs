@@ -32,7 +32,7 @@ fn to_hex(bytes: &[u8]) -> String {
 }
 
 /// Format an `InvalidFileFormat` byte header into a human-readable error message.
-fn format_invalid_file_format(header: &Vec<u8>) -> String {
+fn format_invalid_file_format(header: &[u8]) -> String {
     if is_xz_header(header) {
         format!(
             "Invalid file format: Compressed header detected (hex: {}). \

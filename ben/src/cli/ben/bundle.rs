@@ -16,15 +16,14 @@ use std::path::Path;
 pub(super) fn append_graph_asset(out_path: &str, graph_path: &Path) -> Result<()> {
     eprintln!("Adding graph...");
     let graph_bytes = std::fs::read(graph_path).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
+        io::Error::other(
             format!("failed to read graph {graph_path:?}: {e}"),
         )
     })?;
 
     let file = OpenOptions::new().read(true).write(true).open(out_path)?;
     let mut appender = BendlAppender::open(file)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+        .map_err(|e| io::Error::other(format!("{e}")))?;
     appender
         .add_asset(
             ASSET_TYPE_GRAPH,
@@ -33,14 +32,13 @@ pub(super) fn append_graph_asset(out_path: &str, graph_path: &Path) -> Result<()
             AddAssetOptions::defaults().json(),
         )
         .map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("failed to add graph asset: {e}"),
             )
         })?;
     appender
         .commit()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+        .map_err(|e| io::Error::other(format!("{e}")))?;
     Ok(())
 }
 
@@ -55,8 +53,7 @@ pub(super) fn run_encode_bundle_with_graph(
     // Validate the graph file is readable before we do any real work, so a bad --graph path doesn't
     // leave a half-written bundle behind.
     std::fs::metadata(graph_path).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
+        io::Error::other(
             format!("failed to stat graph {graph_path:?}: {e}"),
         )
     })?;
@@ -65,10 +62,10 @@ pub(super) fn run_encode_bundle_with_graph(
 
     let out_file = File::create(out_path)?;
     let bendl_writer = BendlWriter::new(out_file, AssignmentFormat::Ben)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+        .map_err(|e| io::Error::other(format!("{e}")))?;
     let mut session = bendl_writer
         .into_stream_session()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+        .map_err(|e| io::Error::other(format!("{e}")))?;
     {
         let reader = BufReader::new(File::open(input_path)?);
         encode_jsonl_to_ben(reader, &mut session, variant)?;
@@ -76,7 +73,7 @@ pub(super) fn run_encode_bundle_with_graph(
     let bendl_writer = session.finish_into_writer(sample_count);
     bendl_writer
         .finish()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+        .map_err(|e| io::Error::other(format!("{e}")))?;
 
     append_graph_asset(out_path, graph_path)
 }
@@ -96,8 +93,7 @@ pub(super) fn run_xencode_bundle_with_graph(
     graph_path: &Path,
 ) -> Result<()> {
     std::fs::metadata(graph_path).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
+        io::Error::other(
             format!("failed to stat graph {graph_path:?}: {e}"),
         )
     })?;
@@ -110,10 +106,10 @@ pub(super) fn run_xencode_bundle_with_graph(
 
     let out_file = File::create(out_path)?;
     let bendl_writer = BendlWriter::new(out_file, AssignmentFormat::Xben)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+        .map_err(|e| io::Error::other(format!("{e}")))?;
     let mut session = bendl_writer
         .into_stream_session()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+        .map_err(|e| io::Error::other(format!("{e}")))?;
     {
         let reader = BufReader::new(File::open(input_path)?);
         if from_ben {
@@ -140,7 +136,7 @@ pub(super) fn run_xencode_bundle_with_graph(
     let bendl_writer = session.finish_into_writer(sample_count);
     bendl_writer
         .finish()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e}")))?;
+        .map_err(|e| io::Error::other(format!("{e}")))?;
 
     append_graph_asset(out_path, graph_path)
 }
