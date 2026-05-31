@@ -140,16 +140,7 @@ impl<R: Read> Read for ShortRangeAwareReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self.inner.read(buf) {
             Ok(n) => Ok(n),
-            Err(e) => {
-                if self.short_flag.get() {
-                    Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        ShortRangeMarker { remaining: 0 },
-                    ))
-                } else {
-                    Err(e)
-                }
-            }
+            Err(e) => Err(override_if_short(&self.short_flag, e)),
         }
     }
 }
@@ -206,6 +197,43 @@ pub(crate) fn crc_mismatch_error(
             expected,
         },
     )
+}
+
+/// Build the bundle-layer short-range EOF error used whenever a wrapper above a codec detects (via
+/// the shared [`ShortRangeFlag`]) that the backing range ended early but the codec reported its own
+/// error instead. The exact remaining count is unknown at this layer, so it is reported as zero; a
+/// raw [`ExactLen`] short read that survives untouched still carries the precise count in its own
+/// [`ShortRangeMarker`].
+pub(crate) fn short_range_eof() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::UnexpectedEof,
+        ShortRangeMarker { remaining: 0 },
+    )
+}
+
+/// If `flag` fired, replace `err` with a bundle-layer [`short_range_eof`]; otherwise pass `err`
+/// through unchanged. Centralizes the "codec swallowed the short read in favor of its own error"
+/// rewrite shared by every reader that sits above an [`ExactLen`].
+pub(crate) fn override_if_short(flag: &ShortRangeFlag, err: io::Error) -> io::Error {
+    if flag.get() {
+        short_range_eof()
+    } else {
+        err
+    }
+}
+
+/// Compare a finalized stream CRC32C against the stored value, mapping a mismatch to the standard
+/// `InvalidData`/[`ChecksumError::Mismatch`] error used across every stream verify path.
+fn check_stream_crc(computed: u32, expected: u32) -> io::Result<()> {
+    if computed == expected {
+        Ok(())
+    } else {
+        Err(crc_mismatch_error(
+            ChecksumTarget::Stream,
+            computed,
+            expected,
+        ))
+    }
 }
 
 /// CRC accumulator that sits between a byte source and its consumer. It never substitutes an error
@@ -334,13 +362,8 @@ impl<S: Read + CrcSource> Read for VerifyingReader<S> {
                     .is_some_and(|inner| inner.is::<ShortRangeMarker>())
                 {
                     Err(e)
-                } else if self.short_flag.get() {
-                    Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        ShortRangeMarker { remaining: 0 },
-                    ))
                 } else {
-                    Err(e)
+                    Err(override_if_short(&self.short_flag, e))
                 }
             }
         }
@@ -432,10 +455,7 @@ impl<'a, R: Read + Seek> BendlVerifiedStreamReader<'a, R> {
             Ok(inner) => inner,
             Err(e) => {
                 if short_flag.get() {
-                    return Err(BendlReadError::Io(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        ShortRangeMarker { remaining: 0 },
-                    )));
+                    return Err(BendlReadError::Io(short_range_eof()));
                 }
                 return Err(e);
             }
@@ -469,29 +489,13 @@ impl<'a, R: Read + Seek> BendlVerifiedStreamReader<'a, R> {
     /// `InvalidData` error. Called by the consuming methods after they have driven the decoder to
     /// raw EOF.
     fn finalize_checksum(&self) -> io::Result<()> {
-        let computed = self.arc_hasher.load(Ordering::Relaxed);
-        if computed == self.expected {
-            Ok(())
-        } else {
-            Err(crc_mismatch_error(
-                ChecksumTarget::Stream,
-                computed,
-                self.expected,
-            ))
-        }
+        check_stream_crc(self.arc_hasher.load(Ordering::Relaxed), self.expected)
     }
 
     /// Map an error returned by a consuming inner call into the bundle-layer short-range error when
     /// the shared flag fired, otherwise pass it through.
     fn map_terminal_error(&self, e: io::Error) -> io::Error {
-        if self.short_flag.get() {
-            io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                ShortRangeMarker { remaining: 0 },
-            )
-        } else {
-            e
-        }
+        override_if_short(&self.short_flag, e)
     }
 
     /// Count the number of samples in the stream and verify the stream CRC32C.
@@ -505,26 +509,12 @@ impl<'a, R: Read + Seek> BendlVerifiedStreamReader<'a, R> {
         let arc = Arc::clone(&self.arc_hasher);
         let expected = self.expected;
         let short_flag = self.short_flag.clone();
-        let count = match self.inner.count_samples() {
-            Ok(count) => count,
-            Err(_) if short_flag.get() => {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    ShortRangeMarker { remaining: 0 },
-                ));
-            }
-            Err(e) => return Err(e),
-        };
-        let computed = arc.load(Ordering::Relaxed);
-        if computed == expected {
-            Ok(count)
-        } else {
-            Err(crc_mismatch_error(
-                ChecksumTarget::Stream,
-                computed,
-                expected,
-            ))
-        }
+        let count = self
+            .inner
+            .count_samples()
+            .map_err(|e| override_if_short(&short_flag, e))?;
+        check_stream_crc(arc.load(Ordering::Relaxed), expected)?;
+        Ok(count)
     }
 
     /// Decode assignments and pass each one to a callback by reference.
