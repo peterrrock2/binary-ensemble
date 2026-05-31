@@ -92,12 +92,16 @@ impl RelabelOptions {
         }
     }
 
+    /// Set a concrete sample limit. Convenience form for call sites that hold a plain `usize`; for
+    /// an already-optional value (e.g. a parsed CLI argument) use [`Self::with_max_samples_opt`]
+    /// instead of unwrapping.
     pub fn with_max_samples(mut self, n: usize) -> Self {
         self.max_samples = Some(n);
         self
     }
 
-    /// Set the sample limit. `Some(n)` sets the limit; `None` clears it.
+    /// Set the sample limit from an optional value: `Some(n)` sets the limit, `None` clears it. Lets
+    /// CLI argument plumbing pass an `Option<usize>` straight through.
     pub fn with_max_samples_opt(mut self, n: Option<usize>) -> Self {
         self.max_samples = n;
         self
@@ -198,8 +202,9 @@ pub fn convert_ben_file<R: Read, W: Write>(
 
 /// True when the driver may take the byte-walking RLE fast path.
 ///
-/// The predicate is one boolean computed once. See `risks` in the plan for why it is its own pure
-/// function and gets a dedicated unit-test matrix.
+/// Kept as a single pure predicate (rather than inlined into [`relabel_ben_file`]) so the exact
+/// conditions under which the fast path is safe are stated in one place and can be exhaustively
+/// covered by a dedicated unit-test matrix.
 fn can_use_first_seen_fast_path(
     transform: &RelabelTransform,
     target_variant: Option<BenVariant>,
@@ -231,58 +236,46 @@ where
     F: FnMut(&[u16]) -> io::Result<Vec<u16>>,
 {
     let mut decoder = BenStreamReader::from_ben(reader)?.silent(true);
+    let mut writer = BenStreamWriter::for_ben(writer, target_variant)?;
     let mut sample_number = 0usize;
     let spinner = Spinner::new("Relabeling line");
 
-    match run_policy {
-        RunPolicy::CollapseAdjacentEqualAssignments => {
-            let mut encoder = BenStreamWriter::for_ben(writer, target_variant)?;
-            decoder.for_each_assignment(|assignment, count| {
-                if max_samples.is_some_and(|limit| sample_number >= limit) {
-                    return Ok(false);
-                }
-
-                let relabeled = transform(assignment)?;
-                let out_count = max_samples
-                    .map(|limit| (limit - sample_number).min(count as usize))
-                    .unwrap_or(count as usize);
-
-                for _ in 1..out_count {
-                    encoder.write_assignment(relabeled.clone())?;
-                }
-                if out_count > 0 {
-                    encoder.write_assignment(relabeled)?;
-                }
-
-                sample_number += out_count;
-                spinner.set_count(sample_number as u64);
-                Ok(true)
-            })?;
-            encoder.finish()?;
+    // Both run policies share the same per-frame bookkeeping (sample limit, transform, output count,
+    // progress); they differ only in how the relabeled assignment is emitted. `out_count` is bounded
+    // by the input frame's `count` (a `u16`), so the `as u16` cast on the preserve path cannot
+    // truncate.
+    decoder.for_each_assignment(|assignment, count| {
+        if max_samples.is_some_and(|limit| sample_number >= limit) {
+            return Ok(false);
         }
-        RunPolicy::PreserveFrameBoundaries => {
-            let mut writer = BenStreamWriter::for_ben(writer, target_variant)?;
-            decoder.for_each_assignment(|assignment, count| {
-                if max_samples.is_some_and(|limit| sample_number >= limit) {
-                    return Ok(false);
+
+        let relabeled = transform(assignment)?;
+        let out_count = max_samples
+            .map(|limit| (limit - sample_number).min(count as usize))
+            .unwrap_or(count as usize);
+
+        if out_count > 0 {
+            match run_policy {
+                // Emit `out_count` separate assignments; the writer merges adjacent equal ones into
+                // a single counted frame where the target variant can encode counts.
+                RunPolicy::CollapseAdjacentEqualAssignments => {
+                    for _ in 1..out_count {
+                        writer.write_assignment(relabeled.clone())?;
+                    }
+                    writer.write_assignment(relabeled)?;
                 }
-
-                let relabeled = transform(assignment)?;
-                let out_count = max_samples
-                    .map(|limit| (limit - sample_number).min(count as usize))
-                    .unwrap_or(count as usize);
-
-                if out_count > 0 {
+                // Emit one counted frame, never merging across input frame boundaries.
+                RunPolicy::PreserveFrameBoundaries => {
                     writer.write_frame(relabeled, out_count as u16)?;
                 }
-
-                sample_number += out_count;
-                spinner.set_count(sample_number as u64);
-                Ok(true)
-            })?;
-            writer.finish()?;
+            }
         }
-    }
+
+        sample_number += out_count;
+        spinner.set_count(sample_number as u64);
+        Ok(true)
+    })?;
+    writer.finish()?;
 
     Ok(())
 }
