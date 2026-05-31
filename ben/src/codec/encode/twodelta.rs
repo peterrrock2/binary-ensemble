@@ -283,7 +283,8 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
         let previous_value = previous[idx];
         let new_val = current[idx];
 
-        if previous_value != pair.first_run_district() && previous_value != pair.second_run_district()
+        if previous_value != pair.first_run_district()
+            && previous_value != pair.second_run_district()
         {
             return Err(Error::from(EncodeError::TwoDeltaMaskOutOfPair {
                 pos: idx,

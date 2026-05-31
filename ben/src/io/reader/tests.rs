@@ -575,11 +575,7 @@ fn xz_reader_for_each_assignment_callback_error_propagates() {
     let xben = make_xben(jsonl, BenVariant::Standard);
     let mut reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let err = reader
-        .for_each_assignment(|_assignment, _count| {
-            Err(std::io::Error::other(
-                "callback failed",
-            ))
-        })
+        .for_each_assignment(|_assignment, _count| Err(std::io::Error::other("callback failed")))
         .unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::Other);
     assert_eq!(err.to_string(), "callback failed");

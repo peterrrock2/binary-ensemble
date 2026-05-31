@@ -15,15 +15,11 @@ use std::path::Path;
 /// this point.
 pub(super) fn append_graph_asset(out_path: &str, graph_path: &Path) -> Result<()> {
     eprintln!("Adding graph...");
-    let graph_bytes = std::fs::read(graph_path).map_err(|e| {
-        io::Error::other(
-            format!("failed to read graph {graph_path:?}: {e}"),
-        )
-    })?;
+    let graph_bytes = std::fs::read(graph_path)
+        .map_err(|e| io::Error::other(format!("failed to read graph {graph_path:?}: {e}")))?;
 
     let file = OpenOptions::new().read(true).write(true).open(out_path)?;
-    let mut appender = BendlAppender::open(file)
-        .map_err(|e| io::Error::other(format!("{e}")))?;
+    let mut appender = BendlAppender::open(file).map_err(|e| io::Error::other(format!("{e}")))?;
     appender
         .add_asset(
             ASSET_TYPE_GRAPH,
@@ -31,11 +27,7 @@ pub(super) fn append_graph_asset(out_path: &str, graph_path: &Path) -> Result<()
             &graph_bytes,
             AddAssetOptions::defaults().json(),
         )
-        .map_err(|e| {
-            io::Error::other(
-                format!("failed to add graph asset: {e}"),
-            )
-        })?;
+        .map_err(|e| io::Error::other(format!("failed to add graph asset: {e}")))?;
     appender
         .commit()
         .map_err(|e| io::Error::other(format!("{e}")))?;
@@ -52,11 +44,8 @@ pub(super) fn run_encode_bundle_with_graph(
 ) -> Result<()> {
     // Validate the graph file is readable before we do any real work, so a bad --graph path doesn't
     // leave a half-written bundle behind.
-    std::fs::metadata(graph_path).map_err(|e| {
-        io::Error::other(
-            format!("failed to stat graph {graph_path:?}: {e}"),
-        )
-    })?;
+    std::fs::metadata(graph_path)
+        .map_err(|e| io::Error::other(format!("failed to stat graph {graph_path:?}: {e}")))?;
 
     let sample_count = count_jsonl_lines(input_path)?;
 
@@ -92,11 +81,8 @@ pub(super) fn run_xencode_bundle_with_graph(
     block_size: Option<u64>,
     graph_path: &Path,
 ) -> Result<()> {
-    std::fs::metadata(graph_path).map_err(|e| {
-        io::Error::other(
-            format!("failed to stat graph {graph_path:?}: {e}"),
-        )
-    })?;
+    std::fs::metadata(graph_path)
+        .map_err(|e| io::Error::other(format!("failed to stat graph {graph_path:?}: {e}")))?;
 
     let sample_count: i64 = if from_ben {
         count_samples_from_file(input_path, BenWireFormat::Ben)? as i64

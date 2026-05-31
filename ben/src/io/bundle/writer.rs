@@ -340,6 +340,10 @@ impl<W: Write + Seek> BendlWriter<W> {
 
         let stream_offset = self.inner.stream_position()?;
         self.header.stream_offset = stream_offset;
+        self.inner.seek(SeekFrom::Start(0))?;
+        self.header.write_to(&mut self.inner)?;
+        self.inner.flush()?;
+        self.inner.seek(SeekFrom::Start(stream_offset))?;
 
         Ok(BendlStreamSession {
             inner: Some(self.inner),

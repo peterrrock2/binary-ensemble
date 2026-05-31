@@ -1566,9 +1566,7 @@ struct FailWhenArmed<R> {
 impl<R: Read> Read for FailWhenArmed<R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.armed.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err(std::io::Error::other(
-                "forced read failure",
-            ));
+            return Err(std::io::Error::other("forced read failure"));
         }
         self.inner.read(buf)
     }

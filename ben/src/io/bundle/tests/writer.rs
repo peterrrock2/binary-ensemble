@@ -1334,6 +1334,38 @@ fn bundle_streaming_session_drop_leaves_unfinalized() {
     );
 }
 
+#[test]
+fn dropped_stream_session_persists_recoverable_stream_offset_after_assets() {
+    let asset = b"asset-before-stream";
+    let stream = b"STANDARD BEN FILE\x00partial";
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        let mut writer = BendlWriter::new(Cursor::new(&mut buf), AssignmentFormat::Ben).unwrap();
+        writer
+            .add_custom_asset("asset.bin", asset, AddAssetOptions::defaults().raw())
+            .unwrap();
+        let mut session = writer.into_stream_session().unwrap();
+        assert_eq!(session.start_offset(), (HEADER_SIZE + asset.len()) as u64);
+        session.write_all(stream).unwrap();
+        drop(session);
+    }
+
+    let mut reader = BendlReader::open(Cursor::new(&buf)).unwrap();
+    assert!(!reader.is_finalized());
+    assert_eq!(
+        reader.header().stream_offset,
+        (HEADER_SIZE + asset.len()) as u64
+    );
+
+    let mut recovered = Vec::new();
+    reader
+        .assignment_stream_reader_unverified()
+        .unwrap()
+        .read_to_end(&mut recovered)
+        .unwrap();
+    assert_eq!(recovered, stream);
+}
+
 /// Verification #9: `BendlStreamSession::write` must increment its internal byte counter by the
 /// returned write count, not by the requested buffer length, so partial writes are accounted
 /// correctly and the finalized header's `stream_len` matches the actual byte count of the stream
@@ -1887,9 +1919,7 @@ fn writer_failed_asset_write_does_not_poison_registry() {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             if !self.failed && self.inner.position() >= HEADER_SIZE as u64 {
                 self.failed = true;
-                return Err(std::io::Error::other(
-                    "simulated payload write failure",
-                ));
+                return Err(std::io::Error::other("simulated payload write failure"));
             }
             self.inner.write(buf)
         }
