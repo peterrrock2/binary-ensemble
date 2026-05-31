@@ -694,7 +694,9 @@ fn into_stream_session_after_stream_written_returns_wrong_state() {
 #[test]
 fn stress_many_custom_assets_round_trip() {
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    let count = 500usize;
+    // Stays under MAX_DIRECTORY_ENTRIES so the directory is well-formed while still exercising the
+    // many-entry seek/round-trip paths.
+    let count = 200usize;
     for i in 0..count {
         let name = format!("blob_{i:05}");
         let payload = vec![(i & 0xFF) as u8; (i % 17) + 1];
@@ -713,7 +715,7 @@ fn stress_many_custom_assets_round_trip() {
     let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
     assert_eq!(reader.assets().len(), count);
     // Spot-check a handful of entries by reading their payload bytes back.
-    for i in [0usize, 1, 42, 199, 499] {
+    for i in [0usize, 1, 42, 150, 199] {
         let name = format!("blob_{i:05}");
         let entry = reader.find_asset_by_name(&name).cloned().unwrap();
         let got = reader.asset_bytes(&entry).unwrap();

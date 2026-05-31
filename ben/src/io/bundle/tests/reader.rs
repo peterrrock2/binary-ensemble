@@ -7,6 +7,7 @@ use crate::io::bundle::format::{
     ASSET_FLAG_CHECKSUM, ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH,
     ASSET_TYPE_METADATA, ASSET_TYPE_NODE_PERMUTATION_MAP, BENDL_MAGIC, BENDL_MAJOR_VERSION,
     BENDL_MINOR_VERSION, FINALIZED_NO, FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
+    MAX_DIRECTORY_ENTRIES,
 };
 use crate::io::bundle::reader::{validate_directory_entries, BendlReader, BundleValidationError};
 
@@ -333,13 +334,32 @@ fn open_rejects_unsupported_major_version() {
 }
 
 #[test]
-fn open_rejects_directory_with_inflated_entry_count() {
+fn open_rejects_directory_with_count_over_max() {
+    // An entry count above MAX_DIRECTORY_ENTRIES must be rejected before any allocation, so a
+    // `u32::MAX` count fails gracefully instead of aborting on a multi-gigabyte reservation.
     let mut bytes = build_basic_finalized_bundle();
     // Read directory_offset from the header (bytes 24..32).
     let directory_offset = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
-    // Blow up the entry count at the start of the directory to a value that cannot possibly fit in
-    // the remaining file bytes.
-    bytes[directory_offset..directory_offset + 4].copy_from_slice(&9999u32.to_le_bytes());
+    bytes[directory_offset..directory_offset + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+    match BendlReader::open(Cursor::new(bytes)) {
+        Err(BendlFormatError::TooManyDirectoryEntries { count, max }) => {
+            assert_eq!(count, u32::MAX as u64);
+            assert_eq!(max, MAX_DIRECTORY_ENTRIES);
+        }
+        Err(other) => panic!("expected TooManyDirectoryEntries, got {other:?}"),
+        Ok(_) => panic!("expected error, got Ok"),
+    }
+}
+
+#[test]
+fn open_rejects_directory_with_truncated_entries() {
+    // A count within the cap but larger than the directory region can supply must still fail — here
+    // it surfaces as an Io error when read_exact runs out of bytes mid-directory.
+    let mut bytes = build_basic_finalized_bundle();
+    let directory_offset = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
+    let inflated = MAX_DIRECTORY_ENTRIES - 1;
+    assert!(inflated <= MAX_DIRECTORY_ENTRIES);
+    bytes[directory_offset..directory_offset + 4].copy_from_slice(&inflated.to_le_bytes());
     match BendlReader::open(Cursor::new(bytes)) {
         Err(BendlFormatError::Io(_)) => {}
         Err(other) => panic!("expected Io, got {other:?}"),
@@ -586,11 +606,12 @@ fn validate_directory_accepts_well_formed_multi_singleton_bundle() {
 }
 
 #[test]
-fn stress_thousand_custom_assets_round_trip() {
-    // Build a directory with 1000 small custom assets, each with a unique payload derived from its
+fn stress_many_custom_assets_round_trip() {
+    // Build a directory with many small custom assets, each with a unique payload derived from its
     // index, and confirm they all round-trip via `asset_bytes`. This catches any off-by-one or
-    // seek-caching bugs that might only show up with many entries.
-    const N: usize = 1000;
+    // seek-caching bugs that might only show up with many entries. `N` stays under
+    // `MAX_DIRECTORY_ENTRIES` so the directory is well-formed.
+    const N: usize = 200;
 
     let mut bytes = Vec::new();
     bytes.extend(std::iter::repeat(0u8).take(HEADER_SIZE));
@@ -645,7 +666,7 @@ fn stress_thousand_custom_assets_round_trip() {
     assert_eq!(reader.assets().len(), N);
     reader.validate_directory().unwrap();
     // Access in scrambled order to exercise seeking.
-    for &idx in &[0usize, N - 1, 1, N / 2, N / 3, 2 * N / 3, 7, 999] {
+    for &idx in &[0usize, N - 1, 1, N / 2, N / 3, 2 * N / 3, 7, N - 2] {
         let name = format!("blob-{idx:04}.bin");
         let entry = reader.find_asset_by_name(&name).cloned().unwrap();
         let got = reader.asset_bytes(&entry).unwrap();

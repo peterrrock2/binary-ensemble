@@ -325,6 +325,20 @@ impl BendlHeader {
 /// optional `checksum` bytes.
 pub const DIRECTORY_ENTRY_HEADER_SIZE: usize = 28;
 
+/// Upper bound on the number of directory entries a single bundle may declare.
+///
+/// A real bundle carries only a handful of assets — typically `graph.json`, a node-permutation
+/// map, `metadata.json`, and at most a few small custom blobs — so this ceiling sits far above any
+/// legitimate use while keeping the worst-case directory read bounded. The assignment stream is
+/// stored outside the directory and does not count toward this limit, so a large ensemble does not
+/// push against it.
+///
+/// [`read_directory`] rejects an inflated `entry_count` against this bound **before** allocating,
+/// so a corrupt or adversarial header cannot trigger a multi-gigabyte reservation; [`encode_directory`]
+/// enforces the same bound on the write side so the library never produces a bundle it would refuse
+/// to read back.
+pub const MAX_DIRECTORY_ENTRIES: u32 = 256;
+
 /// In-memory representation of a single directory entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BendlDirectoryEntry {
@@ -458,7 +472,19 @@ pub fn read_directory<R: Read>(
 ) -> Result<Vec<BendlDirectoryEntry>, BendlFormatError> {
     let mut count_buf = [0u8; 4];
     reader.read_exact(&mut count_buf)?;
-    let entry_count = u32::from_le_bytes(count_buf) as usize;
+    let entry_count = u32::from_le_bytes(count_buf);
+
+    // Reject an inflated count before allocating: `entry_count` is untrusted on-disk data, and
+    // `Vec::with_capacity` would otherwise reserve `entry_count * size_of::<BendlDirectoryEntry>()`
+    // bytes up front — a `u32::MAX` count aborts the process on the allocation rather than failing
+    // gracefully on the missing entry bytes.
+    if entry_count > MAX_DIRECTORY_ENTRIES {
+        return Err(BendlFormatError::TooManyDirectoryEntries {
+            count: entry_count as u64,
+            max: MAX_DIRECTORY_ENTRIES,
+        });
+    }
+    let entry_count = entry_count as usize;
 
     let mut entries = Vec::with_capacity(entry_count);
     for _ in 0..entry_count {
@@ -469,6 +495,14 @@ pub fn read_directory<R: Read>(
 
 /// Serialize a directory table into a byte vector.
 pub fn encode_directory(entries: &[BendlDirectoryEntry]) -> Result<Vec<u8>, BendlFormatError> {
+    // Enforce the same ceiling the reader applies, so the library never writes a bundle it would
+    // refuse to read back.
+    if entries.len() > MAX_DIRECTORY_ENTRIES as usize {
+        return Err(BendlFormatError::TooManyDirectoryEntries {
+            count: entries.len() as u64,
+            max: MAX_DIRECTORY_ENTRIES,
+        });
+    }
     let entry_count = entries.len() as u32;
 
     let body_len: usize = entries.iter().map(|e| e.encoded_len()).sum();
@@ -516,6 +550,16 @@ pub enum BendlFormatError {
     TrailingDirectoryBytes {
         /// Number of unread bytes left in the bounded directory region.
         remaining: u64,
+    },
+
+    /// A directory declared more entries than [`MAX_DIRECTORY_ENTRIES`] allows. Rejected before any
+    /// allocation so an inflated on-disk count cannot trigger a huge reservation.
+    #[error("directory declares {count} entries, which exceeds the maximum of {max}")]
+    TooManyDirectoryEntries {
+        /// The entry count declared in the directory header (read path) or requested by the writer.
+        count: u64,
+        /// The maximum permitted entry count ([`MAX_DIRECTORY_ENTRIES`]).
+        max: u32,
     },
 
     /// A directory table violated bundle-level validation rules.
