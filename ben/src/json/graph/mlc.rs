@@ -17,11 +17,16 @@ use std::time::Duration;
 ///
 /// Spinners auto-hide when stderr is not a terminal (e.g. under `cargo test` or when output is
 /// piped), so no config is needed for CI/test environments.
+/// One recursion depth's spinner plus its running item counts.
+struct DepthBar {
+    bar: ProgressBar,
+    total: usize,
+    done: usize,
+}
+
 struct MlcProgress {
     multi: MultiProgress,
-    bars: Vec<ProgressBar>,
-    totals: Vec<usize>,
-    dones: Vec<usize>,
+    depths: Vec<DepthBar>,
 }
 
 impl MlcProgress {
@@ -29,15 +34,13 @@ impl MlcProgress {
     fn new() -> Self {
         Self {
             multi: MultiProgress::new(),
-            bars: Vec::new(),
-            totals: Vec::new(),
-            dones: Vec::new(),
+            depths: Vec::new(),
         }
     }
 
     /// Make sure a bar exists for `depth`, creating any intermediate bars that don't exist yet.
     fn ensure_depth(&mut self, depth: usize) {
-        while self.bars.len() <= depth {
+        while self.depths.len() <= depth {
             let bar = self.multi.add(ProgressBar::new_spinner());
             bar.set_style(
                 ProgressStyle::default_spinner()
@@ -45,10 +48,12 @@ impl MlcProgress {
                     .unwrap(),
             );
             bar.enable_steady_tick(Duration::from_millis(100));
-            self.bars.push(bar);
-            self.totals.push(0);
-            self.dones.push(0);
-            let d = self.bars.len() - 1;
+            self.depths.push(DepthBar {
+                bar,
+                total: 0,
+                done: 0,
+            });
+            let d = self.depths.len() - 1;
             self.refresh(d);
         }
     }
@@ -56,26 +61,29 @@ impl MlcProgress {
     /// Record that `n` more items will be processed at `depth`.
     fn add_total(&mut self, depth: usize, n: usize) {
         self.ensure_depth(depth);
-        self.totals[depth] += n;
+        self.depths[depth].total += n;
         self.refresh(depth);
     }
 
     /// Record that `n` more items at `depth` have been finalized.
     fn add_done(&mut self, depth: usize, n: usize) {
         self.ensure_depth(depth);
-        self.dones[depth] += n;
+        self.depths[depth].done += n;
         self.refresh(depth);
     }
 
     fn refresh(&self, depth: usize) {
-        let done = self.dones[depth];
-        let total = self.totals[depth];
-        let pct = if total == 0 { 0 } else { done * 100 / total };
-        self.bars[depth].set_message(format!(
+        let d = &self.depths[depth];
+        let pct = if d.total == 0 {
+            0
+        } else {
+            d.done * 100 / d.total
+        };
+        d.bar.set_message(format!(
             "MLC phase {}: {}/{} {} ({}%)",
             depth + 1,
-            done,
-            total,
+            d.done,
+            d.total,
             Self::unit_for_depth(depth),
             pct
         ));
@@ -91,12 +99,12 @@ impl MlcProgress {
 
     /// Stop all spinners, leaving a final "complete" message on each.
     fn finish(&self) {
-        for (d, bar) in self.bars.iter().enumerate() {
-            bar.finish_with_message(format!(
+        for (depth, d) in self.depths.iter().enumerate() {
+            d.bar.finish_with_message(format!(
                 "MLC phase {}: complete ({} {})",
-                d + 1,
-                self.totals[d],
-                Self::unit_for_depth(d)
+                depth + 1,
+                d.total,
+                Self::unit_for_depth(depth)
             ));
         }
     }
