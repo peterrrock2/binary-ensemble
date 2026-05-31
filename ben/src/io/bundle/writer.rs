@@ -583,6 +583,17 @@ struct PendingAsset {
     is_json: bool,
 }
 
+/// A pending asset whose payload has been encoded in memory and is ready to be written to disk.
+///
+/// One element per prepared asset — this is the output of the pure, in-memory compression phase of
+/// [`BendlAppender::commit`], carrying everything the subsequent file-mutation phase needs to write
+/// the payload and its directory entry.
+struct PreparedAppendAsset {
+    asset_type: u16,
+    asset_name: String,
+    encoded_asset: EncodedAsset,
+}
+
 impl<W: Read + Write + Seek> BendlAppender<W> {
     /// Open a finalized bundle for append.
     ///
@@ -694,6 +705,26 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
         self.add_asset(ASSET_TYPE_CUSTOM, name, payload, options)
     }
 
+    /// Phase 1 of [`Self::commit`]: drain the pending queue and encode each payload through the
+    /// shared encode path, entirely in memory.
+    ///
+    /// This is pure with respect to the file — it has no ordering constraint against the
+    /// append-only mutation in `commit`, so a failure here returns before any byte is written and
+    /// leaves the bundle untouched.
+    fn prepare_pending_assets(&mut self) -> Result<Vec<PreparedAppendAsset>, BendlWriteError> {
+        let mut prepared = Vec::with_capacity(self.pending.len());
+        for asset in self.pending.drain(..) {
+            let encoded_asset =
+                encode_asset_payload(asset.raw_payload, asset.compress, asset.is_json)?;
+            prepared.push(PreparedAppendAsset {
+                asset_type: asset.asset_type,
+                asset_name: asset.name,
+                encoded_asset,
+            });
+        }
+        Ok(prepared)
+    }
+
     /// Commit all pending appends.
     ///
     /// This compresses any buffered payloads that need it (entirely in memory), then performs the
@@ -707,14 +738,9 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
             return Ok(self.inner);
         }
 
-        // Phase 1: compress any pending payloads through the shared encode path and pair each with
-        // its identifying name/type. Done entirely in memory so failures here leave the file
-        // untouched.
-        let mut encoded: Vec<(u16, String, EncodedAsset)> = Vec::with_capacity(self.pending.len());
-        for asset in self.pending.drain(..) {
-            let enc = encode_asset_payload(asset.raw_payload, asset.compress, asset.is_json)?;
-            encoded.push((asset.asset_type, asset.name, enc));
-        }
+        // Phase 1: compress any pending payloads in memory. This has no ordering constraint against
+        // the file mutation below — a failure here leaves the file untouched.
+        let encoded = self.prepare_pending_assets()?;
 
         // Phase 2: append-only file mutation. Until the final header patch, the old header still
         // points at the old directory, which remains intact. A crash before the patch leaves the
@@ -737,13 +763,14 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
             Vec::with_capacity(self.existing_entries.len() + encoded.len());
         new_entries.extend(self.existing_entries.iter().cloned());
 
-        for (asset_type, name, enc) in encoded {
+        for prepared in encoded {
+            let enc = prepared.encoded_asset;
             let payload_offset = self.inner.seek(SeekFrom::Current(0))?;
             self.inner.write_all(&enc.bytes)?;
             new_entries.push(BendlDirectoryEntry {
-                asset_type,
+                asset_type: prepared.asset_type,
                 asset_flags: enc.asset_flags,
-                name,
+                name: prepared.asset_name,
                 payload_offset,
                 payload_len: enc.bytes.len() as u64,
                 checksum: Some(enc.checksum),

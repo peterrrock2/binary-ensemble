@@ -10,8 +10,8 @@ use binary_ensemble::codec::encode::{
 };
 use binary_ensemble::codec::BenEncodeFrame;
 use binary_ensemble::format::banners::{
-    banner_for_variant, has_known_banner_prefix, variant_from_banner,
-    MKVCHAIN_BEN_BANNER, STANDARD_BEN_BANNER, TWODELTA_BEN_BANNER,
+    banner_for_variant, has_known_banner_prefix, variant_from_banner, MKVCHAIN_BEN_BANNER,
+    STANDARD_BEN_BANNER, TWODELTA_BEN_BANNER,
 };
 use binary_ensemble::io::reader::{
     BenStreamFrameReader, BenStreamReader, DecodeFrame, DecoderInitError,

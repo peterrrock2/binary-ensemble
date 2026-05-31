@@ -303,9 +303,7 @@ def test_pybenencoder_roundtrip(tmp_path: Path) -> None:
     seq = gen_sequence_standard(rng, n_samples)
 
     ben = tmp_path / "out.ben"
-    with BenEncoder(
-        ben, overwrite=True, variant="standard", ben_file_only=True
-    ) as enc:
+    with BenEncoder(ben, overwrite=True, variant="standard", ben_file_only=True) as enc:
         for a in seq:
             enc.write(a)
 
@@ -379,7 +377,9 @@ def test_compress_helpers_reject_unknown_variants(tmp_path: Path) -> None:
         encode_jsonl_to_ben(src, tmp_path / "out.ben", overwrite=True, variant="weird")
 
     with pytest.raises(ValueError, match="Unknown variant"):
-        encode_jsonl_to_xben(src, tmp_path / "out.xben", overwrite=True, variant="weird")
+        encode_jsonl_to_xben(
+            src, tmp_path / "out.xben", overwrite=True, variant="weird"
+        )
 
 
 def test_module_exports_are_exposed() -> None:
@@ -428,9 +428,7 @@ def test_pybenencoder_defaults_and_markov_alias_work(tmp_path: Path) -> None:
 
 def test_pybenencoder_close_and_write_error_paths(tmp_path: Path) -> None:
     out = tmp_path / "out.ben"
-    enc = BenEncoder(
-        out, overwrite=True, variant="standard", ben_file_only=True
-    )
+    enc = BenEncoder(out, overwrite=True, variant="standard", ben_file_only=True)
     enc.write([1, 2, 3])
     enc.close()
     enc.close()
@@ -472,7 +470,9 @@ def test_pybenencoder_rejects_overwrite_and_unknown_variant(tmp_path: Path) -> N
         )
 
 
-def test_compress_helpers_reject_same_path_missing_input_and_bad_json(tmp_path: Path) -> None:
+def test_compress_helpers_reject_same_path_missing_input_and_bad_json(
+    tmp_path: Path,
+) -> None:
     src = tmp_path / "src.jsonl"
     write_jsonl([[1, 1, 2]], src)
 
@@ -663,7 +663,9 @@ def test_decoder_subsample_validations_and_warning_paths(tmp_path: Path) -> None
     assert list(BenDecoder(ben, mode="ben").subsample_every(2, 2)) == samples[1::2]
 
 
-def test_decoder_count_and_subsample_fail_cleanly_if_source_disappears(tmp_path: Path) -> None:
+def test_decoder_count_and_subsample_fail_cleanly_if_source_disappears(
+    tmp_path: Path,
+) -> None:
     src = tmp_path / "src.jsonl"
     write_jsonl([[1], [2], [3]], src)
 
@@ -900,9 +902,7 @@ def test_pybenencoder_bundle_graph_from_str_path(tmp_path: Path) -> None:
     gpath = tmp_path / "g2.json"
     gpath.write_text(json.dumps(graph), encoding="utf-8")
     path = tmp_path / "str_path_graph.bendl"
-    with BenEncoder(
-        path, overwrite=True, variant="standard", graph=str(gpath)
-    ) as enc:
+    with BenEncoder(path, overwrite=True, variant="standard", graph=str(gpath)) as enc:
         enc.write([1])
     assert BenDecoder(path).read_graph() == graph
 
@@ -1083,7 +1083,9 @@ def test_pybendecoder_bundle_subsample_survives_reiteration(tmp_path: Path) -> N
 
 def test_pybendecoder_plain_rejects_bundle_methods(tmp_path: Path) -> None:
     path = tmp_path / "plain.ben"
-    with BenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+    with BenEncoder(
+        path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
         enc.write([1, 2])
 
     dec = BenDecoder(path)
@@ -1133,8 +1135,12 @@ def test_pybendecoder_xben_bundle_roundtrip(tmp_path: Path) -> None:
 
     xben_path = tmp_path / "samples.xben"
     encode_jsonl_to_xben(
-        src, xben_path, overwrite=True, variant="standard",
-        n_threads=1, compression_level=1,
+        src,
+        xben_path,
+        overwrite=True,
+        variant="standard",
+        n_threads=1,
+        compression_level=1,
     )
 
     bendl_path = tmp_path / "xben_bundle.bendl"
@@ -1154,8 +1160,12 @@ def test_pybendecoder_xben_plain_stream(tmp_path: Path) -> None:
 
     xben_path = tmp_path / "plain.xben"
     encode_jsonl_to_xben(
-        src, xben_path, overwrite=True, variant="standard",
-        n_threads=1, compression_level=1,
+        src,
+        xben_path,
+        overwrite=True,
+        variant="standard",
+        n_threads=1,
+        compression_level=1,
     )
 
     dec = BenDecoder(xben_path, mode="xben")
@@ -1249,7 +1259,9 @@ def test_pybendecoder_subsample_every_zero_offset_raises(tmp_path: Path) -> None
 def test_pybendecoder_plain_subsample_indices(tmp_path: Path) -> None:
     samples = [[1], [2], [3], [4], [5]]
     path = tmp_path / "plain_sub.ben"
-    with BenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+    with BenEncoder(
+        path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
         for a in samples:
             enc.write(a)
 
@@ -1261,7 +1273,9 @@ def test_pybendecoder_plain_subsample_indices(tmp_path: Path) -> None:
 def test_pybendecoder_plain_subsample_range(tmp_path: Path) -> None:
     samples = [[1], [2], [3], [4], [5]]
     path = tmp_path / "plain_range.ben"
-    with BenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+    with BenEncoder(
+        path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
         for a in samples:
             enc.write(a)
 
@@ -1273,7 +1287,9 @@ def test_pybendecoder_plain_subsample_range(tmp_path: Path) -> None:
 def test_pybendecoder_plain_subsample_every(tmp_path: Path) -> None:
     samples = [[1], [2], [3], [4], [5], [6]]
     path = tmp_path / "plain_every.ben"
-    with BenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+    with BenEncoder(
+        path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
         for a in samples:
             enc.write(a)
 
@@ -1290,7 +1306,9 @@ def test_pybendecoder_plain_subsample_every(tmp_path: Path) -> None:
 def test_pybendecoder_plain_len_and_count(tmp_path: Path) -> None:
     samples = [[1], [2], [3]]
     path = tmp_path / "plain_len.ben"
-    with BenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+    with BenEncoder(
+        path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
         for a in samples:
             enc.write(a)
 
@@ -1302,7 +1320,9 @@ def test_pybendecoder_plain_len_and_count(tmp_path: Path) -> None:
 def test_pybendecoder_plain_len_after_subsample(tmp_path: Path) -> None:
     samples = [[1], [2], [3], [4], [5]]
     path = tmp_path / "plain_sub_len.ben"
-    with BenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+    with BenEncoder(
+        path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
         for a in samples:
             enc.write(a)
 
@@ -1321,7 +1341,9 @@ def test_pybendecoder_plain_len_after_subsample(tmp_path: Path) -> None:
 def test_pybendecoder_plain_multiple_iterations(tmp_path: Path) -> None:
     samples = [[1, 2], [3, 4]]
     path = tmp_path / "multi_iter.ben"
-    with BenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+    with BenEncoder(
+        path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
         for a in samples:
             enc.write(a)
 
@@ -1334,7 +1356,9 @@ def test_pybendecoder_plain_multiple_iterations(tmp_path: Path) -> None:
 def test_pybendecoder_plain_subsample_survives_reiteration(tmp_path: Path) -> None:
     samples = [[i] for i in range(1, 8)]
     path = tmp_path / "plain_re_sub.ben"
-    with BenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+    with BenEncoder(
+        path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
         for a in samples:
             enc.write(a)
 
@@ -1353,7 +1377,9 @@ def test_pybendecoder_plain_subsample_survives_reiteration(tmp_path: Path) -> No
 def test_pybenencoder_ben_file_only_roundtrip(tmp_path: Path) -> None:
     samples = [[10, 20, 30], [40, 50, 60]]
     path = tmp_path / "ben_only.ben"
-    with BenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+    with BenEncoder(
+        path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
         for a in samples:
             enc.write(a)
 
@@ -1365,7 +1391,9 @@ def test_pybenencoder_ben_file_only_roundtrip(tmp_path: Path) -> None:
 def test_pybenencoder_ben_file_only_mkv(tmp_path: Path) -> None:
     samples = [[1, 2], [1, 2], [3, 4]]
     path = tmp_path / "ben_mkv.ben"
-    with BenEncoder(path, overwrite=True, variant="mkv_chain", ben_file_only=True) as enc:
+    with BenEncoder(
+        path, overwrite=True, variant="mkv_chain", ben_file_only=True
+    ) as enc:
         for a in samples:
             enc.write(a)
 
@@ -1408,7 +1436,9 @@ def test_pybenencoder_bundle_with_metadata(tmp_path: Path) -> None:
 
 def test_pybendecoder_extract_stream_on_plain_raises(tmp_path: Path) -> None:
     path = tmp_path / "plain_extract.ben"
-    with BenEncoder(path, overwrite=True, variant="standard", ben_file_only=True) as enc:
+    with BenEncoder(
+        path, overwrite=True, variant="standard", ben_file_only=True
+    ) as enc:
         enc.write([1, 2])
 
     dec = BenDecoder(path, mode="ben")
@@ -1443,8 +1473,12 @@ def test_decode_xben_to_jsonl_roundtrip(tmp_path: Path) -> None:
 
     xben = tmp_path / "out.xben"
     encode_jsonl_to_xben(
-        src, xben, overwrite=True, variant="standard",
-        n_threads=1, compression_level=1,
+        src,
+        xben,
+        overwrite=True,
+        variant="standard",
+        n_threads=1,
+        compression_level=1,
     )
 
     out = tmp_path / "round.jsonl"

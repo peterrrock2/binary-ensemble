@@ -324,16 +324,16 @@ fn mint_flags_set_bendl() -> Vec<u8> {
 /// Returns a copy of `bytes` with reserved bits set on both the header flags and the custom
 /// asset's asset_flags. Used to mint the `unknown_flags.bendl` fixture from a known-good bundle.
 fn flip_unknown_flag_bits(mut bytes: Vec<u8>) -> Vec<u8> {
-    // 1. Set bit 1 of the header flags (offset 16..20). Bit 0 is HEADER_FLAG_STREAM_CHECKSUM; bit
-    //    1 is currently reserved.
+    // 1. Set bit 1 of the header flags (offset 16..20). Bit 0 is HEADER_FLAG_STREAM_CHECKSUM; bit 1
+    //    is currently reserved.
     let mut header_flags = u32::from_le_bytes(bytes[16..20].try_into().unwrap());
     header_flags |= 1 << 1;
     bytes[16..20].copy_from_slice(&header_flags.to_le_bytes());
 
     // 2. Add a custom asset entry's asset_flags reserved bit. Since the writer-minted bundle does
     //    not include a custom asset, append one to the directory before flipping. Rather than
-    //    surgery, do the simpler thing: reopen the bundle, append a custom asset via the
-    //    appender API, then flip a reserved bit on its directory entry.
+    //    surgery, do the simpler thing: reopen the bundle, append a custom asset via the appender
+    //    API, then flip a reserved bit on its directory entry.
     let mut appender = binary_ensemble::io::bundle::writer::BendlAppender::open(Cursor::new(bytes))
         .expect("open appender");
     appender
@@ -346,12 +346,11 @@ fn flip_unknown_flag_bits(mut bytes: Vec<u8>) -> Vec<u8> {
     let cursor = appender.commit().expect("commit appender");
     let mut bytes = cursor.into_inner();
 
-    // 3. Locate the custom asset's directory entry and flip bit 7 of its asset_flags.
-    //    Directory entry layout per `BendlDirectoryEntry::to_bytes`:
-    //      [u16 asset_type][u16 asset_flags][u16 name_len][u16 reserved][u64 payload_offset]
-    //      [u64 payload_len][u32 checksum_len][name bytes][checksum bytes]
-    //    asset_flags is at byte offset 2 within each entry. We scan the directory and patch the
-    //    entry whose asset_type is ASSET_TYPE_CUSTOM.
+    // 3. Locate the custom asset's directory entry and flip bit 7 of its asset_flags. Directory
+    //    entry layout per `BendlDirectoryEntry::to_bytes`: [u16 asset_type][u16 asset_flags][u16
+    //    name_len][u16 reserved][u64 payload_offset] [u64 payload_len][u32 checksum_len][name
+    //    bytes][checksum bytes] asset_flags is at byte offset 2 within each entry. We scan the
+    //    directory and patch the entry whose asset_type is ASSET_TYPE_CUSTOM.
     let directory_offset = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
     let entry_count_offset = directory_offset;
     let entry_count = u32::from_le_bytes(
@@ -363,14 +362,14 @@ fn flip_unknown_flag_bits(mut bytes: Vec<u8>) -> Vec<u8> {
     let mut cursor = directory_offset + 4;
     for _ in 0..entry_count {
         let asset_type = u16::from_le_bytes(bytes[cursor..cursor + 2].try_into().unwrap());
-        let name_len = u16::from_le_bytes(bytes[cursor + 4..cursor + 6].try_into().unwrap()) as usize;
-        let checksum_len = u32::from_le_bytes(bytes[cursor + 24..cursor + 28].try_into().unwrap())
-            as usize;
+        let name_len =
+            u16::from_le_bytes(bytes[cursor + 4..cursor + 6].try_into().unwrap()) as usize;
+        let checksum_len =
+            u32::from_le_bytes(bytes[cursor + 24..cursor + 28].try_into().unwrap()) as usize;
         if asset_type == ASSET_TYPE_CUSTOM {
             let flags_offset = cursor + 2;
-            let mut asset_flags = u16::from_le_bytes(
-                bytes[flags_offset..flags_offset + 2].try_into().unwrap(),
-            );
+            let mut asset_flags =
+                u16::from_le_bytes(bytes[flags_offset..flags_offset + 2].try_into().unwrap());
             asset_flags |= 1 << 7; // currently reserved
             bytes[flags_offset..flags_offset + 2].copy_from_slice(&asset_flags.to_le_bytes());
             return bytes;

@@ -8,6 +8,27 @@ use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::time::Duration;
 
+/// A single cluster: the original nodes that get contracted into one coarse node.
+type Cluster = Vec<NodeIndex>;
+
+/// A partition of a component into clusters. Every node in the component appears in exactly one.
+type ClusterPartition = Vec<Cluster>;
+
+/// The coarse graph produced by contracting each cluster to a node; always undirected.
+type CoarseGraph = Graph<(), (), petgraph::Undirected>;
+
+/// Per-node tie-breaking keys, indexed by `NodeIndex::index()`. At depth 0 these are the original
+/// node identities; at deeper levels each entry is the minimum original key in a coarse node's
+/// cluster, so the same vector type carries whatever level's keys the recursion is working on.
+type TieBreakKeys = Vec<usize>;
+
+/// One recursion depth's spinner plus its running item counts.
+struct DepthBar {
+    bar: ProgressBar,
+    total: usize,
+    done: usize,
+}
+
 /// Per-phase progress tracker for MLC, with one spinner line per recursion depth.
 ///
 /// Phase 1 (depth 0) processes the original nodes; phase 2 processes the level-1 clusters produced
@@ -17,13 +38,6 @@ use std::time::Duration;
 ///
 /// Spinners auto-hide when stderr is not a terminal (e.g. under `cargo test` or when output is
 /// piped), so no config is needed for CI/test environments.
-/// One recursion depth's spinner plus its running item counts.
-struct DepthBar {
-    bar: ProgressBar,
-    total: usize,
-    done: usize,
-}
-
 struct MlcProgress {
     multi: MultiProgress,
     depths: Vec<DepthBar>,
@@ -53,39 +67,39 @@ impl MlcProgress {
                 total: 0,
                 done: 0,
             });
-            let d = self.depths.len() - 1;
-            self.refresh(d);
+            let new_depth = self.depths.len() - 1;
+            self.refresh(new_depth);
         }
     }
 
-    /// Record that `n` more items will be processed at `depth`.
-    fn add_total(&mut self, depth: usize, n: usize) {
+    /// Record that `additional_items` more items will be processed at `depth`.
+    fn add_total(&mut self, depth: usize, additional_items: usize) {
         self.ensure_depth(depth);
-        self.depths[depth].total += n;
+        self.depths[depth].total += additional_items;
         self.refresh(depth);
     }
 
-    /// Record that `n` more items at `depth` have been finalized.
-    fn add_done(&mut self, depth: usize, n: usize) {
+    /// Record that `additional_items` more items at `depth` have been finalized.
+    fn add_done(&mut self, depth: usize, additional_items: usize) {
         self.ensure_depth(depth);
-        self.depths[depth].done += n;
+        self.depths[depth].done += additional_items;
         self.refresh(depth);
     }
 
     fn refresh(&self, depth: usize) {
-        let d = &self.depths[depth];
-        let pct = if d.total == 0 {
+        let depth_bar = &self.depths[depth];
+        let percent_complete = if depth_bar.total == 0 {
             0
         } else {
-            d.done * 100 / d.total
+            depth_bar.done * 100 / depth_bar.total
         };
-        d.bar.set_message(format!(
+        depth_bar.bar.set_message(format!(
             "MLC phase {}: {}/{} {} ({}%)",
             depth + 1,
-            d.done,
-            d.total,
+            depth_bar.done,
+            depth_bar.total,
             Self::unit_for_depth(depth),
-            pct
+            percent_complete
         ));
     }
 
@@ -99,11 +113,11 @@ impl MlcProgress {
 
     /// Stop all spinners, leaving a final "complete" message on each.
     fn finish(&self) {
-        for (depth, d) in self.depths.iter().enumerate() {
-            d.bar.finish_with_message(format!(
+        for (depth, depth_bar) in self.depths.iter().enumerate() {
+            depth_bar.bar.finish_with_message(format!(
                 "MLC phase {}: complete ({} {})",
                 depth + 1,
-                d.total,
+                depth_bar.total,
                 Self::unit_for_depth(depth)
             ));
         }
@@ -129,9 +143,14 @@ pub(super) fn apply_multi_level_clustering<Ty>(petx_graph: &mut PetxGraph<Ty>) -
 where
     Ty: petgraph::EdgeType,
 {
-    let labels: Vec<usize> = (0..petx_graph.graph.node_bound()).collect();
+    let original_node_tie_break_keys: TieBreakKeys = (0..petx_graph.graph.node_bound()).collect();
     let mut progress = MlcProgress::new();
-    let order = mlc_order_inner(&petx_graph.graph, &labels, &mut progress, 0);
+    let order = mlc_order_inner(
+        &petx_graph.graph,
+        &original_node_tie_break_keys,
+        &mut progress,
+        0,
+    );
     *petx_graph = apply_permutation(petx_graph, &order);
 
     progress.finish();
@@ -141,7 +160,7 @@ where
 /// Recursively order each connected component via multilevel clustering, then concatenate the
 /// results.
 ///
-/// Components are sorted by decreasing size (ties broken by minimum label) so that larger
+/// Components are sorted by decreasing size (ties broken by minimum tie-break key) so that larger
 /// components occupy the beginning of the output. Each component is ordered independently by
 /// [`mlc_component`].
 ///
@@ -149,8 +168,9 @@ where
 ///
 /// * `graph` - The input graph to order. Generic over node/edge weights and edge type so it also
 ///   works with the coarse graph during recursion.
-/// * `labels` - A per-node label vector used for tie-breaking when choosing seeds and sorting
-///   neighbors. Indexed by `NodeIndex::index()`.
+/// * `tie_break_keys` - Per-node keys used to break ties when choosing seeds and ordering
+///   components. Indexed by `NodeIndex::index()`. Carries whatever level's keys the recursion is
+///   at.
 /// * `progress` - Progress tracker for the multi-phase spinner display.
 /// * `depth` - Recursion depth (0 at the top level). Used to route progress updates to the correct
 ///   phase bar.
@@ -161,7 +181,7 @@ where
 /// position `new_index`.
 fn mlc_order_inner<N, E, Ty>(
     graph: &Graph<N, E, Ty>,
-    labels: &[usize],
+    tie_break_keys: &[usize],
     progress: &mut MlcProgress,
     depth: usize,
 ) -> Vec<NodeIndex>
@@ -174,18 +194,24 @@ where
         .into_iter()
         .map(|set| set.into_iter().collect())
         .collect();
-    components.sort_by_key(|c| {
-        let min_label = c
+    components.sort_by_key(|component| {
+        let min_key = component
             .iter()
-            .map(|n| labels[n.index()])
+            .map(|node| tie_break_keys[node.index()])
             .min()
             .unwrap_or(usize::MAX);
-        (Reverse(c.len()), min_label)
+        (Reverse(component.len()), min_key)
     });
 
     let mut order = Vec::with_capacity(graph.node_count());
     for component in components {
-        order.extend(mlc_component(graph, labels, &component, progress, depth));
+        order.extend(mlc_component(
+            graph,
+            tie_break_keys,
+            &component,
+            progress,
+            depth,
+        ));
     }
     order
 }
@@ -209,7 +235,7 @@ where
 /// # Arguments
 ///
 /// * `graph` - The full graph (only edges within `component` are relevant).
-/// * `labels` - Per-node labels for tie-breaking, indexed by `NodeIndex::index()`.
+/// * `tie_break_keys` - Per-node tie-breaking keys, indexed by `NodeIndex::index()`.
 /// * `component` - The subset of `NodeIndex` values to order.
 /// * `progress` - Progress tracker for the multi-phase spinner display.
 /// * `depth` - Recursion depth; routes progress updates to the correct phase bar.
@@ -219,7 +245,7 @@ where
 /// A permutation of the nodes in `component` representing their new order.
 fn mlc_component<N, E, Ty>(
     graph: &Graph<N, E, Ty>,
-    labels: &[usize],
+    tie_break_keys: &[usize],
     component: &[NodeIndex],
     progress: &mut MlcProgress,
     depth: usize,
@@ -234,14 +260,14 @@ where
 
     // `greedy_cluster_partition` ticks this depth's progress per cluster, so every node in
     // `component` contributes to phase `depth+1` exactly once.
-    let mut clusters = greedy_cluster_partition(graph, labels, component, progress, depth);
+    let mut clusters = greedy_cluster_partition(graph, tie_break_keys, component, progress, depth);
 
     // Reorder each cluster internally via RCM on the subgraph induced by its members. This puts
     // peripheral (degree-1) nodes at both ends of the cluster and the high-degree seed near the
     // middle/end, which keeps cluster boundaries "loose" and avoids stranding the most- connected
     // node next to the previous cluster.
     for cluster in clusters.iter_mut() {
-        *cluster = rcm_component(graph, labels, cluster);
+        *cluster = rcm_component(graph, tie_break_keys, cluster);
     }
 
     // Single-cluster case: the whole component is one star.
@@ -251,8 +277,14 @@ where
 
     // Multi-cluster case: recurse on the coarse graph to decide the order in which the clusters
     // appear.
-    let (coarse_graph, coarse_labels) = build_coarse_graph(graph, labels, &clusters);
-    let coarse_order = mlc_order_inner(&coarse_graph, &coarse_labels, progress, depth + 1);
+    let (coarse_graph, coarse_node_tie_break_keys) =
+        build_coarse_graph(graph, tie_break_keys, &clusters);
+    let coarse_order = mlc_order_inner(
+        &coarse_graph,
+        &coarse_node_tie_break_keys,
+        progress,
+        depth + 1,
+    );
 
     let mut order = Vec::with_capacity(component.len());
     for coarse_node in coarse_order {
@@ -263,10 +295,10 @@ where
 
 /// Partition a component into star-shaped clusters using a greedy seed-expansion strategy.
 ///
-/// At each step, the lowest-degree unassigned node (ties broken by label) is chosen as a seed, and
-/// the seed together with all of its unassigned neighbors becomes the next cluster. Local degrees
-/// are then decremented for every unassigned node adjacent to a newly-assigned one, so subsequent
-/// seed selections reflect the residual graph.
+/// At each step, the lowest-degree unassigned node (ties broken by tie-break key) is chosen as a
+/// seed, and the seed together with all of its unassigned neighbors becomes the next cluster. Local
+/// degrees are then decremented for every unassigned node adjacent to a newly-assigned one, so
+/// subsequent seed selections reflect the residual graph.
 ///
 /// Only cluster *membership* is meaningful here; the internal order of each returned cluster is not
 /// final and is expected to be overwritten by the caller (e.g. via [`rcm_component`]).
@@ -274,7 +306,7 @@ where
 /// # Arguments
 ///
 /// * `graph` - The full graph (only edges within `component` are relevant).
-/// * `labels` - Per-node labels for tie-breaking, indexed by `NodeIndex::index()`.
+/// * `tie_break_keys` - Per-node tie-breaking keys, indexed by `NodeIndex::index()`.
 /// * `component` - The subset of `NodeIndex` values to partition.
 /// * `progress` - Progress tracker; `depth`'s done counter is advanced by each cluster's size as
 ///   the cluster is formed, so the caller's phase bar fills up gradually during large partitions.
@@ -286,34 +318,35 @@ where
 /// `component` appears in exactly one cluster.
 fn greedy_cluster_partition<N, E, Ty>(
     graph: &Graph<N, E, Ty>,
-    labels: &[usize],
+    tie_break_keys: &[usize],
     component: &[NodeIndex],
     progress: &mut MlcProgress,
     depth: usize,
-) -> Vec<Vec<NodeIndex>>
+) -> ClusterPartition
 where
     Ty: petgraph::EdgeType,
 {
     let component_set: HashSet<NodeIndex> = component.iter().copied().collect();
-    let mut local_deg = local_degree_in_component(graph, &component_set, component);
+    let mut local_degree = local_degree_in_component(graph, &component_set, component);
 
-    let mut assigned = vec![false; graph.node_bound()];
-    let mut remaining: Vec<NodeIndex> = component.to_vec();
+    let mut node_is_assigned = vec![false; graph.node_bound()];
+    let mut unassigned_nodes: Vec<NodeIndex> = component.to_vec();
     let mut clusters = Vec::new();
 
-    while !remaining.is_empty() {
-        remaining.sort_by_key(|&node| (local_deg[node.index()], labels[node.index()]));
-        let seed = remaining[0];
+    while !unassigned_nodes.is_empty() {
+        unassigned_nodes
+            .sort_by_key(|&node| (local_degree[node.index()], tie_break_keys[node.index()]));
+        let seed = unassigned_nodes[0];
 
         let mut cluster = vec![seed];
-        assigned[seed.index()] = true;
+        node_is_assigned[seed.index()] = true;
 
         // Cluster membership is seed + every unassigned in-component neighbor. Internal order here
         // is irrelevant: the caller (`mlc_component`) overwrites it with an RCM ordering on the
         // cluster's induced subgraph.
         for neighbor in graph.neighbors(seed) {
-            if component_set.contains(&neighbor) && !assigned[neighbor.index()] {
-                assigned[neighbor.index()] = true;
+            if component_set.contains(&neighbor) && !node_is_assigned[neighbor.index()] {
+                node_is_assigned[neighbor.index()] = true;
                 cluster.push(neighbor);
             }
         }
@@ -321,13 +354,13 @@ where
         // Decrement degrees of unassigned nodes adjacent to the new cluster.
         for &node in &cluster {
             for neighbor in graph.neighbors(node) {
-                if component_set.contains(&neighbor) && !assigned[neighbor.index()] {
-                    local_deg[neighbor.index()] -= 1;
+                if component_set.contains(&neighbor) && !node_is_assigned[neighbor.index()] {
+                    local_degree[neighbor.index()] -= 1;
                 }
             }
         }
 
-        remaining.retain(|&n| !assigned[n.index()]);
+        unassigned_nodes.retain(|&node| !node_is_assigned[node.index()]);
         progress.add_done(depth, cluster.len());
         clusters.push(cluster);
     }
@@ -338,68 +371,77 @@ where
 /// Build a coarse graph where each cluster is contracted into a single node.
 ///
 /// The coarse graph is always undirected: an edge exists between two coarse nodes whenever any
-/// original-graph edge connects their clusters. Each coarse node's label is the minimum original
-/// label among its cluster members.
+/// original-graph edge connects their clusters. Each coarse node's tie-break key is the minimum
+/// original key among its cluster members.
 ///
 /// # Arguments
 ///
 /// * `graph` - The full graph containing the original edges.
-/// * `labels` - Per-node labels for the original graph, indexed by `NodeIndex::index()`.
+/// * `tie_break_keys` - Per-node tie-breaking keys for the original graph, indexed by
+///   `NodeIndex::index()`.
 /// * `clusters` - The partition produced by [`greedy_cluster_partition`]. Cluster `i` maps to
 ///   coarse node `i`.
 ///
 /// # Returns
 ///
 /// A tuple of:
-/// * The coarse `Graph<(), (), Undirected>` with one node per cluster and one edge per
-///   inter-cluster connection.
-/// * A label vector for the coarse graph (one entry per cluster), where each label is the minimum
-///   original label in that cluster.
+/// * The coarse [`CoarseGraph`] with one node per cluster and one edge per inter-cluster
+///   connection.
+/// * The coarse graph's tie-break keys (one entry per cluster), where each is the minimum original
+///   key in that cluster.
 fn build_coarse_graph<N, E, Ty>(
     graph: &Graph<N, E, Ty>,
-    labels: &[usize],
-    clusters: &[Vec<NodeIndex>],
-) -> (Graph<(), (), petgraph::Undirected>, Vec<usize>)
+    tie_break_keys: &[usize],
+    clusters: &[Cluster],
+) -> (CoarseGraph, TieBreakKeys)
 where
     Ty: petgraph::EdgeType,
 {
-    let mut cluster_of = vec![usize::MAX; graph.node_bound()];
-    for (ci, cluster) in clusters.iter().enumerate() {
+    let mut coarse_node_by_original_index = vec![usize::MAX; graph.node_bound()];
+    for (cluster_idx, cluster) in clusters.iter().enumerate() {
         for &node in cluster {
-            cluster_of[node.index()] = ci;
+            coarse_node_by_original_index[node.index()] = cluster_idx;
         }
     }
 
-    let mut coarse_graph = Graph::<(), (), petgraph::Undirected>::with_capacity(clusters.len(), 0);
+    let mut coarse_graph = CoarseGraph::with_capacity(clusters.len(), 0);
     for _ in 0..clusters.len() {
         coarse_graph.add_node(());
     }
 
     let mut seen_edges: HashSet<(usize, usize)> = HashSet::new();
-    for (ci, cluster) in clusters.iter().enumerate() {
+    for (cluster_idx, cluster) in clusters.iter().enumerate() {
         for &node in cluster {
             for neighbor in graph.neighbors(node) {
-                let nc = cluster_of[neighbor.index()];
-                if nc != ci && nc != usize::MAX {
-                    let canonical = if ci < nc { (ci, nc) } else { (nc, ci) };
+                let neighbors_cluster = coarse_node_by_original_index[neighbor.index()];
+                if neighbors_cluster != cluster_idx && neighbors_cluster != usize::MAX {
+                    let canonical = if cluster_idx < neighbors_cluster {
+                        (cluster_idx, neighbors_cluster)
+                    } else {
+                        (neighbors_cluster, cluster_idx)
+                    };
                     if seen_edges.insert(canonical) {
-                        coarse_graph.add_edge(NodeIndex::new(ci), NodeIndex::new(nc), ());
+                        coarse_graph.add_edge(
+                            NodeIndex::new(cluster_idx),
+                            NodeIndex::new(neighbors_cluster),
+                            (),
+                        );
                     }
                 }
             }
         }
     }
 
-    let coarse_labels: Vec<usize> = clusters
+    let coarse_node_tie_break_keys: TieBreakKeys = clusters
         .iter()
         .map(|cluster| {
             cluster
                 .iter()
-                .map(|n| labels[n.index()])
+                .map(|node| tie_break_keys[node.index()])
                 .min()
                 .unwrap_or(usize::MAX)
         })
         .collect();
 
-    (coarse_graph, coarse_labels)
+    (coarse_graph, coarse_node_tie_break_keys)
 }

@@ -279,7 +279,13 @@ fn writer_twodelta_chunk_boundary_off_by_one_grid() {
                 continue;
             }
             let assignments: Vec<Vec<u16>> = (0..n_samples)
-                .map(|i| if i % 2 == 0 { anchor.clone() } else { delta.clone() })
+                .map(|i| {
+                    if i % 2 == 0 {
+                        anchor.clone()
+                    } else {
+                        delta.clone()
+                    }
+                })
                 .collect();
 
             let mut xben = Vec::new();

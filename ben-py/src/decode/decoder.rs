@@ -21,9 +21,9 @@ pub struct PyBenDecoder {
     path: PathBuf,
     mode: DecoderMode,
     backend: DecoderBackend,
-    /// Lazily-constructed frame iterator. We defer construction so opening a bundle whose stream is
-    /// empty or truncated still succeeds — only methods that actually walk the stream need a live
-    /// iterator.
+    /// Lazily-constructed frame iterator. We defer construction so opening a bundle whose stream
+    /// is empty or truncated still succeeds — only methods that actually walk the stream need
+    /// a live iterator.
     iter: Option<DynIter>,
     current_assignment: Option<Vec<u16>>,
     remaining_count: u16,
@@ -471,9 +471,14 @@ impl PyBenDecoder {
     /// Copy the embedded assignment stream region verbatim to `out_path`. The resulting file can be
     /// opened directly with `PyBenDecoder(out_path, mode=dec.assignment_format())`. Errors on plain
     /// streams.
-    #[pyo3(signature = (out_path, overwrite=false))]
-    #[pyo3(text_signature = "(self, out_path, overwrite=False)")]
-    fn extract_stream(&mut self, out_path: PathBuf, overwrite: bool) -> PyResult<()> {
+    #[pyo3(signature = (out_path, overwrite=false, allow_unfinalized=false))]
+    #[pyo3(text_signature = "(self, out_path, overwrite=False, allow_unfinalized=False)")]
+    fn extract_stream(
+        &mut self,
+        out_path: PathBuf,
+        overwrite: bool,
+        allow_unfinalized: bool,
+    ) -> PyResult<()> {
         let state = self.require_bundle_mut("extract_stream()")?;
         if out_path.exists() && !overwrite {
             return Err(PyIOError::new_err(format!(
@@ -481,6 +486,18 @@ impl PyBenDecoder {
                 out_path.display()
             )));
         }
+        let mut stream = if allow_unfinalized && !state.reader.is_finalized() {
+            state
+                .reader
+                .assignment_stream_reader_unverified()
+                .map_err(|e| PyException::new_err(format!("Failed to open stream region: {e}")))?
+        } else {
+            state
+                .reader
+                .assignment_stream_reader()
+                .map_err(|e| PyException::new_err(format!("Failed to open stream region: {e}")))?
+        };
+
         let out = if overwrite {
             OpenOptions::new()
                 .write(true)
@@ -496,10 +513,6 @@ impl PyBenDecoder {
         .map_err(|e| PyIOError::new_err(format!("Failed to create {}: {e}", out_path.display())))?;
         let mut out = BufWriter::new(out);
 
-        let mut stream = state
-            .reader
-            .assignment_stream_reader()
-            .map_err(|e| PyException::new_err(format!("Failed to open stream region: {e}")))?;
         io::copy(&mut stream, &mut out)
             .map_err(|e| PyIOError::new_err(format!("Failed to copy stream bytes: {e}")))?;
         out.flush()

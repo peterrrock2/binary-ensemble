@@ -4,13 +4,13 @@
 //! (`translate` direction). The complementary properties here pin the algebraic identities of
 //! the post-decode operations:
 //!
-//! - **relabel composition:** for any node permutation `P` of length `L`,
-//!   `relabel(P^-1, relabel(P, x)) == x`.
-//! - **extract correctness:** for any sample index `i` in `1..=N`,
-//!   `extract(i, encode(x)) == x[i-1]`.
-//! - **convert variant round-trip:** for any variant pair `(A, B)`,
-//!   `convert(A, convert(B, x)) == x` (compared at the decoded-assignment level, since BEN
-//!   variants differ in frame structure and counts but not assignment data).
+//! - **relabel composition:** for any node permutation `P` of length `L`, `relabel(P^-1, relabel(P,
+//!   x)) == x`.
+//! - **extract correctness:** for any sample index `i` in `1..=N`, `extract(i, encode(x)) ==
+//!   x[i-1]`.
+//! - **convert variant round-trip:** for any variant pair `(A, B)`, `convert(A, convert(B, x)) ==
+//!   x` (compared at the decoded-assignment level, since BEN variants differ in frame structure and
+//!   counts but not assignment data).
 
 use binary_ensemble::codec::decode::decode_ben_to_jsonl;
 use binary_ensemble::codec::encode::encode_jsonl_to_ben;
@@ -26,12 +26,7 @@ use std::io::{BufReader, Cursor, Write};
 fn jsonl_from(seq: &[Vec<u16>]) -> Vec<u8> {
     let mut buf = Vec::new();
     for (i, a) in seq.iter().enumerate() {
-        writeln!(
-            &mut buf,
-            "{}",
-            json!({"assignment": a, "sample": i + 1})
-        )
-        .unwrap();
+        writeln!(&mut buf, "{}", json!({"assignment": a, "sample": i + 1})).unwrap();
     }
     buf
 }
@@ -42,10 +37,7 @@ fn strat_fixed_length_seq(
     len: usize,
     max_samples: usize,
 ) -> impl Strategy<Value = Vec<Vec<u16>>> {
-    prop::collection::vec(
-        prop::collection::vec(1u16..=max_val, len),
-        1..=max_samples,
-    )
+    prop::collection::vec(prop::collection::vec(1u16..=max_val, len), 1..=max_samples)
 }
 
 /// Invert a permutation `P` (new_idx → old_idx). The inverse maps `old_idx → new_idx`. Given

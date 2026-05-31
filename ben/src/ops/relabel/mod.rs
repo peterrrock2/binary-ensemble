@@ -100,8 +100,8 @@ impl RelabelOptions {
         self
     }
 
-    /// Set the sample limit from an optional value: `Some(n)` sets the limit, `None` clears it. Lets
-    /// CLI argument plumbing pass an `Option<usize>` straight through.
+    /// Set the sample limit from an optional value: `Some(n)` sets the limit, `None` clears it.
+    /// Lets CLI argument plumbing pass an `Option<usize>` straight through.
     pub fn with_max_samples_opt(mut self, n: Option<usize>) -> Self {
         self.max_samples = n;
         self
@@ -240,10 +240,10 @@ where
     let mut sample_number = 0usize;
     let spinner = Spinner::new("Relabeling line");
 
-    // Both run policies share the same per-frame bookkeeping (sample limit, transform, output count,
-    // progress); they differ only in how the relabeled assignment is emitted. `out_count` is bounded
-    // by the input frame's `count` (a `u16`), so the `as u16` cast on the preserve path cannot
-    // truncate.
+    // Both run policies share the same per-frame bookkeeping (sample limit, transform, output
+    // count, progress); they differ only in how the relabeled assignment is emitted.
+    // `out_count` is bounded by the input frame's `count` (a `u16`), so the `as u16` cast on
+    // the preserve path cannot truncate.
     decoder.for_each_assignment(|assignment, count| {
         if max_samples.is_some_and(|limit| sample_number >= limit) {
             return Ok(false);

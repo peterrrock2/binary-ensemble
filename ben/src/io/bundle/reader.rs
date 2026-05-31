@@ -279,6 +279,24 @@ impl<R: Read + Seek> BendlReader<R> {
         Ok(())
     }
 
+    /// Seek to an asset's `payload_offset` and return a reader bounded to its declared
+    /// `payload_len`, paired with the [`ShortRangeFlag`] that reader will set if the backing range
+    /// is shorter than declared.
+    ///
+    /// This is the raw on-disk byte range shared by every asset read mode (verified/unverified,
+    /// decoded/raw); the codec and CRC layering is applied by each caller on top of the returned
+    /// range. It is scoped to `entry`-based reads and intentionally does not cover the
+    /// assignment-stream readers, which seek to a separately computed `(offset, len)`.
+    fn open_asset_payload_range(
+        &mut self,
+        entry: &BendlDirectoryEntry,
+    ) -> io::Result<(ExactLen<&mut R>, ShortRangeFlag)> {
+        self.inner.seek(SeekFrom::Start(entry.payload_offset))?;
+        let short_flag = ShortRangeFlag::new();
+        let raw = ExactLen::new(&mut self.inner, entry.payload_len, short_flag.clone());
+        Ok((raw, short_flag))
+    }
+
     /// Read the fully-decoded bytes of an asset by directory entry, verifying its CRC32C before
     /// returning.
     ///
@@ -345,9 +363,7 @@ impl<R: Read + Seek> BendlReader<R> {
         };
         let target = ChecksumTarget::Asset(entry.name.clone());
 
-        self.inner.seek(SeekFrom::Start(entry.payload_offset))?;
-        let short_flag = ShortRangeFlag::new();
-        let raw = ExactLen::new(&mut self.inner, entry.payload_len, short_flag.clone());
+        let (raw, short_flag) = self.open_asset_payload_range(entry)?;
 
         // The CRC tee always sits at the raw on-disk layer (over the compressed bytes for xz
         // assets, so verification happens before decompression). For xz assets the decoder sits
@@ -378,9 +394,7 @@ impl<R: Read + Seek> BendlReader<R> {
         &'a mut self,
         entry: &BendlDirectoryEntry,
     ) -> Result<Box<dyn Read + 'a>, BendlReadError> {
-        self.inner.seek(SeekFrom::Start(entry.payload_offset))?;
-        let short_flag = ShortRangeFlag::new();
-        let raw = ExactLen::new(&mut self.inner, entry.payload_len, short_flag.clone());
+        let (raw, short_flag) = self.open_asset_payload_range(entry)?;
         if entry.asset_flags & ASSET_FLAG_XZ != 0 {
             // Wrap the decoder so that if xz reports a runtime error while the underlying
             // ExactLen has flagged a short read, the surface is a short-range UnexpectedEof
@@ -405,12 +419,10 @@ impl<R: Read + Seek> BendlReader<R> {
         &'a mut self,
         entry: &BendlDirectoryEntry,
     ) -> Result<Box<dyn Read + 'a>, BendlReadError> {
-        self.inner.seek(SeekFrom::Start(entry.payload_offset))?;
-        Ok(Box::new(ExactLen::new(
-            &mut self.inner,
-            entry.payload_len,
-            ShortRangeFlag::new(),
-        )))
+        // No codec or CRC layer sits above this range, so the short-range flag has nothing to
+        // observe it — a short read surfaces directly as the ExactLen's own marker.
+        let (raw, _short_flag) = self.open_asset_payload_range(entry)?;
+        Ok(Box::new(raw))
     }
 
     /// Verify the stored CRC32C of a single asset without returning any decoded bytes.

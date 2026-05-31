@@ -374,18 +374,18 @@ impl<S: Read + CrcSource> Read for VerifyingReader<S> {
 // Verified assignment-stream reader
 // =====================================================================
 
-/// CRC accumulator that shares its running hash via an `Arc<AtomicU32>`. Used as the source reader
-/// for [`BendlVerifiedStreamReader`]: the `Arc` lets the outer wrapper read the final hash after a
-/// consuming inner method (e.g. `count_samples`) moves ownership away from the wrapper.
+/// CRC32C accumulator that shares its running hash via an `Arc<AtomicU32>`. Used as the source
+/// reader for [`BendlVerifiedStreamReader`]: the `Arc` lets the outer wrapper read the final hash
+/// after a consuming inner method (e.g. `count_samples`) moves ownership away from the wrapper.
 ///
 /// Unlike [`CrcTeeReader`], this type never substitutes a checksum error for raw EOF — it is always
 /// the outer [`BendlVerifiedStreamReader`] that decides when and whether to check.
-pub(crate) struct ArcHasher<R: Read> {
+pub(crate) struct SharedCrc32cAccumulatorReader<R: Read> {
     inner: R,
     state: Arc<AtomicU32>,
 }
 
-impl<R: Read> Read for ArcHasher<R> {
+impl<R: Read> Read for SharedCrc32cAccumulatorReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
         if n > 0 {
@@ -412,7 +412,7 @@ enum StreamVerifyState {
 }
 
 /// Source reader stack underneath a [`BendlVerifiedStreamReader`].
-pub(crate) type VerifiedStreamSource<'a, R> = ArcHasher<ExactLen<&'a mut R>>;
+pub(crate) type VerifiedStreamSource<'a, R> = SharedCrc32cAccumulatorReader<ExactLen<&'a mut R>>;
 
 /// Verified decoded assignment reader returned by
 /// [`super::reader::BendlReader::open_assignment_reader`].
@@ -447,7 +447,7 @@ impl<'a, R: Read + Seek> BendlVerifiedStreamReader<'a, R> {
             -> Result<BenStreamReader<VerifiedStreamSource<'a, R>>, BendlReadError>,
     ) -> Result<Self, BendlReadError> {
         let arc_hasher = Arc::new(AtomicU32::new(0));
-        let source = ArcHasher {
+        let source = SharedCrc32cAccumulatorReader {
             inner: raw,
             state: Arc::clone(&arc_hasher),
         };

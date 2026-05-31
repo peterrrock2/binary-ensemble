@@ -93,16 +93,22 @@ mod tests {
     #[test]
     fn with_compression_level_clamps_to_nine() {
         assert_eq!(
-            XzEncodeOptions::new().with_compression_level(99).compression_level,
+            XzEncodeOptions::new()
+                .with_compression_level(99)
+                .compression_level,
             Some(9)
         );
         // Level 0 (store-mode) is a legitimate setting and must be preserved as-is.
         assert_eq!(
-            XzEncodeOptions::new().with_compression_level(0).compression_level,
+            XzEncodeOptions::new()
+                .with_compression_level(0)
+                .compression_level,
             Some(0)
         );
         assert_eq!(
-            XzEncodeOptions::new().with_compression_level(6).compression_level,
+            XzEncodeOptions::new()
+                .with_compression_level(6)
+                .compression_level,
             Some(6)
         );
     }
@@ -116,11 +122,15 @@ mod tests {
     #[test]
     fn with_twodelta_chunk_size_clamps_zero_to_one() {
         assert_eq!(
-            XzEncodeOptions::new().with_twodelta_chunk_size(0).twodelta_chunk_size,
+            XzEncodeOptions::new()
+                .with_twodelta_chunk_size(0)
+                .twodelta_chunk_size,
             1
         );
         assert_eq!(
-            XzEncodeOptions::new().with_twodelta_chunk_size(7).twodelta_chunk_size,
+            XzEncodeOptions::new()
+                .with_twodelta_chunk_size(7)
+                .twodelta_chunk_size,
             7
         );
     }

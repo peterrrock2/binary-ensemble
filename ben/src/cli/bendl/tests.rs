@@ -503,6 +503,61 @@ fn run_extract_stream_writes_raw_assignment_bytes() {
 }
 
 #[test]
+fn run_extract_stream_allows_unfinalized_when_requested() {
+    use crate::io::bundle::format::{AssignmentFormat, BendlHeader, FINALIZED_NO, HEADER_SIZE};
+
+    let known_stream = b"STANDARD BEN FILE\x00partial stream bytes";
+    let header = BendlHeader {
+        magic: crate::io::bundle::format::BENDL_MAGIC,
+        major_version: crate::io::bundle::format::BENDL_MAJOR_VERSION,
+        minor_version: crate::io::bundle::format::BENDL_MINOR_VERSION,
+        finalized: FINALIZED_NO,
+        assignment_format: AssignmentFormat::Ben.to_u8(),
+        alignment_padding: 0,
+        flags: 0,
+        stream_checksum: 0,
+        directory_offset: 0,
+        directory_len: 0,
+        stream_offset: HEADER_SIZE as u64,
+        stream_len: 0,
+        sample_count: -1,
+    };
+    let mut buf = Vec::from(header.to_bytes());
+    buf.extend_from_slice(known_stream);
+
+    let bendl = unique_path("extract_unfinalized_stream.bendl");
+    std::fs::write(&bendl, &buf).unwrap();
+    let out = unique_path("extract_unfinalized_stream_out.bin");
+
+    let default_args = ExtractArgs::try_parse_from([
+        "extract",
+        "--stream",
+        "--output",
+        out.to_str().unwrap(),
+        bendl.to_str().unwrap(),
+    ])
+    .unwrap();
+    let err = run_extract(default_args).unwrap_err();
+    assert!(err.contains("unfinalized"), "unexpected error: {err}");
+    assert!(!out.exists(), "failed extraction must not create output");
+
+    let allow_args = ExtractArgs::try_parse_from([
+        "extract",
+        "--stream",
+        "--allow-unfinalized",
+        "--output",
+        out.to_str().unwrap(),
+        bendl.to_str().unwrap(),
+    ])
+    .unwrap();
+    run_extract(allow_args).unwrap();
+    assert_eq!(std::fs::read(&out).unwrap(), known_stream);
+
+    let _ = std::fs::remove_file(&bendl);
+    let _ = std::fs::remove_file(&out);
+}
+
+#[test]
 fn run_extract_asset_with_unknown_name_errors_cleanly() {
     // Pin the no-asset-named-X branch of extract.rs — find_asset_by_name returns None and the
     // caller surfaces a clear "no asset named ..." error.

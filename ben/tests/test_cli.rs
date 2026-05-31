@@ -1759,12 +1759,7 @@ fn ben_encode_graph_requires_input_file_not_stdin() {
 
     let out = run(
         "ben",
-        &[
-            "--mode",
-            "encode",
-            "--graph",
-            graph_path.to_str().unwrap(),
-        ],
+        &["--mode", "encode", "--graph", graph_path.to_str().unwrap()],
         temp.path(),
     );
     assert_failure(&out);
@@ -1882,7 +1877,10 @@ fn ben_encode_graph_happy_path_produces_bendl() {
         temp.path(),
     );
     assert_success(&extract_graph);
-    assert_eq!(fs::read_to_string(&recovered_graph).unwrap(), sample_graph());
+    assert_eq!(
+        fs::read_to_string(&recovered_graph).unwrap(),
+        sample_graph()
+    );
 }
 
 #[test]

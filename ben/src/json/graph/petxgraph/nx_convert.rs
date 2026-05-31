@@ -6,6 +6,10 @@ use petgraph::visit::{EdgeRef, IntoNodeReferences};
 use petgraph::{Directed, Undirected};
 use std::collections::{HashMap, HashSet};
 
+/// Reserved attribute key under which a NetworkX node's original `id` is stashed while the node
+/// lives in petgraph form, so it can be recovered on the round trip back to NetworkX.
+const NETWORKX_ID_ATTR: &str = "__networkx_id__";
+
 /// Convert an [`NxNode`] into a [`PetxNode`].
 ///
 /// The node's `id` field is moved into the attribute map under the reserved key `"__networkx_id__"`
@@ -20,7 +24,7 @@ use std::collections::{HashMap, HashSet};
 /// A [`PetxNode`] whose `attrs` map contains all original attributes plus `"__networkx_id__"`.
 pub(in crate::json::graph) fn nx_node_to_petx_node(nx_node: NxNode) -> PetxNode {
     let mut attrs = nx_node.attrs;
-    attrs.insert("__networkx_id__".to_string(), nx_node.id);
+    attrs.insert(NETWORKX_ID_ATTR.to_string(), nx_node.id);
     PetxNode { attrs }
 }
 
@@ -44,8 +48,8 @@ pub(in crate::json::graph) fn petx_node_to_nx_node(
     petx_node: &PetxNode,
 ) -> Result<NxNode, NxPetgraphError> {
     let mut attrs = petx_node.attrs.clone();
-    let id = attrs.remove("__networkx_id__").ok_or_else(|| {
-        NxPetgraphError::Other("missing __networkx_id__ on petgraph node".to_string())
+    let id = attrs.remove(NETWORKX_ID_ATTR).ok_or_else(|| {
+        NxPetgraphError::Other(format!("missing {NETWORKX_ID_ATTR} on petgraph node"))
     })?;
 
     Ok(NxNode { id, attrs })
@@ -102,6 +106,21 @@ where
     } = nx_graph;
 
     let mut graph = Graph::<PetxNode, NxAdjEntry, Ty>::with_capacity(nodes.len(), 0);
+    let node_id_to_index = add_networkx_nodes(&mut graph, nodes)?;
+    add_networkx_adjacency_edges(&mut graph, &node_id_to_index, adjacency, is_directed)?;
+
+    Ok(PetxGraph { graph_attrs, graph })
+}
+
+/// Add every NetworkX node to `graph`, returning a map from each node's original id to its assigned
+/// [`NodeIndex`]. Errors with [`NxPetgraphError::DuplicateNodeId`] if any id appears twice.
+fn add_networkx_nodes<Ty>(
+    graph: &mut Graph<PetxNode, NxAdjEntry, Ty>,
+    nodes: Vec<NxNode>,
+) -> Result<HashMap<serde_json::Value, NodeIndex>, NxPetgraphError>
+where
+    Ty: petgraph::EdgeType,
+{
     let mut node_id_to_index: HashMap<serde_json::Value, NodeIndex> =
         HashMap::with_capacity(nodes.len());
 
@@ -116,24 +135,37 @@ where
         node_id_to_index.insert(node_id, index);
     }
 
-    // NetworkX adjacency format is a list of adjacency lists, where the i-th adjacency list
-    // corresponds to the i-th node in the nodes list.
-    //
-    // For undirected graphs, the format may contain both (u, v) and (v, u), so we track
-    // canonicalized edge endpoint pairs and only add each undirected edge once.
+    Ok(node_id_to_index)
+}
+
+/// Add edges from the NetworkX adjacency lists to `graph`.
+///
+/// The NetworkX adjacency format is a list of adjacency lists, where the i-th list holds the
+/// out-neighbors of the i-th node. For undirected graphs the format may list both `(u, v)` and
+/// `(v, u)`, so endpoint pairs are canonicalized via [`canonical_undirected_edge_key`] and each
+/// undirected edge is added only once. Errors with [`NxPetgraphError::MissingNeighborNode`] if an
+/// adjacency entry references an id absent from `node_id_to_index`.
+fn add_networkx_adjacency_edges<Ty>(
+    graph: &mut Graph<PetxNode, NxAdjEntry, Ty>,
+    node_id_to_index: &HashMap<serde_json::Value, NodeIndex>,
+    adjacency: Vec<Vec<NxAdjEntry>>,
+    is_directed: bool,
+) -> Result<(), NxPetgraphError>
+where
+    Ty: petgraph::EdgeType,
+{
     let mut seen_undirected_edges: HashSet<(String, String, Option<String>)> = HashSet::new();
 
-    for (source_idx_orig, neighbors) in adjacency.into_iter().enumerate() {
-        let source_idx = NodeIndex::new(source_idx_orig);
-        // Adjacency length was validated against nodes length above.
+    for (source_index, neighbors) in adjacency.into_iter().enumerate() {
+        let source_idx = NodeIndex::new(source_index);
+        // Adjacency length was validated against nodes length by the caller.
         let source_node = graph
             .node_weight(source_idx)
             .expect("adjacency length validated against nodes length");
 
-        // __networkx_id__ is always inserted by nx_node_to_petx_node.
         let source_id = source_node
             .attrs
-            .get("__networkx_id__")
+            .get(NETWORKX_ID_ATTR)
             .expect("__networkx_id__ always set by nx_node_to_petx_node");
 
         // serde_json::Value is always serializable.
@@ -142,36 +174,45 @@ where
 
         for edge in neighbors {
             let target_id = &edge.id;
-            let target_idx = node_id_to_index
+            let target_idx = *node_id_to_index
                 .get(target_id)
                 .ok_or_else(|| NxPetgraphError::MissingNeighborNode(target_id.clone()))?;
 
             if is_directed {
-                graph.add_edge(source_idx, *target_idx, edge);
+                graph.add_edge(source_idx, target_idx, edge);
             } else {
                 // serde_json::Value is always serializable.
                 let target_key =
                     serde_json::to_string(target_id).expect("serde_json::Value always serializes");
-
-                let edge_key_str = edge
+                let edge_key = edge
                     .key
                     .as_ref()
                     .and_then(|key| serde_json::to_string(key).ok());
 
-                let canonical = if source_key <= target_key {
-                    (source_key.clone(), target_key, edge_key_str)
-                } else {
-                    (target_key, source_key.clone(), edge_key_str)
-                };
-
+                let canonical = canonical_undirected_edge_key(&source_key, target_key, edge_key);
                 if seen_undirected_edges.insert(canonical) {
-                    graph.add_edge(source_idx, *target_idx, edge);
+                    graph.add_edge(source_idx, target_idx, edge);
                 }
             }
         }
     }
 
-    Ok(PetxGraph { graph_attrs, graph })
+    Ok(())
+}
+
+/// Order an undirected edge's endpoint keys so that `(u, v)` and `(v, u)` map to the same tuple,
+/// letting a `HashSet` deduplicate the two directions NetworkX may list. The optional edge key is
+/// carried through unchanged so parallel edges between the same endpoints stay distinct.
+fn canonical_undirected_edge_key(
+    source_key: &str,
+    target_key: String,
+    edge_key: Option<String>,
+) -> (String, String, Option<String>) {
+    if source_key <= target_key.as_str() {
+        (source_key.to_string(), target_key, edge_key)
+    } else {
+        (target_key, source_key.to_string(), edge_key)
+    }
 }
 
 /// Check whether a graph contains parallel (multi) edges.

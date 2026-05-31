@@ -334,9 +334,9 @@ pub const DIRECTORY_ENTRY_HEADER_SIZE: usize = 28;
 /// push against it.
 ///
 /// [`read_directory`] rejects an inflated `entry_count` against this bound **before** allocating,
-/// so a corrupt or adversarial header cannot trigger a multi-gigabyte reservation; [`encode_directory`]
-/// enforces the same bound on the write side so the library never produces a bundle it would refuse
-/// to read back.
+/// so a corrupt or adversarial header cannot trigger a multi-gigabyte reservation;
+/// [`encode_directory`] enforces the same bound on the write side so the library never produces a
+/// bundle it would refuse to read back.
 pub const MAX_DIRECTORY_ENTRIES: u32 = 256;
 
 /// In-memory representation of a single directory entry.
@@ -552,11 +552,12 @@ pub enum BendlFormatError {
         remaining: u64,
     },
 
-    /// A directory declared more entries than [`MAX_DIRECTORY_ENTRIES`] allows. Rejected before any
-    /// allocation so an inflated on-disk count cannot trigger a huge reservation.
+    /// A directory declared more entries than [`MAX_DIRECTORY_ENTRIES`] allows. Rejected before
+    /// any allocation so an inflated on-disk count cannot trigger a huge reservation.
     #[error("directory declares {count} entries, which exceeds the maximum of {max}")]
     TooManyDirectoryEntries {
-        /// The entry count declared in the directory header (read path) or requested by the writer.
+        /// The entry count declared in the directory header (read path) or requested by the
+        /// writer.
         count: u64,
         /// The maximum permitted entry count ([`MAX_DIRECTORY_ENTRIES`]).
         max: u32,

@@ -17,6 +17,7 @@ use binary_ensemble::io::bundle::{BendlReadError, BendlReader, ChecksumError, Ch
 use binary_ensemble::io::reader::BenStreamReader;
 use binary_ensemble::io::writer::BenStreamWriter;
 use binary_ensemble::ops::relabel::{relabel_ben_file, RelabelOptions};
+use binary_ensemble::test_utils::{BendlBytes, DirectoryEntryField, HeaderField};
 use binary_ensemble::BenVariant;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -65,8 +66,10 @@ fn minimal_bendl_with_entries(
     bytes
 }
 
-fn expect_bendl_open_err(bytes: Vec<u8>) -> binary_ensemble::io::bundle::format::BendlFormatError {
-    match BendlReader::open(Cursor::new(bytes)) {
+fn expect_bendl_open_err(
+    bytes: impl Into<Vec<u8>>,
+) -> binary_ensemble::io::bundle::format::BendlFormatError {
+    match BendlReader::open(Cursor::new(bytes.into())) {
         Ok(_) => panic!("expected BendlReader::open to fail"),
         Err(err) => err,
     }
@@ -715,7 +718,8 @@ fn valid_bendl_seed() -> Vec<u8> {
 /// Open the bundle and drive every public read accessor. Any panic from any reader path fails the
 /// test loudly. Errors are expected (the input is adversarial) and are silently discarded; only
 /// panics matter here.
-fn assert_bendl_bytes_do_not_panic(bytes: Vec<u8>) {
+fn assert_bendl_bytes_do_not_panic(bytes: impl Into<Vec<u8>>) {
+    let bytes = bytes.into();
     let outcome = std::panic::catch_unwind(|| {
         let mut reader = match BendlReader::open(Cursor::new(bytes)) {
             Ok(r) => r,
@@ -826,97 +830,75 @@ fn seeded_malformed_bendl_bytes_do_not_panic() {
         assert_bendl_bytes_do_not_panic(mutated);
     }
 
-    // Length-field inflation seeds. Header field offsets per the v1.0.0 spec:
-    //   bytes 16..20 : flags (u32)
-    //   bytes 20..24 : stream_checksum (u32)
-    //   bytes 24..32 : directory_offset (u64)
-    //   bytes 32..40 : directory_len (u64)
-    //   bytes 40..48 : stream_offset (u64)
-    //   bytes 48..56 : stream_len (u64)
-    let make_inflated = |range: std::ops::Range<usize>, value: u64| -> Vec<u8> {
-        let len = range.end - range.start;
-        let mut bytes = seed.clone();
-        bytes[range].copy_from_slice(&value.to_le_bytes()[..len]);
-        bytes
+    // Header length-field inflation. Each fixture patches one named header field; the capped
+    // values keep the "value far past end of input" paths reachable without turning this into an
+    // OOM stress test.
+    let inflate_header = |field: HeaderField, value: u64| {
+        BendlBytes::new(seed.clone()).with_header_u64(field, value)
     };
 
     // directory_offset past EOF.
-    assert_bendl_bytes_do_not_panic(make_inflated(24..32, u64::MAX));
+    assert_bendl_bytes_do_not_panic(inflate_header(HeaderField::DirectoryOffset, u64::MAX));
     // directory_len past EOF (capped to avoid OOM if the implementation pre-allocates).
-    assert_bendl_bytes_do_not_panic(make_inflated(32..40, ADVERSARIAL_LEN_CAP as u64));
+    assert_bendl_bytes_do_not_panic(inflate_header(
+        HeaderField::DirectoryLen,
+        ADVERSARIAL_LEN_CAP as u64,
+    ));
     // stream_offset past EOF.
-    assert_bendl_bytes_do_not_panic(make_inflated(40..48, u64::MAX));
+    assert_bendl_bytes_do_not_panic(inflate_header(HeaderField::StreamOffset, u64::MAX));
     // stream_len past EOF (capped).
-    assert_bendl_bytes_do_not_panic(make_inflated(48..56, ADVERSARIAL_LEN_CAP as u64));
+    assert_bendl_bytes_do_not_panic(inflate_header(
+        HeaderField::StreamLen,
+        ADVERSARIAL_LEN_CAP as u64,
+    ));
     // stream_offset + stream_len overflowing u64.
-    let mut overflow_bundle = seed.clone();
-    overflow_bundle[40..48].copy_from_slice(&(u64::MAX - 1).to_le_bytes());
-    overflow_bundle[48..56].copy_from_slice(&u64::MAX.to_le_bytes());
-    assert_bendl_bytes_do_not_panic(overflow_bundle);
-    // Reserved header flag bits set.
-    assert_bendl_bytes_do_not_panic(make_inflated(16..20, u32::MAX as u64));
-    // Non-zero alignment_padding at bytes 14..16; we don't have a make_inflated for u16 so do it
-    // inline.
-    let mut padded = seed.clone();
-    padded[14..16].copy_from_slice(&u16::MAX.to_le_bytes());
-    assert_bendl_bytes_do_not_panic(padded);
-
-    // Directory-entry length-field inflation. The directory starts at directory_offset and begins
-    // with a u32 entry_count followed by the entries themselves. Each entry header is 28 bytes:
-    //   u16 asset_type | u16 asset_flags | u16 name_len | u16 reserved
-    //   u64 payload_offset | u64 payload_len | u32 checksum_len
-    let directory_offset = u64::from_le_bytes(seed[24..32].try_into().unwrap()) as usize;
-    let entry_count = u32::from_le_bytes(
-        seed[directory_offset..directory_offset + 4]
-            .try_into()
-            .unwrap(),
+    assert_bendl_bytes_do_not_panic(
+        BendlBytes::new(seed.clone())
+            .with_header_u64(HeaderField::StreamOffset, u64::MAX - 1)
+            .with_header_u64(HeaderField::StreamLen, u64::MAX),
     );
+    // Reserved header flag bits set.
+    assert_bendl_bytes_do_not_panic(inflate_header(HeaderField::Flags, u32::MAX as u64));
+    // Non-zero alignment_padding (writers zero it; readers must ignore non-zero bytes there).
+    assert_bendl_bytes_do_not_panic(inflate_header(
+        HeaderField::AlignmentPadding,
+        u16::MAX as u64,
+    ));
+
+    // Directory-entry length-field inflation: walk each entry and inflate its per-entry length
+    // fields one at a time, plus an inflated entry count.
+    let entry_count = BendlBytes::new(seed.clone()).entry_count();
     assert!(entry_count > 0, "valid_bendl_seed must contain entries");
 
     // entry_count inflation (capped to keep test runtime bounded — the reader must not try to
     // pre-allocate a Vec with u32::MAX capacity, but we don't want to find out the hard way here).
-    let mut inflated_entry_count = seed.clone();
-    inflated_entry_count[directory_offset..directory_offset + 4]
-        .copy_from_slice(&ADVERSARIAL_LEN_CAP.to_le_bytes());
-    assert_bendl_bytes_do_not_panic(inflated_entry_count);
+    assert_bendl_bytes_do_not_panic(
+        BendlBytes::new(seed.clone()).with_entry_count(ADVERSARIAL_LEN_CAP),
+    );
 
-    // Walk each entry and inflate its per-entry length fields one at a time.
-    let mut entry_cursor = directory_offset + 4;
-    for _ in 0..entry_count {
-        let name_len =
-            u16::from_le_bytes(seed[entry_cursor + 4..entry_cursor + 6].try_into().unwrap())
-                as usize;
-        let checksum_len = u32::from_le_bytes(
-            seed[entry_cursor + 24..entry_cursor + 28]
-                .try_into()
-                .unwrap(),
-        ) as usize;
-        let entry_size = 28 + name_len + checksum_len;
+    for index in 0..entry_count as usize {
+        let inflate_entry = |field: DirectoryEntryField, value: u64| {
+            BendlBytes::new(seed.clone()).with_directory_entry_field(index, field, value)
+        };
 
         // name_len inflation (capped).
-        let mut inflated = seed.clone();
-        inflated[entry_cursor + 4..entry_cursor + 6]
-            .copy_from_slice(&(ADVERSARIAL_LEN_CAP as u16).to_le_bytes());
-        assert_bendl_bytes_do_not_panic(inflated);
-
+        assert_bendl_bytes_do_not_panic(inflate_entry(
+            DirectoryEntryField::NameLen,
+            ADVERSARIAL_LEN_CAP as u64,
+        ));
         // checksum_len inflation (capped).
-        let mut inflated = seed.clone();
-        inflated[entry_cursor + 24..entry_cursor + 28]
-            .copy_from_slice(&ADVERSARIAL_LEN_CAP.to_le_bytes());
-        assert_bendl_bytes_do_not_panic(inflated);
-
-        // payload_len inflation to u64::MAX. ExactLen at read time, plus the per-frame decode
-        // cap, prevent any actual allocation.
-        let mut inflated = seed.clone();
-        inflated[entry_cursor + 16..entry_cursor + 24].copy_from_slice(&u64::MAX.to_le_bytes());
-        assert_bendl_bytes_do_not_panic(inflated);
-
+        assert_bendl_bytes_do_not_panic(inflate_entry(
+            DirectoryEntryField::ChecksumLen,
+            ADVERSARIAL_LEN_CAP as u64,
+        ));
+        // payload_len inflation to u64::MAX. ExactLen at read time, plus the per-frame decode cap,
+        // prevent any actual allocation.
+        assert_bendl_bytes_do_not_panic(inflate_entry(DirectoryEntryField::PayloadLen, u64::MAX));
         // payload_offset past EOF.
-        let mut inflated = seed.clone();
-        inflated[entry_cursor + 8..entry_cursor + 16].copy_from_slice(&u64::MAX.to_le_bytes());
-        assert_bendl_bytes_do_not_panic(inflated);
-
-        entry_cursor += entry_size;
+        assert_bendl_bytes_do_not_panic(inflate_entry(
+            DirectoryEntryField::PayloadOffset,
+            u64::MAX,
+        ));
     }
 }
 
@@ -930,9 +912,9 @@ fn bendl_open_rejects_directory_offset_past_eof() {
     // directory_offset claims a position well past the actual file. Cursor seek succeeds (its
     // position is u64) but the subsequent read returns Ok(0); read_directory's read_exact for the
     // entry count fails with UnexpectedEof, which becomes BendlFormatError::Io.
-    let mut bytes = valid_bendl_seed();
-    let past_eof = (bytes.len() as u64) + 4096;
-    bytes[24..32].copy_from_slice(&past_eof.to_le_bytes());
+    let seed = valid_bendl_seed();
+    let past_eof = seed.len() as u64 + 4096;
+    let bytes = BendlBytes::new(seed).with_header_u64(HeaderField::DirectoryOffset, past_eof);
     let err = expect_bendl_open_err(bytes);
     assert!(
         matches!(err, BendlFormatError::Io(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof),
@@ -944,9 +926,9 @@ fn bendl_open_rejects_directory_offset_past_eof() {
 fn bendl_open_rejects_directory_offset_plus_directory_len_overflow() {
     // directory_offset + directory_len overflows u64. The reader has no chance to read anything at
     // u64::MAX - 4; the failure surface is the same UnexpectedEof from the bounded read attempt.
-    let mut bytes = valid_bendl_seed();
-    bytes[24..32].copy_from_slice(&(u64::MAX - 4).to_le_bytes());
-    bytes[32..40].copy_from_slice(&100u64.to_le_bytes());
+    let bytes = BendlBytes::new(valid_bendl_seed())
+        .with_header_u64(HeaderField::DirectoryOffset, u64::MAX - 4)
+        .with_header_u64(HeaderField::DirectoryLen, 100);
     let err = expect_bendl_open_err(bytes);
     assert!(
         matches!(err, BendlFormatError::Io(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof),
@@ -967,13 +949,13 @@ fn bendl_open_rejects_name_len_longer_than_remaining_directory_bytes() {
         payload_len: 0,
         checksum: None,
     }];
-    let mut bytes = minimal_bendl_with_entries(entries, 0);
-
-    // Directory layout in the bundle starts at HEADER_SIZE: [u32 count][entry_header (28 bytes)
-    // including u16 name_len at offset +4][name bytes][checksum bytes].
-    // Patch name_len from 2 to a huge value that exceeds the directory's declared length.
-    let name_len_offset = HEADER_SIZE + 4 + 4;
-    bytes[name_len_offset..name_len_offset + 2].copy_from_slice(&u16::MAX.to_le_bytes());
+    // Patch the sole entry's name_len from 2 to a huge value that exceeds the directory's declared
+    // length, so read_exact for the name buffer fails inside the bounded directory region.
+    let bytes = BendlBytes::new(minimal_bendl_with_entries(entries, 0)).with_directory_entry_field(
+        0,
+        DirectoryEntryField::NameLen,
+        u16::MAX as u64,
+    );
 
     let err = expect_bendl_open_err(bytes);
     assert!(
@@ -992,19 +974,17 @@ fn bendl_unknown_header_flag_bits_are_ignored() {
     // Forward-compat contract: bits 1..31 of `flags` are reserved. Setting them on a finalized
     // bundle must not change anything observable — open succeeds, directory entries are intact,
     // verify_stream_checksum passes, asset access works.
-    let mut bytes = valid_bendl_seed();
-    let flags_offset = 16;
-    let original_flags =
-        u32::from_le_bytes(bytes[flags_offset..flags_offset + 4].try_into().unwrap());
+    let seed = BendlBytes::new(valid_bendl_seed());
+    let original_flags = seed.header_u64(HeaderField::Flags) as u32;
     assert!(
         original_flags & HEADER_FLAG_STREAM_CHECKSUM != 0,
         "seed must have STREAM_CHECKSUM set; otherwise this test is testing the wrong contract"
     );
     let polluted_flags = original_flags | (1u32 << 5) | (1u32 << 31);
-    bytes[flags_offset..flags_offset + 4].copy_from_slice(&polluted_flags.to_le_bytes());
+    let bytes = seed.with_header_u64(HeaderField::Flags, polluted_flags as u64);
 
-    let mut reader =
-        BendlReader::open(Cursor::new(bytes)).expect("unknown flag bits must not block open");
+    let mut reader = BendlReader::open(Cursor::new(bytes.into_bytes()))
+        .expect("unknown flag bits must not block open");
     assert!(reader.is_finalized());
     assert_eq!(
         reader.assets().len(),
@@ -1035,15 +1015,13 @@ fn bendl_clear_stream_checksum_flag_with_nonzero_bytes_returns_unavailable_not_m
     // but leaving non-zero garbage in the stream_checksum slot — a buggy reader that interpreted
     // bytes 20..24 unconditionally would return Mismatch (since the garbage would not match the
     // actual CRC).
-    let mut bytes = valid_bendl_seed();
-    let flags_offset = 16;
-    let cleared_flags =
-        u32::from_le_bytes(bytes[flags_offset..flags_offset + 4].try_into().unwrap())
-            & !HEADER_FLAG_STREAM_CHECKSUM;
-    bytes[flags_offset..flags_offset + 4].copy_from_slice(&cleared_flags.to_le_bytes());
-    bytes[20..24].copy_from_slice(&0xDEADBEEFu32.to_le_bytes());
+    let seed = BendlBytes::new(valid_bendl_seed());
+    let cleared_flags = seed.header_u64(HeaderField::Flags) as u32 & !HEADER_FLAG_STREAM_CHECKSUM;
+    let bytes = seed
+        .with_header_u64(HeaderField::Flags, cleared_flags as u64)
+        .with_header_u64(HeaderField::StreamChecksum, 0xDEADBEEF);
 
-    let mut reader = BendlReader::open(Cursor::new(bytes)).expect("open must succeed");
+    let mut reader = BendlReader::open(Cursor::new(bytes.into_bytes())).expect("open must succeed");
 
     let expect_unavailable = |result: Result<_, BendlReadError>| match result {
         Err(BendlReadError::Checksum(ChecksumError::Unavailable {
@@ -1070,10 +1048,10 @@ fn bendl_nonzero_alignment_padding_is_ignored() {
     // alignment_padding occupies bytes 14..16. Writers zero it; readers must ignore non-zero bytes
     // there. Forward-compat insurance: a future writer that accidentally stamps something into the
     // padding region must not break readers.
-    let mut bytes = valid_bendl_seed();
-    bytes[14..16].copy_from_slice(&u16::MAX.to_le_bytes());
+    let bytes = BendlBytes::new(valid_bendl_seed())
+        .with_header_u64(HeaderField::AlignmentPadding, u16::MAX as u64);
 
-    let mut reader = BendlReader::open(Cursor::new(bytes))
+    let mut reader = BendlReader::open(Cursor::new(bytes.into_bytes()))
         .expect("non-zero alignment_padding must not block open");
     reader
         .verify_stream_checksum()
@@ -1093,11 +1071,11 @@ fn bendl_stream_offset_plus_stream_len_overflow_surfaces_short_range() {
     // read; verify_stream_checksum returns BendlReadError::Io(UnexpectedEof);
     // open_assignment_reader either fails at construction or surfaces UnexpectedEof during
     // iteration; assignment_stream_reader_unverified surfaces UnexpectedEof on read.
-    let mut bytes = valid_bendl_seed();
-    bytes[40..48].copy_from_slice(&(u64::MAX - 5).to_le_bytes());
-    bytes[48..56].copy_from_slice(&u64::MAX.to_le_bytes());
+    let bytes = BendlBytes::new(valid_bendl_seed())
+        .with_header_u64(HeaderField::StreamOffset, u64::MAX - 5)
+        .with_header_u64(HeaderField::StreamLen, u64::MAX);
 
-    let mut reader = BendlReader::open(Cursor::new(bytes)).expect("open must succeed");
+    let mut reader = BendlReader::open(Cursor::new(bytes.into_bytes())).expect("open must succeed");
 
     match reader.verify_stream_checksum() {
         Err(BendlReadError::Io(ref e)) => assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof),
@@ -1146,11 +1124,11 @@ fn bendl_stream_offset_plus_stream_len_overflow_surfaces_short_range() {
 fn bendl_stream_offset_past_eof_surfaces_short_range() {
     // stream_offset alone points past EOF. Same surface contract as the overflow case — open
     // succeeds; every stream accessor reports UnexpectedEof on read.
-    let mut bytes = valid_bendl_seed();
-    let past_eof = (bytes.len() as u64) + 4096;
-    bytes[40..48].copy_from_slice(&past_eof.to_le_bytes());
+    let seed = valid_bendl_seed();
+    let past_eof = seed.len() as u64 + 4096;
+    let bytes = BendlBytes::new(seed).with_header_u64(HeaderField::StreamOffset, past_eof);
 
-    let mut reader = BendlReader::open(Cursor::new(bytes)).expect("open must succeed");
+    let mut reader = BendlReader::open(Cursor::new(bytes.into_bytes())).expect("open must succeed");
 
     match reader.verify_stream_checksum() {
         Err(BendlReadError::Io(ref e)) => assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof),

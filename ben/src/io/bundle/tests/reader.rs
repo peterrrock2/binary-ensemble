@@ -1482,7 +1482,10 @@ fn asset_payload_reader_unverified_returns_compressed_bytes_for_xz_asset() {
     let mut out = Vec::new();
     payload_reader.read_to_end(&mut out).unwrap();
     drop(payload_reader);
-    assert_eq!(out, compressed, "payload reader returns raw compressed bytes");
+    assert_eq!(
+        out, compressed,
+        "payload reader returns raw compressed bytes"
+    );
     assert_ne!(out, raw, "payload reader did NOT decompress");
 
     // For an uncompressed asset, the payload reader and the decoded unverified reader produce the

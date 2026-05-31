@@ -1390,8 +1390,14 @@ fn twodelta_round_trip_with_label_zero_pairs() {
     use std::io::Cursor;
 
     let fixtures = vec![
-        ("pair (0, 1)", vec![vec![0u16, 0, 1, 1], vec![0u16, 1, 0, 1]]),
-        ("pair (1, 0)", vec![vec![1u16, 1, 0, 0], vec![1u16, 0, 1, 0]]),
+        (
+            "pair (0, 1)",
+            vec![vec![0u16, 0, 1, 1], vec![0u16, 1, 0, 1]],
+        ),
+        (
+            "pair (1, 0)",
+            vec![vec![1u16, 1, 0, 0], vec![1u16, 0, 1, 0]],
+        ),
     ];
 
     for (label, assignments) in fixtures {

@@ -60,8 +60,8 @@ pub(super) struct Args {
     /// Input file to read from.
     #[arg()]
     pub input_file: Option<String>,
-    /// Output file to write to. Optional. If not provided, the output file will be determined based
-    /// on the input file and the mode of operation.
+    /// Output file to write to. Optional. If not provided, the output file will be determined
+    /// based on the input file and the mode of operation.
     #[arg(short, long)]
     pub output_file: Option<String>,
     /// The standard behaviour is to try and derive the output file name from the input file name.
@@ -92,9 +92,9 @@ pub(super) struct Args {
     /// `--variant standard`. Ignored if `--variant` is set.
     #[arg(short = 'a', long)]
     pub save_all: bool,
-    /// BEN variant to use when encoding. Possible values: standard, mkvchain, twodelta. Defaults to
-    /// mkvchain if neither this nor --save-all is given. Takes precedence over --save-all when both
-    /// are provided.
+    /// BEN variant to use when encoding. Possible values: standard, mkvchain, twodelta. Defaults
+    /// to mkvchain if neither this nor --save-all is given. Takes precedence over --save-all
+    /// when both are provided.
     #[arg(short = 't', long, value_enum)]
     pub variant: Option<CliVariant>,
     /// If the output file already exists, this flag will cause the program to overwrite it without
@@ -125,9 +125,9 @@ pub(super) struct Args {
     #[arg(long)]
     pub chunk_size: Option<usize>,
     /// Per-block size in bytes for the multithreaded XZ encoder. liblzma needs a non-zero block
-    /// size to actually fan compression out across worker threads; smaller blocks scale parallelism
-    /// better at a slight compression-ratio cost. Defaults to 16 MiB when `--n-cpus > 1`, or 0
-    /// (liblzma auto, ~192 MiB at preset 9) for single-thread runs.
+    /// size to actually fan compression out across worker threads; smaller blocks scale
+    /// parallelism better at a slight compression-ratio cost. Defaults to 16 MiB when
+    /// `--n-cpus > 1`, or 0 (liblzma auto, ~192 MiB at preset 9) for single-thread runs.
     #[arg(long)]
     pub xz_block_size: Option<u64>,
     /// Embed a graph JSON asset alongside the assignment stream and emit the result as a `.bendl`

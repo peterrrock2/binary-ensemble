@@ -102,6 +102,10 @@ pub(super) struct ExtractArgs {
     /// Extract the embedded assignment stream region verbatim. Mutually exclusive with `--asset`.
     #[arg(long, conflicts_with = "asset")]
     pub stream: bool,
+    /// Allow `--stream` extraction from an unfinalized bundle. This skips stream checksum
+    /// verification because an unfinalized stream checksum is not authoritative.
+    #[arg(long, requires = "stream")]
+    pub allow_unfinalized: bool,
     /// Name of the asset to extract (e.g. `graph.json`). If the asset is xz-compressed, the
     /// extracted file contains the decompressed bytes.
     #[arg(long)]

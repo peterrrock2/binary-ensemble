@@ -56,6 +56,19 @@ ASSET_FLAG_JSON = 1 << 0
 ASSET_FLAG_XZ = 1 << 1
 ASSET_FLAG_CHECKSUM = 1 << 2
 
+HEADER_FLAG_STREAM_CHECKSUM = 1 << 0
+
+
+def _crc32c(data: bytes) -> int:
+    """Compute CRC32C (Castagnoli), matching the Rust bundle checksum contract."""
+    crc = 0xFFFFFFFF
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            mask = -(crc & 1)
+            crc = (crc >> 1) ^ (0x82F63B78 & mask)
+    return (~crc) & 0xFFFFFFFF
+
 
 # ---------------------------------------------------------------------------
 # Byte-level bundle construction
@@ -75,26 +88,25 @@ def _pack_header(
     major_version: int = BENDL_MAJOR_VERSION,
     minor_version: int = BENDL_MINOR_VERSION,
     flags: int = 0,
+    stream_checksum: int = 0,
     reserved_0: int = 0,
 ) -> bytes:
     if len(magic) != 8:
         raise ValueError("magic must be 8 bytes")
-    return (
-        magic
-        + struct.pack(
-            "<HHBBHQQQQQq",
-            major_version,
-            minor_version,
-            complete,
-            assignment_format,
-            reserved_0,
-            flags,
-            directory_offset,
-            directory_len,
-            stream_offset,
-            stream_len,
-            sample_count,
-        )
+    return magic + struct.pack(
+        "<HHBBHIIQQQQq",
+        major_version,
+        minor_version,
+        complete,
+        assignment_format,
+        reserved_0,
+        flags,
+        stream_checksum,
+        directory_offset,
+        directory_len,
+        stream_offset,
+        stream_len,
+        sample_count,
     )
 
 
@@ -155,13 +167,13 @@ class _Asset:
     def encoded_bytes(self) -> bytes:
         return _xz(self.raw_payload) if self.compress else self.raw_payload
 
-    def flags(self) -> int:
+    def flags(self, *, has_checksum: bool) -> int:
         flags = 0
         if self.is_json:
             flags |= ASSET_FLAG_JSON
         if self.compress:
             flags |= ASSET_FLAG_XZ
-        if self.checksum is not None:
+        if has_checksum:
             flags |= ASSET_FLAG_CHECKSUM
         return flags
 
@@ -175,13 +187,17 @@ def build_bundle(
     complete: int = COMPLETE_YES,
     magic: bytes = BENDL_MAGIC,
     major_version: int = BENDL_MAJOR_VERSION,
+    checksums: bool = True,
 ) -> bytes:
     """Construct the bytes of a `.bendl` file from pieces.
 
     The layout is ``[header][asset payloads][stream][directory]``. This
     helper mirrors the writer's finalize path closely enough to produce
     bundles that the Rust reader accepts, while also exposing enough knobs
-    to generate deliberately broken bundles for negative tests.
+    to generate deliberately broken bundles for negative tests. By default
+    it mirrors the current writer and stores CRC32C checksums for finalized
+    streams and assets; pass ``checksums=False`` for foreign/no-checksum
+    fixtures.
     """
     assets = list(assets)
 
@@ -203,20 +219,29 @@ def build_bundle(
 
     directory_offset = len(buf)
     entries_bytes: List[bytes] = []
-    for (offset, length, _enc), asset in zip(encoded_assets, assets):
+    for (offset, length, encoded), asset in zip(encoded_assets, assets):
+        checksum = asset.checksum
+        if checksums and checksum is None:
+            checksum = struct.pack("<I", _crc32c(encoded))
         entries_bytes.append(
             _pack_directory_entry(
                 asset_type=asset.asset_type,
-                asset_flags=asset.flags(),
+                asset_flags=asset.flags(has_checksum=checksum is not None),
                 name=asset.name,
                 payload_offset=offset,
                 payload_len=length,
-                checksum=asset.checksum,
+                checksum=checksum,
             )
         )
     directory = _pack_directory(entries_bytes)
     buf.extend(directory)
     directory_len = len(directory)
+
+    header_flags = 0
+    stream_checksum = 0
+    if checksums and complete == COMPLETE_YES:
+        header_flags |= HEADER_FLAG_STREAM_CHECKSUM
+        stream_checksum = _crc32c(stream_bytes)
 
     header = _pack_header(
         complete=complete,
@@ -228,6 +253,8 @@ def build_bundle(
         sample_count=sample_count,
         magic=magic,
         major_version=major_version,
+        flags=header_flags,
+        stream_checksum=stream_checksum,
     )
     buf[:HEADER_SIZE] = header
     return bytes(buf)
@@ -245,7 +272,9 @@ def _write_jsonl(samples: List[List[int]], path: Path) -> None:
             f.write("\n")
 
 
-def _ben_bytes_for(samples: List[List[int]], tmp: Path, variant: str = "standard") -> bytes:
+def _ben_bytes_for(
+    samples: List[List[int]], tmp: Path, variant: str = "standard"
+) -> bytes:
     """Produce real BEN bytes for ``samples`` via ``BenEncoder``."""
     ben_path = tmp / "inner.ben"
     with BenEncoder(
@@ -256,7 +285,9 @@ def _ben_bytes_for(samples: List[List[int]], tmp: Path, variant: str = "standard
     return ben_path.read_bytes()
 
 
-def _xben_bytes_for(samples: List[List[int]], tmp: Path, variant: str = "standard") -> bytes:
+def _xben_bytes_for(
+    samples: List[List[int]], tmp: Path, variant: str = "standard"
+) -> bytes:
     src = tmp / "src.jsonl"
     _write_jsonl(samples, src)
     out = tmp / "inner.xben"
@@ -284,7 +315,9 @@ def test_module_exports_decoder_and_encoder() -> None:
 
 def test_bundle_reader_round_trip_ben_with_assets(tmp_path: Path) -> None:
     rng = random.Random(4242)
-    samples = [[rng.randint(1, 10) for _ in range(rng.randint(1, 50))] for _ in range(40)]
+    samples = [
+        [rng.randint(1, 10) for _ in range(rng.randint(1, 50))] for _ in range(40)
+    ]
 
     graph_json = b'{"nodes":[0,1,2,3],"edges":[[0,1],[1,2],[2,3]]}'
     metadata_json = b'{"note":"hello bundle","seed":4242}'
@@ -336,7 +369,12 @@ def test_bundle_reader_round_trip_ben_with_assets(tmp_path: Path) -> None:
     assert reader.assignment_format() == "ben"
 
     names = reader.asset_names()
-    assert names == ["metadata.json", "graph.json", "node_permutation_map.json", "notes.bin"]
+    assert names == [
+        "metadata.json",
+        "graph.json",
+        "node_permutation_map.json",
+        "notes.bin",
+    ]
 
     assets = reader.list_assets()
     assert [a["name"] for a in assets] == names
@@ -346,7 +384,7 @@ def test_bundle_reader_round_trip_ben_with_assets(tmp_path: Path) -> None:
     assert "json" in by_name["graph.json"]["flags"]
     assert "xz" not in by_name["metadata.json"]["flags"]
     assert "json" in by_name["metadata.json"]["flags"]
-    assert by_name["notes.bin"]["flags"] == []
+    assert by_name["notes.bin"]["flags"] == ["checksum"]
     # payload_offset must sit at or past the end of the header.
     for entry in assets:
         assert entry["offset"] >= HEADER_SIZE
@@ -399,7 +437,9 @@ def test_bundle_reader_round_trip_xben(tmp_path: Path) -> None:
     assert list(BenDecoder(extracted, mode="xben")) == samples
 
 
-def test_bundle_reader_canonical_helpers_return_none_when_absent(tmp_path: Path) -> None:
+def test_bundle_reader_canonical_helpers_return_none_when_absent(
+    tmp_path: Path,
+) -> None:
     samples = [[1, 2, 3]]
     bundle = build_bundle(
         stream_bytes=_ben_bytes_for(samples, tmp_path),
@@ -675,7 +715,9 @@ def test_open_rejects_malformed_directory_invariants(tmp_path: Path) -> None:
         BenDecoder(path)
 
 
-def test_open_rejects_declared_directory_len_with_trailing_bytes(tmp_path: Path) -> None:
+def test_open_rejects_declared_directory_len_with_trailing_bytes(
+    tmp_path: Path,
+) -> None:
     bundle = bytearray(
         build_bundle(
             stream_bytes=_ben_bytes_for([[1, 2]], tmp_path),
@@ -711,9 +753,11 @@ def test_incomplete_bundle_scans_stream_for_sample_count(tmp_path: Path) -> None
     assert reader.is_complete() is False
     assert reader.count_samples() == 1
     assert reader.asset_names() == []
-    # extract_stream should still write out bytes that decode as BEN.
+    # Verified extraction requires a finalized stream checksum.
     out = tmp_path / "extracted.ben"
-    reader.extract_stream(out)
+    with pytest.raises(Exception, match="unfinalized"):
+        reader.extract_stream(out)
+    reader.extract_stream(out, overwrite=True, allow_unfinalized=True)
     assert list(BenDecoder(out, mode="ben")) == [[1, 2, 3]]
 
 
@@ -840,9 +884,12 @@ def test_interrupted_ben_stream_mid_frame_decodes_valid_prefix(tmp_path: Path) -
     except Exception:
         pass
 
-    # extract_stream should write exactly the partial byte sequence.
+    # Verified extraction refuses unfinalized streams because their checksum is
+    # not authoritative yet.
     extracted = tmp_path / "partial.ben"
-    reader.extract_stream(extracted)
+    with pytest.raises(Exception, match="unfinalized"):
+        reader.extract_stream(extracted)
+    reader.extract_stream(extracted, overwrite=True, allow_unfinalized=True)
     assert extracted.read_bytes() == partial
 
     # The extracted file opens as a BEN stream (banner is intact).
@@ -871,7 +918,9 @@ def test_interrupted_ben_stream_inside_banner_fails_to_open_decoder(
     assert reader.is_complete() is False
 
     extracted = tmp_path / "head_cut.ben"
-    reader.extract_stream(extracted)
+    with pytest.raises(Exception, match="unfinalized"):
+        reader.extract_stream(extracted)
+    reader.extract_stream(extracted, overwrite=True, allow_unfinalized=True)
     # The decoder must reject a BEN file whose banner is incomplete.
     with pytest.raises(Exception, match="Failed to create BenDecoder"):
         BenDecoder(extracted, mode="ben")
@@ -890,14 +939,18 @@ def test_interrupted_ben_stream_zero_bytes_after_header(tmp_path: Path) -> None:
         reader.count_samples()
 
     extracted = tmp_path / "zero.ben"
-    reader.extract_stream(extracted)
+    with pytest.raises(Exception, match="unfinalized"):
+        reader.extract_stream(extracted)
+    reader.extract_stream(extracted, overwrite=True, allow_unfinalized=True)
     assert extracted.read_bytes() == b""
     # A zero-byte .ben has no banner → decoder construction must fail.
     with pytest.raises(Exception, match="Failed to create BenDecoder"):
         BenDecoder(extracted, mode="ben")
 
 
-def test_finalized_bundle_with_inflated_stream_len_survives_open(tmp_path: Path) -> None:
+def test_finalized_bundle_with_inflated_stream_len_survives_open(
+    tmp_path: Path,
+) -> None:
     # Build a valid finalized bundle, then patch stream_len to a value
     # larger than the actual stream payload. This simulates the narrow
     # window where the writer updated the header but was killed before
@@ -976,9 +1029,7 @@ def test_long_asset_name_near_u16_max(tmp_path: Path) -> None:
     bundle = build_bundle(
         stream_bytes=_ben_bytes_for([[1]], tmp_path),
         sample_count=1,
-        assets=[
-            _Asset(asset_type=ASSET_TYPE_CUSTOM, name=long_name, payload=payload)
-        ],
+        assets=[_Asset(asset_type=ASSET_TYPE_CUSTOM, name=long_name, payload=payload)],
     )
     path = _write_bundle(tmp_path / "long.bendl", bundle)
     reader = BenDecoder(path)
@@ -1027,6 +1078,7 @@ def test_list_assets_flag_fidelity(tmp_path: Path) -> None:
         stream_bytes=_ben_bytes_for([[1, 2]], tmp_path),
         sample_count=1,
         assets=assets,
+        checksums=False,
     )
     path = _write_bundle(tmp_path / "flags.bendl", bundle)
     reader = BenDecoder(path)
@@ -1065,9 +1117,9 @@ def test_read_asset_bytes_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_stress_many_heterogeneous_assets_round_trip(tmp_path: Path) -> None:
-    # 500 custom assets with rotating flags. This exercises directory
+    # A full directory with rotating flags. This exercises directory
     # scaling, offset bookkeeping, and name lookup on a non-trivial directory.
-    N = 500
+    N = 256
     assets: List[_Asset] = []
     expected: List[Tuple[str, bytes]] = []
     rng = random.Random(0xBEEF)
@@ -1268,9 +1320,7 @@ def test_pybenencoder_default_emits_bundle_without_graph(tmp_path: Path) -> None
 def test_pybenencoder_bundle_embeds_graph_from_dict(tmp_path: Path) -> None:
     out = tmp_path / "with_graph.bendl"
     samples = [[1, 1, 2, 2], [1, 1, 3, 3]]
-    with BenEncoder(
-        out, overwrite=True, variant="standard", graph=SAMPLE_GRAPH
-    ) as enc:
+    with BenEncoder(out, overwrite=True, variant="standard", graph=SAMPLE_GRAPH) as enc:
         for a in samples:
             enc.write(a)
 
@@ -1296,9 +1346,7 @@ def test_pybenencoder_bundle_embeds_graph_from_path(tmp_path: Path) -> None:
 
     out = tmp_path / "with_graph_path.bendl"
     samples = [[0, 0, 1, 1]]
-    with BenEncoder(
-        out, overwrite=True, variant="standard", graph=graph_path
-    ) as enc:
+    with BenEncoder(out, overwrite=True, variant="standard", graph=graph_path) as enc:
         for a in samples:
             enc.write(a)
 
@@ -1329,9 +1377,7 @@ def test_pybenencoder_bundle_embeds_graph_from_bytes(tmp_path: Path) -> None:
     raw = json.dumps(SAMPLE_GRAPH).encode("utf-8")
     out = tmp_path / "via-bytes.bendl"
     samples = [[2, 2, 2, 2]]
-    with BenEncoder(
-        out, overwrite=True, variant="standard", graph=raw
-    ) as enc:
+    with BenEncoder(out, overwrite=True, variant="standard", graph=raw) as enc:
         for a in samples:
             enc.write(a)
 
@@ -1343,9 +1389,7 @@ def test_pybenencoder_bundle_embeds_graph_from_bytesio(tmp_path: Path) -> None:
     buf = io.BytesIO(json.dumps(SAMPLE_GRAPH).encode("utf-8"))
     out = tmp_path / "via-bytesio.bendl"
     samples = [[1, 2, 1, 2]]
-    with BenEncoder(
-        out, overwrite=True, variant="standard", graph=buf
-    ) as enc:
+    with BenEncoder(out, overwrite=True, variant="standard", graph=buf) as enc:
         for a in samples:
             enc.write(a)
 
@@ -1357,9 +1401,7 @@ def test_pybenencoder_bundle_embeds_graph_from_stringio(tmp_path: Path) -> None:
     buf = io.StringIO(json.dumps(SAMPLE_GRAPH))
     out = tmp_path / "via-stringio.bendl"
     samples = [[3, 3, 3, 3]]
-    with BenEncoder(
-        out, overwrite=True, variant="standard", graph=buf
-    ) as enc:
+    with BenEncoder(out, overwrite=True, variant="standard", graph=buf) as enc:
         for a in samples:
             enc.write(a)
 
@@ -1371,9 +1413,7 @@ def test_pybenencoder_bundle_round_trip_via_extract_stream(tmp_path: Path) -> No
     out = tmp_path / "full.bendl"
     rng = random.Random(0xCAFE)
     samples = [[rng.randint(1, 8) for _ in range(12)] for _ in range(15)]
-    with BenEncoder(
-        out, overwrite=True, variant="standard", graph=SAMPLE_GRAPH
-    ) as enc:
+    with BenEncoder(out, overwrite=True, variant="standard", graph=SAMPLE_GRAPH) as enc:
         for a in samples:
             enc.write(a)
 
@@ -1402,9 +1442,7 @@ def test_pybenencoder_ben_file_only_matches_old_format(tmp_path: Path) -> None:
     # A ben_file_only=True output should be byte-identical to the legacy
     # plain-BEN path, so the header has no BENDL magic.
     out = tmp_path / "legacy.ben"
-    with BenEncoder(
-        out, overwrite=True, variant="standard", ben_file_only=True
-    ) as enc:
+    with BenEncoder(out, overwrite=True, variant="standard", ben_file_only=True) as enc:
         enc.write([1, 2, 3])
     blob = out.read_bytes()
     assert not blob.startswith(BENDL_MAGIC)
@@ -1528,7 +1566,7 @@ def test_pybendecoder_bundle_toc_and_assets(tmp_path: Path) -> None:
     by_name = {a["name"]: a for a in assets}
     assert "xz" in by_name["graph.json"]["flags"]
     assert "json" in by_name["graph.json"]["flags"]
-    assert by_name["notes.bin"]["flags"] == []
+    assert by_name["notes.bin"]["flags"] == ["checksum"]
 
     # Raw and JSON asset access
     assert dec.read_asset_bytes("metadata.json") == metadata_json
@@ -1553,9 +1591,7 @@ def test_pybendecoder_bundle_canonical_helpers_return_none_when_absent(
     bundle = build_bundle(
         stream_bytes=_ben_bytes_for(samples, tmp_path),
         sample_count=len(samples),
-        assets=[
-            _Asset(asset_type=ASSET_TYPE_CUSTOM, name="custom.bin", payload=b"x")
-        ],
+        assets=[_Asset(asset_type=ASSET_TYPE_CUSTOM, name="custom.bin", payload=b"x")],
     )
     path = _write_bundle(tmp_path / "sparse.bendl", bundle)
     dec = BenDecoder(path)
@@ -1683,9 +1719,7 @@ def test_pybendecoder_opens_bundle_produced_by_pybenencoder(tmp_path: Path) -> N
     # must round-trip through a single BenDecoder call — no need to
     # extract the stream first.
     out = tmp_path / "e2e.bendl"
-    with BenEncoder(
-        out, overwrite=True, variant="standard", graph=SAMPLE_GRAPH
-    ) as enc:
+    with BenEncoder(out, overwrite=True, variant="standard", graph=SAMPLE_GRAPH) as enc:
         for a in [[1, 2, 3], [2, 3, 4]]:
             enc.write(a)
 
@@ -1943,9 +1977,7 @@ def test_pybendecoder_bundle_graph_asset_is_xz_transparent(tmp_path: Path) -> No
     # A bundle built with BenEncoder compresses the graph asset as xz;
     # read_graph() on BenDecoder must still return the decoded JSON.
     out = tmp_path / "xz_graph.bendl"
-    with BenEncoder(
-        out, overwrite=True, variant="standard", graph=SAMPLE_GRAPH
-    ) as enc:
+    with BenEncoder(out, overwrite=True, variant="standard", graph=SAMPLE_GRAPH) as enc:
         enc.write([1, 2, 3])
     dec = BenDecoder(out)
     # Spot-check that graph.json was actually stored compressed.
@@ -2006,7 +2038,12 @@ def test_pybendecoder_plain_xben_assignment_format(tmp_path: Path) -> None:
     _write_jsonl(samples, src)
     xben_path = tmp_path / "plain.xben"
     encode_jsonl_to_xben(
-        src, xben_path, overwrite=True, variant="standard", n_threads=1, compression_level=1
+        src,
+        xben_path,
+        overwrite=True,
+        variant="standard",
+        n_threads=1,
+        compression_level=1,
     )
     with pytest.warns(UserWarning):
         dec = BenDecoder(xben_path, mode="xben")
