@@ -9,7 +9,7 @@ repository = "https://github.com/peterrrock2/binary-ensemble"
 description = "Python bindings for the Binary Ensemble Package. Specifically the Encoder and Decoder"
 
 [lib]
-name = "pyben_core"
+name = "ben_py_core"
 crate-type = ["cdylib"]
 
 [dependencies]

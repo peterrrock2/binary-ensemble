@@ -1,5 +1,5 @@
-Welcome to PyBen's documentation!
-=================================
+Welcome to binary-ensemble's documentation!
+===========================================
 
 BEN (short for Binary-Ensemble) is a compression algorithm designed for efficient storage and access
 of ensembles of districting plans, and was designed to work primarily as a companion to the
@@ -15,7 +15,7 @@ BEN and XBEN formats.
 Installation
 ------------
 
-To install PyBen, you can just use pip!
+To install binary-ensemble, you can just use pip!
 
 .. code-block:: bash
 
@@ -23,9 +23,9 @@ To install PyBen, you can just use pip!
 
 
 .. toctree:: 
-    :caption: PyBEN Tutorial
+    :caption: binary-ensemble Tutorial
 
-    user/using_pyben
+    user/using_ben_py
 
 
 .. toctree::

@@ -9,10 +9,10 @@ build:
 python:
   install:
     - method: pip
-      path: ./pyben
+      path: ./ben-py
       extra_requirements:
         - docs
 
 sphinx:
   builder: dirhtml
-  configuration: pyben/docs/conf.py
+  configuration: ben-py/docs/conf.py

@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.abspath("../src"))
 
 # -- Project information -----------------------------------------------------
 
-project = "PyBen"
+project = "binary-ensemble"
 copyright = "2025, Peter Rock"
 author = "Peter Rock"
 

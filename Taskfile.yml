@@ -7,7 +7,7 @@ vars:
   LOCAL_BIN: '{{.HOME}}/.local/bin'
   LLVM_BIN: '{{.HOME}}/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/bin'
   COV_TARGET_DIR: '{{.ROOT_DIR}}/target/llvm-cov-target'
-  PYBEN_TEST_PATHS: 'tests/'
+  BEN_PY_TEST_PATHS: 'tests/'
 
 tasks:
   default:
@@ -137,7 +137,7 @@ tasks:
       PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
     dir: ben-py
     cmds:
-      - uv run pytest {{.CLI_ARGS | default .PYBEN_TEST_PATHS}}
+      - uv run pytest {{.CLI_ARGS | default .BEN_PY_TEST_PATHS}}
 
   test:
     desc: Run Rust and Python tests
@@ -223,7 +223,7 @@ tasks:
         export CARGO_TARGET_DIR="{{.COV_TARGET_DIR}}";
         cd "{{.ROOT_DIR}}/ben-py";
         uv run maturin develop --target-dir "{{.COV_TARGET_DIR}}";
-        uv run pytest {{.CLI_ARGS | default .PYBEN_TEST_PATHS}}'
+        uv run pytest {{.CLI_ARGS | default .BEN_PY_TEST_PATHS}}'
       - >-
         {{.LLVM_BIN}}/llvm-profdata merge -sparse
         {{.ROOT_DIR}}/target/*.profraw
@@ -257,7 +257,7 @@ tasks:
         export CARGO_TARGET_DIR="{{.COV_TARGET_DIR}}";
         cd "{{.ROOT_DIR}}/ben-py";
         uv run maturin develop --target-dir "{{.COV_TARGET_DIR}}";
-        uv run pytest {{.CLI_ARGS | default .PYBEN_TEST_PATHS}}'
+        uv run pytest {{.CLI_ARGS | default .BEN_PY_TEST_PATHS}}'
       - >-
         {{.LLVM_BIN}}/llvm-profdata merge -sparse
         {{.ROOT_DIR}}/target/*.profraw
@@ -305,7 +305,7 @@ tasks:
         cd "{{.ROOT_DIR}}/ben-py";
         uv run maturin develop --target-dir "{{.COV_TARGET_DIR}}" >/dev/null;
         pytest_status=0;
-        uv run pytest {{.CLI_ARGS | default .PYBEN_TEST_PATHS}} >/tmp/ben-py-pytest.log || pytest_status="$?";
+        uv run pytest {{.CLI_ARGS | default .BEN_PY_TEST_PATHS}} >/tmp/ben-py-pytest.log || pytest_status="$?";
         cd "{{.ROOT_DIR}}";
         {{.LLVM_BIN}}/llvm-profdata merge -sparse target/*.profraw {{.COV_TARGET_DIR}}/*.profraw -o /tmp/ben-py.profdata >/dev/null;
         {{.LLVM_BIN}}/llvm-cov report {{.ROOT_DIR}}/ben-py/binary_ensemble/_core.abi3.so -instr-profile=/tmp/ben-py.profdata --ignore-filename-regex='"'"'/.cargo/registry|/rustc/|^/mnt/.*/ben/src/'"'"' > "$ben_py_report_file";
@@ -313,7 +313,7 @@ tasks:
 
         printf "\n%s\n\n" "BEN COVERAGE";
         cat "$ben_report_file";
-        printf "\n%s\n\n" "PYBEN COVERAGE";
+        printf "\n%s\n\n" "BEN-PY COVERAGE";
         cat "$ben_py_report_file";
         printf "\n%-10s %-10s\n" "Target" "Lines";
         printf "%-10s %-10s\n" "ben" "${ben_total:-n/a}";
