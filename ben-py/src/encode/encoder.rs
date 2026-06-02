@@ -21,9 +21,11 @@ enum EncoderState {
     BenOnly(BenStreamWriter<BufWriter<File>>),
     /// `.bendl` bundle path: the session owns the buffered file and the `BenStreamWriter` writes
     /// through it. `sample_count` is tracked alongside so it can be plumbed into
-    /// `finish_into_writer` at `close()` time.
+    /// `finish_into_writer` at `close()` time. The writer is boxed because the bundle-streaming
+    /// `BenStreamWriter` is much larger than the plain-BEN one, which would otherwise bloat every
+    /// `EncoderState` to the larger variant's size.
     BundleStreaming {
-        writer: BenStreamWriter<BendlStreamSession<BufWriter<File>>>,
+        writer: Box<BenStreamWriter<BendlStreamSession<BufWriter<File>>>>,
         sample_count: i64,
     },
 }
@@ -115,7 +117,7 @@ impl PyBenEncoder {
             let session = writer.into_stream_session().map_err(Self::map_bundle_err)?;
             let writer = BenStreamWriter::for_ben(session, ben_var).map_err(Self::map_io_err)?;
             EncoderState::BundleStreaming {
-                writer,
+                writer: Box::new(writer),
                 sample_count: 0,
             }
         };

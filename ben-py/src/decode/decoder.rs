@@ -249,7 +249,7 @@ impl PyBenDecoder {
             return Err(PyException::new_err("indices must not be empty"));
         }
         let base_len = ensure_base_len(&mut slf, py)?;
-        if indices[0] <= 0 {
+        if indices[0] == 0 {
             return Err(PyException::new_err("indices must be 1-based"));
         }
         if indices.last().unwrap() > &base_len {
