@@ -50,6 +50,11 @@ pub enum BenVariant {
     /// Store one frame plus a repetition count for repeated consecutive samples.
     MkvChain,
     /// Store delta-encoded frames for improved compression of correlated samples.
+    ///
+    /// Works on any ensemble: a transition that swaps exactly two districts is delta-compressed,
+    /// and any other transition (a multi-district move, random/independent sampling, or a district
+    /// that was previously empty) emits a full snapshot frame. Each frame carries a 1-byte tag
+    /// selecting snapshot vs delta, so delta and snapshot frames interleave freely.
     TwoDelta,
 }
 

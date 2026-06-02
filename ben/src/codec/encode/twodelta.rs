@@ -6,6 +6,11 @@ use std::io::{Error, ErrorKind, Result};
 /// Encode a transition between two assignment vectors as a TwoDelta frame, optionally using
 /// caller-supplied hints to accelerate encoding.
 ///
+/// This single-frame builder is **strict**: it errors on any transition that is not a clean 2-swap
+/// (see [`EncodeError::TwoDeltaTooManyIds`]). Stream-level generality — falling back to a snapshot
+/// frame for multi-district or new-district transitions — is provided by the writer's transition
+/// classifier, not by this builder.
+///
 /// # Arguments
 ///
 /// * `previous_assignment` - The full assignment vector from the preceding sample.

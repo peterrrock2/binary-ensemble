@@ -55,7 +55,6 @@ pub(crate) enum BenStreamInner<R: Read> {
     Ben {
         reader: R,
         previous_assignment: Option<Vec<u16>>,
-        twodelta_consumed_first_frame: bool,
         sample_count: usize,
         spinner: Option<Spinner>,
     },
@@ -91,7 +90,6 @@ impl<R: Read> BenStreamReader<R> {
             inner: BenStreamInner::Ben {
                 reader,
                 previous_assignment: None,
-                twodelta_consumed_first_frame: false,
                 sample_count: 0,
                 spinner: None,
             },
@@ -199,14 +197,12 @@ impl<R: Read> BenStreamReader<R> {
             BenStreamInner::Ben {
                 reader,
                 previous_assignment,
-                twodelta_consumed_first_frame,
                 sample_count,
                 spinner,
             } => ben::for_each_assignment_ben(
                 reader,
                 variant,
                 previous_assignment,
-                twodelta_consumed_first_frame,
                 sample_count,
                 spinner,
                 silent,
@@ -250,14 +246,12 @@ impl<R: Read> Iterator for BenStreamReader<R> {
             BenStreamInner::Ben {
                 reader,
                 previous_assignment,
-                twodelta_consumed_first_frame,
                 sample_count,
                 spinner,
             } => ben::next_record_ben(
                 reader,
                 variant,
                 previous_assignment,
-                twodelta_consumed_first_frame,
                 sample_count,
                 spinner,
                 silent,

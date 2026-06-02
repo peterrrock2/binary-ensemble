@@ -56,9 +56,11 @@ impl BenDecodeFrame {
     /// Returns `Ok(None)` on a clean EOF at a frame boundary, `Ok(Some(frame))` on success, and
     /// `Err` on any I/O or format error.
     ///
-    /// Note: in a `TwoDelta` *stream*, the first frame is encoded in `MkvChain` wire format. The
-    /// caller (e.g. [`BenStreamReader`]) tracks that state and passes [`BenVariant::MkvChain`] for
-    /// the first frame and [`BenVariant::TwoDelta`] for the rest.
+    /// Note: in a `TwoDelta` *stream* the body layout is chosen per frame — snapshot frames are
+    /// `MkvChain`-formatted and delta frames are `TwoDelta`-formatted. That choice is carried by a
+    /// 1-byte tag the stream reader (e.g. [`BenStreamReader`]) consumes before calling this; it
+    /// resolves the tag to a [`BenVariant`] and passes it here. This function reads the body for
+    /// whatever variant it is given and is unaware of the tag.
     ///
     /// [`BenStreamReader`]: crate::io::reader::BenStreamReader
     pub fn from_reader(reader: &mut impl Read, variant: BenVariant) -> io::Result<Option<Self>> {

@@ -618,19 +618,97 @@ fn writer_translate_ben_twodelta_chunk_flush() {
     assert_eq!(results, assignments);
 }
 
-// ── TwoDelta encoding error propagation ─────────────────────────────
+// ── TwoDelta >2-district fallback ───────────────────────────────────
 
 #[test]
-fn xz_writer_twodelta_too_many_ids_propagates_on_write() {
-    // Writing a third assignment that changes 3 distinct IDs errors at the TwoDelta encode
-    // boundary.
+fn xz_writer_twodelta_too_many_ids_falls_back_to_snapshot() {
+    // A transition that changes 3 distinct ids is no longer an error: it emits a full snapshot
+    // frame and still round-trips.
     let anchor = vec![1u16, 1, 2, 2];
-    let invalid = vec![2u16, 3, 1, 3]; // 3 distinct changing ids
+    let multi = vec![2u16, 3, 1, 3]; // 3 distinct changing ids
     let mut xben = Vec::new();
-    let mut writer = build_xben_writer(&mut xben, BenVariant::TwoDelta, None);
-    writer.write_assignment(anchor).unwrap();
-    let err = writer.write_assignment(invalid).unwrap_err();
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    {
+        let mut writer = build_xben_writer(&mut xben, BenVariant::TwoDelta, None);
+        writer.write_assignment(anchor.clone()).unwrap();
+        writer.write_assignment(multi.clone()).unwrap();
+        writer.finish().unwrap();
+    }
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
+    let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
+    assert_eq!(results, vec![anchor, multi]);
+}
+
+#[test]
+fn xz_writer_twodelta_mixed_snapshot_delta_direct_roundtrip() {
+    // The direct XBEN writer (not the BEN→XBEN translate path) must emit a mid-stream full frame
+    // for a >2-district transition and rebase later deltas onto it.
+    let assignments = vec![
+        vec![1u16, 1, 2, 2], // anchor (full)
+        vec![1u16, 2, 1, 2], // delta
+        vec![3u16, 3, 1, 2], // 3 ids → mid-stream full
+        vec![3u16, 3, 2, 1], // delta from the snapshot
+    ];
+    assert_eq!(roundtrip_xben(&assignments, BenVariant::TwoDelta), assignments);
+}
+
+#[test]
+fn xz_writer_twodelta_new_district_falls_back_to_snapshot_direct() {
+    // A 2-id transition that introduces a district absent from the previous assignment has no mask
+    // to delta against, so the direct XBEN writer must emit a snapshot; a later 2-swap among now
+    // present ids deltas normally.
+    let assignments = vec![
+        vec![1u16, 1, 1, 1], // anchor
+        vec![1u16, 1, 2, 2], // introduces district 2 → snapshot
+        vec![1u16, 2, 1, 2], // delta (both ids present)
+    ];
+    assert_eq!(roundtrip_xben(&assignments, BenVariant::TwoDelta), assignments);
+}
+
+#[test]
+fn xz_writer_twodelta_delta_snapshot_repeat_delta_direct() {
+    // delta → snapshot → repeat → delta: the repeat increments the deferred full frame's count,
+    // and the following delta rebases onto the flushed snapshot.
+    let s = vec![3u16, 3, 1, 2];
+    let assignments = vec![
+        vec![1u16, 1, 2, 2], // anchor
+        vec![1u16, 2, 1, 2], // delta
+        s.clone(),           // snapshot
+        s.clone(),           // repeat of snapshot
+        vec![3u16, 3, 2, 1], // delta from the snapshot
+    ];
+    assert_eq!(
+        roundtrip_xben_counts(&assignments, BenVariant::TwoDelta),
+        vec![
+            (vec![1u16, 1, 2, 2], 1),
+            (vec![1u16, 2, 1, 2], 1),
+            (s.clone(), 2),
+            (vec![3u16, 3, 2, 1], 1),
+        ]
+    );
+}
+
+#[test]
+fn xz_writer_twodelta_pending_full_count_overflow_u16max() {
+    // A snapshot repeated past u16::MAX flushes the full frame (count == u16::MAX) and emits the
+    // overflow repeat as a delta in the following chunk, so the total still round-trips.
+    let anchor = vec![1u16, 1, 2, 2];
+    let delta = vec![1u16, 2, 1, 2]; // 2-swap from anchor
+    let snapshot = vec![3u16, 3, 3, 3]; // 3 ids change → snapshot
+    let repeats = u16::MAX as usize + 1; // one past the count ceiling
+
+    let mut xben = Vec::new();
+    {
+        let mut writer = build_xben_writer(&mut xben, BenVariant::TwoDelta, None);
+        writer.write_assignment(anchor.clone()).unwrap();
+        writer.write_assignment(delta.clone()).unwrap();
+        for _ in 0..repeats {
+            writer.write_assignment(snapshot.clone()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
+    let total: usize = reader.map(|r| r.unwrap().1 as usize).sum();
+    assert_eq!(total, 2 + repeats);
 }
 
 // ── MkvChain u16::MAX overflow ───────────────────────────────────────

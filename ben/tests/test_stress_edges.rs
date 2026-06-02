@@ -310,7 +310,9 @@ fn malformed_ben_bit_widths_return_invalid_data() {
 fn malformed_twodelta_bit_width_and_extra_runs_return_errors() {
     let anchor = BenEncodeFrame::from_assignment(vec![1u16, 2], BenVariant::MkvChain, Some(1));
     let mut ben = TWODELTA_BEN_BANNER.to_vec();
+    ben.push(0x00); // snapshot tag for the anchor (MkvChain-formatted body)
     ben.extend_from_slice(anchor.as_slice());
+    ben.push(0x01); // delta tag; the body below has max_len_bits == 0, which is invalid
     ben.extend_from_slice(&[0, 1, 0, 2, 0, 0, 0, 0, 0, 1]);
 
     let mut reader = BenStreamReader::from_ben(ben.as_slice())

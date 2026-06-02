@@ -9,6 +9,7 @@ use crate::codec::decode::{
 };
 use crate::codec::encode::{encode_ben_to_xben, encode_twodelta_frame};
 use crate::codec::frames::BenEncodeFrame;
+use crate::io::reader::twodelta::{BEN_TWODELTA_DELTA_TAG, BEN_TWODELTA_SNAPSHOT_TAG};
 use crate::io::writer::BenStreamWriter;
 use crate::util::rle::rle_to_vec;
 use crate::BenVariant;
@@ -224,6 +225,8 @@ fn decode_ben_to_jsonl_twodelta_multiple_repeated_deltas() {
 fn decode_ben_to_jsonl_underflow_anchor() {
     // Mirrors test_jsonl_decode_ben_underflow: 2-byte payload, 1 padding bit.
     let mut ben = b"TWODELTA BEN FILE".to_vec();
+    // The anchor (first) frame carries the snapshot tag; its body is MkvChain-formatted.
+    ben.push(BEN_TWODELTA_SNAPSHOT_TAG);
     ben.extend_from_slice(&[2, 3, 0, 0, 0, 2, 0b01100_100, 0b01_11011_0]);
     ben.extend_from_slice(&1u16.to_be_bytes());
 
@@ -244,6 +247,8 @@ fn decode_ben_to_jsonl_underflow_anchor() {
 fn decode_ben_to_jsonl_exact_anchor() {
     // Mirrors test_jsonl_decode_ben_exact: 5-byte payload, zero padding.
     let mut ben = b"TWODELTA BEN FILE".to_vec();
+    // The anchor (first) frame carries the snapshot tag; its body is MkvChain-formatted.
+    ben.push(BEN_TWODELTA_SNAPSHOT_TAG);
     ben.extend_from_slice(&[2, 3, 0, 0, 0, 5]);
     ben.extend_from_slice(&[
         0b01100_100,
@@ -279,6 +284,8 @@ fn decode_ben_to_jsonl_exact_anchor() {
 #[test]
 fn decode_ben_to_jsonl_16bit_val_anchor() {
     let mut ben = b"TWODELTA BEN FILE".to_vec();
+    // The anchor (first) frame carries the snapshot tag; its body is MkvChain-formatted.
+    ben.push(BEN_TWODELTA_SNAPSHOT_TAG);
     ben.extend_from_slice(&[10, 3, 0, 0, 0, 5]);
     ben.extend_from_slice(&[
         0b00000000,
@@ -305,6 +312,8 @@ fn decode_ben_to_jsonl_16bit_val_anchor() {
 #[test]
 fn decode_ben_to_jsonl_16bit_len_anchor() {
     let mut ben = b"TWODELTA BEN FILE".to_vec();
+    // The anchor (first) frame carries the snapshot tag; its body is MkvChain-formatted.
+    ben.push(BEN_TWODELTA_SNAPSHOT_TAG);
     ben.extend_from_slice(&[2, 10, 0, 0, 0, 5]);
     ben.extend_from_slice(&[
         0b01000000,
@@ -331,6 +340,8 @@ fn decode_ben_to_jsonl_16bit_len_anchor() {
 #[test]
 fn decode_ben_to_jsonl_max_val_65535_anchor() {
     let mut ben = b"TWODELTA BEN FILE".to_vec();
+    // The anchor (first) frame carries the snapshot tag; its body is MkvChain-formatted.
+    ben.push(BEN_TWODELTA_SNAPSHOT_TAG);
     ben.extend_from_slice(&[16, 4, 0, 0, 0, 8]);
     ben.extend_from_slice(&[
         0b00000000,
@@ -360,6 +371,8 @@ fn decode_ben_to_jsonl_max_val_65535_anchor() {
 #[test]
 fn decode_ben_to_jsonl_max_len_65535_anchor() {
     let mut ben = b"TWODELTA BEN FILE".to_vec();
+    // The anchor (first) frame carries the snapshot tag; its body is MkvChain-formatted.
+    ben.push(BEN_TWODELTA_SNAPSHOT_TAG);
     ben.extend_from_slice(&[6, 16, 0, 0, 0, 9]);
     ben.extend_from_slice(&[
         0b01011100,
@@ -390,6 +403,8 @@ fn decode_ben_to_jsonl_max_len_65535_anchor() {
 #[test]
 fn decode_ben_to_jsonl_max_val_and_len_65535_anchor() {
     let mut ben = b"TWODELTA BEN FILE".to_vec();
+    // The anchor (first) frame carries the snapshot tag; its body is MkvChain-formatted.
+    ben.push(BEN_TWODELTA_SNAPSHOT_TAG);
     ben.extend_from_slice(&[16, 16, 0, 0, 0, 12]);
     ben.extend_from_slice(&[
         0b00000000,
@@ -424,6 +439,8 @@ fn decode_ben_to_jsonl_max_val_and_len_65535_anchor() {
 fn decode_ben_to_jsonl_single_element_anchor() {
     // Anchor assignment [23], count=1.
     let mut ben = b"TWODELTA BEN FILE".to_vec();
+    // The anchor (first) frame carries the snapshot tag; its body is MkvChain-formatted.
+    ben.push(BEN_TWODELTA_SNAPSHOT_TAG);
     ben.extend_from_slice(&[5, 1, 0, 0, 0, 1, 0b101111_00]);
     ben.extend_from_slice(&1u16.to_be_bytes());
 
@@ -437,6 +454,8 @@ fn decode_ben_to_jsonl_single_element_anchor() {
 fn decode_ben_to_jsonl_single_one_anchor() {
     // Anchor assignment [1], count=1.
     let mut ben = b"TWODELTA BEN FILE".to_vec();
+    // The anchor (first) frame carries the snapshot tag; its body is MkvChain-formatted.
+    ben.push(BEN_TWODELTA_SNAPSHOT_TAG);
     ben.extend_from_slice(&[1, 1, 0, 0, 0, 1, 0b11_000000]);
     ben.extend_from_slice(&1u16.to_be_bytes());
 
@@ -466,9 +485,14 @@ fn decode_ben_to_jsonl_three_frames_byte_level() {
     // Delta [2,1]→[1,2]:
     //   pair=(1,2), run_lengths=[1,1], same encoding
     //   raw_bytes = [0,1, 0,2, 1, 0,0,0,1, 0xC0, 0,1]
+    //
+    // Each frame is prefixed with its per-frame tag: snapshot for the anchor, delta for the rest.
     let mut ben = b"TWODELTA BEN FILE".to_vec();
+    ben.push(BEN_TWODELTA_SNAPSHOT_TAG);
     ben.extend_from_slice(&[2, 1, 0, 0, 0, 1, 0x74, 0, 1]);
+    ben.push(BEN_TWODELTA_DELTA_TAG);
     ben.extend_from_slice(&[0, 2, 0, 1, 1, 0, 0, 0, 1, 0xC0, 0, 1]);
+    ben.push(BEN_TWODELTA_DELTA_TAG);
     ben.extend_from_slice(&[0, 1, 0, 2, 1, 0, 0, 0, 1, 0xC0, 0, 1]);
 
     let mut out = Vec::new();
@@ -550,5 +574,193 @@ fn decode_xben_to_jsonl_twodelta_with_repetitions() {
     decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut jsonl).unwrap();
 
     let expected: String = (1..=3).map(|i| expected_line(&anchor, i)).collect();
+    assert_eq!(jsonl, expected.as_bytes());
+}
+
+// ─── snapshot/delta fallback: tags, round-trips, error handling ─────────
+
+/// Walk a `TwoDelta` BEN stream past its banner and collect the per-frame tag bytes, skipping over
+/// each frame body so the next tag is found. Panics on a malformed/unknown tag.
+fn collect_twodelta_tags(ben: &[u8]) -> Vec<u8> {
+    const BANNER_LEN: usize = 17;
+    let mut tags = Vec::new();
+    let mut pos = BANNER_LEN;
+    while pos < ben.len() {
+        let tag = ben[pos];
+        pos += 1;
+        match tag {
+            BEN_TWODELTA_SNAPSHOT_TAG => {
+                // MkvChain body: max_val(1) max_len(1) n_bytes(4 BE) payload(n_bytes) count(2).
+                let n_bytes =
+                    u32::from_be_bytes(ben[pos + 2..pos + 6].try_into().unwrap()) as usize;
+                pos += 1 + 1 + 4 + n_bytes + 2;
+            }
+            BEN_TWODELTA_DELTA_TAG => {
+                // Delta body: pair(4) max_len(1) n_bytes(4 BE) payload(n_bytes) count(2).
+                let n_bytes =
+                    u32::from_be_bytes(ben[pos + 5..pos + 9].try_into().unwrap()) as usize;
+                pos += 4 + 1 + 4 + n_bytes + 2;
+            }
+            other => panic!("unexpected tag byte {other:#04x} at offset {}", pos - 1),
+        }
+        tags.push(tag);
+    }
+    tags
+}
+
+fn decode_twodelta_ben_to_assignments(ben: &[u8]) -> Vec<Vec<u16>> {
+    let reader = crate::io::reader::BenStreamReader::from_ben(ben).unwrap();
+    reader.map(|r| r.unwrap().0).collect()
+}
+
+#[test]
+fn twodelta_ben_first_frame_carries_snapshot_tag() {
+    let ben = make_twodelta_ben(&[vec![1u16, 1, 2, 2], vec![1u16, 2, 1, 2]]);
+    assert_eq!(collect_twodelta_tags(&ben).first().copied(), Some(BEN_TWODELTA_SNAPSHOT_TAG));
+}
+
+#[test]
+fn twodelta_ben_interleaved_swap_multiswap_swap_tags_and_roundtrip() {
+    // anchor → 2-swap → 3-id swap (snapshot) → 2-swap. The final delta must decode correctly,
+    // proving masks were rebuilt across the mid-stream snapshot.
+    let a0 = vec![1u16, 1, 2, 2]; // snapshot (anchor)
+    let a1 = vec![1u16, 2, 1, 2]; // delta from a0 (swap pos1/pos2)
+    let a2 = vec![3u16, 3, 1, 2]; // 3 ids change vs a1 → snapshot
+    let a3 = vec![3u16, 3, 2, 1]; // delta from a2 (swap pos2/pos3; both ids present in a2)
+    let assignments = vec![a0.clone(), a1.clone(), a2.clone(), a3.clone()];
+    let ben = make_twodelta_ben(&assignments);
+
+    assert_eq!(
+        collect_twodelta_tags(&ben),
+        vec![
+            BEN_TWODELTA_SNAPSHOT_TAG,
+            BEN_TWODELTA_DELTA_TAG,
+            BEN_TWODELTA_SNAPSHOT_TAG,
+            BEN_TWODELTA_DELTA_TAG,
+        ]
+    );
+    assert_eq!(decode_twodelta_ben_to_assignments(&ben), assignments);
+}
+
+#[test]
+fn twodelta_ben_new_district_falls_back_to_snapshot_then_resumes_delta() {
+    // A 2-id transition that introduces a district absent from the previous assignment has no mask
+    // to delta against → snapshot. Once present, later 2-swaps among those ids delta normally.
+    let c0 = vec![1u16, 1, 1, 1]; // snapshot (anchor)
+    let c1 = vec![1u16, 1, 2, 2]; // introduces district 2 → snapshot fallback
+    let c2 = vec![1u16, 2, 1, 2]; // delta from c1 (both ids present)
+    let assignments = vec![c0.clone(), c1.clone(), c2.clone()];
+    let ben = make_twodelta_ben(&assignments);
+
+    assert_eq!(
+        collect_twodelta_tags(&ben),
+        vec![
+            BEN_TWODELTA_SNAPSHOT_TAG,
+            BEN_TWODELTA_SNAPSHOT_TAG,
+            BEN_TWODELTA_DELTA_TAG,
+        ]
+    );
+    assert_eq!(decode_twodelta_ben_to_assignments(&ben), assignments);
+}
+
+#[test]
+fn twodelta_ben_general_ensemble_roundtrip() {
+    // A pseudo-random mix of multi-district moves and 2-swaps over a fixed label set.
+    let mut assignments = Vec::new();
+    let mut state: u64 = 0x9E3779B97F4A7C15;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    for _ in 0..200 {
+        let assignment: Vec<u16> = (0..16).map(|_| (next() % 4) as u16 + 1).collect();
+        assignments.push(assignment);
+    }
+    let ben = make_twodelta_ben(&assignments);
+    assert_eq!(decode_twodelta_ben_to_assignments(&ben), assignments);
+}
+
+#[test]
+fn twodelta_ben_count_samples_over_mixed_stream() {
+    let anchor = vec![1u16, 1, 2, 2];
+    let assignments = vec![
+        anchor.clone(),
+        anchor.clone(),       // repeat of anchor
+        vec![1u16, 2, 1, 2],  // delta
+        vec![3u16, 3, 1, 2],  // snapshot
+        vec![3u16, 3, 1, 2],  // repeat of snapshot
+        vec![3u16, 3, 2, 1],  // delta
+    ];
+    let ben = make_twodelta_ben(&assignments);
+    let reader = crate::io::reader::BenStreamReader::from_ben(ben.as_slice()).unwrap();
+    assert_eq!(reader.count_samples().unwrap(), assignments.len());
+}
+
+#[test]
+fn twodelta_ben_unknown_tag_rejected() {
+    let mut ben = make_twodelta_ben(&[vec![1u16, 1, 2, 2]]);
+    ben.push(0x07); // not a valid per-frame tag
+    let mut out = Vec::new();
+    let err = decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn twodelta_ben_truncated_after_tag_errors_not_clean_eof() {
+    let mut ben = make_twodelta_ben(&[vec![1u16, 1, 2, 2]]);
+    ben.push(BEN_TWODELTA_DELTA_TAG); // a tag with no body following
+    let mut out = Vec::new();
+    let err = decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn decode_xben_to_jsonl_twodelta_mixed_via_translate_roundtrip() {
+    // The BEN→XBEN translate path must parse the per-frame tag and emit a mid-stream full frame
+    // for the snapshot, which then decodes correctly.
+    let a0 = vec![1u16, 1, 2, 2];
+    let a1 = vec![1u16, 2, 1, 2]; // delta
+    let a2 = vec![3u16, 3, 1, 2]; // snapshot (3 ids)
+    let a3 = vec![3u16, 3, 2, 1]; // delta from the snapshot
+    let assignments = vec![a0.clone(), a1.clone(), a2.clone(), a3.clone()];
+    let ben = make_twodelta_ben(&assignments);
+
+    let mut xben = Vec::new();
+    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None, None)
+        .unwrap();
+
+    let mut jsonl = Vec::new();
+    decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut jsonl).unwrap();
+    let expected = expected_line(&a0, 1)
+        + &expected_line(&a1, 2)
+        + &expected_line(&a2, 3)
+        + &expected_line(&a3, 4);
+    assert_eq!(jsonl, expected.as_bytes());
+}
+
+#[test]
+fn decode_xben_to_jsonl_twodelta_delta_snapshot_repeat_delta_via_translate() {
+    // delta → snapshot → repeat → delta must round-trip through the translate path.
+    let a0 = vec![1u16, 1, 2, 2];
+    let a1 = vec![1u16, 2, 1, 2]; // delta
+    let a2 = vec![3u16, 3, 1, 2]; // snapshot
+    let a3 = vec![3u16, 3, 1, 2]; // repeat of the snapshot
+    let a4 = vec![3u16, 3, 2, 1]; // delta from the snapshot
+    let assignments = vec![a0.clone(), a1.clone(), a2.clone(), a3.clone(), a4.clone()];
+    let ben = make_twodelta_ben(&assignments);
+
+    let mut xben = Vec::new();
+    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None, None)
+        .unwrap();
+
+    let mut jsonl = Vec::new();
+    decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut jsonl).unwrap();
+    let expected: String = assignments
+        .iter()
+        .enumerate()
+        .map(|(i, a)| expected_line(a, i + 1))
+        .collect();
     assert_eq!(jsonl, expected.as_bytes());
 }

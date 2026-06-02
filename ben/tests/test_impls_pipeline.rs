@@ -1470,13 +1470,17 @@ fn twodelta_first_frame_carries_repeat_trailer() {
         encoder.finish().unwrap();
     }
 
+    // The first frame is a snapshot: a 1-byte snapshot tag (0x00) precedes the MkvChain-formatted
+    // body, which is the Standard frame bytes plus a trailing u16 repetition count.
     let expected_first = BenEncodeFrame::from_assignment(&first, BenVariant::Standard, None);
     assert_eq!(&ben[..17], b"TWODELTA BEN FILE");
+    assert_eq!(ben[17], 0x00, "first frame should carry the snapshot tag");
+    let body_start = 18;
     assert_eq!(
-        &ben[17..17 + expected_first.as_slice().len()],
+        &ben[body_start..body_start + expected_first.as_slice().len()],
         expected_first.as_slice()
     );
-    let count_offset = 17 + expected_first.as_slice().len();
+    let count_offset = body_start + expected_first.as_slice().len();
     assert_eq!(
         u16::from_be_bytes([ben[count_offset], ben[count_offset + 1]]),
         2
@@ -1484,27 +1488,42 @@ fn twodelta_first_frame_carries_repeat_trailer() {
 }
 
 #[test]
-fn twodelta_rejects_non_pair_transition() {
+fn twodelta_non_pair_transition_falls_back_to_snapshot() {
+    // A >2-district transition is no longer an error: it emits a snapshot frame and round-trips.
+    let a0 = vec![1u16, 1, 2, 2];
+    let a1 = vec![1u16, 3, 2, 4]; // 1->3 and 2->4: 4 distinct ids across changed positions
     let mut ben = Vec::new();
-    let mut encoder = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
-    encoder.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
-    encoder.write_assignment(vec![1u16, 3, 2, 4]).unwrap();
-    let err = encoder.finish().err().unwrap();
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    {
+        let mut encoder = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
+        encoder.write_assignment(a0.clone()).unwrap();
+        encoder.write_assignment(a1.clone()).unwrap();
+        encoder.finish().unwrap();
+    }
+    let decoded: Vec<_> = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .map(|r| r.unwrap().0)
+        .collect();
+    assert_eq!(decoded, vec![a0, a1]);
 }
 
 #[test]
-fn twodelta_write_json_value_rejects_non_pair_transition() {
+fn twodelta_write_json_value_non_pair_transition_falls_back_to_snapshot() {
     let mut ben = Vec::new();
-    let mut encoder = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
-    encoder
-        .write_json_value(json!({"assignment": [1u16, 1, 2, 2]}))
-        .unwrap();
-    encoder
-        .write_json_value(json!({"assignment": [1u16, 3, 2, 4]}))
-        .unwrap();
-    let err = encoder.finish().err().unwrap();
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    {
+        let mut encoder = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
+        encoder
+            .write_json_value(json!({"assignment": [1u16, 1, 2, 2]}))
+            .unwrap();
+        encoder
+            .write_json_value(json!({"assignment": [1u16, 3, 2, 4]}))
+            .unwrap();
+        encoder.finish().unwrap();
+    }
+    let decoded: Vec<_> = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .map(|r| r.unwrap().0)
+        .collect();
+    assert_eq!(decoded, vec![vec![1u16, 1, 2, 2], vec![1u16, 3, 2, 4]]);
 }
 
 #[test]

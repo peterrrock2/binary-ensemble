@@ -7,7 +7,10 @@ use crate::codec::encode::encode_twodelta_frame_with_hint;
 use crate::codec::BenEncodeFrame;
 use crate::BenVariant;
 
-use super::super::twodelta::twodelta_repeat_runs;
+use super::super::twodelta::{
+    classify_transition, pair_has_masks, twodelta_repeat_runs, TransitionKind,
+    BEN_TWODELTA_DELTA_TAG, BEN_TWODELTA_SNAPSHOT_TAG,
+};
 
 /// State for the BEN arm. Variant lives here as the single source of truth.
 pub(super) struct BenState<W: Write> {
@@ -62,32 +65,53 @@ impl<W: Write> BenState<W> {
             }
             BenVariant::TwoDelta => {
                 if self.previous_assignment.is_empty() {
-                    // First frame: encode as MkvChain wire format and seed the position masks for
-                    // subsequent delta frames.
-                    for (idx, &val) in assignment.iter().enumerate() {
-                        self.previous_masks.entry(val).or_default().push(idx);
-                    }
-                    let frame = BenEncodeFrame::from_assignment(
-                        assignment,
-                        BenVariant::MkvChain,
-                        Some(count),
-                    );
-                    self.writer.write_all(frame.as_slice())?;
-                } else if self.previous_assignment.as_slice() == assignment {
-                    let frame = twodelta_repeat_frame(assignment, count)?;
-                    self.writer.write_all(frame.as_slice())?;
+                    // First frame: a snapshot. Seeds the position masks for subsequent deltas.
+                    self.write_twodelta_snapshot(assignment, count)?;
                 } else {
-                    let frame = encode_twodelta_frame_with_hint(
-                        &self.previous_assignment,
-                        assignment,
-                        None,
-                        Some(&mut self.previous_masks),
-                        Some(count),
-                    )?;
-                    self.writer.write_all(frame.as_slice())?;
+                    match classify_transition(&self.previous_assignment, assignment)? {
+                        TransitionKind::Repeat => {
+                            let frame = twodelta_repeat_frame(assignment, count)?;
+                            self.writer.write_all(&[BEN_TWODELTA_DELTA_TAG])?;
+                            self.writer.write_all(frame.as_slice())?;
+                        }
+                        // Clean 2-swap where both districts already exist: cheap delta against the
+                        // maintained masks.
+                        TransitionKind::Delta(a, b)
+                            if pair_has_masks(&self.previous_masks, a, b) =>
+                        {
+                            let frame = encode_twodelta_frame_with_hint(
+                                &self.previous_assignment,
+                                assignment,
+                                Some((a, b)),
+                                Some(&mut self.previous_masks),
+                                Some(count),
+                            )?;
+                            self.writer.write_all(&[BEN_TWODELTA_DELTA_TAG])?;
+                            self.writer.write_all(frame.as_slice())?;
+                        }
+                        // A >2-district transition, or a 2-id transition that introduces a district
+                        // absent from the previous assignment (no mask to delta against): full
+                        // snapshot, then rebuild masks so the next delta has a correct baseline.
+                        TransitionKind::Delta(..) | TransitionKind::Snapshot => {
+                            self.write_twodelta_snapshot(assignment, count)?;
+                        }
+                    }
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Write a snapshot frame (`MkvChain` wire format under the snapshot tag) and (re)seed the
+    /// position masks from `assignment` so any following delta frame has a correct baseline.
+    fn write_twodelta_snapshot(&mut self, assignment: &[u16], count: u16) -> io::Result<()> {
+        self.previous_masks.clear();
+        for (idx, &val) in assignment.iter().enumerate() {
+            self.previous_masks.entry(val).or_default().push(idx);
+        }
+        let frame = BenEncodeFrame::from_assignment(assignment, BenVariant::MkvChain, Some(count));
+        self.writer.write_all(&[BEN_TWODELTA_SNAPSHOT_TAG])?;
+        self.writer.write_all(frame.as_slice())?;
         Ok(())
     }
 
@@ -114,9 +138,9 @@ impl<W: Write> BenState<W> {
         self.flush_pending_frame()?;
         self.encode_and_write_frame(&assignment, count)?;
         // For TwoDelta, the next delta is encoded against the just-emitted frame.
-        // `encode_and_write_frame` already updated `previous_masks` when the previous_assignment
-        // was empty; in all variants we need to update `previous_assignment` here so a subsequent
-        // `write_assignment` sees the right baseline.
+        // `encode_and_write_frame` already updated `previous_masks` (a snapshot reseeds them, a
+        // delta maintains them in place); in all variants we update `previous_assignment` here so a
+        // subsequent `write_assignment` sees the right baseline.
         self.previous_assignment = assignment;
         Ok(())
     }

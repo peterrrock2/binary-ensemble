@@ -211,6 +211,88 @@ fn xz_reader_into_frames_twodelta() {
     assert_eq!(frames.len(), 2);
 }
 
+/// Build a plain-BEN stream using BenStreamWriter directly.
+fn make_ben_from_assignments(assignments: &[Vec<u16>], variant: BenVariant) -> Vec<u8> {
+    let mut ben = Vec::new();
+    {
+        let mut writer = BenStreamWriter::for_ben(&mut ben, variant).unwrap();
+        for a in assignments {
+            writer.write_assignment(a.clone()).unwrap();
+        }
+    }
+    ben
+}
+
+/// A TwoDelta sequence that exercises every framing path: anchor (full), a 2-swap delta, a
+/// multi-district transition (mid-stream snapshot), a repeat of that snapshot, and a delta rebased
+/// onto it.
+fn mixed_twodelta_assignments() -> Vec<Vec<u16>> {
+    vec![
+        vec![1u16, 1, 2, 2],
+        vec![1u16, 2, 1, 2],
+        vec![3u16, 3, 1, 2],
+        vec![3u16, 3, 1, 2],
+        vec![3u16, 3, 2, 1],
+    ]
+}
+
+/// Drive a raw-frame iterator to completion, expanding each self-contained frame `count` times.
+fn expand_raw_frames<R: io::Read>(frames: BenStreamFrameReader<R>) -> Vec<Vec<u16>> {
+    let mut out = Vec::new();
+    for item in frames {
+        let (frame, count) = item.unwrap();
+        let assignment = frame.expand_self_contained().unwrap();
+        for _ in 0..count {
+            out.push(assignment.clone());
+        }
+    }
+    out
+}
+
+#[test]
+fn raw_frame_surface_roundtrips_mixed_twodelta_ben() {
+    // The subsample/raw-frame surface materializes each TwoDelta frame and re-encodes it as a
+    // self-contained Standard frame. A mixed snapshot/delta stream must round-trip across it.
+    let assignments = mixed_twodelta_assignments();
+    let ben = make_ben_from_assignments(&assignments, BenVariant::TwoDelta);
+    let frames = BenStreamReader::from_ben(Cursor::new(ben)).unwrap().into_frames();
+    assert_eq!(expand_raw_frames(frames), assignments);
+}
+
+#[test]
+fn raw_frame_surface_roundtrips_mixed_twodelta_xben() {
+    let assignments = mixed_twodelta_assignments();
+    let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
+    let frames = BenStreamReader::from_xben(Cursor::new(xben)).unwrap().into_frames();
+    assert_eq!(expand_raw_frames(frames), assignments);
+}
+
+#[test]
+fn subsample_mixed_twodelta_ben_selects_correct_samples() {
+    // Subsampling rides on the raw-frame surface; selecting across the mid-stream snapshot must
+    // still rebase the later delta correctly.
+    let assignments = mixed_twodelta_assignments();
+    let ben = make_ben_from_assignments(&assignments, BenVariant::TwoDelta);
+    let results: Vec<_> = BenStreamReader::from_ben(Cursor::new(ben))
+        .unwrap()
+        .into_subsample_by_indices(vec![1, 3, 5])
+        .map(|r| r.unwrap().0)
+        .collect();
+    assert_eq!(results, vec![assignments[0].clone(), assignments[2].clone(), assignments[4].clone()]);
+}
+
+#[test]
+fn subsample_mixed_twodelta_xben_selects_correct_samples() {
+    let assignments = mixed_twodelta_assignments();
+    let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
+    let results: Vec<_> = BenStreamReader::from_xben(Cursor::new(xben))
+        .unwrap()
+        .into_subsample_by_indices(vec![1, 3, 5])
+        .map(|r| r.unwrap().0)
+        .collect();
+    assert_eq!(results, vec![assignments[0].clone(), assignments[2].clone(), assignments[4].clone()]);
+}
+
 #[test]
 fn xz_frame_reader_new() {
     let jsonl = r#"{"assignment":[1,1,2,2],"sample":1}
@@ -1618,17 +1700,18 @@ fn raw_frame_iter_propagates_twodelta_decode_error() {
         writer.write_assignment(vec![2u16, 1, 2, 1]).unwrap();
     }
 
-    // Locate the TwoDelta delta frame start by parsing the anchor (MkvChain) frame header:
-    // banner(17) + max_val_bits(1) + max_len_bits(1) + n_bytes(4 BE) + payload(n_bytes) + count(2)
-    // = anchor_end.
+    // Locate the TwoDelta delta frame start by parsing the anchor (snapshot/MkvChain) frame header:
+    // banner(17) + snapshot_tag(1) + max_val_bits(1) + max_len_bits(1) + n_bytes(4 BE) +
+    // payload(n_bytes) + count(2) = anchor_end (which points at the next frame's tag byte).
     let banner_len = 17usize;
+    let anchor_start = banner_len + 1; // skip the snapshot tag
     let n_bytes =
-        u32::from_be_bytes(ben[banner_len + 2..banner_len + 6].try_into().unwrap()) as usize;
-    let anchor_end = banner_len + 6 + n_bytes + 2;
+        u32::from_be_bytes(ben[anchor_start + 2..anchor_start + 6].try_into().unwrap()) as usize;
+    let anchor_end = anchor_start + 6 + n_bytes + 2;
 
-    // The TwoDelta delta frame: pair_a(2) + pair_b(2) + max_len_bits(1) + ... Set max_len_bits to
-    // 0, which triggers InvalidData during decoding.
-    ben[anchor_end + 4] = 0;
+    // The delta frame: delta_tag(1) + pair_a(2) + pair_b(2) + max_len_bits(1) + ... Set max_len_bits
+    // to 0, which triggers InvalidData during decoding.
+    ben[anchor_end + 5] = 0;
 
     let reader = BenStreamReader::from_ben(Cursor::new(ben)).unwrap();
     let mut iter = reader.into_frames();

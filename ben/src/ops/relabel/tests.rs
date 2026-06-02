@@ -1026,11 +1026,14 @@ fn test_relabel_ben_file_twodelta_malformed_frame_error_propagates() {
         writer.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
         writer.write_assignment(vec![2u16, 1, 2, 1]).unwrap();
     }
+    // banner(17) + snapshot_tag(1) precede the anchor frame; a delta_tag(1) precedes the delta
+    // frame, so the delta's max_len_bits sits at anchor_end + 5.
     let banner_len = 17usize;
+    let anchor_start = banner_len + 1;
     let n_bytes =
-        u32::from_be_bytes(ben[banner_len + 2..banner_len + 6].try_into().unwrap()) as usize;
-    let anchor_end = banner_len + 6 + n_bytes + 2;
-    ben[anchor_end + 4] = 0;
+        u32::from_be_bytes(ben[anchor_start + 2..anchor_start + 6].try_into().unwrap()) as usize;
+    let anchor_end = anchor_start + 6 + n_bytes + 2;
+    ben[anchor_end + 5] = 0;
 
     let mut output = Vec::new();
     let err =
@@ -1047,11 +1050,14 @@ fn test_relabel_ben_file_with_map_twodelta_malformed_frame_error_propagates() {
         writer.write_assignment(vec![1u16, 1, 2, 2]).unwrap();
         writer.write_assignment(vec![2u16, 1, 2, 1]).unwrap();
     }
+    // banner(17) + snapshot_tag(1) precede the anchor frame; a delta_tag(1) precedes the delta
+    // frame, so the delta's max_len_bits sits at anchor_end + 5.
     let banner_len = 17usize;
+    let anchor_start = banner_len + 1;
     let n_bytes =
-        u32::from_be_bytes(ben[banner_len + 2..banner_len + 6].try_into().unwrap()) as usize;
-    let anchor_end = banner_len + 6 + n_bytes + 2;
-    ben[anchor_end + 4] = 0;
+        u32::from_be_bytes(ben[anchor_start + 2..anchor_start + 6].try_into().unwrap()) as usize;
+    let anchor_end = anchor_start + 6 + n_bytes + 2;
+    ben[anchor_end + 5] = 0;
 
     let map: HashMap<usize, usize> = (0..4).map(|i| (i, i)).collect();
     let mut output = Vec::new();

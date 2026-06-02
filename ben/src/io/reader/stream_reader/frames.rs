@@ -64,12 +64,11 @@ impl<R: Read> Iterator for BenStreamFrameReader<R> {
             BenStreamInner::Ben {
                 reader,
                 previous_assignment,
-                twodelta_consumed_first_frame,
                 sample_count,
                 spinner,
             } => match variant {
                 BenVariant::Standard | BenVariant::MkvChain => {
-                    match pop_frame_from_reader(reader, variant, twodelta_consumed_first_frame) {
+                    match pop_frame_from_reader(reader, variant) {
                         Some(Ok(frame)) => {
                             let count = frame.count();
                             if count == 0 {
@@ -86,7 +85,6 @@ impl<R: Read> Iterator for BenStreamFrameReader<R> {
                         reader,
                         variant,
                         previous_assignment,
-                        twodelta_consumed_first_frame,
                         sample_count,
                         spinner,
                         silent,

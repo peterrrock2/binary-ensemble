@@ -16,7 +16,9 @@ use crate::BenVariant;
 
 use super::super::frames::BufferedDeltaFrame;
 use super::super::twodelta::{
-    twodelta_repeat_runs, XBEN_TWODELTA_CHUNK_TAG, XBEN_TWODELTA_FULL_TAG,
+    classify_transition, pair_has_masks, twodelta_repeat_runs, TransitionKind,
+    BEN_TWODELTA_DELTA_TAG, BEN_TWODELTA_SNAPSHOT_TAG, XBEN_TWODELTA_CHUNK_TAG,
+    XBEN_TWODELTA_FULL_TAG,
 };
 use super::super::utils::encode_xben_twodelta_full_frame;
 
@@ -36,8 +38,11 @@ pub(super) enum XBenState {
     TwoDelta {
         previous_assignment: Vec<u16>,
         previous_masks: HashMap<u16, Vec<usize>>,
-        pending_initial_full_assignment: Option<Vec<u16>>,
-        pending_initial_full_count: u16,
+        /// A full frame buffered awaiting its final repetition count. Used both for the initial
+        /// anchor and for mid-stream snapshots (>2-district transitions). A full frame writes its
+        /// count *after* the payload, so it cannot be emitted until a distinct assignment arrives.
+        pending_full_assignment: Option<Vec<u16>>,
+        pending_full_count: u16,
         twodelta_chunk_size: usize,
         chunk_buffer: Vec<BufferedDeltaFrame>,
     },
@@ -54,8 +59,8 @@ impl XBenState {
             BenVariant::TwoDelta => XBenState::TwoDelta {
                 previous_assignment: Vec::new(),
                 previous_masks: HashMap::new(),
-                pending_initial_full_assignment: None,
-                pending_initial_full_count: 0,
+                pending_full_assignment: None,
+                pending_full_count: 0,
                 twodelta_chunk_size,
                 chunk_buffer: Vec::new(),
             },
@@ -114,24 +119,24 @@ impl<W: Write> XBenInner<W> {
             XBenState::TwoDelta {
                 previous_assignment,
                 previous_masks,
-                pending_initial_full_assignment,
-                pending_initial_full_count,
+                pending_full_assignment,
+                pending_full_count,
                 twodelta_chunk_size,
                 chunk_buffer,
             } => {
                 // First assignment ever: buffer as the initial full frame.
-                if pending_initial_full_assignment.is_none() && previous_assignment.is_empty() {
-                    *pending_initial_full_assignment = Some(assign_vec);
-                    *pending_initial_full_count = 1;
+                if pending_full_assignment.is_none() && previous_assignment.is_empty() {
+                    *pending_full_assignment = Some(assign_vec);
+                    *pending_full_count = 1;
                     return Ok(());
                 }
-                // Repeat of the pending initial full frame.
-                if pending_initial_full_assignment.as_deref() == Some(assign_vec.as_slice()) {
-                    if *pending_initial_full_count == u16::MAX {
-                        flush_twodelta_initial(
+                // Repeat of the pending full frame (initial anchor or a mid-stream snapshot).
+                if pending_full_assignment.as_deref() == Some(assign_vec.as_slice()) {
+                    if *pending_full_count == u16::MAX {
+                        flush_twodelta_full(
                             &mut self.encoder,
-                            pending_initial_full_assignment,
-                            pending_initial_full_count,
+                            pending_full_assignment,
+                            pending_full_count,
                             previous_assignment,
                             previous_masks,
                         )?;
@@ -140,7 +145,7 @@ impl<W: Write> XBenInner<W> {
                         *previous_assignment = assign_vec;
                         return Ok(());
                     }
-                    *pending_initial_full_count += 1;
+                    *pending_full_count += 1;
                     return Ok(());
                 }
                 // Repeat of the last delta frame in the current chunk.
@@ -156,42 +161,65 @@ impl<W: Write> XBenInner<W> {
                     }
                     return Ok(());
                 }
-                // New distinct assignment: flush the initial full frame if pending.
-                if pending_initial_full_assignment.is_some() {
-                    flush_twodelta_initial(
+                // New distinct assignment: flush a pending full frame so it precedes the new body.
+                if pending_full_assignment.is_some() {
+                    flush_twodelta_full(
                         &mut self.encoder,
-                        pending_initial_full_assignment,
-                        pending_initial_full_count,
+                        pending_full_assignment,
+                        pending_full_count,
                         previous_assignment,
                         previous_masks,
                     )?;
                 }
-                // Encode the delta frame and add it to the chunk buffer.
-                let frame = encode_twodelta_frame_with_hint(
-                    &*previous_assignment,
-                    &assign_vec,
-                    None,
-                    Some(previous_masks),
-                    None,
-                )?;
-                let (pair, run_lengths) = match frame {
-                    BenEncodeFrame::TwoDelta {
-                        pair,
-                        run_length_vector,
-                        ..
-                    } => (pair, run_length_vector),
-                    _ => unreachable!(
-                        "encode_twodelta_frame_with_hint always returns the TwoDelta arm"
-                    ),
-                };
-                chunk_buffer.push(BufferedDeltaFrame {
-                    pair,
-                    run_lengths,
-                    count: 1,
-                });
-                *previous_assignment = assign_vec;
-                if chunk_buffer.len() >= *twodelta_chunk_size {
-                    flush_chunk_inner(&mut self.encoder, chunk_buffer)?;
+                // Classify the transition; fall back to a deferred snapshot when >2 ids change.
+                match classify_transition(previous_assignment, &assign_vec)? {
+                    // `previous == assign_vec` only reaches here when the chunk was just flushed
+                    // (so the repeat-of-last-delta fast path above was skipped). Encode it as a
+                    // repeat delta against the previous frame.
+                    TransitionKind::Repeat => {
+                        let repeat = twodelta_repeat_buffered_frame(&assign_vec, 1)?;
+                        chunk_buffer.push(repeat);
+                        *previous_assignment = assign_vec;
+                    }
+                    // Clean 2-swap where both districts already exist: cheap delta.
+                    TransitionKind::Delta(a, b) if pair_has_masks(previous_masks, a, b) => {
+                        let frame = encode_twodelta_frame_with_hint(
+                            &*previous_assignment,
+                            &assign_vec,
+                            Some((a, b)),
+                            Some(previous_masks),
+                            None,
+                        )?;
+                        let (pair, run_lengths) = match frame {
+                            BenEncodeFrame::TwoDelta {
+                                pair,
+                                run_length_vector,
+                                ..
+                            } => (pair, run_length_vector),
+                            _ => unreachable!(
+                                "encode_twodelta_frame_with_hint always returns the TwoDelta arm"
+                            ),
+                        };
+                        chunk_buffer.push(BufferedDeltaFrame {
+                            pair,
+                            run_lengths,
+                            count: 1,
+                        });
+                        *previous_assignment = assign_vec;
+                        if chunk_buffer.len() >= *twodelta_chunk_size {
+                            flush_chunk_inner(&mut self.encoder, chunk_buffer)?;
+                        }
+                    }
+                    // A >2-district transition, or a 2-id transition introducing a district absent
+                    // from the previous assignment: defer it as a pending full frame. Flush the
+                    // current chunk first so its deltas precede the snapshot in the stream. The
+                    // full frame's count is written after its payload, so it cannot be emitted
+                    // until a following distinct assignment (or `flush`) settles the count.
+                    TransitionKind::Delta(..) | TransitionKind::Snapshot => {
+                        flush_chunk_inner(&mut self.encoder, chunk_buffer)?;
+                        *pending_full_assignment = Some(assign_vec);
+                        *pending_full_count = 1;
+                    }
                 }
             }
         }
@@ -209,15 +237,17 @@ impl<W: Write> XBenInner<W> {
             XBenState::TwoDelta {
                 previous_assignment,
                 previous_masks,
-                pending_initial_full_assignment,
-                pending_initial_full_count,
+                pending_full_assignment,
+                pending_full_count,
                 chunk_buffer,
                 ..
             } => {
-                flush_twodelta_initial(
+                // At most one of these is non-empty: buffering a pending full frame always flushes
+                // the chunk first, and pushing a delta clears any pending full frame.
+                flush_twodelta_full(
                     &mut self.encoder,
-                    pending_initial_full_assignment,
-                    pending_initial_full_count,
+                    pending_full_assignment,
+                    pending_full_count,
                     previous_assignment,
                     previous_masks,
                 )?;
@@ -241,68 +271,89 @@ impl<W: Write> XBenInner<W> {
             _ => unreachable!(),
         };
 
-        // First frame: standard BEN RLE → XBEN full frame.
-        let max_val_bits = reader.read_u8()?;
-        let max_len_bits = reader.read_u8()?;
-        let n_bytes = reader.read_u32::<BigEndian>()?;
-        let runs = decode_ben_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
-        let first_count = reader.read_u16::<BigEndian>()?;
-
-        let mut encoded = Vec::with_capacity(1 + 4 + runs.len() * 4);
-        encoded.push(XBEN_TWODELTA_FULL_TAG);
-        encoded.extend_from_slice(&(runs.len() as u32).to_be_bytes());
-        for &(value, len) in &runs {
-            encoded.extend_from_slice(&value.to_be_bytes());
-            encoded.extend_from_slice(&len.to_be_bytes());
-        }
-        self.encoder.write_all(&encoded)?;
-        self.encoder.write_all(&first_count.to_be_bytes())?;
-
-        let mut sample_count = first_count as usize;
+        let mut sample_count = 0usize;
         let spinner = Spinner::new("Encoding line");
-        spinner.set_count(sample_count as u64);
 
-        // Delta frames: unpack bitpacked run lengths and buffer into chunks.
+        // Each BEN frame is prefixed with a per-frame tag. This path keeps no masks and
+        // materializes no assignments, so there is nothing to reset across a snapshot — it simply
+        // mirrors the BEN framing onto the XBEN columnar layout.
         loop {
-            let pair_a = match reader.read_u16::<BigEndian>() {
-                Ok(v) => v,
+            let tag = match reader.read_u8() {
+                Ok(t) => t,
                 Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(e),
             };
-            let pair_b = reader.read_u16::<BigEndian>()?;
-            let delta_max_len_bits = reader.read_u8()?;
-            let delta_n_bytes = reader.read_u32::<BigEndian>()?;
 
-            let mut payload = vec![0u8; delta_n_bytes as usize];
-            reader.read_exact(&mut payload)?;
-            let count = reader.read_u16::<BigEndian>()?;
+            match tag {
+                // Snapshot: a MkvChain-formatted body → XBEN full frame. Flush the current chunk
+                // first so its deltas precede the full frame in the stream.
+                BEN_TWODELTA_SNAPSHOT_TAG => {
+                    flush_chunk_inner(&mut self.encoder, chunk_buffer)?;
 
-            let (pair, run_lengths) = match BenEncodeFrame::from_parts(
-                (pair_a, pair_b),
-                delta_max_len_bits,
-                payload,
-                count,
-            ) {
-                BenEncodeFrame::TwoDelta {
-                    pair,
-                    run_length_vector,
-                    ..
-                } => (pair, run_length_vector),
-                _ => unreachable!("BenEncodeFrame::from_parts always returns TwoDelta"),
-            };
+                    let max_val_bits = reader.read_u8()?;
+                    let max_len_bits = reader.read_u8()?;
+                    let n_bytes = reader.read_u32::<BigEndian>()?;
+                    let runs = decode_ben_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
+                    let count = reader.read_u16::<BigEndian>()?;
 
-            chunk_buffer.push(BufferedDeltaFrame {
-                pair,
-                run_lengths,
-                count,
-            });
+                    let mut encoded = Vec::with_capacity(1 + 4 + runs.len() * 4);
+                    encoded.push(XBEN_TWODELTA_FULL_TAG);
+                    encoded.extend_from_slice(&(runs.len() as u32).to_be_bytes());
+                    for &(value, len) in &runs {
+                        encoded.extend_from_slice(&value.to_be_bytes());
+                        encoded.extend_from_slice(&len.to_be_bytes());
+                    }
+                    self.encoder.write_all(&encoded)?;
+                    self.encoder.write_all(&count.to_be_bytes())?;
 
-            if chunk_buffer.len() >= chunk_size {
-                flush_chunk_inner(&mut self.encoder, chunk_buffer)?;
+                    sample_count += count as usize;
+                    spinner.set_count(sample_count as u64);
+                }
+                // Delta: unpack the bit-packed run lengths and buffer into the current chunk.
+                BEN_TWODELTA_DELTA_TAG => {
+                    let pair_a = reader.read_u16::<BigEndian>()?;
+                    let pair_b = reader.read_u16::<BigEndian>()?;
+                    let delta_max_len_bits = reader.read_u8()?;
+                    let delta_n_bytes = reader.read_u32::<BigEndian>()?;
+
+                    let mut payload = vec![0u8; delta_n_bytes as usize];
+                    reader.read_exact(&mut payload)?;
+                    let count = reader.read_u16::<BigEndian>()?;
+
+                    let (pair, run_lengths) = match BenEncodeFrame::from_parts(
+                        (pair_a, pair_b),
+                        delta_max_len_bits,
+                        payload,
+                        count,
+                    ) {
+                        BenEncodeFrame::TwoDelta {
+                            pair,
+                            run_length_vector,
+                            ..
+                        } => (pair, run_length_vector),
+                        _ => unreachable!("BenEncodeFrame::from_parts always returns TwoDelta"),
+                    };
+
+                    chunk_buffer.push(BufferedDeltaFrame {
+                        pair,
+                        run_lengths,
+                        count,
+                    });
+
+                    if chunk_buffer.len() >= chunk_size {
+                        flush_chunk_inner(&mut self.encoder, chunk_buffer)?;
+                    }
+
+                    sample_count += count as usize;
+                    spinner.set_count(sample_count as u64);
+                }
+                other => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("unknown TwoDelta frame tag byte {other:#04x}"),
+                    ))
+                }
             }
-
-            sample_count += count as usize;
-            spinner.set_count(sample_count as u64);
         }
 
         flush_chunk_inner(&mut self.encoder, chunk_buffer)?;
@@ -357,20 +408,25 @@ fn flush_mkv_pending<W: Write>(
     Ok(())
 }
 
-fn flush_twodelta_initial<W: Write>(
+/// Emit a buffered full frame (payload then trailing count) and rebase the delta state onto it.
+///
+/// Used for both the initial anchor and mid-stream snapshots, so `previous_masks` is cleared before
+/// reseeding rather than only pushed onto — the map is non-empty after the first frame.
+fn flush_twodelta_full<W: Write>(
     encoder: &mut XzEncoder<W>,
-    pending_initial_full_assignment: &mut Option<Vec<u16>>,
-    pending_initial_full_count: &mut u16,
+    pending_full_assignment: &mut Option<Vec<u16>>,
+    pending_full_count: &mut u16,
     previous_assignment: &mut Vec<u16>,
     previous_masks: &mut HashMap<u16, Vec<usize>>,
 ) -> io::Result<()> {
-    let pending = match pending_initial_full_assignment.take() {
+    let pending = match pending_full_assignment.take() {
         Some(p) => p,
         None => return Ok(()),
     };
-    let count = *pending_initial_full_count;
-    *pending_initial_full_count = 0;
+    let count = *pending_full_count;
+    *pending_full_count = 0;
 
+    previous_masks.clear();
     for (idx, &val) in pending.iter().enumerate() {
         previous_masks.entry(val).or_default().push(idx);
     }

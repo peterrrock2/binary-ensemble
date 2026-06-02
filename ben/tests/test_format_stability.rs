@@ -43,6 +43,18 @@ const CANONICAL_JSONL: &str = "\
 {\"assignment\":[2,2,2,1],\"sample\":5}
 ";
 
+/// Canonical JSONL used to mint the `TwoDelta` fixtures only. `TwoDelta` is unreleased, so it gets
+/// its own source that deliberately exercises mixed snapshot/delta framing: an anchor snapshot, a
+/// 2-swap delta, a repeat (count), a **>2-district transition** that forces a mid-stream snapshot,
+/// and a 2-swap delta rebased onto that snapshot.
+const TWODELTA_CANONICAL_JSONL: &str = "\
+{\"assignment\":[1,1,2,2],\"sample\":1}
+{\"assignment\":[1,2,1,2],\"sample\":2}
+{\"assignment\":[1,2,1,2],\"sample\":3}
+{\"assignment\":[3,3,1,2],\"sample\":4}
+{\"assignment\":[3,3,2,1],\"sample\":5}
+";
+
 /// Graph JSON committed as the `graph.json` asset inside the BENDL fixtures. Tiny but
 /// representative of a real adjacency-style graph.
 const CANONICAL_GRAPH_JSON: &str = "{\"nodes\":4,\"edges\":[[0,1],[1,2],[2,3],[3,0]]}";
@@ -68,58 +80,60 @@ fn read_fixture(name: &str) -> Vec<u8> {
     })
 }
 
-/// Decode a committed BEN fixture and assert the round-trip matches `CANONICAL_JSONL`.
-fn assert_ben_fixture_round_trips(name: &str) {
+/// Decode a committed BEN fixture and assert the round-trip matches `expected`. The `expected`
+/// source is a parameter (not a hardcoded constant) so the released Standard/MkvChain fixtures and
+/// the separately-sourced TwoDelta fixture can share this helper without entangling their inputs.
+fn assert_ben_fixture_round_trips(name: &str, expected: &str) {
     let bytes = read_fixture(name);
     let mut out = Vec::new();
     decode_ben_to_jsonl(&bytes[..], &mut out).expect("ben decode");
     assert_eq!(
         String::from_utf8(out).expect("decoder output is utf-8"),
-        CANONICAL_JSONL,
+        expected,
         "fixture {name} did not round-trip"
     );
 }
 
-/// Decode a committed XBEN fixture and assert the round-trip matches `CANONICAL_JSONL`.
-fn assert_xben_fixture_round_trips(name: &str) {
+/// Decode a committed XBEN fixture and assert the round-trip matches `expected`.
+fn assert_xben_fixture_round_trips(name: &str, expected: &str) {
     let bytes = read_fixture(name);
     let mut out = Vec::new();
     decode_xben_to_jsonl(BufReader::new(&bytes[..]), &mut out).expect("xben decode");
     assert_eq!(
         String::from_utf8(out).expect("decoder output is utf-8"),
-        CANONICAL_JSONL,
+        expected,
         "fixture {name} did not round-trip"
     );
 }
 
 #[test]
 fn standard_ben_v1_0_0_round_trips() {
-    assert_ben_fixture_round_trips("standard.ben");
+    assert_ben_fixture_round_trips("standard.ben", CANONICAL_JSONL);
 }
 
 #[test]
 fn mkvchain_ben_v1_0_0_round_trips() {
-    assert_ben_fixture_round_trips("mkvchain.ben");
+    assert_ben_fixture_round_trips("mkvchain.ben", CANONICAL_JSONL);
 }
 
 #[test]
 fn twodelta_ben_v1_0_0_round_trips() {
-    assert_ben_fixture_round_trips("twodelta.ben");
+    assert_ben_fixture_round_trips("twodelta.ben", TWODELTA_CANONICAL_JSONL);
 }
 
 #[test]
 fn standard_xben_v1_0_0_round_trips() {
-    assert_xben_fixture_round_trips("standard.xben");
+    assert_xben_fixture_round_trips("standard.xben", CANONICAL_JSONL);
 }
 
 #[test]
 fn mkvchain_xben_v1_0_0_round_trips() {
-    assert_xben_fixture_round_trips("mkvchain.xben");
+    assert_xben_fixture_round_trips("mkvchain.xben", CANONICAL_JSONL);
 }
 
 #[test]
 fn twodelta_xben_v1_0_0_round_trips() {
-    assert_xben_fixture_round_trips("twodelta.xben");
+    assert_xben_fixture_round_trips("twodelta.xben", TWODELTA_CANONICAL_JSONL);
 }
 
 #[test]
@@ -254,20 +268,19 @@ fn write_fixture(name: &str, bytes: &[u8]) {
     std::fs::write(&path, bytes).unwrap_or_else(|e| panic!("write {path:?}: {e}"));
 }
 
-fn mint_ben(variant: BenVariant) -> Vec<u8> {
+fn mint_ben(variant: BenVariant, jsonl: &str) -> Vec<u8> {
     let mut out = Vec::new();
-    encode_jsonl_to_ben(Cursor::new(CANONICAL_JSONL.as_bytes()), &mut out, variant)
-        .expect("encode ben");
+    encode_jsonl_to_ben(Cursor::new(jsonl.as_bytes()), &mut out, variant).expect("encode ben");
     out
 }
 
-fn mint_xben(variant: BenVariant) -> Vec<u8> {
+fn mint_xben(variant: BenVariant, jsonl: &str) -> Vec<u8> {
     let mut out = Vec::new();
     // Force single-threaded encoding with a fixed compression level so the bytes are deterministic.
     // Defaults vary across machines (n_threads = available parallelism), which would make
     // re-generation non-reproducible across hosts.
     encode_jsonl_to_xben(
-        Cursor::new(CANONICAL_JSONL.as_bytes()),
+        Cursor::new(jsonl.as_bytes()),
         &mut out,
         variant,
         Some(1),
@@ -382,12 +395,24 @@ fn flip_unknown_flag_bits(mut bytes: Vec<u8>) -> Vec<u8> {
 #[test]
 #[ignore = "regenerates committed v1.0.0 fixtures; never run as part of normal CI"]
 fn generate_format_stability_fixtures() {
-    write_fixture("standard.ben", &mint_ben(BenVariant::Standard));
-    write_fixture("mkvchain.ben", &mint_ben(BenVariant::MkvChain));
-    write_fixture("twodelta.ben", &mint_ben(BenVariant::TwoDelta));
-    write_fixture("standard.xben", &mint_xben(BenVariant::Standard));
-    write_fixture("mkvchain.xben", &mint_xben(BenVariant::MkvChain));
-    write_fixture("twodelta.xben", &mint_xben(BenVariant::TwoDelta));
+    write_fixture("standard.ben", &mint_ben(BenVariant::Standard, CANONICAL_JSONL));
+    write_fixture("mkvchain.ben", &mint_ben(BenVariant::MkvChain, CANONICAL_JSONL));
+    write_fixture(
+        "twodelta.ben",
+        &mint_ben(BenVariant::TwoDelta, TWODELTA_CANONICAL_JSONL),
+    );
+    write_fixture(
+        "standard.xben",
+        &mint_xben(BenVariant::Standard, CANONICAL_JSONL),
+    );
+    write_fixture(
+        "mkvchain.xben",
+        &mint_xben(BenVariant::MkvChain, CANONICAL_JSONL),
+    );
+    write_fixture(
+        "twodelta.xben",
+        &mint_xben(BenVariant::TwoDelta, TWODELTA_CANONICAL_JSONL),
+    );
 
     let flags_set = mint_flags_set_bendl();
     write_fixture("flags_set.bendl", &flags_set);
@@ -398,9 +423,30 @@ fn generate_format_stability_fixtures() {
     // Also commit the canonical sources alongside so a human can read what the fixtures represent
     // without invoking the codec.
     write_fixture("source.jsonl", CANONICAL_JSONL.as_bytes());
+    write_fixture("source_twodelta.jsonl", TWODELTA_CANONICAL_JSONL.as_bytes());
     write_fixture("source_graph.json", CANONICAL_GRAPH_JSON.as_bytes());
     write_fixture("source_metadata.json", CANONICAL_METADATA_JSON.as_bytes());
 
     // Print a checklist so the engineer regenerating fixtures sees what landed.
     eprintln!("Wrote v1.0.0 fixtures to {:?}", fixtures_dir());
+}
+
+#[test]
+#[ignore = "regenerates only the (unreleased) TwoDelta fixtures; never run as part of normal CI"]
+fn regenerate_twodelta_fixtures() {
+    // `TwoDelta` is unreleased, so its wire format may change and its fixtures may be re-minted in
+    // place (the "committed before any release shipped" escape hatch in `docs/format-stability.md`).
+    // This regenerator touches *only* the TwoDelta fixtures and their source, leaving every released
+    // Standard/MkvChain/BENDL fixture byte-for-byte untouched.
+    write_fixture(
+        "twodelta.ben",
+        &mint_ben(BenVariant::TwoDelta, TWODELTA_CANONICAL_JSONL),
+    );
+    write_fixture(
+        "twodelta.xben",
+        &mint_xben(BenVariant::TwoDelta, TWODELTA_CANONICAL_JSONL),
+    );
+    write_fixture("source_twodelta.jsonl", TWODELTA_CANONICAL_JSONL.as_bytes());
+
+    eprintln!("Re-minted TwoDelta fixtures in {:?}", fixtures_dir());
 }
