@@ -1,10 +1,9 @@
 use binary_ensemble::io::bundle::format::AssignmentFormat;
-use binary_ensemble::io::bundle::BendlReader;
 use binary_ensemble::io::reader::{BenWireFormat, MkvRecord, Selection};
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
-use std::fs::File;
-use std::io::{self, BufReader};
+use std::io;
+use std::path::PathBuf;
 
 pub(super) type DynIter = Box<dyn Iterator<Item = io::Result<MkvRecord>> + Send>;
 
@@ -47,26 +46,30 @@ impl DecoderMode {
     }
 }
 
-/// Cached bundle state for a decoder opened on a `.bendl` file.
+/// Where the iterable assignment stream lives.
 ///
-/// Holds a dedicated [`BendlReader`] so the decoder can satisfy TOC inspection and asset-read calls
-/// without disturbing the iterator (which reads the stream region through a separate file handle).
-pub(super) struct BundleState {
-    pub reader: BendlReader<BufReader<File>>,
-    pub stream_offset: u64,
-    pub stream_len: u64,
-}
-
-/// What the decoder was actually opened on.
-pub(super) enum DecoderBackend {
-    Plain,
-    Bundle(BundleState),
-}
-
-impl DecoderBackend {
-    pub(super) fn is_bundle(&self) -> bool {
-        matches!(self, DecoderBackend::Bundle(_))
-    }
+/// A plain `.ben`/`.xben` file is read from the start; a `.bendl` bundle is read through a second
+/// file handle bounded to the embedded stream region. Carrying the region offsets (rather than a
+/// live [`binary_ensemble::io::bundle::BendlReader`]) keeps the iteration core free of the bundle
+/// inspection surface, so [`super::cursor::SampleCursor`] is shared verbatim between the stream and
+/// bundle decoders.
+#[derive(Clone)]
+pub(super) enum StreamSource {
+    Plain {
+        path: PathBuf,
+    },
+    Bundle {
+        path: PathBuf,
+        stream_offset: u64,
+        stream_len: u64,
+        /// Authoritative sample count from a finalized bundle header, or `None` when the bundle is
+        /// unfinalized (forcing a stream scan).
+        header_sample_count: Option<i64>,
+        /// `true` for a finalized bundle whose stream region is empty (an assets-only bundle with no
+        /// BEN banner). Iteration over such a source yields nothing instead of failing on the
+        /// missing banner.
+        empty: bool,
+    },
 }
 
 /// Stored form of the most recently installed subsampling selection.

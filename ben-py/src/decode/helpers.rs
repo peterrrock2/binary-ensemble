@@ -1,9 +1,9 @@
-use super::types::{BundleState, DecoderBackend, DecoderMode, DynIter};
+use super::types::{DecoderMode, DynIter, StreamSource};
 use crate::common::open_input;
 use binary_ensemble::io::bundle::format::BENDL_MAGIC;
 use binary_ensemble::io::reader::{
-    build_frame_iter, build_frame_iter_from_reader, count_samples_from_frame_iter, BenStreamReader,
-    BenWireFormat,
+    build_frame_iter, build_frame_iter_from_reader, count_samples_from_file,
+    count_samples_from_frame_iter, BenStreamReader, BenWireFormat, FrameIter,
 };
 use pyo3::exceptions::{PyException, PyIOError, PyUserWarning};
 use pyo3::prelude::*;
@@ -57,51 +57,65 @@ where
     }
 }
 
-/// Build a plain-stream iterator from `path` using `mode`.
-pub(super) fn build_plain_iter(path: &Path, mode: DecoderMode) -> PyResult<DynIter> {
-    let reader = open_input(&path.to_path_buf())?;
-    open_stream_reader(reader, mode.wire_format())
-}
-
-/// Open a second file handle on the bundle path, seek to the stream region, and wrap it in the
-/// appropriate assignment reader so the decoder iterator only walks the embedded stream.
-pub(super) fn build_bundle_iter(
+/// Create a `Read`-only handle bounded to a bundle's assignment stream region.
+fn open_bundle_stream_reader(
     path: &Path,
-    state: &BundleState,
-    mode: DecoderMode,
-) -> PyResult<DynIter> {
-    let reader = open_bundle_stream_reader(path, state)?;
-    open_stream_reader(reader, mode.wire_format())
-}
-
-/// Create a `Read`-only handle bounded to the bundle's assignment stream region.
-pub(super) fn open_bundle_stream_reader(
-    path: &Path,
-    state: &BundleState,
+    stream_offset: u64,
+    stream_len: u64,
 ) -> PyResult<io::Take<BufReader<File>>> {
     let file = File::open(path)
         .map_err(|e| PyIOError::new_err(format!("Failed to open {}: {e}", path.display())))?;
     let mut buf = BufReader::new(file);
-    buf.seek(SeekFrom::Start(state.stream_offset))
+    buf.seek(SeekFrom::Start(stream_offset))
         .map_err(|e| PyIOError::new_err(format!("Failed to seek into bundle stream: {e}")))?;
-    Ok(buf.take(state.stream_len))
+    Ok(buf.take(stream_len))
 }
 
+/// Build a fresh assignment iterator for the given source.
+///
+/// A finalized assets-only bundle (`StreamSource::Bundle { empty: true, .. }`) has no BEN banner to
+/// parse, so it yields an empty iterator rather than failing on the missing banner.
+pub(super) fn build_iter(source: &StreamSource, mode: DecoderMode) -> PyResult<DynIter> {
+    match source {
+        StreamSource::Plain { path } => {
+            let reader = open_input(&path.to_path_buf())?;
+            open_stream_reader(reader, mode.wire_format())
+        }
+        StreamSource::Bundle { empty: true, .. } => Ok(Box::new(std::iter::empty())),
+        StreamSource::Bundle {
+            path,
+            stream_offset,
+            stream_len,
+            ..
+        } => {
+            let reader = open_bundle_stream_reader(path, *stream_offset, *stream_len)?;
+            open_stream_reader(reader, mode.wire_format())
+        }
+    }
+}
+
+/// Build a frame iterator for subsample selection over the given source.
 pub(super) fn build_frames_for_subsample(
-    path: &Path,
+    source: &StreamSource,
     mode: DecoderMode,
-    backend: &DecoderBackend,
-) -> PyResult<binary_ensemble::io::reader::FrameIter> {
+) -> PyResult<FrameIter> {
     let format = mode.wire_format();
-    match backend {
-        DecoderBackend::Plain => build_frame_iter(&path.to_path_buf(), format).map_err(|e| {
-            PyException::new_err(format!(
-                "Failed to create frame iterator from {}: {e}",
-                path.display()
-            ))
-        }),
-        DecoderBackend::Bundle(state) => {
-            let reader = open_bundle_stream_reader(path, state)?;
+    match source {
+        StreamSource::Plain { path } => {
+            build_frame_iter(&path.to_path_buf(), format).map_err(|e| {
+                PyException::new_err(format!(
+                    "Failed to create frame iterator from {}: {e}",
+                    path.display()
+                ))
+            })
+        }
+        StreamSource::Bundle {
+            path,
+            stream_offset,
+            stream_len,
+            ..
+        } => {
+            let reader = open_bundle_stream_reader(path, *stream_offset, *stream_len)?;
             build_frame_iter_from_reader(reader, format).map_err(|e| {
                 PyException::new_err(format!(
                     "Failed to create frame iterator from bundle {}: {e}",
@@ -112,17 +126,33 @@ pub(super) fn build_frames_for_subsample(
     }
 }
 
-pub(super) fn scan_bundle_samples(
-    path: &Path,
-    state: &BundleState,
+/// Count the samples in a source by reading it from the start.
+pub(super) fn scan_samples(
+    source: &StreamSource,
     mode: DecoderMode,
+    py: Python<'_>,
 ) -> PyResult<usize> {
-    let reader = open_bundle_stream_reader(path, state)?;
-    let iter = build_frame_iter_from_reader(reader, mode.wire_format()).map_err(|e| {
-        PyException::new_err(format!(
-            "Failed to open bundle stream for sample count: {e}"
-        ))
-    })?;
-    count_samples_from_frame_iter(iter)
-        .map_err(|e| PyException::new_err(format!("Failed to count samples in bundle: {e}")))
+    match source {
+        StreamSource::Plain { path } => {
+            let path = path.clone();
+            let format = mode.wire_format();
+            py.detach(|| count_samples_from_file(&path, format))
+                .map_err(|e| {
+                    PyException::new_err(format!("Failed to count samples in {}: {e}", path.display()))
+                })
+        }
+        StreamSource::Bundle {
+            path,
+            stream_offset,
+            stream_len,
+            ..
+        } => {
+            let reader = open_bundle_stream_reader(path, *stream_offset, *stream_len)?;
+            let iter = build_frame_iter_from_reader(reader, mode.wire_format()).map_err(|e| {
+                PyException::new_err(format!("Failed to open bundle stream for sample count: {e}"))
+            })?;
+            count_samples_from_frame_iter(iter)
+                .map_err(|e| PyException::new_err(format!("Failed to count samples in bundle: {e}")))
+        }
+    }
 }

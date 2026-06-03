@@ -46,7 +46,7 @@ pub fn encode_ben_to_xben(
 
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false, variant="mkv_chain"))]
-#[pyo3(text_signature = "(in_file, out_file, overwrite=false, variant='mkv_chain')")]
+#[pyo3(text_signature = "(in_file, out_file, overwrite=False, variant='mkv_chain')")]
 pub fn encode_jsonl_to_ben(
     in_file: PathBuf,
     out_file: PathBuf,

@@ -9,6 +9,9 @@ dynamic = ["version"]
 description = "Python bindings for the Binary Ensemble Package."
 readme = "README.md"
 requires-python = ">=3.11"
+dependencies = [
+    "networkx>=3.0",
+]
 
 
 [tool.maturin]

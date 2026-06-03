@@ -1,444 +1,168 @@
-from typing import Any, Iterable, Iterator, Literal
+"""Type stubs for the compiled ``binary_ensemble._core`` extension.
+
+These describe the raw PyO3 surface. End users should import the ergonomic
+facades from :mod:`binary_ensemble.stream`, :mod:`binary_ensemble.bundle`,
+:mod:`binary_ensemble.codec`, and :mod:`binary_ensemble.graph` instead.
+"""
+
 from pathlib import Path
+from typing import Any, Iterable, Iterator, Literal
 
-class PyBenDecoder:
-    """Iterator over assignments in a BEN, XBEN, or BENDL file.
+# ---------------------------------------------------------------------------
+# Stream decoder / encoder (plain .ben / .xben)
+# ---------------------------------------------------------------------------
 
-    Open a decoder over a plain stream (`.ben` / `.xben`) or a bundle
-    (`.bendl`). The file's leading bytes are sniffed; when the BENDL magic
-    is present, the bundle header decides between BEN and XBEN and the
-    ``mode`` argument is ignored. Iteration walks only the embedded stream
-    region, and the bundle's table of contents / asset payloads are
-    available through the bundle-inspection methods.
+class BenDecoder:
+    """Iterator over assignments in a plain BEN or XBEN stream.
 
-    Construction is lazy with respect to sample counting: opening the decoder does
-    not scan the whole file. The first call to :func:`len` or :meth:`count_samples`
-    will count samples and cache the result.
-
-    Parameters
-    ----------
-    file_path :
-        Path to the input file.
-    mode : {"ben", "xben"}, default "ben"
-        Select container format. Only consulted for plain streams; for
-        bundles the header dictates the format.
-
-    Raises
-    ------
-    OSError
-        If the file cannot be opened.
-    Exception
-        If the underlying decoder fails to initialize.
+    Stream-only: opening this on a ``.bendl`` bundle raises and points at
+    :class:`BendlDecoder`. Sample counting is lazy and cached.
     """
 
     def __init__(
         self, file_path: str | Path, mode: Literal["ben", "xben"] = "ben"
     ) -> None: ...
-    def __iter__(self) -> Iterator[list[int]]:
-        """Return an iterator over the samples, restarting from the start.
-
-        Each call to :func:`iter` (including the implicit call made by
-        ``for x in dec:``) rebuilds the underlying frame walker and, if a
-        subsample selection has been installed via :meth:`subsample_indices`,
-        :meth:`subsample_range`, or :meth:`subsample_every`, reapplies it.
-        Iteration can therefore be performed multiple times on the same
-        decoder.
-        """
-        ...
+    def __iter__(self) -> Iterator[list[int]]: ...
     def __next__(self) -> list[int]: ...
-    def __len__(self) -> int:
-        """Return the number of samples.
+    def __len__(self) -> int: ...
+    def count_samples(self) -> int: ...
+    def subsample_indices(self, indices: Iterable[int]) -> "BenDecoder": ...
+    def subsample_range(self, start: int, end: int) -> "BenDecoder": ...
+    def subsample_every(self, step: int, offset: int = 1) -> "BenDecoder": ...
+    def assignment_format(self) -> Literal["ben", "xben"]: ...
 
-        Notes
-        -----
-        The first call may require a full scan of the underlying file and can be
-        expensive for very large BEN/XBEN datasets. The result is cached after
-        the first successful count.
-        """
-        ...
-    def count_samples(self) -> int:
-        """Count and cache the total number of samples in the source file.
-
-        Always reports the base (unfiltered) sample count, even after a
-        ``subsample_*`` call has been applied. Equivalent to ``len(dec)``
-        when no subsample selection is active. The first call may perform
-        a full-file scan; the result is cached.
-        """
-        ...
-    def subsample_indices(self, indices: Iterable[int]) -> "PyBenDecoder":
-        """Keep only the given **1-based** sample indices.
-
-        Duplicates are ignored and order is irrelevant; the set is sorted & deduped internally.
-        Returns the same decoder (fluent API).
-
-
-        Arguments
-        ---------
-        indices :
-            Iterable of 1-based sample indices to keep.
-
-        Returns
-        -------
-        PyBenDecoder
-            The same decoder (fluent API).
-        """
-        ...
-
-    def subsample_range(self, start: int, end: int) -> "PyBenDecoder":
-        """Keep only samples in the inclusive **1-based** range [start, end].
-
-        The base sample count is computed on demand if needed for bounds
-        validation.
-
-        Arguments
-        ---------
-        start :
-            1-based index of the first sample to keep.
-        end :
-            1-based index of the last sample to keep.
-
-        Returns
-        -------
-        PyBenDecoder
-            The same decoder (fluent API).
-        """
-        ...
-
-    def subsample_every(self, step: int, offset: int = 1) -> "PyBenDecoder":
-        """Keep every `step`-th sample starting at **1-based** `offset`.
-        Returns the same decoder (fluent API).
-
-        The base sample count is computed on demand if needed for bounds
-        validation.
-
-        Arguments
-        ---------
-        step :
-            Step size (keep every `step`-th sample).
-        offset :
-            1-based index of the first sample to keep (default: 1).
-
-        Returns
-        -------
-        PyBenDecoder
-            The same decoder (fluent API).
-        """
-        ...
-
-    # -----------------------------------------------------------------
-    # Bundle-inspection surface.
-    #
-    # These methods only make sense when the decoder was opened on a
-    # `.bendl` file; on a plain `.ben`/`.xben` stream they raise a clear
-    # error pointing the user at the right tool.
-    # -----------------------------------------------------------------
-
-    def is_bundle(self) -> bool:
-        """Return True if the decoder was opened on a `.bendl` bundle."""
-        ...
-
-    def assignment_format(self) -> Literal["ben", "xben"]:
-        """Return the container format of the underlying stream."""
-        ...
-
-    def version(self) -> tuple[int, int]:
-        """Return the bundle's format version as ``(major, minor)``.
-
-        Raises an error on plain streams.
-        """
-        ...
-
-    def is_complete(self) -> bool:
-        """Return whether the bundle was successfully finalized.
-
-        Raises an error on plain streams.
-        """
-        ...
-
-    def asset_names(self) -> list[str]:
-        """Return the names of every entry in the bundle's directory.
-
-        Raises an error on plain streams.
-        """
-        ...
-
-    def list_assets(self) -> list[dict[str, Any]]:
-        """Return the full bundle directory as a list of dicts with keys
-        ``name``, ``type``, ``offset``, ``len``, and ``flags``.
-
-        Raises an error on plain streams.
-        """
-        ...
-
-    def read_asset_bytes(self, name: str) -> bytes:
-        """Return the (decoded) bytes of the named asset.
-
-        Raises an error on plain streams, a ``KeyError`` when the asset is
-        absent, and an ``OSError`` when the payload cannot be read.
-        """
-        ...
-
-    def read_json_asset(self, name: str) -> Any:
-        """Parse a JSON asset into a Python object.
-
-        Raises an error on plain streams, a ``KeyError`` when the asset is
-        absent, and an exception when the bytes are not valid UTF-8 JSON.
-        """
-        ...
-
-    def read_graph(self) -> Any | None:
-        """Return the bundle's ``graph.json`` asset as a parsed JSON
-        object, or ``None`` if absent. Raises on plain streams.
-        """
-        ...
-
-    def read_metadata(self) -> Any | None:
-        """Return the bundle's ``metadata.json`` asset as a parsed JSON
-        object, or ``None`` if absent. Raises on plain streams.
-        """
-        ...
-
-    def read_relabel_map(self) -> Any | None:
-        """Return the bundle's ``relabel_map.json`` asset as a parsed
-        JSON object, or ``None`` if absent. Raises on plain streams.
-        """
-        ...
-
-    def extract_stream(self, out_path: str | Path, overwrite: bool = False) -> None:
-        """Copy the embedded assignment stream to a file.
-
-        The resulting file can be opened directly with
-        ``PyBenDecoder(out_path, mode=dec.assignment_format())``.
-
-        Raises an error on plain streams, an ``OSError`` when the output
-        file already exists and *overwrite* is ``False``.
-        """
-        ...
-
-class PyBenEncoder:
-    """Encoder for Binary Ensemble (.ben) files.
-
-
-    The encoder supports writing assignments to a BEN file using a context manager and the `write`
-    method.
-
-
-    Example
-    -------
-
-
-    .. code-block:: python
-
-        from binary_ensemble import PyBenEncoder
-
-        assignments = [
-            [1, 2, 1, 1, 2, 2],
-            [2, 1, 1, 2, 2, 1],
-            [1, 1, 2, 1, 2, 2],
-        ]
-
-        with PyBenEncoder("output.ben", overwrite=True) as encoder:
-            for assignment in assignments:
-                encoder.write(assignment)
-
-    """
+class BenEncoder:
+    """Encoder for plain Binary Ensemble (`.ben`) streams."""
 
     def __init__(
         self,
         file_path: str | Path,
         overwrite: bool = False,
         variant: Literal["standard", "mkv_chain", "twodelta"] | None = None,
-    ) -> None:
-        """Initializes the encoder and opens the underlying file.
-
-        Parameters
-        ----------
-        file_path :
-            Path to the output BEN file.
-        overwrite :
-            Whether to overwrite the output file if it exists. Defaults to False.
-        variant : {"standard", "mkv_chain", "twodelta"}, optional
-            Select BEN variant. If None, defaults to "mkv_chain".
-
-        Raises
-        ------
-        OSError
-            If the file cannot be opened.
-        Exception
-            If the underlying encoder fails to initialize.
-        """
-        ...
-
-    def write(self, assignment: list[int]) -> None:
-        """Write a single assignment to the BEN file.
-
-        Parameters
-        ----------
-        assignment :
-            List of integers representing the assignment.
-        """
-        ...
-
-    def close(self) -> None:
-        """Closes the encoder and the underlying file.
-
-        Also handles flushing any buffered data.
-        """
-        ...
-
-    def __enter__(self) -> "PyBenEncoder": ...
+    ) -> None: ...
+    def write(self, assignment: list[int]) -> None: ...
+    def close(self) -> None: ...
+    def __enter__(self) -> "BenEncoder": ...
     def __exit__(self, exc_type, exc, tb) -> bool: ...
 
-def decompress_ben_to_jsonl(
-    in_file: str | Path, out_file: str | Path, overwrite: bool = False
-) -> None:
-    """Converts a BEN file to a JSONL file.
+# ---------------------------------------------------------------------------
+# Bundle decoder / encoder (.bendl)
+# ---------------------------------------------------------------------------
 
-    Parameters
-    ----------
-    in_file :
-        Path to the input BEN file.
-    out_file :
-        Path to the output JSONL file.
-    overwrite :
-        Whether to overwrite the output file if it exists. Defaults to False.
+class BendlDecoder:
+    """Reader and iterator for a ``.bendl`` bundle.
 
-    Raises
-    ------
-    OSError
-        If the input file cannot be opened or the output file cannot be created.
+    Bundle-only: opening this on a plain ``.ben``/``.xben`` stream raises and
+    points at :class:`BenDecoder`. Iteration walks the embedded assignment
+    stream; the bundle directory and asset payloads are exposed through the
+    inspection methods. A finalized assets-only bundle (empty stream) iterates to
+    nothing with ``len == 0``.
     """
-    ...
 
-def decompress_xben_to_jsonl(
-    in_file: str | Path, out_file: str | Path, overwrite: bool = False
-) -> None:
-    """Converts an XBEN file to a JSONL file.
+    def __init__(self, file_path: str | Path) -> None: ...
+    def __iter__(self) -> Iterator[list[int]]: ...
+    def __next__(self) -> list[int]: ...
+    def __len__(self) -> int: ...
+    def count_samples(self) -> int: ...
+    def subsample_indices(self, indices: Iterable[int]) -> "BendlDecoder": ...
+    def subsample_range(self, start: int, end: int) -> "BendlDecoder": ...
+    def subsample_every(self, step: int, offset: int = 1) -> "BendlDecoder": ...
+    def assignment_format(self) -> Literal["ben", "xben"]: ...
+    def version(self) -> tuple[int, int]: ...
+    def is_complete(self) -> bool: ...
+    def asset_names(self) -> list[str]: ...
+    def list_assets(self) -> list[dict[str, Any]]: ...
+    def read_asset_bytes(self, name: str) -> bytes: ...
+    def read_json_asset(self, name: str) -> Any: ...
+    # Returns a NetworkX graph (``networkx.Graph``/``MultiGraph``) rebuilt from the
+    # stored adjacency JSON, or ``None`` if absent. Use ``read_json_asset("graph.json")``
+    # for the raw parsed dict.
+    def read_graph(self) -> Any | None: ...
+    def read_metadata(self) -> Any | None: ...
+    def read_node_permutation_map(self) -> Any | None: ...
+    def extract_stream(
+        self,
+        out_path: str | Path,
+        overwrite: bool = False,
+        allow_unfinalized: bool = False,
+    ) -> None: ...
 
-    Parameters
-    ----------
-    in_file :
-        Path to the input XBEN file.
-    out_file :
-        Path to the output JSONL file.
-    overwrite :
-        Whether to overwrite the output file if it exists. Defaults to False.
+class BendlStreamSession:
+    """Single-use context manager over a bundle's assignment stream.
 
-    Raises
-    ------
-    OSError
-        If the input file cannot be opened or the output file cannot be created.
+    Obtained from :meth:`BendlEncoder.stream`; finalizes the bundle on a clean
+    close and leaves it unfinalized if the context exits via an exception.
     """
-    ...
 
-def decompress_xben_to_ben(
-    in_file: str | Path, out_file: str | Path, overwrite: bool = False
-) -> None:
-    """Converts an XBEN file to a BEN file.
+    def write(self, assignment: list[int]) -> None: ...
+    def close(self) -> None: ...
+    def __enter__(self) -> "BendlStreamSession": ...
+    def __exit__(self, exc_type, exc, tb) -> bool: ...
 
-    Parameters
-    ----------
-    in_file :
-        Path to the input XBEN file.
-    out_file :
-        Path to the output BEN file.
-    overwrite :
-        Whether to overwrite the output file if it exists. Defaults to False.
+class BendlEncoder:
+    """Writer for a ``.bendl`` bundle (create mode) or appender (append mode)."""
 
-    Raises
-    ------
-    OSError
-        If the input file cannot be opened or the output file cannot be created.
-    """
-    ...
+    def __init__(self, file_path: str | Path, overwrite: bool = False) -> None: ...
+    @staticmethod
+    def append(file_path: str | Path) -> "BendlEncoder": ...
+    def add_asset(
+        self, name: str, payload: bytes, content_type: Literal["json", "text"]
+    ) -> None: ...
+    def add_metadata(self, metadata: Any) -> None: ...
+    # Returns the (possibly reordered) graph as a NetworkX graph, matching
+    # BendlDecoder.read_graph.
+    def add_graph(self, graph: Any, preprocess_method: str | None) -> Any: ...
+    def stream(
+        self,
+        format: Literal["ben"] = "ben",
+        variant: Literal["standard", "mkv_chain", "twodelta"] | None = None,
+    ) -> BendlStreamSession: ...
+    def close(self) -> None: ...
+    def __enter__(self) -> "BendlEncoder": ...
+    def __exit__(self, exc_type, exc, tb) -> bool: ...
 
-def compress_jsonl_to_ben(
+# ---------------------------------------------------------------------------
+# Whole-file stream / JSONL transforms
+# ---------------------------------------------------------------------------
+
+def encode_jsonl_to_ben(
     in_file: str | Path,
     out_file: str | Path,
     overwrite: bool = False,
-    variant: Literal["standard", "mkv_chain", "twodelta"] | None = None,
-) -> None:
-    """Converts a JSONL file to a BEN file.
-
-    Parameters
-    ----------
-    in_file :
-        Path to the input JSONL file.
-    out_file :
-        Path to the output BEN file.
-    overwrite :
-        Whether to overwrite the output file if it exists. Defaults to False.
-    variant : {"standard", "mkv_chain", "twodelta"}, optional
-        Select BEN variant. If None, defaults to "mkv_chain".
-
-    Raises
-    ------
-    OSError
-        If the input file cannot be opened or the output file cannot be created.
-    ValueError
-        If the input file is not a valid JSONL file or if the variant cannot be inferred.
-    """
-    ...
-
-def compress_jsonl_to_xben(
+    variant: Literal["standard", "mkv_chain", "twodelta"] = "mkv_chain",
+) -> None: ...
+def encode_jsonl_to_xben(
     in_file: str | Path,
     out_file: str | Path,
     overwrite: bool = False,
-    variant: Literal["standard", "mkv_chain", "twodelta"] | None = None,
+    variant: Literal["standard", "mkv_chain", "twodelta"] = "mkv_chain",
     n_threads: int | None = None,
     compression_level: int | None = None,
-) -> None:
-    """Converts a JSONL file to an XBEN file.
-
-    Parameters
-    ----------
-    in_file :
-        Path to the input JSONL file.
-    out_file :
-        Path to the output XBEN file.
-    overwrite :
-        Whether to overwrite the output file if it exists. Defaults to False.
-    variant : {"standard", "mkv_chain", "twodelta"}, optional
-        Select BEN variant. If None, defaults to "mkv_chain".
-    n_threads :
-        Number of threads to use for compression. If None, defaults to the number of CPU cores.
-    compression_level :
-        Compression level to use for LZMA compression (0-9). If None, defaults to 9 (highest).
-
-    Raises
-    ------
-    OSError
-        If the input file cannot be opened or the output file cannot be created.
-    ValueError
-        If the input file is not a valid JSONL file or if the variant cannot be inferred.
-    """
-    ...
-
-def compress_ben_to_xben(
+    xz_block_size: int | None = None,
+) -> None: ...
+def encode_ben_to_xben(
     in_file: str | Path,
     out_file: str | Path,
     overwrite: bool = False,
     n_threads: int | None = None,
     compression_level: int | None = None,
-) -> None:
-    """Converts a BEN file to an XBEN file.
+    xz_block_size: int | None = None,
+) -> None: ...
+def decode_ben_to_jsonl(
+    in_file: str | Path, out_file: str | Path, overwrite: bool = False
+) -> None: ...
+def decode_xben_to_jsonl(
+    in_file: str | Path, out_file: str | Path, overwrite: bool = False
+) -> None: ...
+def decode_xben_to_ben(
+    in_file: str | Path, out_file: str | Path, overwrite: bool = False
+) -> None: ...
 
-    Parameters
-    ----------
-    in_file :
-        Path to the input BEN file.
-    out_file :
-        Path to the output XBEN file.
-    overwrite :
-        Whether to overwrite the output file if it exists. Defaults to False.
-    n_threads :
-        Number of threads to use for compression. If None, defaults to the number of CPU cores.
-    compression_level :
-        Compression level to use for LZMA compression (0-9). If None, defaults to 9 (highest).
+# ---------------------------------------------------------------------------
+# Graph reordering and bundle recompression
+# ---------------------------------------------------------------------------
 
-    Raises
-    ------
-    OSError
-        If the input file cannot be opened or the output file cannot be created.
-    """
-    ...
+def graph_reorder(graph: Any, method: str) -> tuple[Any, Any]: ...
+def recompress_bundle(
+    in_file: str | Path, out_file: str | Path, overwrite: bool = False
+) -> None: ...
