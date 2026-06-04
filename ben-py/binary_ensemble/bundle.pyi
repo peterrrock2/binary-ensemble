@@ -10,7 +10,7 @@ class BendlEncoder:
     @classmethod
     def append(cls, file_path) -> "BendlEncoder": ...
     def add_graph(
-        self, graph: Any, preprocess_method: Optional[str] = "mlc"
+        self, graph: Any, sort: Optional[str] = "mlc", key: Optional[str] = None
     ) -> Any: ...
     def add_metadata(self, metadata: Any) -> None: ...
     def add_asset(
@@ -34,6 +34,7 @@ def compress_stream(
 def relabel_bundle(
     path,
     out_file=None,
-    method: str = "mlc",
+    sort: str = "mlc",
+    key: Optional[str] = None,
     in_place: bool = False,
 ) -> None: ...

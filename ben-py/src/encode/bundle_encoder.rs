@@ -9,7 +9,7 @@
 use crate::common::{
     graph_node_count, networkx_graph_from_bytes, open_output, parse_graph_input, parse_variant,
 };
-use crate::graph::helpers::reorder_graph_to_bytes;
+use crate::graph::helpers::{reorder_graph_to_bytes, resolve_reorder};
 use binary_ensemble::io::bundle::format::{AssignmentFormat, KnownAssetKind};
 use binary_ensemble::io::bundle::writer::BendlAppender;
 use binary_ensemble::io::bundle::{
@@ -162,34 +162,37 @@ impl PyBendlEncoder {
 
     /// Add the `graph.json` known asset.
     ///
-    /// `preprocess_method` defaults to `"mlc"`, so by default the graph is reordered for better
-    /// compression. When it is not `None`, the graph is reordered via the chosen method, both
-    /// `graph.json` and `node_permutation_map.json` are stored, and the reordered graph is returned
-    /// (as a NetworkX graph, matching `BendlDecoder.read_graph`) so the chain runs on that
-    /// ordering. Reordering is pre-stream only. Pass `preprocess_method=None` to store the
-    /// graph as-is (no permutation map); a raw graph may also be attached post-stream / in
-    /// append mode. The returned graph's node count is recorded for per-write validation.
-    #[pyo3(signature = (graph, preprocess_method = Some("mlc".to_string())))]
-    #[pyo3(text_signature = "(self, graph, preprocess_method='mlc')")]
+    /// `sort` defaults to `"mlc"`, so by default the graph is reordered for better compression.
+    /// `sort` is `"mlc"` (multi-level clustering), `"rcm"` (reverse Cuthill-McKee), `"key"` to sort
+    /// by a node attribute named via `key` (e.g. `key="GEOID"`), or `None` to store the graph
+    /// as-is. When reordering, both `graph.json` and `node_permutation_map.json` are stored,
+    /// and the reordered graph is returned (as a NetworkX graph, matching
+    /// `BendlDecoder.read_graph`) so the chain runs on that ordering. Reordering is pre-stream
+    /// only; a raw graph (`sort=None`) may also be attached post-stream / in append mode. The
+    /// returned graph's node count is recorded for per-write validation.
+    #[pyo3(signature = (graph, sort = Some("mlc".to_string()), key = None))]
+    #[pyo3(text_signature = "(self, graph, sort='mlc', key=None)")]
     fn add_graph(
         &mut self,
         py: Python<'_>,
         graph: Bound<'_, PyAny>,
-        preprocess_method: Option<String>,
+        sort: Option<String>,
+        key: Option<String>,
     ) -> PyResult<Py<PyAny>> {
+        let plan = resolve_reorder(sort.as_deref(), key.as_deref())?;
         let graph_bytes = parse_graph_input(py, &graph)?;
         let opts = AddAssetOptions::defaults().json();
 
-        if let Some(method) = preprocess_method {
+        if let Some(plan) = plan {
             // Reordering rewrites the node ordering the chain must write in, so it is pre-stream
             // only.
             if !matches!(self.state, BundleState::PreStream { .. }) {
                 return Err(PyException::new_err(
-                    "a reordering add_graph (preprocess_method != None) is only allowed before \
-                     stream(); post-stream or append-mode graphs must use preprocess_method=None",
+                    "a reordering add_graph (sort != None) is only allowed before stream(); \
+                     post-stream or append-mode graphs must use sort=None",
                 ));
             }
-            let (reordered, map) = reorder_graph_to_bytes(&graph_bytes, &method)?;
+            let (reordered, map) = reorder_graph_to_bytes(&graph_bytes, &plan)?;
             let count = graph_node_count(&reordered)?;
             if let BundleState::PreStream {
                 writer,

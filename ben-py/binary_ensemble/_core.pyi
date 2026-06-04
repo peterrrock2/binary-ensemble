@@ -110,8 +110,11 @@ class BendlEncoder:
     ) -> None: ...
     def add_metadata(self, metadata: Any) -> None: ...
     # Returns the (possibly reordered) graph as a NetworkX graph, matching
-    # BendlDecoder.read_graph. preprocess_method defaults to "mlc"; pass None for raw.
-    def add_graph(self, graph: Any, preprocess_method: str | None = "mlc") -> Any: ...
+    # BendlDecoder.read_graph. sort defaults to "mlc"; sort="key" sorts by `key`;
+    # sort=None stores raw.
+    def add_graph(
+        self, graph: Any, sort: str | None = "mlc", key: str | None = None
+    ) -> Any: ...
     def stream(
         self,
         format: Literal["ben"] = "ben",
@@ -162,13 +165,16 @@ def decode_xben_to_ben(
 # Graph reordering and bundle recompression
 # ---------------------------------------------------------------------------
 
-def graph_reorder(graph: Any, method: str) -> tuple[Any, Any]: ...
+def graph_reorder(
+    graph: Any, sort: str | None = "mlc", key: str | None = None
+) -> tuple[Any, Any]: ...
 def recompress_bundle(
     in_file: str | Path, out_file: str | Path, overwrite: bool = False
 ) -> None: ...
 def relabel_bundle(
     in_file: str | Path,
     out_file: str | Path,
-    method: str = "mlc",
+    sort: str | None = "mlc",
+    key: str | None = None,
     overwrite: bool = False,
 ) -> None: ...

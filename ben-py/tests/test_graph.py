@@ -66,6 +66,34 @@ def test_reorder_by_key_id() -> None:
     assert pmap["ordering_method"] is None
 
 
+def test_reorder_sort_key_with_attribute() -> None:
+    n = _n()
+    reordered, pmap = g.reorder(_graph(), sort="key", key="county")
+    _check_consistent(reordered, pmap, n)
+    assert pmap["key"] == "county"
+    assert pmap["ordering_method"] is None
+
+
+def test_reorder_sort_key_requires_key() -> None:
+    with pytest.raises(ValueError, match="sort='key' requires key"):
+        g.reorder(_graph(), sort="key")
+
+
+def test_reorder_key_without_sort_key_raises() -> None:
+    with pytest.raises(ValueError, match="only valid with sort='key'"):
+        g.reorder(_graph(), sort="mlc", key="county")
+
+
+def test_reorder_unknown_sort_raises() -> None:
+    with pytest.raises(ValueError, match="unknown sort"):
+        g.reorder(_graph(), sort="county")  # a key must go through sort="key"
+
+
+def test_reorder_none_sort_raises() -> None:
+    with pytest.raises(ValueError, match="nothing to reorder"):
+        g.reorder(_graph(), sort=None)
+
+
 def test_reorder_accepts_bytes_and_path() -> None:
     n = _n()
     raw = EXAMPLE_GRAPH.read_bytes()

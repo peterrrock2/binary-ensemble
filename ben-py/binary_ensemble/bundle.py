@@ -108,22 +108,31 @@ class BendlEncoder:
         self._enc = _CoreBendlEncoder.append(file_path)
         return self
 
-    def add_graph(self, graph: Any, preprocess_method: Optional[str] = "mlc") -> Any:
+    def add_graph(
+        self, graph: Any, sort: Optional[str] = "mlc", key: Optional[str] = None
+    ) -> Any:
         """Embed the dual ``graph.json`` and return the (possibly reordered) graph.
 
-        ``preprocess_method`` defaults to ``"mlc"`` (multi-level clustering), so
-        by default the graph is reordered for better compression. When it is not
-        ``None`` the graph is reordered (``"rcm"``, ``"mlc"``, or a node-attribute
-        key) and both ``graph.json`` and ``node_permutation_map.json`` are stored;
-        the reordered graph is returned so the chain runs on that ordering.
-        Reordering is pre-stream only. Pass ``preprocess_method=None`` to store
-        the graph as-is with no permutation map.
+        ``sort`` selects how nodes are ordered and defaults to ``"mlc"`` (so the
+        graph is reordered for better compression):
+
+        - ``"mlc"`` — multi-level clustering,
+        - ``"rcm"`` — reverse Cuthill-McKee,
+        - ``"key"`` — sort by the node attribute named in ``key`` (e.g.
+          ``sort="key", key="GEOID"``; ``key="id"`` sorts by the NetworkX node id),
+        - ``None`` — store the graph as-is, with no permutation map.
+
+        When reordering, both ``graph.json`` and ``node_permutation_map.json`` are
+        stored and the reordered graph is returned so the chain runs on that
+        ordering. Reordering is pre-stream only; a raw graph (``sort=None``) may
+        also be attached post-stream / in append mode. ``key`` is only valid with
+        ``sort="key"``.
 
         The graph is returned as a NetworkX graph (matching
         :meth:`BendlDecoder.read_graph`), so its node order is the order the
         chain should write assignments in.
         """
-        return self._enc.add_graph(graph, preprocess_method)
+        return self._enc.add_graph(graph, sort, key)
 
     def add_metadata(self, metadata: Any) -> None:
         """Embed the canonical ``metadata.json`` asset (a dict/list, bytes, or path)."""
@@ -209,24 +218,26 @@ def compress_stream(
 def relabel_bundle(
     path,
     out_file=None,
-    method: str = "mlc",
+    sort: str = "mlc",
+    key: Optional[str] = None,
     in_place: bool = False,
 ) -> None:
-    """Reorder a BEN bundle's graph by ``method`` and relabel its stream to match.
+    """Reorder a BEN bundle's graph and relabel its stream to match.
 
-    Reorders the embedded ``graph.json`` (``"mlc"`` by default; also ``"rcm"`` or
-    a node-attribute key), rewrites every assignment into the new node order, and
-    writes a fresh bundle storing the reordered graph and a
-    ``node_permutation_map.json`` (so the reordering is reversible). Metadata and
-    custom assets are preserved. This is the bundle-level form of the CLI's
-    ``reben`` ordering flow — typically run to shrink a bundle before an XBEN
-    recompress.
+    ``sort`` selects the ordering — ``"mlc"`` (default), ``"rcm"``, or ``"key"``
+    to sort by the node attribute named in ``key`` (e.g. ``sort="key",
+    key="GEOID"``). It reorders the embedded ``graph.json``, rewrites every
+    assignment into the new node order, and writes a fresh bundle storing the
+    reordered graph and a ``node_permutation_map.json`` (so the reordering is
+    reversible). Metadata and custom assets are preserved. This is the
+    bundle-level form of the CLI's ``reben`` ordering flow — typically run to
+    shrink a bundle before an XBEN recompress.
 
     Provide exactly one of ``in_place=True`` or ``out_file``. Only BEN bundles are
     supported (relabel before compressing to XBEN); the source must carry a graph.
     """
     _atomic_or_out(
-        lambda src, dst, overwrite: _relabel_bundle(src, dst, method, overwrite),
+        lambda src, dst, overwrite: _relabel_bundle(src, dst, sort, key, overwrite),
         path,
         out_file,
         in_place,

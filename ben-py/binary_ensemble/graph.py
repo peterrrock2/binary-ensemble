@@ -12,13 +12,13 @@ a path) and returns ``(reordered_graph, node_permutation_map)``:
   an object with a ``node_permutation_old_to_new`` field mapping original
   zero-based node positions to their new positions.
 
-To reorder *and* embed the result in a bundle in one step, pass
-``preprocess_method`` to :meth:`binary_ensemble.bundle.BendlEncoder.add_graph`.
+To reorder *and* embed the result in a bundle in one step, pass ``sort`` / ``key``
+to :meth:`binary_ensemble.bundle.BendlEncoder.add_graph`.
 """
 
 from __future__ import annotations
 
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
 
 from binary_ensemble._core import graph_reorder
 
@@ -30,26 +30,29 @@ __all__ = [
 ]
 
 
-def reorder(graph: Any, method: str) -> Tuple[Any, Any]:
-    """Reorder ``graph`` by ``method`` and return ``(reordered_graph, node_permutation_map)``.
+def reorder(
+    graph: Any, sort: str = "mlc", key: Optional[str] = None
+) -> Tuple[Any, Any]:
+    """Reorder ``graph`` and return ``(reordered_graph, node_permutation_map)``.
 
-    ``method`` is one of ``"multi-level-cluster"`` / ``"mlc"``,
-    ``"reverse-cuthill-mckee"`` / ``"rcm"``, or a node-attribute key (e.g.
-    ``"geoid"``, or the special ``"id"`` for the NetworkX node id).
+    ``sort`` is ``"mlc"`` (multi-level clustering, the default), ``"rcm"``
+    (reverse Cuthill-McKee), or ``"key"`` to sort by the node attribute named in
+    ``key`` (e.g. ``sort="key", key="GEOID"``; ``key="id"`` sorts by the NetworkX
+    node id). ``key`` is only valid with ``sort="key"``.
     """
-    return graph_reorder(graph, method)
+    return graph_reorder(graph, sort, key)
 
 
 def reorder_multi_level_cluster(graph: Any) -> Tuple[Any, Any]:
     """Reorder ``graph`` using recursive multi-level clustering."""
-    return graph_reorder(graph, "multi-level-cluster")
+    return graph_reorder(graph, "mlc")
 
 
 def reorder_reverse_cuthill_mckee(graph: Any) -> Tuple[Any, Any]:
     """Reorder ``graph`` using Reverse Cuthill-McKee."""
-    return graph_reorder(graph, "reverse-cuthill-mckee")
+    return graph_reorder(graph, "rcm")
 
 
 def reorder_by_key(graph: Any, key: str) -> Tuple[Any, Any]:
     """Reorder ``graph`` by sorting on a node-attribute ``key`` (use ``"id"`` for node id)."""
-    return graph_reorder(graph, key)
+    return graph_reorder(graph, "key", key)

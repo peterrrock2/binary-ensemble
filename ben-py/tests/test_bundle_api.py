@@ -42,7 +42,7 @@ def test_create_round_trip_all_asset_kinds(tmp_path: Path) -> None:
     samples = [[(i + j) % 4 + 1 for j in range(n)] for i in range(6)]
     path = tmp_path / "full.bendl"
     with BendlEncoder(path, overwrite=True) as enc:
-        returned = enc.add_graph(_graph(), preprocess_method=None)
+        returned = enc.add_graph(_graph(), sort=None)
         enc.add_metadata({"seed": 1234})
         with enc.stream("ben") as stream:
             for a in samples:
@@ -187,7 +187,7 @@ def test_add_graph_reorder_emits_graph_and_permutation_map(tmp_path: Path) -> No
     n = _n()
     path = tmp_path / "reord.bendl"
     enc = BendlEncoder(path, overwrite=True)
-    reordered = enc.add_graph(_graph(), preprocess_method="rcm")
+    reordered = enc.add_graph(_graph(), sort="rcm")
     with enc.stream("ben") as s:
         s.write([1] * n)
     enc.close()
@@ -209,7 +209,7 @@ def test_add_graph_reorder_emits_graph_and_permutation_map(tmp_path: Path) -> No
 def test_add_graph_none_stores_raw_without_permutation_map(tmp_path: Path) -> None:
     path = tmp_path / "raw.bendl"
     enc = BendlEncoder(path, overwrite=True)
-    enc.add_graph(_graph(), preprocess_method=None)
+    enc.add_graph(_graph(), sort=None)
     enc.close()
     dec = BendlDecoder(path)
     assert dec.asset_names() == ["graph.json"]
@@ -217,7 +217,7 @@ def test_add_graph_none_stores_raw_without_permutation_map(tmp_path: Path) -> No
 
 
 def test_add_graph_defaults_to_mlc_reorder(tmp_path: Path) -> None:
-    # With no preprocess_method, add_graph reorders via MLC and stores a map.
+    # With no sort given, add_graph reorders via MLC (the default) and stores a map.
     path = tmp_path / "default.bendl"
     enc = BendlEncoder(path, overwrite=True)
     returned = enc.add_graph(_graph())
@@ -231,7 +231,7 @@ def test_add_graph_defaults_to_mlc_reorder(tmp_path: Path) -> None:
 def test_add_graph_node_count_mismatch_raises(tmp_path: Path) -> None:
     n = _n()
     enc = BendlEncoder(tmp_path / "nc.bendl", overwrite=True)
-    enc.add_graph(_graph(), preprocess_method=None)
+    enc.add_graph(_graph(), sort=None)
     with enc.stream("ben") as s:
         s.write([1] * n)  # correct
         with pytest.raises(ValueError, match="does not match graph node count"):
@@ -245,18 +245,18 @@ def test_reorder_add_graph_after_stream_raises_but_raw_succeeds(tmp_path: Path) 
     with enc.stream("ben") as s:
         s.write([1] * n)
     with pytest.raises(Exception, match="only allowed before"):
-        enc.add_graph(_graph(), preprocess_method="rcm")
+        enc.add_graph(_graph(), sort="rcm")
     # A raw graph attaches fine post-stream.
-    enc.add_graph(_graph(), preprocess_method=None)
+    enc.add_graph(_graph(), sort=None)
     enc.close()
     assert BendlDecoder(path).asset_names() == ["graph.json"]
 
 
 def test_duplicate_graph_raises(tmp_path: Path) -> None:
     enc = BendlEncoder(tmp_path / "dup.bendl", overwrite=True)
-    enc.add_graph(_graph(), preprocess_method=None)
+    enc.add_graph(_graph(), sort=None)
     with pytest.raises(Exception, match="duplicate singleton"):
-        enc.add_graph(_graph(), preprocess_method=None)
+        enc.add_graph(_graph(), sort=None)
 
 
 # ---------------------------------------------------------------------------
@@ -318,9 +318,9 @@ def test_append_mode_reorder_graph_raises(tmp_path: Path) -> None:
             s.write([1] * _n())
     ap = BendlEncoder.append(path)
     with pytest.raises(Exception, match="only allowed before"):
-        ap.add_graph(_graph(), preprocess_method="rcm")
+        ap.add_graph(_graph(), sort="rcm")
     # Raw graph append works.
-    ap.add_graph(_graph(), preprocess_method=None)
+    ap.add_graph(_graph(), sort=None)
     ap.close()
     assert "graph.json" in BendlDecoder(path).asset_names()
 

@@ -36,7 +36,7 @@ def _build_ben_bundle(path: Path, with_graph: bool = True):
     samples = [[(i + j) % 4 + 1 for j in range(n)] for i in range(8)]
     enc = BendlEncoder(path, overwrite=True)
     if with_graph:
-        enc.add_graph(_graph(), preprocess_method=None)  # store in raw order
+        enc.add_graph(_graph(), sort=None)  # store in raw order
     enc.add_metadata({"seed": 99})
     with enc.stream("ben") as s:
         for a in samples:
@@ -55,7 +55,7 @@ def test_relabel_out_file_is_lossless_and_preserves_assets(tmp_path: Path) -> No
     out = tmp_path / "out.bendl"
     samples = _build_ben_bundle(src)
 
-    relabel_bundle(src, out_file=out, method="mlc")
+    relabel_bundle(src, out_file=out, sort="mlc")
 
     dec = BendlDecoder(out)
     # Stays BEN, same sample count, canonical graph + permutation map present.
@@ -87,7 +87,7 @@ def test_relabel_in_place(tmp_path: Path) -> None:
     src = tmp_path / "in.bendl"
     samples = _build_ben_bundle(src)
 
-    relabel_bundle(src, in_place=True, method="rcm")
+    relabel_bundle(src, in_place=True, sort="rcm")
 
     dec = BendlDecoder(src)
     assert dec.assignment_format() == "ben"
@@ -102,6 +102,21 @@ def test_relabel_in_place(tmp_path: Path) -> None:
     assert [_depermute(p, old_to_new) for p in dec] == samples
 
 
+def test_relabel_by_key(tmp_path: Path) -> None:
+    src = tmp_path / "in.bendl"
+    out = tmp_path / "out.bendl"
+    samples = _build_ben_bundle(src)
+
+    relabel_bundle(src, out_file=out, sort="key", key="county")
+
+    dec = BendlDecoder(out)
+    pmap = dec.read_node_permutation_map()
+    assert pmap["key"] == "county"
+    assert pmap["ordering_method"] is None
+    old_to_new = {int(k): v for k, v in pmap["node_permutation_old_to_new"].items()}
+    assert [_depermute(p, old_to_new) for p in dec] == samples
+
+
 def test_relabel_arg_validation(tmp_path: Path) -> None:
     src = tmp_path / "in.bendl"
     _build_ben_bundle(src)
@@ -109,6 +124,8 @@ def test_relabel_arg_validation(tmp_path: Path) -> None:
         relabel_bundle(src)
     with pytest.raises(ValueError, match="not both"):
         relabel_bundle(src, out_file=tmp_path / "o.bendl", in_place=True)
+    with pytest.raises(ValueError, match="sort='key' requires key"):
+        relabel_bundle(src, out_file=tmp_path / "o.bendl", sort="key")
 
 
 def test_relabel_requires_graph(tmp_path: Path) -> None:

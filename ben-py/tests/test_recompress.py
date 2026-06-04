@@ -26,7 +26,7 @@ def _build_ben_bundle(path: Path):
     n = len(_graph()["nodes"])
     samples = [[(i + j) % 4 + 1 for j in range(n)] for i in range(8)]
     with BendlEncoder(path, overwrite=True) as enc:
-        enc.add_graph(_graph(), preprocess_method="rcm")
+        enc.add_graph(_graph(), sort="rcm")
         enc.add_metadata({"seed": 99})
         with enc.stream("ben") as s:
             for a in samples:

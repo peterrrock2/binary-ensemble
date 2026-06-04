@@ -7,7 +7,7 @@
 //! JSON flag.
 
 use crate::common::open_output;
-use crate::graph::helpers::reorder_graph_to_bytes;
+use crate::graph::helpers::{reorder_graph_to_bytes, require_reorder};
 use binary_ensemble::io::bundle::format::{
     AssignmentFormat, KnownAssetKind, ASSET_FLAG_JSON, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA,
     ASSET_TYPE_NODE_PERMUTATION_MAP,
@@ -79,17 +79,19 @@ fn new_to_old_from_map_bytes(map_bytes: &[u8]) -> PyResult<HashMap<usize, usize>
     Ok(new_to_old)
 }
 
-/// Relabel the bundle at `in_file` by reordering its graph via `method`, writing a fresh BEN bundle
-/// at `out_file`.
+/// Relabel the bundle at `in_file` by reordering its graph (via `sort` / `key`), writing a fresh
+/// BEN bundle at `out_file`.
 #[pyfunction]
-#[pyo3(signature = (in_file, out_file, method = "mlc".to_string(), overwrite = false))]
-#[pyo3(text_signature = "(in_file, out_file, method='mlc', overwrite=False)")]
+#[pyo3(signature = (in_file, out_file, sort = Some("mlc".to_string()), key = None, overwrite = false))]
+#[pyo3(text_signature = "(in_file, out_file, sort='mlc', key=None, overwrite=False)")]
 pub fn relabel_bundle(
     in_file: PathBuf,
     out_file: PathBuf,
-    method: String,
+    sort: Option<String>,
+    key: Option<String>,
     overwrite: bool,
 ) -> PyResult<()> {
+    let plan = require_reorder(sort.as_deref(), key.as_deref())?;
     let file = File::open(&in_file)
         .map_err(|e| PyIOError::new_err(format!("Failed to open {}: {e}", in_file.display())))?;
     let mut reader = BendlReader::open(BufReader::new(file)).map_err(|e| {
@@ -126,7 +128,7 @@ pub fn relabel_bundle(
         .map_err(|e| PyIOError::new_err(format!("Failed to read graph asset: {e}")))?;
 
     // Reorder the graph and derive the new->old permutation for the stream.
-    let (reordered_graph, map_bytes) = reorder_graph_to_bytes(&graph_bytes, &method)?;
+    let (reordered_graph, map_bytes) = reorder_graph_to_bytes(&graph_bytes, &plan)?;
     let new_to_old = new_to_old_from_map_bytes(&map_bytes)?;
 
     // Carry over every other asset (skip the old graph and any old permutation map; we rewrite
