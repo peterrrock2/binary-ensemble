@@ -16,7 +16,12 @@ All public symbols are re-exported here for convenience.
 """
 
 from binary_ensemble import bundle, codec, graph, stream
-from binary_ensemble.bundle import BendlDecoder, BendlEncoder, compress_stream
+from binary_ensemble.bundle import (
+    BendlDecoder,
+    BendlEncoder,
+    compress_stream,
+    relabel_bundle,
+)
 from binary_ensemble.codec import (
     decode_ben_to_jsonl,
     decode_xben_to_ben,
@@ -37,6 +42,7 @@ __all__ = [
     "BendlEncoder",
     "BendlDecoder",
     "compress_stream",
+    "relabel_bundle",
     # Stream
     "BenEncoder",
     "BenDecoder",

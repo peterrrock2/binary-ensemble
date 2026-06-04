@@ -616,7 +616,10 @@ fn decode_twodelta_ben_to_assignments(ben: &[u8]) -> Vec<Vec<u16>> {
 #[test]
 fn twodelta_ben_first_frame_carries_snapshot_tag() {
     let ben = make_twodelta_ben(&[vec![1u16, 1, 2, 2], vec![1u16, 2, 1, 2]]);
-    assert_eq!(collect_twodelta_tags(&ben).first().copied(), Some(BEN_TWODELTA_SNAPSHOT_TAG));
+    assert_eq!(
+        collect_twodelta_tags(&ben).first().copied(),
+        Some(BEN_TWODELTA_SNAPSHOT_TAG)
+    );
 }
 
 #[test]
@@ -687,11 +690,11 @@ fn twodelta_ben_count_samples_over_mixed_stream() {
     let anchor = vec![1u16, 1, 2, 2];
     let assignments = vec![
         anchor.clone(),
-        anchor.clone(),       // repeat of anchor
-        vec![1u16, 2, 1, 2],  // delta
-        vec![3u16, 3, 1, 2],  // snapshot
-        vec![3u16, 3, 1, 2],  // repeat of snapshot
-        vec![3u16, 3, 2, 1],  // delta
+        anchor.clone(),      // repeat of anchor
+        vec![1u16, 2, 1, 2], // delta
+        vec![3u16, 3, 1, 2], // snapshot
+        vec![3u16, 3, 1, 2], // repeat of snapshot
+        vec![3u16, 3, 2, 1], // delta
     ];
     let ben = make_twodelta_ben(&assignments);
     let reader = crate::io::reader::BenStreamReader::from_ben(ben.as_slice()).unwrap();
@@ -728,8 +731,15 @@ fn decode_xben_to_jsonl_twodelta_mixed_via_translate_roundtrip() {
     let ben = make_twodelta_ben(&assignments);
 
     let mut xben = Vec::new();
-    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None, None)
-        .unwrap();
+    encode_ben_to_xben(
+        BufReader::new(ben.as_slice()),
+        &mut xben,
+        Some(1),
+        Some(0),
+        None,
+        None,
+    )
+    .unwrap();
 
     let mut jsonl = Vec::new();
     decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut jsonl).unwrap();
@@ -752,8 +762,15 @@ fn decode_xben_to_jsonl_twodelta_delta_snapshot_repeat_delta_via_translate() {
     let ben = make_twodelta_ben(&assignments);
 
     let mut xben = Vec::new();
-    encode_ben_to_xben(BufReader::new(ben.as_slice()), &mut xben, Some(1), Some(0), None, None)
-        .unwrap();
+    encode_ben_to_xben(
+        BufReader::new(ben.as_slice()),
+        &mut xben,
+        Some(1),
+        Some(0),
+        None,
+        None,
+    )
+    .unwrap();
 
     let mut jsonl = Vec::new();
     decode_xben_to_jsonl(BufReader::new(xben.as_slice()), &mut jsonl).unwrap();

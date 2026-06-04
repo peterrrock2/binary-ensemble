@@ -65,9 +65,9 @@ pub(super) enum StreamSource {
         /// Authoritative sample count from a finalized bundle header, or `None` when the bundle is
         /// unfinalized (forcing a stream scan).
         header_sample_count: Option<i64>,
-        /// `true` for a finalized bundle whose stream region is empty (an assets-only bundle with no
-        /// BEN banner). Iteration over such a source yields nothing instead of failing on the
-        /// missing banner.
+        /// `true` for a finalized bundle whose stream region is empty (an assets-only bundle with
+        /// no BEN banner). Iteration over such a source yields nothing instead of failing
+        /// on the missing banner.
         empty: bool,
     },
 }

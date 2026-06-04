@@ -57,7 +57,8 @@ fn add_preserved<W: Write + std::io::Seek>(
     }
 }
 
-/// Recompress the BEN stream of the bundle at `in_file` to XBEN, writing a new bundle at `out_file`.
+/// Recompress the BEN stream of the bundle at `in_file` to XBEN, writing a new bundle at
+/// `out_file`.
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite = false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
@@ -115,9 +116,8 @@ pub fn recompress_bundle(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -
 
     // Build the new XBEN bundle.
     let buf = open_output(&out_file, overwrite)?;
-    let mut writer = BendlWriter::new(buf, AssignmentFormat::Xben).map_err(|e| {
-        PyIOError::new_err(format!("Failed to initialize bundle writer: {e}"))
-    })?;
+    let mut writer = BendlWriter::new(buf, AssignmentFormat::Xben)
+        .map_err(|e| PyIOError::new_err(format!("Failed to initialize bundle writer: {e}")))?;
     for asset in &assets {
         add_preserved(&mut writer, asset).map_err(map_bundle_err)?;
     }

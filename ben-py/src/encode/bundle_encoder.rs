@@ -12,7 +12,9 @@ use crate::common::{
 use crate::graph::helpers::reorder_graph_to_bytes;
 use binary_ensemble::io::bundle::format::{AssignmentFormat, KnownAssetKind};
 use binary_ensemble::io::bundle::writer::BendlAppender;
-use binary_ensemble::io::bundle::{AddAssetOptions, BendlStreamSession, BendlWriteError, BendlWriter};
+use binary_ensemble::io::bundle::{
+    AddAssetOptions, BendlStreamSession, BendlWriteError, BendlWriter,
+};
 use binary_ensemble::io::writer::BenStreamWriter;
 use pyo3::exceptions::{PyException, PyIOError, PyValueError};
 use pyo3::prelude::*;
@@ -160,14 +162,15 @@ impl PyBendlEncoder {
 
     /// Add the `graph.json` known asset.
     ///
-    /// When `preprocess_method` is not `None`, the graph is reordered via the chosen method, both
+    /// `preprocess_method` defaults to `"mlc"`, so by default the graph is reordered for better
+    /// compression. When it is not `None`, the graph is reordered via the chosen method, both
     /// `graph.json` and `node_permutation_map.json` are stored, and the reordered graph is returned
-    /// (as a NetworkX graph, matching `BendlDecoder.read_graph`) so the chain runs on that ordering.
-    /// Reordering is pre-stream only. When `preprocess_method` is `None`, the graph is stored as-is
-    /// (no permutation map) and may also be attached post-stream / in append mode. The returned
-    /// graph's node count is recorded for per-write validation.
-    #[pyo3(signature = (graph, preprocess_method))]
-    #[pyo3(text_signature = "(self, graph, preprocess_method)")]
+    /// (as a NetworkX graph, matching `BendlDecoder.read_graph`) so the chain runs on that
+    /// ordering. Reordering is pre-stream only. Pass `preprocess_method=None` to store the
+    /// graph as-is (no permutation map); a raw graph may also be attached post-stream / in
+    /// append mode. The returned graph's node count is recorded for per-write validation.
+    #[pyo3(signature = (graph, preprocess_method = Some("mlc".to_string())))]
+    #[pyo3(text_signature = "(self, graph, preprocess_method='mlc')")]
     fn add_graph(
         &mut self,
         py: Python<'_>,
@@ -225,7 +228,7 @@ impl PyBendlEncoder {
     }
 
     /// Open the single-use assignment stream. Only `"ben"` is accepted today; XBEN comes from
-    /// `bundle.compress_stream`. `variant` selects the BEN variant (default `"mkv_chain"`).
+    /// `bundle.compress_stream`. `variant` selects the BEN variant (default `"twodelta"`).
     #[pyo3(signature = (format = "ben", variant = None))]
     #[pyo3(text_signature = "(self, format='ben', variant=None)")]
     fn stream(
@@ -252,9 +255,7 @@ impl PyBendlEncoder {
         }
         match &me.state {
             BundleState::PreStream { .. } => {}
-            BundleState::Streaming => {
-                return Err(PyException::new_err("a stream is already open"))
-            }
+            BundleState::Streaming => return Err(PyException::new_err("a stream is already open")),
             BundleState::Appendable => {
                 return Err(PyException::new_err(
                     "a stream has already been written to this bundle",
@@ -407,9 +408,7 @@ impl PyBendlStreamSession {
             .writer
             .as_mut()
             .ok_or_else(|| PyIOError::new_err("stream session is already closed"))?;
-        writer
-            .write_assignment(assignment)
-            .map_err(map_io_err)?;
+        writer.write_assignment(assignment).map_err(map_io_err)?;
         self.sample_count += 1;
         Ok(())
     }

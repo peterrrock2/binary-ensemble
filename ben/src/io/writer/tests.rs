@@ -648,7 +648,10 @@ fn xz_writer_twodelta_mixed_snapshot_delta_direct_roundtrip() {
         vec![3u16, 3, 1, 2], // 3 ids → mid-stream full
         vec![3u16, 3, 2, 1], // delta from the snapshot
     ];
-    assert_eq!(roundtrip_xben(&assignments, BenVariant::TwoDelta), assignments);
+    assert_eq!(
+        roundtrip_xben(&assignments, BenVariant::TwoDelta),
+        assignments
+    );
 }
 
 #[test]
@@ -661,7 +664,10 @@ fn xz_writer_twodelta_new_district_falls_back_to_snapshot_direct() {
         vec![1u16, 1, 2, 2], // introduces district 2 → snapshot
         vec![1u16, 2, 1, 2], // delta (both ids present)
     ];
-    assert_eq!(roundtrip_xben(&assignments, BenVariant::TwoDelta), assignments);
+    assert_eq!(
+        roundtrip_xben(&assignments, BenVariant::TwoDelta),
+        assignments
+    );
 }
 
 #[test]

@@ -6,6 +6,7 @@ pub mod decode;
 pub mod encode;
 pub mod graph;
 pub mod recompress;
+pub mod relabel;
 
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -22,6 +23,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crate::encode::encode_ben_to_xben, m)?)?;
     m.add_function(wrap_pyfunction!(crate::graph::graph_reorder, m)?)?;
     m.add_function(wrap_pyfunction!(crate::recompress::recompress_bundle, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::relabel::relabel_bundle, m)?)?;
 
     Ok(())
 }

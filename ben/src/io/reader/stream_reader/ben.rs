@@ -14,8 +14,8 @@ use crate::BenVariant;
 /// Read the next frame from the underlying BEN stream.
 ///
 /// Every frame of a `TwoDelta` stream is prefixed with a 1-byte tag selecting its body layout: a
-/// `BEN_TWODELTA_SNAPSHOT_TAG` frame is `MkvChain`-formatted and a `BEN_TWODELTA_DELTA_TAG` frame is
-/// a delta. The tag is consumed here so the frame module stays variant-clean. Non-`TwoDelta`
+/// `BEN_TWODELTA_SNAPSHOT_TAG` frame is `MkvChain`-formatted and a `BEN_TWODELTA_DELTA_TAG` frame
+/// is a delta. The tag is consumed here so the frame module stays variant-clean. Non-`TwoDelta`
 /// streams carry no tag and read their fixed body directly.
 pub(super) fn pop_frame_from_reader<R: Read>(
     reader: &mut R,

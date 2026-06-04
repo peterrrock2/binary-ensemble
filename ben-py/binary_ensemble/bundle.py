@@ -32,8 +32,35 @@ from typing import Any, Optional, Union
 from binary_ensemble._core import BendlDecoder
 from binary_ensemble._core import BendlEncoder as _CoreBendlEncoder
 from binary_ensemble._core import recompress_bundle as _recompress_bundle
+from binary_ensemble._core import relabel_bundle as _relabel_bundle
 
-__all__ = ["BendlEncoder", "BendlDecoder", "compress_stream"]
+__all__ = ["BendlEncoder", "BendlDecoder", "compress_stream", "relabel_bundle"]
+
+
+def _atomic_or_out(transform, path, out_file, in_place, suffix=".bendl"):
+    """Shared in_place-swap / out_file dispatch for whole-bundle transforms.
+
+    ``transform(src, dst, overwrite)`` writes the result. Exactly one of
+    ``in_place`` / ``out_file`` must be given.
+    """
+    if in_place and out_file is not None:
+        raise ValueError("pass either in_place=True or out_file, not both")
+    if not in_place and out_file is None:
+        raise ValueError("pass either in_place=True or out_file")
+
+    if in_place:
+        directory = os.path.dirname(os.path.abspath(os.fspath(path)))
+        fd, tmp = tempfile.mkstemp(suffix=suffix, dir=directory)
+        os.close(fd)
+        try:
+            transform(path, tmp, True)
+            os.replace(tmp, path)
+        except BaseException:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            raise
+    else:
+        transform(path, out_file, False)
 
 
 def _coerce_bytes(payload: Union[bytes, bytearray, memoryview, str]) -> bytes:
@@ -42,18 +69,29 @@ def _coerce_bytes(payload: Union[bytes, bytearray, memoryview, str]) -> bytes:
         return payload.encode("utf-8")
     if isinstance(payload, (bytes, bytearray, memoryview)):
         return bytes(payload)
-    raise TypeError(
-        f"asset payload must be bytes or str, got {type(payload).__name__}"
-    )
+    raise TypeError(f"asset payload must be bytes or str, got {type(payload).__name__}")
 
 
 class BendlEncoder:
     """Writer for a ``.bendl`` bundle (create mode) or an asset appender (append mode).
 
     In create mode (the constructor), assets may be added before or after a
-    single-use ``stream()``; closing finalizes the bundle. In append mode
-    (:meth:`append`), an existing finalized bundle is grown with new assets and
-    ``stream()`` is unavailable.
+    single-use ``stream()``. You do **not** need to use ``BendlEncoder`` itself as
+    a context manager: closing the ``stream()`` context finalizes the bundle, so
+    the common pattern is::
+
+        enc = BendlEncoder(path, overwrite=True)
+        graph = enc.add_graph(my_graph)          # MLC-reordered by default
+        with enc.stream("ben") as stream:        # only the stream needs ``with``
+            for assignment in chain:
+                stream.write(assignment)
+        # bundle is finalized here
+
+    The encoder is still usable as a context manager if you prefer, and that is
+    the easy way to finalize an *assets-only* bundle (one written with no
+    ``stream()``): either ``with BendlEncoder(...) as enc: ...`` or an explicit
+    :meth:`close`. In append mode (:meth:`append`), an existing finalized bundle
+    is grown with new assets and ``stream()`` is unavailable.
     """
 
     def __init__(self, file_path, overwrite: bool = False) -> None:
@@ -70,14 +108,16 @@ class BendlEncoder:
         self._enc = _CoreBendlEncoder.append(file_path)
         return self
 
-    def add_graph(self, graph: Any, preprocess_method: Optional[str]) -> Any:
+    def add_graph(self, graph: Any, preprocess_method: Optional[str] = "mlc") -> Any:
         """Embed the dual ``graph.json`` and return the (possibly reordered) graph.
 
-        When ``preprocess_method`` is not ``None`` the graph is reordered (e.g.
-        ``"rcm"``, ``"mlc"``, or a node-attribute key) and both ``graph.json``
-        and ``node_permutation_map.json`` are stored; the reordered graph is
-        returned so the chain runs on that ordering. Reordering is pre-stream
-        only. ``None`` stores the graph as-is with no permutation map.
+        ``preprocess_method`` defaults to ``"mlc"`` (multi-level clustering), so
+        by default the graph is reordered for better compression. When it is not
+        ``None`` the graph is reordered (``"rcm"``, ``"mlc"``, or a node-attribute
+        key) and both ``graph.json`` and ``node_permutation_map.json`` are stored;
+        the reordered graph is returned so the chain runs on that ordering.
+        Reordering is pre-stream only. Pass ``preprocess_method=None`` to store
+        the graph as-is with no permutation map.
 
         The graph is returned as a NetworkX graph (matching
         :meth:`BendlDecoder.read_graph`), so its node order is the order the
@@ -126,7 +166,7 @@ class BendlEncoder:
 
         Only ``"ben"`` is accepted; produce XBEN bundles via
         :func:`compress_stream`. ``variant`` selects the BEN variant
-        (default ``"mkv_chain"``).
+        (default ``"twodelta"``).
         """
         return self._enc.stream(format, variant)
 
@@ -158,21 +198,36 @@ def compress_stream(
     is normalized to the writer's default policy. An assets-only bundle (empty
     stream) recompresses to an empty XBEN bundle.
     """
-    if in_place and out_file is not None:
-        raise ValueError("pass either in_place=True or out_file, not both")
-    if not in_place and out_file is None:
-        raise ValueError("pass either in_place=True or out_file")
+    _atomic_or_out(
+        lambda src, dst, overwrite: _recompress_bundle(src, dst, overwrite=overwrite),
+        path,
+        out_file,
+        in_place,
+    )
 
-    if in_place:
-        directory = os.path.dirname(os.path.abspath(os.fspath(path)))
-        fd, tmp = tempfile.mkstemp(suffix=".bendl", dir=directory)
-        os.close(fd)
-        try:
-            _recompress_bundle(path, tmp, overwrite=True)
-            os.replace(tmp, path)
-        except BaseException:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-            raise
-    else:
-        _recompress_bundle(path, out_file, overwrite=False)
+
+def relabel_bundle(
+    path,
+    out_file=None,
+    method: str = "mlc",
+    in_place: bool = False,
+) -> None:
+    """Reorder a BEN bundle's graph by ``method`` and relabel its stream to match.
+
+    Reorders the embedded ``graph.json`` (``"mlc"`` by default; also ``"rcm"`` or
+    a node-attribute key), rewrites every assignment into the new node order, and
+    writes a fresh bundle storing the reordered graph and a
+    ``node_permutation_map.json`` (so the reordering is reversible). Metadata and
+    custom assets are preserved. This is the bundle-level form of the CLI's
+    ``reben`` ordering flow — typically run to shrink a bundle before an XBEN
+    recompress.
+
+    Provide exactly one of ``in_place=True`` or ``out_file``. Only BEN bundles are
+    supported (relabel before compressing to XBEN); the source must carry a graph.
+    """
+    _atomic_or_out(
+        lambda src, dst, overwrite: _relabel_bundle(src, dst, method, overwrite),
+        path,
+        out_file,
+        in_place,
+    )

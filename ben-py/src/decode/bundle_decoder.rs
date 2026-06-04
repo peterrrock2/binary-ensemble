@@ -17,8 +17,8 @@ use std::path::PathBuf;
 ///
 /// This decoder is bundle-only: opening it on a plain `.ben`/`.xben` stream raises and points the
 /// caller at `BenDecoder`. It exposes the bundle inspection surface (`version`, `is_complete`,
-/// `asset_names`, `list_assets`, canonical and generic asset getters, `extract_stream`) and iterates
-/// the embedded assignment stream.
+/// `asset_names`, `list_assets`, canonical and generic asset getters, `extract_stream`) and
+/// iterates the embedded assignment stream.
 #[pyclass(module = "binary_ensemble", name = "BendlDecoder", unsendable)]
 pub struct PyBendlDecoder {
     path: PathBuf,
@@ -169,7 +169,11 @@ impl PyBendlDecoder {
     /// Names of every entry in the bundle's directory, in directory order.
     #[pyo3(text_signature = "(self)")]
     fn asset_names(&self) -> Vec<String> {
-        self.reader.assets().iter().map(|e| e.name.clone()).collect()
+        self.reader
+            .assets()
+            .iter()
+            .map(|e| e.name.clone())
+            .collect()
     }
 
     /// Return the full bundle directory as a list of dicts with keys `name`, `type`, `offset`,
@@ -246,7 +250,11 @@ impl PyBendlDecoder {
     /// Read the bundle's `node_permutation_map.json` asset as parsed JSON, or `None` if absent.
     #[pyo3(text_signature = "(self)")]
     fn read_node_permutation_map<'py>(&mut self, py: Python<'py>) -> PyResult<Option<Py<PyAny>>> {
-        self.read_known_json(py, ASSET_TYPE_NODE_PERMUTATION_MAP, "node_permutation_map.json")
+        self.read_known_json(
+            py,
+            ASSET_TYPE_NODE_PERMUTATION_MAP,
+            "node_permutation_map.json",
+        )
     }
 
     /// Copy the embedded assignment stream region verbatim to `out_path`. The resulting file can be
@@ -282,7 +290,10 @@ impl PyBendlDecoder {
                 .truncate(true)
                 .open(&out_path)
         } else {
-            OpenOptions::new().write(true).create_new(true).open(&out_path)
+            OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&out_path)
         }
         .map_err(|e| PyIOError::new_err(format!("Failed to create {}: {e}", out_path.display())))?;
         let mut out = BufWriter::new(out);

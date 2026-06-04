@@ -395,8 +395,14 @@ fn flip_unknown_flag_bits(mut bytes: Vec<u8>) -> Vec<u8> {
 #[test]
 #[ignore = "regenerates committed v1.0.0 fixtures; never run as part of normal CI"]
 fn generate_format_stability_fixtures() {
-    write_fixture("standard.ben", &mint_ben(BenVariant::Standard, CANONICAL_JSONL));
-    write_fixture("mkvchain.ben", &mint_ben(BenVariant::MkvChain, CANONICAL_JSONL));
+    write_fixture(
+        "standard.ben",
+        &mint_ben(BenVariant::Standard, CANONICAL_JSONL),
+    );
+    write_fixture(
+        "mkvchain.ben",
+        &mint_ben(BenVariant::MkvChain, CANONICAL_JSONL),
+    );
     write_fixture(
         "twodelta.ben",
         &mint_ben(BenVariant::TwoDelta, TWODELTA_CANONICAL_JSONL),
@@ -435,9 +441,10 @@ fn generate_format_stability_fixtures() {
 #[ignore = "regenerates only the (unreleased) TwoDelta fixtures; never run as part of normal CI"]
 fn regenerate_twodelta_fixtures() {
     // `TwoDelta` is unreleased, so its wire format may change and its fixtures may be re-minted in
-    // place (the "committed before any release shipped" escape hatch in `docs/format-stability.md`).
-    // This regenerator touches *only* the TwoDelta fixtures and their source, leaving every released
-    // Standard/MkvChain/BENDL fixture byte-for-byte untouched.
+    // place (the "committed before any release shipped" escape hatch in
+    // `docs/format-stability.md`). This regenerator touches *only* the TwoDelta fixtures and
+    // their source, leaving every released Standard/MkvChain/BENDL fixture byte-for-byte
+    // untouched.
     write_fixture(
         "twodelta.ben",
         &mint_ben(BenVariant::TwoDelta, TWODELTA_CANONICAL_JSONL),

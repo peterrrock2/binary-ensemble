@@ -247,7 +247,9 @@ def _write_jsonl(samples: List[List[int]], path: Path) -> None:
             f.write("\n")
 
 
-def _ben_bytes_for(samples: List[List[int]], tmp: Path, variant: str = "standard") -> bytes:
+def _ben_bytes_for(
+    samples: List[List[int]], tmp: Path, variant: str = "standard"
+) -> bytes:
     ben_path = tmp / "inner.ben"
     with BenEncoder(ben_path, overwrite=True, variant=variant) as enc:
         for a in samples:
@@ -255,7 +257,9 @@ def _ben_bytes_for(samples: List[List[int]], tmp: Path, variant: str = "standard
     return ben_path.read_bytes()
 
 
-def _xben_bytes_for(samples: List[List[int]], tmp: Path, variant: str = "standard") -> bytes:
+def _xben_bytes_for(
+    samples: List[List[int]], tmp: Path, variant: str = "standard"
+) -> bytes:
     src = tmp / "src.jsonl"
     _write_jsonl(samples, src)
     out = tmp / "inner.xben"
@@ -277,7 +281,9 @@ def _write_bundle(path: Path, bundle_bytes: bytes) -> Path:
 
 def test_bundle_round_trip_ben_with_assets(tmp_path: Path) -> None:
     rng = random.Random(4242)
-    samples = [[rng.randint(1, 10) for _ in range(rng.randint(1, 50))] for _ in range(40)]
+    samples = [
+        [rng.randint(1, 10) for _ in range(rng.randint(1, 50))] for _ in range(40)
+    ]
     # NetworkX adjacency format (what read_graph rebuilds into a live graph).
     graph_json = (
         b'{"directed":false,"multigraph":false,"graph":{},'
@@ -292,9 +298,25 @@ def test_bundle_round_trip_ben_with_assets(tmp_path: Path) -> None:
         stream_bytes=_ben_bytes_for(samples, tmp_path),
         sample_count=len(samples),
         assets=[
-            _Asset(asset_type=ASSET_TYPE_METADATA, name="metadata.json", payload=metadata_json, is_json=True),
-            _Asset(asset_type=ASSET_TYPE_GRAPH, name="graph.json", payload=graph_json, is_json=True, compress=True),
-            _Asset(asset_type=ASSET_TYPE_NODE_PERMUTATION_MAP, name="node_permutation_map.json", payload=perm_json, is_json=True),
+            _Asset(
+                asset_type=ASSET_TYPE_METADATA,
+                name="metadata.json",
+                payload=metadata_json,
+                is_json=True,
+            ),
+            _Asset(
+                asset_type=ASSET_TYPE_GRAPH,
+                name="graph.json",
+                payload=graph_json,
+                is_json=True,
+                compress=True,
+            ),
+            _Asset(
+                asset_type=ASSET_TYPE_NODE_PERMUTATION_MAP,
+                name="node_permutation_map.json",
+                payload=perm_json,
+                is_json=True,
+            ),
             _Asset(asset_type=ASSET_TYPE_CUSTOM, name="notes.bin", payload=custom_blob),
         ],
     )
@@ -357,7 +379,9 @@ def test_canonical_helpers_return_none_when_absent(tmp_path: Path) -> None:
     bundle = build_bundle(
         stream_bytes=_ben_bytes_for([[1, 2, 3]], tmp_path),
         sample_count=1,
-        assets=[_Asset(asset_type=ASSET_TYPE_CUSTOM, name="only_custom.bin", payload=b"x")],
+        assets=[
+            _Asset(asset_type=ASSET_TYPE_CUSTOM, name="only_custom.bin", payload=b"x")
+        ],
     )
     path = _write_bundle(tmp_path / "sparse.bendl", bundle)
     dec = BendlDecoder(path)
@@ -412,7 +436,11 @@ def test_read_json_asset_rejects_non_utf8(tmp_path: Path) -> None:
     bundle = build_bundle(
         stream_bytes=_ben_bytes_for([[1, 2]], tmp_path),
         sample_count=1,
-        assets=[_Asset(asset_type=ASSET_TYPE_CUSTOM, name="binary.bin", payload=b"\xff\xfe\xfd")],
+        assets=[
+            _Asset(
+                asset_type=ASSET_TYPE_CUSTOM, name="binary.bin", payload=b"\xff\xfe\xfd"
+            )
+        ],
     )
     path = _write_bundle(tmp_path / "bin.bendl", bundle)
     dec = BendlDecoder(path)
@@ -425,7 +453,14 @@ def test_read_json_asset_rejects_malformed_json(tmp_path: Path) -> None:
     bundle = build_bundle(
         stream_bytes=_ben_bytes_for([[1]], tmp_path),
         sample_count=1,
-        assets=[_Asset(asset_type=ASSET_TYPE_METADATA, name="metadata.json", payload=b"not a json {{{", is_json=True)],
+        assets=[
+            _Asset(
+                asset_type=ASSET_TYPE_METADATA,
+                name="metadata.json",
+                payload=b"not a json {{{",
+                is_json=True,
+            )
+        ],
     )
     path = _write_bundle(tmp_path / "m.bendl", bundle)
     dec = BendlDecoder(path)
@@ -449,8 +484,15 @@ def test_unicode_asset_name_round_trips(tmp_path: Path) -> None:
 
 def test_many_assets_preserve_directory_order(tmp_path: Path) -> None:
     payloads = {f"asset_{i:04d}.bin": bytes([i & 0xFF] * (i + 1)) for i in range(200)}
-    assets = [_Asset(asset_type=ASSET_TYPE_CUSTOM, name=n, payload=p) for n, p in payloads.items()]
-    bundle = build_bundle(stream_bytes=_ben_bytes_for([[1, 2, 3]], tmp_path), sample_count=1, assets=assets)
+    assets = [
+        _Asset(asset_type=ASSET_TYPE_CUSTOM, name=n, payload=p)
+        for n, p in payloads.items()
+    ]
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for([[1, 2, 3]], tmp_path),
+        sample_count=1,
+        assets=assets,
+    )
     path = _write_bundle(tmp_path / "many.bendl", bundle)
     dec = BendlDecoder(path)
     assert dec.asset_names() == list(payloads.keys())
@@ -461,16 +503,30 @@ def test_many_assets_preserve_directory_order(tmp_path: Path) -> None:
 
 def test_list_assets_flag_fidelity(tmp_path: Path) -> None:
     combos: List[Tuple[bool, bool, bool]] = [
-        (False, False, False), (True, False, False), (False, True, False),
-        (False, False, True), (True, True, False), (True, False, True),
-        (False, True, True), (True, True, True),
+        (False, False, False),
+        (True, False, False),
+        (False, True, False),
+        (False, False, True),
+        (True, True, False),
+        (True, False, True),
+        (False, True, True),
+        (True, True, True),
     ]
     assets: List[_Asset] = []
     expected: List[List[str]] = []
     for i, (is_json, compress, has_checksum) in enumerate(combos):
         payload = f'{{"i":{i}}}'.encode("utf-8") if is_json else bytes([i % 256]) * 32
         checksum = b"\xde\xad\xbe\xef" if has_checksum else None
-        assets.append(_Asset(asset_type=ASSET_TYPE_CUSTOM, name=f"asset-{i}.bin", payload=payload, is_json=is_json, compress=compress, checksum=checksum))
+        assets.append(
+            _Asset(
+                asset_type=ASSET_TYPE_CUSTOM,
+                name=f"asset-{i}.bin",
+                payload=payload,
+                is_json=is_json,
+                compress=compress,
+                checksum=checksum,
+            )
+        )
         want: List[str] = []
         if is_json:
             want.append("json")
@@ -479,7 +535,12 @@ def test_list_assets_flag_fidelity(tmp_path: Path) -> None:
         if has_checksum:
             want.append("checksum")
         expected.append(want)
-    bundle = build_bundle(stream_bytes=_ben_bytes_for([[1, 2]], tmp_path), sample_count=1, assets=assets, checksums=False)
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for([[1, 2]], tmp_path),
+        sample_count=1,
+        assets=assets,
+        checksums=False,
+    )
     path = _write_bundle(tmp_path / "flags.bendl", bundle)
     got = BendlDecoder(path).list_assets()
     for entry, want in zip(got, expected):
@@ -505,7 +566,9 @@ def test_zero_length_custom_payload(tmp_path: Path) -> None:
 
 
 def test_extract_stream_refuses_existing_file_without_overwrite(tmp_path: Path) -> None:
-    bundle = build_bundle(stream_bytes=_ben_bytes_for([[1, 2]], tmp_path), sample_count=1)
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for([[1, 2]], tmp_path), sample_count=1
+    )
     path = _write_bundle(tmp_path / "a.bendl", bundle)
     dec = BendlDecoder(path)
     target = tmp_path / "already.ben"
@@ -516,7 +579,9 @@ def test_extract_stream_refuses_existing_file_without_overwrite(tmp_path: Path) 
 
 
 def test_extract_stream_into_missing_parent_dir_raises(tmp_path: Path) -> None:
-    bundle = build_bundle(stream_bytes=_ben_bytes_for([[1, 2]], tmp_path), sample_count=1)
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for([[1, 2]], tmp_path), sample_count=1
+    )
     path = _write_bundle(tmp_path / "mini.bendl", bundle)
     dec = BendlDecoder(path)
     with pytest.raises(OSError):
@@ -542,7 +607,11 @@ def test_open_rejects_plain_stream(tmp_path: Path) -> None:
 
 
 def test_open_rejects_unsupported_major_version(tmp_path: Path) -> None:
-    bundle = build_bundle(stream_bytes=_ben_bytes_for([[1, 2]], tmp_path), sample_count=1, major_version=999)
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for([[1, 2]], tmp_path),
+        sample_count=1,
+        major_version=999,
+    )
     path = _write_bundle(tmp_path / "oldfuture.bendl", bundle)
     with pytest.raises(Exception, match="Failed to parse bundle header"):
         BendlDecoder(path)
@@ -596,7 +665,14 @@ def test_open_rejects_malformed_directory_invariants(tmp_path: Path) -> None:
     wrong = build_bundle(
         stream_bytes=stream,
         sample_count=1,
-        assets=[_Asset(asset_type=ASSET_TYPE_METADATA, name="not_metadata.json", payload=b"{}", is_json=True)],
+        assets=[
+            _Asset(
+                asset_type=ASSET_TYPE_METADATA,
+                name="not_metadata.json",
+                payload=b"{}",
+                is_json=True,
+            )
+        ],
     )
     with pytest.raises(Exception, match="malformed directory"):
         BendlDecoder(_write_bundle(tmp_path / "singleton.bendl", wrong))
@@ -631,7 +707,15 @@ def test_corrupted_xz_asset_raises(tmp_path: Path) -> None:
         build_bundle(
             stream_bytes=_ben_bytes_for([[1, 2]], tmp_path),
             sample_count=1,
-            assets=[_Asset(asset_type=ASSET_TYPE_GRAPH, name="graph.json", payload=b'{"nodes":[0,1,2,3,4,5,6,7,8,9]}', is_json=True, compress=True)],
+            assets=[
+                _Asset(
+                    asset_type=ASSET_TYPE_GRAPH,
+                    name="graph.json",
+                    payload=b'{"nodes":[0,1,2,3,4,5,6,7,8,9]}',
+                    is_json=True,
+                    compress=True,
+                )
+            ],
         )
     )
     xz_start = bundle.find(b"\xfd7zXZ")
@@ -701,9 +785,15 @@ def test_interrupted_zero_bytes_after_header(tmp_path: Path) -> None:
     assert extracted.read_bytes() == b""
 
 
-def test_finalized_bundle_with_inflated_stream_len_survives_open(tmp_path: Path) -> None:
+def test_finalized_bundle_with_inflated_stream_len_survives_open(
+    tmp_path: Path,
+) -> None:
     samples = [[1, 2, 3], [4, 5, 6]]
-    bundle = bytearray(build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples)))
+    bundle = bytearray(
+        build_bundle(
+            stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples)
+        )
+    )
     old_stream_len = struct.unpack_from("<Q", bundle, 48)[0]
     struct.pack_into("<Q", bundle, 48, old_stream_len + 10_000)
     path = _write_bundle(tmp_path / "liar.bendl", bytes(bundle))
@@ -727,7 +817,14 @@ def test_read_after_extract_still_works(tmp_path: Path) -> None:
     bundle = build_bundle(
         stream_bytes=_ben_bytes_for([[1, 2], [3, 4]], tmp_path),
         sample_count=2,
-        assets=[_Asset(asset_type=ASSET_TYPE_METADATA, name="metadata.json", payload=b'{"x":1}', is_json=True)],
+        assets=[
+            _Asset(
+                asset_type=ASSET_TYPE_METADATA,
+                name="metadata.json",
+                payload=b'{"x":1}',
+                is_json=True,
+            )
+        ],
     )
     path = _write_bundle(tmp_path / "seq.bendl", bundle)
     dec = BendlDecoder(path)
@@ -742,7 +839,14 @@ def test_toc_interleaved_with_iteration(tmp_path: Path) -> None:
     bundle = build_bundle(
         stream_bytes=_ben_bytes_for(samples, tmp_path),
         sample_count=len(samples),
-        assets=[_Asset(asset_type=ASSET_TYPE_METADATA, name="metadata.json", payload=b'{"tag":42}', is_json=True)],
+        assets=[
+            _Asset(
+                asset_type=ASSET_TYPE_METADATA,
+                name="metadata.json",
+                payload=b'{"tag":42}',
+                is_json=True,
+            )
+        ],
     )
     path = _write_bundle(tmp_path / "interleave.bendl", bundle)
     dec = BendlDecoder(path)
@@ -763,7 +867,12 @@ def test_read_asset_bytes_idempotent(tmp_path: Path) -> None:
         sample_count=1,
         assets=[
             _Asset(asset_type=ASSET_TYPE_CUSTOM, name="raw.bin", payload=payload),
-            _Asset(asset_type=ASSET_TYPE_CUSTOM, name="compressed.bin", payload=payload, compress=True),
+            _Asset(
+                asset_type=ASSET_TYPE_CUSTOM,
+                name="compressed.bin",
+                payload=payload,
+                compress=True,
+            ),
         ],
     )
     path = _write_bundle(tmp_path / "idem.bendl", bundle)
@@ -780,7 +889,9 @@ def test_read_asset_bytes_idempotent(tmp_path: Path) -> None:
 
 def test_iteration_can_restart(tmp_path: Path) -> None:
     samples = [[1, 2], [3, 4], [5, 6]]
-    bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples)
+    )
     path = _write_bundle(tmp_path / "twice.bendl", bundle)
     dec = BendlDecoder(path)
     assert list(dec) == samples
@@ -789,7 +900,9 @@ def test_iteration_can_restart(tmp_path: Path) -> None:
 
 def test_partial_iteration_then_restart(tmp_path: Path) -> None:
     samples = [[1, 2], [3, 4], [5, 6], [7, 8]]
-    bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples)
+    )
     path = _write_bundle(tmp_path / "partial.bendl", bundle)
     dec = BendlDecoder(path)
     it = iter(dec)
@@ -800,7 +913,9 @@ def test_partial_iteration_then_restart(tmp_path: Path) -> None:
 
 def test_subsample_modes(tmp_path: Path) -> None:
     samples = [[i] for i in range(1, 11)]
-    bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples)
+    )
     path = _write_bundle(tmp_path / "sub.bendl", bundle)
 
     dec = BendlDecoder(path).subsample_range(3, 6)
@@ -816,7 +931,9 @@ def test_subsample_modes(tmp_path: Path) -> None:
 
 def test_subsample_count_preserves_filtered_len(tmp_path: Path) -> None:
     samples = [[i] for i in range(1, 9)]
-    bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples)
+    )
     path = _write_bundle(tmp_path / "cnt.bendl", bundle)
     dec = BendlDecoder(path).subsample_range(2, 5)
     assert len(dec) == 4
@@ -827,7 +944,9 @@ def test_subsample_count_preserves_filtered_len(tmp_path: Path) -> None:
 
 def test_subsample_out_of_bounds(tmp_path: Path) -> None:
     samples = [[1, 2], [3, 4], [5, 6]]
-    bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples)
+    )
     path = _write_bundle(tmp_path / "oob.bendl", bundle)
     with pytest.raises(Exception, match="end must be <= number of samples"):
         BendlDecoder(path).subsample_range(1, 99)
@@ -840,7 +959,9 @@ def test_subsample_out_of_bounds(tmp_path: Path) -> None:
 
 def test_len_uses_header_fast_path(tmp_path: Path) -> None:
     samples = [[i] for i in range(1, 6)]
-    bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
+    bundle = build_bundle(
+        stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples)
+    )
     path = _write_bundle(tmp_path / "fast.bendl", bundle)
     dec = BendlDecoder(path)
     assert len(dec) == len(samples)
@@ -856,11 +977,25 @@ def test_seeded_fuzz_random_bundles_round_trip(tmp_path: Path) -> None:
         truth: List[Tuple[str, bytes]] = []
         for i in range(n_assets):
             payload = rng.randbytes(rng.choice([0, 1, 7, 64, 500]))
-            assets.append(_Asset(asset_type=ASSET_TYPE_CUSTOM, name=f"t{trial}-a{i}.bin", payload=payload, compress=rng.random() < 0.4))
+            assets.append(
+                _Asset(
+                    asset_type=ASSET_TYPE_CUSTOM,
+                    name=f"t{trial}-a{i}.bin",
+                    payload=payload,
+                    compress=rng.random() < 0.4,
+                )
+            )
             truth.append((f"t{trial}-a{i}.bin", payload))
         n_samples = rng.randint(1, 25)
-        samples = [[rng.randint(1, 8) for _ in range(rng.randint(1, 40))] for _ in range(n_samples)]
-        bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=n_samples, assets=assets)
+        samples = [
+            [rng.randint(1, 8) for _ in range(rng.randint(1, 40))]
+            for _ in range(n_samples)
+        ]
+        bundle = build_bundle(
+            stream_bytes=_ben_bytes_for(samples, tmp_path),
+            sample_count=n_samples,
+            assets=assets,
+        )
         path = _write_bundle(tmp_path / f"fuzz-{trial}.bendl", bundle)
         dec = BendlDecoder(path)
         assert dec.count_samples() == n_samples

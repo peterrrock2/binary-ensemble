@@ -255,7 +255,9 @@ fn raw_frame_surface_roundtrips_mixed_twodelta_ben() {
     // self-contained Standard frame. A mixed snapshot/delta stream must round-trip across it.
     let assignments = mixed_twodelta_assignments();
     let ben = make_ben_from_assignments(&assignments, BenVariant::TwoDelta);
-    let frames = BenStreamReader::from_ben(Cursor::new(ben)).unwrap().into_frames();
+    let frames = BenStreamReader::from_ben(Cursor::new(ben))
+        .unwrap()
+        .into_frames();
     assert_eq!(expand_raw_frames(frames), assignments);
 }
 
@@ -263,7 +265,9 @@ fn raw_frame_surface_roundtrips_mixed_twodelta_ben() {
 fn raw_frame_surface_roundtrips_mixed_twodelta_xben() {
     let assignments = mixed_twodelta_assignments();
     let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
-    let frames = BenStreamReader::from_xben(Cursor::new(xben)).unwrap().into_frames();
+    let frames = BenStreamReader::from_xben(Cursor::new(xben))
+        .unwrap()
+        .into_frames();
     assert_eq!(expand_raw_frames(frames), assignments);
 }
 
@@ -278,7 +282,14 @@ fn subsample_mixed_twodelta_ben_selects_correct_samples() {
         .into_subsample_by_indices(vec![1, 3, 5])
         .map(|r| r.unwrap().0)
         .collect();
-    assert_eq!(results, vec![assignments[0].clone(), assignments[2].clone(), assignments[4].clone()]);
+    assert_eq!(
+        results,
+        vec![
+            assignments[0].clone(),
+            assignments[2].clone(),
+            assignments[4].clone()
+        ]
+    );
 }
 
 #[test]
@@ -290,7 +301,14 @@ fn subsample_mixed_twodelta_xben_selects_correct_samples() {
         .into_subsample_by_indices(vec![1, 3, 5])
         .map(|r| r.unwrap().0)
         .collect();
-    assert_eq!(results, vec![assignments[0].clone(), assignments[2].clone(), assignments[4].clone()]);
+    assert_eq!(
+        results,
+        vec![
+            assignments[0].clone(),
+            assignments[2].clone(),
+            assignments[4].clone()
+        ]
+    );
 }
 
 #[test]
@@ -1709,8 +1727,8 @@ fn raw_frame_iter_propagates_twodelta_decode_error() {
         u32::from_be_bytes(ben[anchor_start + 2..anchor_start + 6].try_into().unwrap()) as usize;
     let anchor_end = anchor_start + 6 + n_bytes + 2;
 
-    // The delta frame: delta_tag(1) + pair_a(2) + pair_b(2) + max_len_bits(1) + ... Set max_len_bits
-    // to 0, which triggers InvalidData during decoding.
+    // The delta frame: delta_tag(1) + pair_a(2) + pair_b(2) + max_len_bits(1) + ... Set
+    // max_len_bits to 0, which triggers InvalidData during decoding.
     ben[anchor_end + 5] = 0;
 
     let reader = BenStreamReader::from_ben(Cursor::new(ben)).unwrap();

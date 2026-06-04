@@ -17,9 +17,9 @@ use pyo3::types::PyDict;
 pub(super) struct SampleCursor {
     source: StreamSource,
     mode: DecoderMode,
-    /// Lazily-constructed frame iterator. Construction is deferred so opening a bundle with an empty
-    /// or truncated stream still succeeds — only methods that actually walk the stream need a live
-    /// iterator.
+    /// Lazily-constructed frame iterator. Construction is deferred so opening a bundle with an
+    /// empty or truncated stream still succeeds — only methods that actually walk the stream
+    /// need a live iterator.
     iter: Option<DynIter>,
     current_assignment: Option<Vec<u16>>,
     remaining_count: u16,
@@ -100,7 +100,9 @@ impl SampleCursor {
                 self.remaining_count = count - 1;
                 Ok(Some(assignment))
             }
-            Some(Err(e)) => Err(PyException::new_err(format!("Error decoding next item: {e}"))),
+            Some(Err(e)) => Err(PyException::new_err(format!(
+                "Error decoding next item: {e}"
+            ))),
             None => Ok(None),
         }
     }

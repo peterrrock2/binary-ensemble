@@ -35,6 +35,7 @@ def test_top_level_exports() -> None:
         "BendlEncoder",
         "BendlDecoder",
         "compress_stream",
+        "relabel_bundle",
         "BenEncoder",
         "BenDecoder",
         "encode_jsonl_to_ben",
@@ -56,7 +57,12 @@ def test_stream_module_exports() -> None:
 
 
 def test_bundle_module_exports() -> None:
-    assert set(bundle.__all__) == {"BendlEncoder", "BendlDecoder", "compress_stream"}
+    assert set(bundle.__all__) == {
+        "BendlEncoder",
+        "BendlDecoder",
+        "compress_stream",
+        "relabel_bundle",
+    }
     assert bundle.BendlDecoder is _core.BendlDecoder
 
 
@@ -239,10 +245,15 @@ def _params_from_inspect(func, *, drop_self: bool):
 def test_bundle_facade_matches_stub() -> None:
     stub = _parse_stub(PKG_DIR / "bundle.pyi")
 
-    # compress_stream (module-level function).
-    assert _params_from_inspect(bundle.compress_stream, drop_self=False) == stub[
-        "compress_stream"
-    ][1]
+    # Module-level functions.
+    assert (
+        _params_from_inspect(bundle.compress_stream, drop_self=False)
+        == stub["compress_stream"][1]
+    )
+    assert (
+        _params_from_inspect(bundle.relabel_bundle, drop_self=False)
+        == stub["relabel_bundle"][1]
+    )
 
     # BendlEncoder methods.
     enc_methods = stub["BendlEncoder"][1]

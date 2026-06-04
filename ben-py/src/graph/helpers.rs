@@ -16,12 +16,14 @@ enum Reorder {
 
 fn classify(method: &str) -> Reorder {
     match method {
-        "mlc" | "multi-level-cluster" => {
-            Reorder::Ordering(GraphOrderingMethod::MultiLevelCluster, "multi-level-cluster")
-        }
-        "rcm" | "reverse-cuthill-mckee" => {
-            Reorder::Ordering(GraphOrderingMethod::ReverseCuthillMckee, "reverse-cuthill-mckee")
-        }
+        "mlc" | "multi-level-cluster" => Reorder::Ordering(
+            GraphOrderingMethod::MultiLevelCluster,
+            "multi-level-cluster",
+        ),
+        "rcm" | "reverse-cuthill-mckee" => Reorder::Ordering(
+            GraphOrderingMethod::ReverseCuthillMckee,
+            "reverse-cuthill-mckee",
+        ),
         other => Reorder::Key(other.to_string()),
     }
 }
@@ -37,8 +39,9 @@ pub fn reorder_graph_to_bytes(graph_bytes: &[u8], method: &str) -> PyResult<(Vec
     let mut reordered = Vec::new();
     let (map, key_field, ordering_field) = match classify(method) {
         Reorder::Ordering(ordering, name) => {
-            let map = sort_json_file_by_ordering(Cursor::new(graph_bytes), &mut reordered, ordering)
-                .map_err(|e| PyException::new_err(format!("Failed to reorder graph: {e}")))?;
+            let map =
+                sort_json_file_by_ordering(Cursor::new(graph_bytes), &mut reordered, ordering)
+                    .map_err(|e| PyException::new_err(format!("Failed to reorder graph: {e}")))?;
             (map, None::<String>, Some(name))
         }
         Reorder::Key(key) => {

@@ -81,10 +81,7 @@ pub(crate) enum TransitionKind {
 ///
 /// `zip` would silently truncate to the shorter vector, so the length is checked explicitly,
 /// preserving the validation the strict single-frame encoder performs.
-pub(crate) fn classify_transition(
-    previous: &[u16],
-    current: &[u16],
-) -> io::Result<TransitionKind> {
+pub(crate) fn classify_transition(previous: &[u16], current: &[u16]) -> io::Result<TransitionKind> {
     if previous.len() != current.len() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,

@@ -110,8 +110,8 @@ class BendlEncoder:
     ) -> None: ...
     def add_metadata(self, metadata: Any) -> None: ...
     # Returns the (possibly reordered) graph as a NetworkX graph, matching
-    # BendlDecoder.read_graph.
-    def add_graph(self, graph: Any, preprocess_method: str | None) -> Any: ...
+    # BendlDecoder.read_graph. preprocess_method defaults to "mlc"; pass None for raw.
+    def add_graph(self, graph: Any, preprocess_method: str | None = "mlc") -> Any: ...
     def stream(
         self,
         format: Literal["ben"] = "ben",
@@ -129,13 +129,13 @@ def encode_jsonl_to_ben(
     in_file: str | Path,
     out_file: str | Path,
     overwrite: bool = False,
-    variant: Literal["standard", "mkv_chain", "twodelta"] = "mkv_chain",
+    variant: Literal["standard", "mkv_chain", "twodelta"] = "twodelta",
 ) -> None: ...
 def encode_jsonl_to_xben(
     in_file: str | Path,
     out_file: str | Path,
     overwrite: bool = False,
-    variant: Literal["standard", "mkv_chain", "twodelta"] = "mkv_chain",
+    variant: Literal["standard", "mkv_chain", "twodelta"] = "twodelta",
     n_threads: int | None = None,
     compression_level: int | None = None,
     xz_block_size: int | None = None,
@@ -165,4 +165,10 @@ def decode_xben_to_ben(
 def graph_reorder(graph: Any, method: str) -> tuple[Any, Any]: ...
 def recompress_bundle(
     in_file: str | Path, out_file: str | Path, overwrite: bool = False
+) -> None: ...
+def relabel_bundle(
+    in_file: str | Path,
+    out_file: str | Path,
+    method: str = "mlc",
+    overwrite: bool = False,
 ) -> None: ...

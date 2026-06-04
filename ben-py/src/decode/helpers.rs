@@ -138,7 +138,10 @@ pub(super) fn scan_samples(
             let format = mode.wire_format();
             py.detach(|| count_samples_from_file(&path, format))
                 .map_err(|e| {
-                    PyException::new_err(format!("Failed to count samples in {}: {e}", path.display()))
+                    PyException::new_err(format!(
+                        "Failed to count samples in {}: {e}",
+                        path.display()
+                    ))
                 })
         }
         StreamSource::Bundle {
@@ -149,10 +152,13 @@ pub(super) fn scan_samples(
         } => {
             let reader = open_bundle_stream_reader(path, *stream_offset, *stream_len)?;
             let iter = build_frame_iter_from_reader(reader, mode.wire_format()).map_err(|e| {
-                PyException::new_err(format!("Failed to open bundle stream for sample count: {e}"))
+                PyException::new_err(format!(
+                    "Failed to open bundle stream for sample count: {e}"
+                ))
             })?;
-            count_samples_from_frame_iter(iter)
-                .map_err(|e| PyException::new_err(format!("Failed to count samples in bundle: {e}")))
+            count_samples_from_frame_iter(iter).map_err(|e| {
+                PyException::new_err(format!("Failed to count samples in bundle: {e}"))
+            })
         }
     }
 }

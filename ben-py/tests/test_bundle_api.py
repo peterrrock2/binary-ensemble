@@ -56,7 +56,12 @@ def test_create_round_trip_all_asset_kinds(tmp_path: Path) -> None:
     assert dec.is_complete()
     assert dec.count_samples() == len(samples)
     assert dec.assignment_format() == "ben"
-    assert dec.asset_names() == ["graph.json", "metadata.json", "notes.txt", "post.json"]
+    assert dec.asset_names() == [
+        "graph.json",
+        "metadata.json",
+        "notes.txt",
+        "post.json",
+    ]
     assert dec.read_metadata() == {"seed": 1234}
     assert dec.read_asset_bytes("notes.txt") == b"hello world"
     assert dec.read_json_asset("post.json") == {"k": [1, 2, 3]}
@@ -143,7 +148,9 @@ def test_exception_in_stream_leaves_bundle_unfinalized(tmp_path: Path) -> None:
     with pytest.raises(Exception, match="unfinalized"):
         dec.extract_stream(tmp_path / "recovered.ben")
     # ...but the partial write is recoverable.
-    dec.extract_stream(tmp_path / "recovered.ben", overwrite=True, allow_unfinalized=True)
+    dec.extract_stream(
+        tmp_path / "recovered.ben", overwrite=True, allow_unfinalized=True
+    )
     assert (tmp_path / "recovered.ben").stat().st_size > 0
 
 
@@ -207,6 +214,18 @@ def test_add_graph_none_stores_raw_without_permutation_map(tmp_path: Path) -> No
     dec = BendlDecoder(path)
     assert dec.asset_names() == ["graph.json"]
     assert dec.read_node_permutation_map() is None
+
+
+def test_add_graph_defaults_to_mlc_reorder(tmp_path: Path) -> None:
+    # With no preprocess_method, add_graph reorders via MLC and stores a map.
+    path = tmp_path / "default.bendl"
+    enc = BendlEncoder(path, overwrite=True)
+    returned = enc.add_graph(_graph())
+    enc.close()
+    assert returned.number_of_nodes() == _n()
+    dec = BendlDecoder(path)
+    assert dec.asset_names() == ["graph.json", "node_permutation_map.json"]
+    assert dec.read_node_permutation_map()["ordering_method"] == "multi-level-cluster"
 
 
 def test_add_graph_node_count_mismatch_raises(tmp_path: Path) -> None:

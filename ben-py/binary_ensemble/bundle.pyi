@@ -3,13 +3,15 @@ from typing import Any, Optional, Union
 from binary_ensemble._core import BendlDecoder as BendlDecoder
 from binary_ensemble._core import BendlStreamSession
 
-__all__ = ["BendlEncoder", "BendlDecoder", "compress_stream"]
+__all__ = ["BendlEncoder", "BendlDecoder", "compress_stream", "relabel_bundle"]
 
 class BendlEncoder:
     def __init__(self, file_path, overwrite: bool = False) -> None: ...
     @classmethod
     def append(cls, file_path) -> "BendlEncoder": ...
-    def add_graph(self, graph: Any, preprocess_method: Optional[str]) -> Any: ...
+    def add_graph(
+        self, graph: Any, preprocess_method: Optional[str] = "mlc"
+    ) -> Any: ...
     def add_metadata(self, metadata: Any) -> None: ...
     def add_asset(
         self,
@@ -27,5 +29,11 @@ class BendlEncoder:
 def compress_stream(
     path,
     out_file=None,
+    in_place: bool = False,
+) -> None: ...
+def relabel_bundle(
+    path,
+    out_file=None,
+    method: str = "mlc",
     in_place: bool = False,
 ) -> None: ...

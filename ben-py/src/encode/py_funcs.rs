@@ -45,8 +45,8 @@ pub fn encode_ben_to_xben(
 }
 
 #[pyfunction]
-#[pyo3(signature = (in_file, out_file, overwrite=false, variant="mkv_chain"))]
-#[pyo3(text_signature = "(in_file, out_file, overwrite=False, variant='mkv_chain')")]
+#[pyo3(signature = (in_file, out_file, overwrite=false, variant="twodelta"))]
+#[pyo3(text_signature = "(in_file, out_file, overwrite=False, variant='twodelta')")]
 pub fn encode_jsonl_to_ben(
     in_file: PathBuf,
     out_file: PathBuf,
@@ -69,9 +69,9 @@ pub fn encode_jsonl_to_ben(
 }
 
 #[pyfunction]
-#[pyo3(signature = (in_file, out_file, overwrite=false, variant="mkv_chain", n_threads=None, compression_level=None, xz_block_size=None))]
+#[pyo3(signature = (in_file, out_file, overwrite=false, variant="twodelta", n_threads=None, compression_level=None, xz_block_size=None))]
 #[pyo3(
-    text_signature = "(in_file, out_file, overwrite=False, variant='mkv_chain', n_threads=None, compression_level=None, xz_block_size=None)"
+    text_signature = "(in_file, out_file, overwrite=False, variant='twodelta', n_threads=None, compression_level=None, xz_block_size=None)"
 )]
 pub fn encode_jsonl_to_xben(
     in_file: PathBuf,

@@ -30,7 +30,7 @@ impl PyBenEncoder {
     /// * `file_path` - Output path. Must not exist unless `overwrite=True`.
     /// * `overwrite` - Replace an existing file at `file_path`.
     /// * `variant` - BEN variant for the assignment stream (`"standard"`, `"mkv_chain"`, or
-    ///   `"twodelta"`). Defaults to `"mkv_chain"` when `None`.
+    ///   `"twodelta"`). Defaults to `"twodelta"` when `None`.
     #[new]
     #[pyo3(signature = (file_path, overwrite = false, variant = None))]
     #[pyo3(text_signature = "(file_path, overwrite=False, variant=None)")]
@@ -51,7 +51,9 @@ impl PyBenEncoder {
             .writer
             .as_mut()
             .ok_or_else(|| PyIOError::new_err("Encoder has already been closed."))?;
-        writer.write_assignment(assignment).map_err(Self::map_io_err)
+        writer
+            .write_assignment(assignment)
+            .map_err(Self::map_io_err)
     }
 
     /// Flush the assignment stream and close the underlying file. Idempotent.
