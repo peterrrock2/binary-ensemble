@@ -1358,9 +1358,9 @@ fn reben_cli_can_canonicalize_into_a_different_ben_variant() {
 }
 
 #[test]
-fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations() {
+fn reben_cli_generates_map_from_dual_graph_and_reports_invalid_flag_combinations() {
     let temp = TempDir::new("reben-more");
-    let graph_path = temp.path().join("shape.json");
+    let graph_path = temp.path().join("dualgraph.json");
     let ben_path = temp.path().join("samples.jsonl.ben");
     let relabeled_path = temp.path().join("rekeyed.ben");
 
@@ -1382,7 +1382,7 @@ fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations
             "ben",
             "--key",
             "GEOID20",
-            "--shape-file",
+            "--dualgraph",
             graph_path.to_str().unwrap(),
             "--output-file",
             relabeled_path.to_str().unwrap(),
@@ -1392,11 +1392,11 @@ fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations
     assert_success(&relabel);
     assert!(temp
         .path()
-        .join("shape_sorted_by_GEOID20_map.json")
+        .join("dualgraph_sorted_by_GEOID20_map.json")
         .exists());
 
-    let generated_graph = temp.path().join("shape_sorted_by_GEOID20.json");
-    let generated_map = temp.path().join("shape_sorted_by_GEOID20_map.json");
+    let generated_graph = temp.path().join("dualgraph_sorted_by_GEOID20.json");
+    let generated_map = temp.path().join("dualgraph_sorted_by_GEOID20_map.json");
     let both = run(
         "reben",
         &[
@@ -1405,7 +1405,7 @@ fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations
             "ben",
             "--key",
             "GEOID20",
-            "--shape-file",
+            "--dualgraph",
             graph_path.to_str().unwrap(),
             "--map-file",
             generated_map.to_str().unwrap(),
@@ -1416,7 +1416,7 @@ fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations
     assert!(String::from_utf8_lossy(&both.stderr)
         .contains("Cannot provide both a map file and a sorting option"));
 
-    let missing_shape = run(
+    let missing_dual_graph = run(
         "reben",
         &[
             ben_path.to_str().unwrap(),
@@ -1427,8 +1427,8 @@ fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations
         ],
         temp.path(),
     );
-    assert_failure(&missing_shape);
-    assert!(String::from_utf8_lossy(&missing_shape.stderr).contains("No shape file provided"));
+    assert_failure(&missing_dual_graph);
+    assert!(String::from_utf8_lossy(&missing_dual_graph.stderr).contains("No dual-graph file provided"));
 
     let sorted_json: Value =
         serde_json::from_str(&fs::read_to_string(generated_graph).unwrap()).unwrap();
@@ -1438,7 +1438,7 @@ fn reben_cli_generates_map_from_shape_file_and_reports_invalid_flag_combinations
 #[test]
 fn reben_cli_supports_rcm_ordering() {
     let temp = TempDir::new("reben-orderings");
-    let graph_path = temp.path().join("shape.json");
+    let graph_path = temp.path().join("dualgraph.json");
     let rcm_path = temp.path().join("rcm.json");
 
     fs::write(&graph_path, sample_graph()).unwrap();
@@ -1459,7 +1459,7 @@ fn reben_cli_supports_rcm_ordering() {
     assert_success(&rcm);
     assert!(temp
         .path()
-        .join("shape_sorted_by_reverse-cuthill-mckee_map.json")
+        .join("dualgraph_sorted_by_reverse-cuthill-mckee_map.json")
         .exists());
 
     let rcm_json: Value = serde_json::from_str(&fs::read_to_string(&rcm_path).unwrap()).unwrap();
@@ -1469,7 +1469,7 @@ fn reben_cli_supports_rcm_ordering() {
 #[test]
 fn reben_cli_supports_multi_level_cluster_ordering() {
     let temp = TempDir::new("reben-mlc");
-    let graph_path = temp.path().join("shape.json");
+    let graph_path = temp.path().join("dualgraph.json");
     let mlc_path = temp.path().join("mlc.json");
 
     fs::write(&graph_path, sample_graph()).unwrap();
@@ -1490,7 +1490,7 @@ fn reben_cli_supports_multi_level_cluster_ordering() {
     assert_success(&mlc);
     assert!(temp
         .path()
-        .join("shape_sorted_by_multi-level-cluster_map.json")
+        .join("dualgraph_sorted_by_multi-level-cluster_map.json")
         .exists());
 
     let mlc_json: Value = serde_json::from_str(&fs::read_to_string(&mlc_path).unwrap()).unwrap();

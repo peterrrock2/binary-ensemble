@@ -26,8 +26,26 @@ fn clap_metadata_uses_package_version() {
 
     assert_eq!(command.get_version(), Some(env!("CARGO_PKG_VERSION")));
     assert!(help.contains("Relabeling Binary Ensemble CLI Tool"));
-    assert!(help.contains("--shape-file"));
+    assert!(help.contains("--dualgraph"));
+    // `--shape-file` is a hidden alias: it works but does not appear in help.
+    assert!(!help.contains("--shape-file"));
     assert!(help.contains("canonicalize"));
+}
+
+#[test]
+fn shape_file_is_accepted_as_hidden_alias_for_dualgraph() {
+    let args = Args::try_parse_from([
+        "reben",
+        "input.jsonl.ben",
+        "--mode",
+        "ben",
+        "--key",
+        "GEOID20",
+        "--shape-file",
+        "graph.json",
+    ])
+    .unwrap();
+    assert_eq!(args.dual_graph.as_deref(), Some("graph.json"));
 }
 
 #[test]
@@ -317,7 +335,7 @@ fn run_ben_mode_with_output_variant_and_n_items() {
 
 #[test]
 fn run_ben_mode_with_shape_file_and_ordering() {
-    // Covers the shape_file + ordering path. Creates a map from the shape file ordering, then
+    // Covers the dual-graph + ordering path. Creates a map from the dual-graph ordering, then
     // relabels the BEN.
     let input = write_temp_ben("shape_order_input.jsonl.ben");
     let shape = unique_path("shape_order_shape.json");
@@ -332,7 +350,7 @@ fn run_ben_mode_with_shape_file_and_ordering() {
         input.to_str().unwrap(),
         "--mode",
         "ben",
-        "--shape-file",
+        "--dualgraph",
         shape.to_str().unwrap(),
         "--ordering",
         "reverse-cuthill-mckee",
@@ -605,7 +623,7 @@ fn run_json_mode_with_key_happy_path() {
 
 #[test]
 fn run_ben_mode_with_key_and_shape_happy_path() {
-    // Exercise the --key + --shape-file branch of run_ben_mode (lines 76-123 of ben_mode.rs):
+    // Exercise the --key + --dualgraph branch of run_ben_mode (lines 76-123 of ben_mode.rs):
     // sort by key, generate a map file, then permute the BEN stream by that map. The existing
     // tests cover the no-map/no-key path and the --map-file path; this is the gap.
     let input = write_temp_ben("ben_mode_key_input.jsonl.ben");
@@ -619,7 +637,7 @@ fn run_ben_mode_with_key_and_shape_happy_path() {
         "ben",
         "--key",
         "GEOID20",
-        "--shape-file",
+        "--dualgraph",
         shape.to_str().unwrap(),
         "--output-file",
         out.to_str().unwrap(),
@@ -651,7 +669,7 @@ fn run_ben_mode_with_ordering_and_shape_happy_path() {
         "ben",
         "--ordering",
         "reverse-cuthill-mckee",
-        "--shape-file",
+        "--dualgraph",
         shape.to_str().unwrap(),
         "--output-file",
         out.to_str().unwrap(),
@@ -693,8 +711,8 @@ fn run_ben_mode_rejects_map_file_combined_with_key() {
 }
 
 #[test]
-fn run_ben_mode_rejects_key_without_shape_file() {
-    // The shape-file presence guard (ben_mode.rs line 78-80).
+fn run_ben_mode_rejects_key_without_dual_graph() {
+    // The dual-graph presence guard (ben_mode.rs line 78-80).
     let input = write_temp_ben("key_no_shape_input.jsonl.ben");
     let args = Args::try_parse_from([
         "reben",
@@ -707,5 +725,5 @@ fn run_ben_mode_rejects_key_without_shape_file() {
     .unwrap();
     let err = run_ben_mode(args).unwrap_err();
     let _ = fs::remove_file(&input);
-    assert!(err.contains("shape file"), "got: {err}");
+    assert!(err.contains("dual-graph file"), "got: {err}");
 }

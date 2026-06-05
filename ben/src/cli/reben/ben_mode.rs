@@ -75,34 +75,34 @@ pub(super) fn run_ben_mode(args: Args) -> Result<(), String> {
 
     let mut map_file_name = String::new();
     if args.key.is_some() || args.ordering.is_some() {
-        let shape = args.shape_file.as_ref().ok_or_else(|| {
-            "No shape file provided to go with the requested ordering.".to_string()
+        let dual_graph = args.dual_graph.as_ref().ok_or_else(|| {
+            "No dual-graph file provided to go with the requested ordering.".to_string()
         })?;
         let label = relabeling_label(args.key.as_deref(), args.ordering.as_ref())?;
         tracing::trace!("Creating map file for ordering: {}", label);
 
-        let output_file_name = shape.trim_end_matches(".json").to_owned()
+        let output_file_name = dual_graph.trim_end_matches(".json").to_owned()
             + format!("_sorted_by_{}.json", label).as_str();
 
         let output_file = File::create(&output_file_name)
             .map_err(|e| format!("Could not create output file {output_file_name:?}: {e}"))?;
         let writer = BufWriter::new(output_file);
 
-        let shape_file =
-            File::open(shape).map_err(|e| format!("Could not open shape file {shape:?}: {e}"))?;
-        let shape_reader = BufReader::new(shape_file);
+        let dual_graph_file = File::open(dual_graph)
+            .map_err(|e| format!("Could not open dual-graph file {dual_graph:?}: {e}"))?;
+        let dual_graph_reader = BufReader::new(dual_graph_file);
         let map = if let Some(key) = args.key.as_ref() {
-            sort_json_file_by_key(shape_reader, writer, key)
+            sort_json_file_by_key(dual_graph_reader, writer, key)
         } else {
             let ordering = args
                 .ordering
                 .as_ref()
                 .ok_or_else(|| "Provide either --key or --ordering.".to_string())?;
-            sort_json_file_by_ordering(shape_reader, writer, to_graph_ordering(ordering))
+            sort_json_file_by_ordering(dual_graph_reader, writer, to_graph_ordering(ordering))
         }
-        .map_err(|e| format!("Could not sort shape file: {e}"))?;
+        .map_err(|e| format!("Could not sort dual-graph file: {e}"))?;
 
-        map_file_name = shape.trim_end_matches(".json").to_owned()
+        map_file_name = dual_graph.trim_end_matches(".json").to_owned()
             + format!("_sorted_by_{}", label).as_str()
             + "_map.json";
         let map_file = File::create(&map_file_name)

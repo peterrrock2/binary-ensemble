@@ -39,7 +39,6 @@ pub(super) enum BenCliVariant {
     version
 )]
 /// Defines the command line arguments accepted by the program.
-// TODO: Change the name of shape_file to dual_graph_file.
 pub(super) struct Args {
     /// Input file to read from.
     #[arg()]
@@ -53,10 +52,12 @@ pub(super) struct Args {
     /// Topology-based ordering method to use instead of a key sort.
     #[arg(long, value_enum)]
     pub ordering: Option<OrderingMethod>,
-    /// Shape file to use for sorting the BEN file. Only needed in BEN mode when a map is not
-    /// provided.
-    #[arg(short, long)]
-    pub shape_file: Option<String>,
+    /// Dual-graph (JSON) file to use for sorting the BEN file. Only needed in BEN mode when a map
+    /// is not provided.
+    // `shape-file` is the former name of this flag, kept as a hidden alias for backward
+    // compatibility.
+    #[arg(short = 'd', long = "dualgraph", alias = "shape-file")]
+    pub dual_graph: Option<String>,
     /// Map file to use for relabeling the BEN file.
     #[arg(short = 'p', long)]
     pub map_file: Option<String>,
