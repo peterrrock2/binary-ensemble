@@ -5,11 +5,22 @@ use pyo3::exceptions::{PyException, PyIOError};
 use pyo3::prelude::*;
 use std::path::PathBuf;
 
-/// Iterator over assignments in a plain BEN or XBEN stream.
+/// Iterator over the assignments in a plain BEN or XBEN stream.
 ///
-/// This decoder is stream-only: opening it on a `.bendl` bundle raises and points the caller at
-/// `BendlDecoder`. Bundle inspection (assets, directory, embedded-stream extraction) lives on
-/// `BendlDecoder`, mirroring the `ben` vs `bendl` CLI split.
+/// Iterate the decoder to yield one assignment at a time, each a ``list[int]`` of district
+/// ids in dual-graph node order. ``len()`` reports the (expanded) sample count and is cheap
+/// to call, so it is safe to use for a progress bar. The encoding variant is detected
+/// automatically from the stream, so it is never passed when reading.
+///
+/// This decoder is stream-only: opening it on a ``.bendl`` bundle raises and points the
+/// caller at :class:`~binary_ensemble.bundle.BendlDecoder`, which carries the bundle
+/// inspection surface (assets, embedded graph, metadata). This mirrors the ``ben`` vs
+/// ``bendl`` split of the command-line tools.
+///
+/// Example:
+///     >>> from binary_ensemble import BenDecoder
+///     >>> for assignment in BenDecoder("plans.ben"):
+///     ...     print(assignment[:8])
 #[pyclass(module = "binary_ensemble", name = "BenDecoder", unsendable)]
 pub struct PyBenDecoder {
     cursor: SampleCursor,
@@ -17,15 +28,20 @@ pub struct PyBenDecoder {
 
 #[pymethods]
 impl PyBenDecoder {
-    /// Open a decoder on a plain `.ben` or `.xben` file.
+    /// Open a decoder on a plain ``.ben`` or ``.xben`` file.
     ///
-    /// The file's leading bytes are sniffed; a `.bendl` bundle is rejected with a pointer at
-    /// `BendlDecoder`. `mode` selects between the BEN and XBEN readers and defaults to `"ben"`.
+    /// The file's leading bytes are sniffed and a ``.bendl`` bundle is rejected. ``mode``
+    /// selects between the BEN and XBEN readers; opening an XBEN stream pays a one-time
+    /// decompression startup cost.
     ///
-    /// # Arguments
+    /// Args:
+    ///     file_path: Path to the input ``.ben`` or ``.xben`` file.
+    ///     mode: Either ``"ben"`` or ``"xben"``. Defaults to ``"ben"``.
     ///
-    /// * `file_path` - Path to the input file.
-    /// * `mode` - Either `"ben"` or `"xben"`.
+    /// Raises:
+    ///     Exception: If ``file_path`` is a ``.bendl`` bundle (use
+    ///         :class:`~binary_ensemble.bundle.BendlDecoder` instead).
+    ///     OSError: If the file cannot be opened or its banner is malformed.
     #[new]
     #[pyo3(signature = (file_path, mode = "ben"))]
     #[pyo3(text_signature = "(file_path, mode='ben')")]
@@ -56,27 +72,53 @@ impl PyBenDecoder {
         Ok(Self { cursor })
     }
 
-    /// Return `self` as an iterator, rebuilding the underlying frame walker so iteration can be
-    /// restarted. A subsample selection installed via `subsample_*` is reapplied on each restart.
+    /// Return ``self`` as a fresh iterator over the stream.
+    ///
+    /// Restarting rebuilds the underlying frame walker, so a decoder can be iterated more
+    /// than once. Any subsample selection installed via a ``subsample_*`` method is
+    /// reapplied on each restart.
     fn __iter__(mut slf: PyRefMut<Self>) -> PyResult<Py<Self>> {
         slf.cursor.restart()?;
         Ok(slf.into())
     }
 
+    /// Return the next assignment, or raise ``StopIteration`` at the end of the stream.
     fn __next__(&mut self) -> PyResult<Option<Vec<u16>>> {
         self.cursor.next()
     }
 
-    // Because we want progress bars!!!
+    /// Return the (expanded) number of samples, for use as a progress-bar total.
     fn __len__(&mut self, py: Python<'_>) -> PyResult<usize> {
         self.cursor.len(py)
     }
 
+    /// Count the samples in the stream.
+    ///
+    /// The result is the *expanded* sample count: a frame that repeats five identical
+    /// samples contributes five. The count is computed lazily and cached, so repeated calls
+    /// (and ``len()``) are cheap.
+    ///
+    /// Returns:
+    ///     int: The number of samples in the stream.
     #[pyo3(text_signature = "(self)")]
     fn count_samples(&mut self, py: Python<'_>) -> PyResult<usize> {
         self.cursor.count_samples(py)
     }
 
+    /// Restrict iteration to the samples at the given 1-indexed positions.
+    ///
+    /// Selected samples are reached by skipping frames rather than decoding the whole
+    /// stream, so this stays fast on large ensembles.
+    ///
+    /// Args:
+    ///     indices: The 1-indexed sample numbers to keep.
+    ///
+    /// Returns:
+    ///     BenDecoder: ``self``, so the call can be chained directly into a ``for`` loop.
+    ///
+    /// Example:
+    ///     >>> for plan in BenDecoder("plans.ben").subsample_indices([1, 500, 9999]):
+    ///     ...     ...
     #[pyo3(text_signature = "(self, indices, /)")]
     fn subsample_indices<'py>(
         mut slf: PyRefMut<'py, Self>,
@@ -87,6 +129,14 @@ impl PyBenDecoder {
         Ok(slf.into())
     }
 
+    /// Restrict iteration to a contiguous, half-open range of samples ``[start, end)``.
+    ///
+    /// Args:
+    ///     start: First sample number to keep (1-indexed, inclusive).
+    ///     end: One past the last sample number to keep (exclusive).
+    ///
+    /// Returns:
+    ///     BenDecoder: ``self``, for chaining into a ``for`` loop.
     #[pyo3(text_signature = "(self, start, end, /)")]
     fn subsample_range<'py>(
         mut slf: PyRefMut<'py, Self>,
@@ -98,7 +148,20 @@ impl PyBenDecoder {
         Ok(slf.into())
     }
 
+    /// Restrict iteration to every ``step``-th sample.
+    ///
+    /// Args:
+    ///     step: Stride between kept samples (e.g. ``10`` keeps every tenth sample).
+    ///     offset: 1-indexed position of the first kept sample. Defaults to ``1``.
+    ///
+    /// Returns:
+    ///     BenDecoder: ``self``, for chaining into a ``for`` loop.
+    ///
+    /// Example:
+    ///     >>> for plan in BenDecoder("plans.ben").subsample_every(1000):
+    ///     ...     ...
     #[pyo3(signature = (step, offset=1))]
+    #[pyo3(text_signature = "(self, step, offset=1)")]
     fn subsample_every<'py>(
         mut slf: PyRefMut<'py, Self>,
         step: usize,
@@ -109,7 +172,7 @@ impl PyBenDecoder {
         Ok(slf.into())
     }
 
-    /// Return the container format of the underlying stream as `"ben"` or `"xben"`.
+    /// Return the container format of the underlying stream as ``"ben"`` or ``"xben"``.
     #[pyo3(text_signature = "(self)")]
     fn assignment_format(&self) -> &'static str {
         self.cursor.mode().as_str()

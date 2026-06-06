@@ -6,10 +6,18 @@ use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::PathBuf;
 
-/// Encoder for plain Binary Ensemble (`.ben`) streams.
+/// Encoder for plain Binary Ensemble (``.ben``) streams.
 ///
-/// This encoder writes a plain BEN stream with no bundle framing. To produce a `.bendl` bundle
-/// (with an embedded graph, metadata, or other assets) use `binary_ensemble.bundle.BendlEncoder`.
+/// Write assignments one at a time with :meth:`write`, then :meth:`close` to flush and finish
+/// the file. The encoder is a context manager, so the idiomatic pattern is::
+///
+///     with BenEncoder("plans.ben", overwrite=True) as enc:
+///         for assignment in plans:
+///             enc.write(assignment)
+///
+/// This produces a plain BEN stream with no bundle framing. To produce a self-describing
+/// ``.bendl`` bundle (with an embedded graph, metadata, or other assets) use
+/// :class:`~binary_ensemble.bundle.BendlEncoder` instead.
 #[pyclass(module = "binary_ensemble", name = "BenEncoder", unsendable)]
 pub struct PyBenEncoder {
     writer: Option<BenStreamWriter<BufWriter<File>>>,
@@ -23,14 +31,18 @@ impl PyBenEncoder {
 
 #[pymethods]
 impl PyBenEncoder {
-    /// Open a new encoder that writes a plain `.ben` stream.
+    /// Open a new encoder that writes a plain ``.ben`` stream.
     ///
-    /// # Arguments
+    /// Args:
+    ///     file_path: Output path. Must not exist unless ``overwrite=True``.
+    ///     overwrite: Replace an existing file at ``file_path``. Defaults to ``False``.
+    ///     variant: BEN encoding variant for the stream — ``"standard"``, ``"mkv_chain"``,
+    ///         or ``"twodelta"``. Defaults to ``"twodelta"`` when ``None``.
     ///
-    /// * `file_path` - Output path. Must not exist unless `overwrite=True`.
-    /// * `overwrite` - Replace an existing file at `file_path`.
-    /// * `variant` - BEN variant for the assignment stream (`"standard"`, `"mkv_chain"`, or
-    ///   `"twodelta"`). Defaults to `"twodelta"` when `None`.
+    /// Raises:
+    ///     OSError: If ``file_path`` exists and ``overwrite`` is ``False``, or it cannot be
+    ///         created.
+    ///     ValueError: If ``variant`` is not a recognized variant name.
     #[new]
     #[pyo3(signature = (file_path, overwrite = false, variant = None))]
     #[pyo3(text_signature = "(file_path, overwrite=False, variant=None)")]
@@ -44,6 +56,13 @@ impl PyBenEncoder {
     }
 
     /// Encode a single assignment and append it to the output stream.
+    ///
+    /// Args:
+    ///     assignment: The plan as a ``list[int]`` of district ids, one per node in
+    ///         dual-graph node order.
+    ///
+    /// Raises:
+    ///     OSError: If the encoder has already been closed, or the write fails.
     #[pyo3(signature = (assignment))]
     #[pyo3(text_signature = "(assignment)")]
     fn write(&mut self, assignment: Vec<u16>) -> PyResult<()> {

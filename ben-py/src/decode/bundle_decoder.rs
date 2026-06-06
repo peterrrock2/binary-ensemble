@@ -13,12 +13,26 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 
-/// Reader and iterator for a `.bendl` bundle.
+/// Reader and iterator for a ``.bendl`` bundle.
 ///
-/// This decoder is bundle-only: opening it on a plain `.ben`/`.xben` stream raises and points the
-/// caller at `BenDecoder`. It exposes the bundle inspection surface (`version`, `is_complete`,
-/// `asset_names`, `list_assets`, canonical and generic asset getters, `extract_stream`) and
-/// iterates the embedded assignment stream.
+/// Iterate the decoder to yield the embedded assignment stream one plan at a time (each a
+/// ``list[int]`` of district ids), and use ``len()`` for the sample count. Alongside the
+/// stream, a bundle carries assets — the dual graph, metadata, a node permutation map, and any
+/// custom blobs — exposed through the canonical getters (:meth:`read_graph`,
+/// :meth:`read_metadata`, :meth:`read_node_permutation_map`) and the generic
+/// :meth:`read_asset_bytes` / :meth:`read_json_asset`. Inspect the directory with
+/// :meth:`asset_names`, :meth:`list_assets`, :meth:`version`, and :meth:`is_complete`.
+///
+/// This decoder is bundle-only: opening it on a plain ``.ben``/``.xben`` stream raises and
+/// points the caller at :class:`~binary_ensemble.stream.BenDecoder`. A finalized assets-only
+/// bundle (one written with no assignment stream) iterates to nothing with ``len() == 0``.
+///
+/// Example:
+///     >>> from binary_ensemble import BendlDecoder
+///     >>> dec = BendlDecoder("ensemble.bendl")
+///     >>> graph = dec.read_graph()
+///     >>> for assignment in dec:
+///     ...     ...
 #[pyclass(module = "binary_ensemble", name = "BendlDecoder", unsendable)]
 pub struct PyBendlDecoder {
     path: PathBuf,
@@ -28,10 +42,20 @@ pub struct PyBendlDecoder {
 
 #[pymethods]
 impl PyBendlDecoder {
-    /// Open a decoder on a `.bendl` bundle.
+    /// Open a decoder on a ``.bendl`` bundle.
     ///
-    /// The file's leading bytes are sniffed; a plain `.ben`/`.xben` stream is rejected with a
-    /// pointer at `BenDecoder`. The bundle header decides the embedded BEN/XBEN format.
+    /// The file's leading bytes are sniffed and a plain ``.ben``/``.xben`` stream is rejected.
+    /// The bundle header decides whether the embedded stream is BEN or XBEN; an XBEN stream
+    /// pays a one-time decompression startup cost.
+    ///
+    /// Args:
+    ///     file_path: Path to the input ``.bendl`` file.
+    ///
+    /// Raises:
+    ///     Exception: If ``file_path`` is not a bundle (use
+    ///         :class:`~binary_ensemble.stream.BenDecoder` for plain streams), or its header
+    ///         cannot be parsed.
+    ///     OSError: If the file cannot be opened.
     #[new]
     #[pyo3(signature = (file_path))]
     #[pyo3(text_signature = "(file_path)")]
@@ -106,11 +130,28 @@ impl PyBendlDecoder {
         self.cursor.len(py)
     }
 
+    /// Count the samples in the embedded stream.
+    ///
+    /// The result is the *expanded* sample count (a frame repeating five identical samples
+    /// contributes five). It is computed lazily and cached, so repeated calls and ``len()``
+    /// are cheap.
+    ///
+    /// Returns:
+    ///     int: The number of samples in the bundle's stream.
     #[pyo3(text_signature = "(self)")]
     fn count_samples(&mut self, py: Python<'_>) -> PyResult<usize> {
         self.cursor.count_samples(py)
     }
 
+    /// Restrict iteration to the samples at the given 1-indexed positions.
+    ///
+    /// Selected samples are reached by skipping frames rather than decoding the whole stream.
+    ///
+    /// Args:
+    ///     indices: The 1-indexed sample numbers to keep.
+    ///
+    /// Returns:
+    ///     BendlDecoder: ``self``, so the call can be chained into a ``for`` loop.
     #[pyo3(text_signature = "(self, indices, /)")]
     fn subsample_indices<'py>(
         mut slf: PyRefMut<'py, Self>,
@@ -121,6 +162,14 @@ impl PyBendlDecoder {
         Ok(slf.into())
     }
 
+    /// Restrict iteration to a contiguous, half-open range of samples ``[start, end)``.
+    ///
+    /// Args:
+    ///     start: First sample number to keep (1-indexed, inclusive).
+    ///     end: One past the last sample number to keep (exclusive).
+    ///
+    /// Returns:
+    ///     BendlDecoder: ``self``, for chaining into a ``for`` loop.
     #[pyo3(text_signature = "(self, start, end, /)")]
     fn subsample_range<'py>(
         mut slf: PyRefMut<'py, Self>,
@@ -132,7 +181,16 @@ impl PyBendlDecoder {
         Ok(slf.into())
     }
 
+    /// Restrict iteration to every ``step``-th sample.
+    ///
+    /// Args:
+    ///     step: Stride between kept samples (e.g. ``10`` keeps every tenth sample).
+    ///     offset: 1-indexed position of the first kept sample. Defaults to ``1``.
+    ///
+    /// Returns:
+    ///     BendlDecoder: ``self``, for chaining into a ``for`` loop.
     #[pyo3(signature = (step, offset=1))]
+    #[pyo3(text_signature = "(self, step, offset=1)")]
     fn subsample_every<'py>(
         mut slf: PyRefMut<'py, Self>,
         step: usize,
@@ -204,7 +262,16 @@ impl PyBendlDecoder {
         Ok(out)
     }
 
-    /// Read the (decoded) bytes of a named asset as a Python `bytes` object.
+    /// Read the (decoded) bytes of a named asset as a Python ``bytes`` object.
+    ///
+    /// Args:
+    ///     name: The asset's name, as listed by :meth:`asset_names`.
+    ///
+    /// Returns:
+    ///     bytes: The asset's decoded payload.
+    ///
+    /// Raises:
+    ///     KeyError: If no asset with that name exists in the bundle.
     #[pyo3(text_signature = "(self, name, /)")]
     fn read_asset_bytes(&mut self, name: &str) -> PyResult<Vec<u8>> {
         let entry = self
@@ -217,7 +284,17 @@ impl PyBendlDecoder {
             .map_err(|e| PyIOError::new_err(format!("Failed to read asset {name:?}: {e}")))
     }
 
-    /// Parse a JSON asset into a Python object (dict, list, …).
+    /// Parse a JSON asset into a Python object (``dict``, ``list``, …).
+    ///
+    /// Args:
+    ///     name: The asset's name, as listed by :meth:`asset_names`.
+    ///
+    /// Returns:
+    ///     The parsed JSON value.
+    ///
+    /// Raises:
+    ///     KeyError: If no asset with that name exists in the bundle.
+    ///     Exception: If the asset is not valid UTF-8 JSON.
     #[pyo3(text_signature = "(self, name, /)")]
     fn read_json_asset<'py>(&mut self, py: Python<'py>, name: &str) -> PyResult<Py<PyAny>> {
         let bytes = self.read_asset_bytes(name)?;
@@ -257,8 +334,19 @@ impl PyBendlDecoder {
         )
     }
 
-    /// Copy the embedded assignment stream region verbatim to `out_path`. The resulting file can be
-    /// opened directly with `BenDecoder(out_path, mode=dec.assignment_format())`.
+    /// Copy the embedded assignment stream out to a standalone ``.ben``/``.xben`` file.
+    ///
+    /// The bytes are copied verbatim, so the result can be opened directly with
+    /// ``BenDecoder(out_path, mode=dec.assignment_format())``.
+    ///
+    /// Args:
+    ///     out_path: Path to write the extracted stream to.
+    ///     overwrite: Replace ``out_path`` if it already exists. Defaults to ``False``.
+    ///     allow_unfinalized: Permit extraction from a bundle that was never finalized
+    ///         (recovering a partial stream). Defaults to ``False``.
+    ///
+    /// Raises:
+    ///     OSError: If ``out_path`` exists and ``overwrite`` is ``False``, or the copy fails.
     #[pyo3(signature = (out_path, overwrite=false, allow_unfinalized=false))]
     #[pyo3(text_signature = "(self, out_path, overwrite=False, allow_unfinalized=False)")]
     fn extract_stream(

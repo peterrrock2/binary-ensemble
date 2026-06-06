@@ -15,13 +15,7 @@ import pytest
 
 from binary_ensemble.bundle import BendlDecoder, BendlEncoder
 
-EXAMPLE_GRAPH = (
-    Path(__file__).resolve().parent.parent
-    / "docs"
-    / "user"
-    / "example_data"
-    / "gerrymandria.json"
-)
+EXAMPLE_GRAPH = Path(__file__).resolve().parent / "data" / "gerrymandria.json"
 
 
 def _graph():

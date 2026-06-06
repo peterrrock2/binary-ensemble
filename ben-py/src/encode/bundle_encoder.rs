@@ -78,10 +78,13 @@ pub struct PyBendlEncoder {
 impl PyBendlEncoder {
     /// Open a new bundle writer in create mode.
     ///
-    /// # Arguments
+    /// Args:
+    ///     file_path: Output path. Must not exist unless ``overwrite=True``.
+    ///     overwrite: Replace an existing file at ``file_path``. Defaults to ``False``.
     ///
-    /// * `file_path` - Output path. Must not exist unless `overwrite=True`.
-    /// * `overwrite` - Replace an existing file at `file_path`.
+    /// Raises:
+    ///     OSError: If ``file_path`` exists and ``overwrite`` is ``False``, or it cannot be
+    ///         created.
     #[new]
     #[pyo3(signature = (file_path, overwrite = false))]
     #[pyo3(text_signature = "(file_path, overwrite=False)")]
@@ -382,7 +385,12 @@ fn state_error(state: &BundleState, op: &str) -> PyErr {
     PyException::new_err(format!("cannot {op}: {reason}"))
 }
 
-/// Single-use context manager over the bundle's assignment stream.
+/// Single-use context manager over a bundle's assignment stream.
+///
+/// Obtained from :meth:`binary_ensemble.bundle.BendlEncoder.stream`; you don't construct it
+/// directly. Write assignments with :meth:`write` inside a ``with`` block. Closing the context
+/// cleanly **finalizes** the bundle; if the block exits via an exception the bundle is left
+/// unfinalized (recoverable, rather than stamped complete over a truncated stream).
 #[pyclass(module = "binary_ensemble", name = "BendlStreamSession", unsendable)]
 pub struct PyBendlStreamSession {
     writer: Option<Box<BenStreamWriter<BendlStreamSession<BufWriter<File>>>>>,
@@ -394,8 +402,16 @@ pub struct PyBendlStreamSession {
 
 #[pymethods]
 impl PyBendlStreamSession {
-    /// Encode a single assignment. When the bundle carries a pre-stream graph, the assignment
-    /// length must equal the graph's node count.
+    /// Encode a single assignment into the bundle's stream.
+    ///
+    /// Args:
+    ///     assignment: The plan as a ``list[int]`` of district ids, one per node in
+    ///         dual-graph node order.
+    ///
+    /// Raises:
+    ///     ValueError: If the bundle carries a pre-stream graph and the assignment length does
+    ///         not equal the graph's node count.
+    ///     OSError: If the session is already closed, or the write fails.
     #[pyo3(signature = (assignment))]
     #[pyo3(text_signature = "(self, assignment)")]
     fn write(&mut self, assignment: Vec<u16>) -> PyResult<()> {

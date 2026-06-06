@@ -8,7 +8,7 @@ reads and iterates one.
 Typical write::
 
     with BendlEncoder(path, overwrite=True) as enc:
-        enc.add_graph(graph, preprocess_method="rcm")   # None => store raw
+        enc.add_graph(graph, sort="rcm")                # sort=None => store raw
         enc.add_metadata({"seed": 1234})
         with enc.stream("ben") as stream:
             for assignment in chain:

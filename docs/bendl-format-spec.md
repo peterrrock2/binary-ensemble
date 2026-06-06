@@ -1,23 +1,27 @@
-# BENDL Format Specification Draft
+# BENDL Format Specification
 
 ## Status
 
-Draft design for a future `.bendl` file format.
+Stable wire format. This document specifies the implemented v1 `.bendl` container as produced and
+consumed by the bundle reader, writer, and appender, and pinned by the committed v1.0.0 stability
+fixtures.
 
-This document defines a concrete binary layout for a single-file dataset container that:
+A `.bendl` is a single-file dataset container that:
 
 - feels like one file to users
-- keeps metadata and optional assets accessible near the front
-- stores the assignment stream at the end
+- keeps metadata and optional assets in the same container
+- stores the assignment stream as a bounded embedded payload
 - supports interrupted writes
 - can be finalized by patching the header
 
-This specification is intentionally separate from the existing `.ben` and `.xben` formats.
+The `.bendl` container is distinct from the `.ben` and `.xben` stream formats. It embeds a BEN or
+XBEN stream as an opaque payload and records which one in its header; the stream's own layout
+(banner and frames) is specified in the BEN stream format specification.
 
 ## Design Goals
 
 - Single-file dataset container.
-- Efficient access to front-loaded metadata.
+- Directory-indexed access to metadata and optional assets.
 - Stream-friendly assignment payloads.
 - Recoverable partial files after interruption.
 - Forward-compatible directory structure.
@@ -26,10 +30,11 @@ This specification is intentionally separate from the existing `.ben` and `.xben
 ## Terminology
 
 - `bundle`: a `.bendl` file.
-- `asset`: a named front-loaded object such as a graph or relabel map.
-- `assignment stream`: the trailing BEN or XBEN payload.
+- `asset`: a named object such as a graph or node permutation map.
+- `assignment stream`: the embedded BEN or XBEN payload.
 - `finalized bundle`: a bundle whose header has been patched to indicate successful completion.
-- `incomplete bundle`: a bundle whose assignment stream may still be usable, but whose final size/count information is not authoritative.
+- `incomplete bundle`: a bundle whose assignment stream may still be usable, but whose final
+  size/count information is not authoritative.
 
 ## File Layout
 
@@ -37,12 +42,15 @@ A `.bendl` file is laid out as:
 
 ```text
 [Fixed Header]
-[Directory Table]
 [Asset Payloads]
 [Assignment Stream]
+[Directory Table]
 ```
 
-The assignment stream is always the final data region in the file.
+The directory table is normally the final data region in a finalized bundle. A post-finalize append
+writes new asset payloads and a replacement directory after the old EOF, then patches the header
+last; if that final patch fails, the old directory remains authoritative and newer bytes are
+orphaned.
 
 ## Byte Order
 
@@ -57,63 +65,57 @@ offset  size  field
 0       8     magic
 8       2     major_version
 10      2     minor_version
-12      2     flags
-14      1     complete
-15      1     assignment_format
-16      8     directory_offset
-24      8     directory_len
-32      8     stream_offset
-40      8     stream_len
-48      8     sample_count
-56      8     reserved
+12      1     finalized
+13      1     assignment_format
+14      2     alignment_padding
+16      4     flags
+20      4     stream_checksum
+24      8     directory_offset
+32      8     directory_len
+40      8     stream_offset
+48      8     stream_len
+56      8     sample_count
 ```
+
+Total: 64 bytes. All multi-byte integers are little-endian.
 
 ### Header Fields
 
-- `magic`
-  - fixed bytes identifying the file as BENDL
-  - proposed value: `b"BENDL\\0\\0\\1"`
-- `major_version`
-  - initial value: `1`
-- `minor_version`
-  - initial value: `0`
-- `flags`
-  - bundle-level feature flags (64 bits available)
-- `complete`
-  - `0` means incomplete/unfinalized
-  - `1` means finalized
-- `assignment_format`
-  - `1 = BEN`
-  - `2 = XBEN`
-- `directory_offset`
-  - byte offset of the directory table
-- `directory_len`
-  - byte length of the directory table
-- `stream_offset`
-  - byte offset where the assignment stream begins
-- `stream_len`
-  - length in bytes of the assignment stream
-  - `0` if unknown/unfinalized
-- `sample_count`
-  - number of expanded samples in the assignment stream
-  - `-1` if unknown/unfinalized
-- `reserved`
-  - reserved for future extension
+- `magic` — 8 bytes identifying the file as BENDL. Value: `b"BENDL\0\0\x01"`.
+- `major_version` — incompatible-change version. Current value: `1`.
+- `minor_version` — additive backward-compatible version. Current value: `0`.
+- `finalized` — `0` means incomplete/unfinalized; `1` means finalized.
+- `assignment_format` — `1 = BEN` (plain bit-packed), `2 = XBEN` (xz-compressed BEN32).
+- `alignment_padding` — two bytes of padding that keep the following 8-byte fields at offset ≥ 24
+  8-byte aligned. Writers set to zero; readers ignore non-zero bytes. Not a forward-compat slot —
+  new fields must live elsewhere.
+- `flags` — 32-bit bundle-level feature flags. See **Header Flags** below. Bits without a defined
+  constant are reserved; writers set them to zero.
+- `stream_checksum` — CRC32C (Castagnoli polynomial) of the on-disk assignment stream bytes
+  `[stream_offset, stream_offset + stream_len)`. For XBEN streams the CRC is over the compressed
+  bytes, not the decompressed content. Valid only when `HEADER_FLAG_STREAM_CHECKSUM` (bit 0) is set
+  in `flags`. Writers set this field to zero while the bundle is unfinalized and patch it with the
+  final value at finalization time.
+- `directory_offset` — absolute byte offset of the directory table. Zero if no directory has been
+  written yet.
+- `directory_len` — byte length of the directory table. Zero if absent.
+- `stream_offset` — byte offset where the assignment stream begins.
+- `stream_len` — exact byte length of the assignment stream. Zero if unfinalized. Readers MUST
+  surface an error if the backing file is shorter than this declared length.
+- `sample_count` — number of expanded samples in the assignment stream. `-1` if unfinalized.
 
 ## Header Flags
 
-Initial proposed header flags:
+- **Bit 0 — `HEADER_FLAG_STREAM_CHECKSUM`**: the `stream_checksum` field contains a valid CRC32C
+  over the on-disk assignment stream bytes. Library writers always set this flag and write a valid
+  checksum. The clear-flag state exists only for adversarial/foreign bytes and partial-recovery
+  flows; verified reader APIs return `Unavailable` when this flag is clear.
 
-- bit 0: directory contains checksums
-- bit 1: bundle contains graph asset
-- bit 2: bundle contains relabel map asset
-- bit 3: bundle contains metadata asset
-
-Unrecognized flags must be ignored by readers unless a future version marks them as mandatory.
+Bits 1–31 are reserved. Unrecognized flag bits must be ignored by readers.
 
 ## Directory Table
 
-The directory table is a compact binary table describing front-loaded assets.
+The directory table is a compact binary table describing asset payloads.
 
 Layout:
 
@@ -122,6 +124,12 @@ offset  size  field
 0       4     entry_count
 4       ...   repeated directory entries
 ```
+
+`entry_count` is the number of asset entries that follow; the assignment stream is stored outside
+the directory and does not count toward it. Readers MUST reject a bundle whose `entry_count` exceeds
+`MAX_DIRECTORY_ENTRIES` (256) **before** allocating per-entry storage, so a corrupt or adversarial
+count cannot force a large reservation. Writers MUST NOT emit more than `MAX_DIRECTORY_ENTRIES`
+entries.
 
 Each directory entry has the following header:
 
@@ -149,9 +157,12 @@ offset  size  field
 - `payload_offset`
   - absolute file offset of the asset payload
 - `payload_len`
-  - byte length of the asset payload
+  - exact byte length of the on-disk asset payload. Readers MUST surface an error if the backing
+    file is shorter than this declared length; they MUST NOT silently return a truncated payload.
 - `checksum_len`
-  - byte length of optional checksum bytes that follow the name
+  - byte length of the optional checksum bytes that follow the name. MUST be `4` when the
+    `ASSET_FLAG_CHECKSUM` bit (bit 2) is set and `0` when it is clear; readers MUST reject any entry
+    where the flag and `checksum_len` disagree.
 - `name bytes`
   - UTF-8 asset name
 - `checksum bytes`
@@ -159,53 +170,67 @@ offset  size  field
 
 ### Asset Types
 
-Initial proposed asset types:
+Defined asset types:
 
 - `1 = metadata.json`
 - `2 = graph.json`
-- `3 = relabel_map.json`
+- `3 = node_permutation_map.json`
 - `4 = custom user asset`
+
+Types `1`–`3` are singleton known assets: each may appear at most once and MUST use its standardized
+name. Type `4` is a custom asset with a writer-chosen name, and multiple are allowed.
 
 ### Asset Flags
 
-Initial proposed asset flags:
+Defined asset flags:
 
 - bit 0: payload is UTF-8 JSON
-- bit 1: payload is zstd-compressed
+- bit 1: payload is xz-compressed
 - bit 2: checksum present
 
-Readers must skip unknown asset types and unknown flags when possible.
+When bit 2 is set, the trailing checksum is exactly four little-endian bytes holding a CRC32C
+(Castagnoli polynomial) over the **on-disk payload bytes**
+(`payload_offset .. payload_offset + payload_len`). For an xz-compressed asset the CRC covers the
+compressed bytes, so verification happens before decompression. Library writers always set bit 2 and
+write a valid checksum.
+
+Readers must skip unknown asset types and unknown flag bits when possible.
 
 ## Asset Payload Region
 
-Assets are written after the directory table and before the assignment stream.
+Assets are written after the fixed header and before the assignment stream. Each asset payload is
+referenced by the trailing directory table.
 
-Each asset payload is raw bytes referenced by the directory table. The bundle does not require per-asset wrapper headers in the payload region because offsets and lengths are already described by the directory entries.
+Each asset payload is raw bytes referenced by the directory table. The bundle does not require
+per-asset wrapper headers in the payload region because offsets and lengths are already described by
+the directory entries.
 
-Examples of front-loaded assets:
+Examples of assets:
 
 - graph file
-- relabel map
+- node permutation map
 - extra metadata JSON
 - provenance/configuration info
 
 ## Assignment Stream Region
 
-The assignment stream starts at `stream_offset` and occupies `stream_len` bytes if the bundle is finalized.
+The assignment stream starts at `stream_offset` and occupies `stream_len` bytes if the bundle is
+finalized.
 
 The stream payload must be one of:
 
 - BEN byte stream
 - XBEN byte stream
 
-The bundle does not reinterpret BEN/XBEN internals. It only stores the opaque assignment stream and records its format in `assignment_format`.
+The bundle does not reinterpret BEN/XBEN internals. It only stores the opaque assignment stream and
+records its format in `assignment_format`.
 
 ### Incomplete Bundles
 
-If `complete == 0`:
+If `finalized == 0`:
 
 - `stream_len` may be `0`
-- `sample_count` may be `u64::MAX`
+- `sample_count` is `-1`
 - readers should treat assignment data as extending from `stream_offset` to EOF
 
 This allows partially written bundles to remain recoverable.
@@ -215,31 +240,38 @@ This allows partially written bundles to remain recoverable.
 Writers are expected to use this sequence:
 
 1. Write a provisional header with:
-   - `complete = 0`
+   - `finalized = 0`
    - `stream_len = 0`
-   - `sample_count = u64::MAX`
-2. Write the directory table.
-3. Write all front-loaded assets.
-4. Record `stream_offset`.
-5. Write the assignment stream.
-6. On successful completion:
+   - `sample_count = -1`
+1. Write all asset payloads.
+1. Record `stream_offset`.
+1. Write the assignment stream.
+1. Compute the assignment-stream checksum.
+1. Write the trailing directory table.
+1. On successful completion:
    - compute final `stream_len`
    - compute final `sample_count`
+   - record final `directory_offset` and `directory_len`
    - seek back to patch the header
-   - set `complete = 1`
+   - set `finalized = 1`
 
-If writing is interrupted before step 6, the file remains an incomplete bundle.
+If writing is interrupted before step 7, the file remains an incomplete bundle.
 
 ## Reader Rules
 
 Readers must:
 
-1. Validate `magic` and supported version.
-2. Read the fixed header.
-3. Read the directory table.
-4. Make front-loaded assets available immediately.
-5. Interpret the assignment stream according to `assignment_format`.
-6. If `complete == 0`, treat the stream as running from `stream_offset` to EOF.
+1. Validate `magic` and supported `major_version`. Higher `minor_version` values are accepted.
+1. Read the fixed header.
+1. Read the authoritative directory table identified by `directory_offset` and `directory_len`.
+   Reject a declared `entry_count` above `MAX_DIRECTORY_ENTRIES` (256) before allocating, and reject
+   any bytes left over in the directory region after the declared entries.
+1. Validate the directory: asset names must be unique, and a singleton known type (1–3) must use its
+   standardized name. Reject a directory that violates either rule.
+1. Make directory-listed assets available.
+1. Interpret the assignment stream according to `assignment_format`.
+1. If `finalized == 0`, treat the stream as running from `stream_offset` to EOF (or to
+   `directory_offset` when a provisional directory was written).
 
 Readers should expose:
 
@@ -251,33 +283,43 @@ Readers should expose:
 
 If a bundle write is interrupted:
 
-- header and front-loaded assets should still be usable if fully written
+- header and assets should still be usable if fully written and directory-listed
 - assignment data should be readable from `stream_offset` to EOF
 - `sample_count` should be treated as unknown
 - the bundle should be marked incomplete
 
-If the interruption happens before the directory or assets are fully written, the bundle may be unreadable. Writers should therefore prefer writing small front-loaded metadata first and beginning the assignment stream only after the directory is complete.
+If the interruption happens before the final directory or header patch is written, the bundle may be
+incomplete. Post-finalize append is ordered so that the old directory remains authoritative until
+the replacement directory is committed by the final header patch.
 
 ## Metadata Conventions
 
-Although the directory is binary, metadata payloads should initially use JSON for ease of debugging.
+Although the directory is binary, metadata payloads use JSON for ease of debugging.
 
-Recommended metadata file names:
+Standardized metadata file names:
 
 - `metadata.json`
 - `graph.json`
-- `relabel_map.json`
+- `node_permutation_map.json`
 
-Recommended metadata fields:
+The `metadata.json` payload mirrors the fixed header for human readability; the header (and, for the
+variant, the embedded stream banner) remains authoritative. Its fields are:
 
 ```json
 {
-  "bundle_version": 1,
-  "assignments_format": "xben",
+  "major_version": 1,
+  "minor_version": 0,
+  "assignment_format": "xben",
   "variant": "mkv_chain",
   "complete": false
 }
 ```
+
+- `major_version` / `minor_version` — mirror the header version fields.
+- `assignment_format` — `"ben"` or `"xben"`, mirroring the header `assignment_format` byte.
+- `variant` — `"standard"`, `"mkv_chain"`, or `"two_delta"`, mirroring the embedded stream banner.
+  Optional; omitted when unknown.
+- `complete` — mirrors the header `finalized` flag.
 
 ## Versioning Strategy
 
@@ -285,24 +327,25 @@ Recommended metadata fields:
 - additive backward-compatible fields may use `minor_version` bump
 - unknown asset types should be ignored when possible
 
-## Suggested Rust Types
+## Rust Types
 
-Conceptual Rust representations:
+The in-memory representations of the header and directory entries:
 
 ```rust
 pub struct BendlHeader {
     pub magic: [u8; 8],
     pub major_version: u16,
     pub minor_version: u16,
-    pub flags: u64,
-    pub complete: u8,
+    pub finalized: u8,
     pub assignment_format: u8,
+    pub alignment_padding: u16,
+    pub flags: u32,
+    pub stream_checksum: u32,
     pub directory_offset: u64,
     pub directory_len: u64,
     pub stream_offset: u64,
     pub stream_len: u64,
-    pub sample_count: i28,
-    pub reserved: u64,
+    pub sample_count: i64,
 }
 
 pub struct BendlDirectoryEntry {
@@ -315,25 +358,29 @@ pub struct BendlDirectoryEntry {
 }
 ```
 
-## Suggested Module Layout
+## Module Layout
 
-If implemented in `ben`, the new code should likely live under:
+The implementation lives under:
 
 ```text
-ben/src/bundle/
+ben/src/io/bundle/
   mod.rs
   format.rs
   reader.rs
   writer.rs
   manifest.rs
+  verify.rs
+  error.rs
 ```
 
 Responsibilities:
 
-- `format.rs`: binary header/directory definitions
-- `reader.rs`: bundle reader
-- `writer.rs`: bundle writer/finalizer
+- `format.rs`: binary header/directory definitions and their encode/decode helpers
+- `reader.rs`: bundle reader (header + directory parsing, asset and stream access)
+- `writer.rs`: bundle writer/finalizer and the post-finalize appender
 - `manifest.rs`: JSON metadata structs
+- `verify.rs`: bounded readers, CRC tees, and checksum verification adapters
+- `error.rs`: read-side error and checksum-error types
 
 ## Out of Scope for V1
 
@@ -342,14 +389,14 @@ Responsibilities:
 - random-write mutation of existing bundles
 - archive-level compression beyond the assignment stream format
 
-## Current Recommendation
+## Summary
 
-Implement `.bendl` V1 as:
+`.bendl` v1 is:
 
 - a seekable file container
-- a fixed header plus binary directory
-- front-loaded optional assets
-- trailing BEN/XBEN assignment stream
-- header patched on successful finalize
+- a fixed header plus asset payloads, assignment stream, and trailing binary directory
+- optional assets referenced by directory entries
+- an embedded BEN/XBEN assignment stream
+- a header patched on successful finalize
 
-This keeps the format simple, recoverable, and aligned with the current streaming requirements.
+This keeps the format simple, recoverable, and aligned with the streaming requirements.

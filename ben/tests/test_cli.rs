@@ -1428,7 +1428,9 @@ fn reben_cli_generates_map_from_dual_graph_and_reports_invalid_flag_combinations
         temp.path(),
     );
     assert_failure(&missing_dual_graph);
-    assert!(String::from_utf8_lossy(&missing_dual_graph.stderr).contains("No dual-graph file provided"));
+    assert!(
+        String::from_utf8_lossy(&missing_dual_graph.stderr).contains("No dual-graph file provided")
+    );
 
     let sorted_json: Value =
         serde_json::from_str(&fs::read_to_string(generated_graph).unwrap()).unwrap();

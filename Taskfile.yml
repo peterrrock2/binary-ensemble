@@ -324,6 +324,38 @@ tasks:
         fi;
         '
 
+  docs:
+    desc: Build the Python docs site (renders committed notebook outputs)
+    dir: ben-py
+    cmds:
+      # -E -a forces a full rebuild (re-read all sources, rewrite every page). Needed
+      # because the palette/switcher state and asset cache-busters are injected by conf.py
+      # and don't invalidate Sphinx's incremental cache — an incremental build would serve
+      # stale inline JS / cached CSS (e.g. the switcher reappearing after DOCS_SWITCHER changes).
+      - uv run --extra docs sphinx-build -E -a -W -b dirhtml docs docs/_build
+      - 'echo "Docs built -> ben-py/docs/_build/index.html"'
+
+  docs-exec:
+    desc: Build the docs and execute every tutorial notebook (CI-equivalent)
+    dir: ben-py
+    env:
+      NB_EXECUTION_MODE: cache
+    cmds:
+      - uv run --extra docs --extra docs-exec sphinx-build -W -b dirhtml docs docs/_build
+
+  docs-serve:
+    desc: Build the docs and serve them at http://localhost:8000
+    dir: ben-py
+    cmds:
+      - task: docs
+      - uv run python -m http.server 8000 --directory docs/_build
+
+  docs-test:
+    desc: Execute every Python code block in the Markdown docs
+    dir: ben-py
+    cmds:
+      - uv run pytest tests/test_docs_snippets.py
+
   clean-linux: &clean-unix
     desc: Clean build artifacts
     internal: true
@@ -334,7 +366,7 @@ tasks:
       - rm -rf ben-py/binary_ensemble/*abi3.so ben-py/binary_ensemble/*.pyd
       - rm -rf ben-py/.venv
       - find . -type d -name "__pycache__" -exec rm -rf {} +
-      - rm -rf docs/_build docs/user/example_data
+      - rm -rf ben-py/docs/_build ben-py/docs/jupyter_execute ben-py/docs/_generated ben-py/docs/user/example_data
 
   clean-darwin: *clean-unix
 
@@ -349,8 +381,10 @@ tasks:
       - cmd /c "if exist ben-py\\binary_ensemble.egg-info rmdir /s /q ben-py\\binary_ensemble.egg-info"
       - cmd /c "if exist ben-py\\.venv rmdir /s /q ben-py\\.venv"
       - powershell -NoProfile -Command "Get-ChildItem -Path . -Directory -Filter __pycache__ -Recurse | Remove-Item -Recurse -Force"
-      - cmd /c "if exist docs\\_build rmdir /s /q docs\\_build"
-      - cmd /c "if exist docs\\user\\example_data rmdir /s /q docs\\user\\example_data"
+      - cmd /c "if exist ben-py\\docs\\_build rmdir /s /q ben-py\\docs\\_build"
+      - cmd /c "if exist ben-py\\docs\\jupyter_execute rmdir /s /q ben-py\\docs\\jupyter_execute"
+      - cmd /c "if exist ben-py\\docs\\_generated rmdir /s /q ben-py\\docs\\_generated"
+      - cmd /c "if exist ben-py\\docs\\user\\example_data rmdir /s /q ben-py\\docs\\user\\example_data"
 
   clean:
     desc: Clean build artifacts

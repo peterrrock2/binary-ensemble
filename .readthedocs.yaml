@@ -16,3 +16,6 @@ python:
 sphinx:
   builder: dirhtml
   configuration: ben-py/docs/conf.py
+  # Notebook execution stays off here (NB_EXECUTION_MODE defaults to "off"), so the
+  # hosted build renders the committed notebook outputs. CI executes the notebooks.
+  fail_on_warning: true

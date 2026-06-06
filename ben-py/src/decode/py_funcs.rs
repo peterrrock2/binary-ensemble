@@ -7,6 +7,18 @@ use pyo3::exceptions::PyIOError;
 use pyo3::prelude::*;
 use std::path::PathBuf;
 
+/// Decompress an XBEN file into a plain BEN stream.
+///
+/// XBEN decompression is fast; converting to BEN gives you a stream you can read, replay, and
+/// subsample. The encoding variant is preserved and detected automatically on the next read.
+///
+/// Args:
+///     in_file: Path to the input ``.xben`` file.
+///     out_file: Path to write the ``.ben`` output.
+///     overwrite: Replace ``out_file`` if it already exists. Defaults to ``False``.
+///
+/// Raises:
+///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``, or the conversion fails.
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
@@ -26,6 +38,18 @@ pub fn decode_xben_to_ben(in_file: PathBuf, out_file: PathBuf, overwrite: bool) 
     Ok(())
 }
 
+/// Decode an XBEN file back to canonicalized JSONL.
+///
+/// Produces one ``{"assignment": [...], "sample": n}`` object per line, with sample numbers
+/// starting at 1.
+///
+/// Args:
+///     in_file: Path to the input ``.xben`` file.
+///     out_file: Path to write the ``.jsonl`` output.
+///     overwrite: Replace ``out_file`` if it already exists. Defaults to ``False``.
+///
+/// Raises:
+///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``, or the conversion fails.
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
@@ -45,6 +69,18 @@ pub fn decode_xben_to_jsonl(in_file: PathBuf, out_file: PathBuf, overwrite: bool
     Ok(())
 }
 
+/// Decode a BEN stream back to canonicalized JSONL.
+///
+/// Produces one ``{"assignment": [...], "sample": n}`` object per line, with sample numbers
+/// starting at 1. This is the inverse of :func:`encode_jsonl_to_ben`.
+///
+/// Args:
+///     in_file: Path to the input ``.ben`` file.
+///     out_file: Path to write the ``.jsonl`` output.
+///     overwrite: Replace ``out_file`` if it already exists. Defaults to ``False``.
+///
+/// Raises:
+///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``, or the conversion fails.
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
