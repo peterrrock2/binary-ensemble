@@ -129,14 +129,18 @@ impl PyBenDecoder {
         Ok(slf.into())
     }
 
-    /// Restrict iteration to a contiguous, half-open range of samples ``[start, end)``.
+    /// Restrict iteration to a contiguous, 1-indexed inclusive range of samples.
     ///
     /// Args:
     ///     start: First sample number to keep (1-indexed, inclusive).
-    ///     end: One past the last sample number to keep (exclusive).
+    ///     end: Last sample number to keep (1-indexed, inclusive).
     ///
     /// Returns:
     ///     BenDecoder: ``self``, for chaining into a ``for`` loop.
+    ///
+    /// Example:
+    ///     >>> list(BenDecoder("plans.ben").subsample_range(10, 15))
+    ///     # samples 10, 11, 12, 13, 14, and 15
     #[pyo3(text_signature = "(self, start, end, /)")]
     fn subsample_range<'py>(
         mut slf: PyRefMut<'py, Self>,

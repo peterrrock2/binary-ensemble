@@ -78,6 +78,10 @@ pub struct PyBendlEncoder {
 impl PyBendlEncoder {
     /// Open a new bundle writer in create mode.
     ///
+    /// A create-mode encoder writes one `.bendl` bundle. Add graph and metadata assets, then
+    /// open exactly one assignment stream with :meth:`stream`. The stream context finalizes the
+    /// bundle on a clean close.
+    ///
     /// Args:
     ///     file_path: Output path. Must not exist unless ``overwrite=True``.
     ///     overwrite: Replace an existing file at ``file_path``. Defaults to ``False``.
@@ -85,6 +89,12 @@ impl PyBendlEncoder {
     /// Raises:
     ///     OSError: If ``file_path`` exists and ``overwrite`` is ``False``, or it cannot be
     ///         created.
+    ///
+    /// Example:
+    ///     >>> from binary_ensemble import BendlEncoder
+    ///     >>> encoder = BendlEncoder("ensemble.bendl", overwrite=True)
+    ///     >>> with encoder.stream("ben") as stream:
+    ///     ...     stream.write([1, 1, 2, 2])
     #[new]
     #[pyo3(signature = (file_path, overwrite = false))]
     #[pyo3(text_signature = "(file_path, overwrite=False)")]
@@ -101,8 +111,25 @@ impl PyBendlEncoder {
         })
     }
 
-    /// Open an existing finalized bundle for append. `stream()` is unavailable; `add_*` commit
-    /// immediately.
+    /// Open an existing finalized bundle for append.
+    ///
+    /// Append mode is for assets only. ``stream()`` is unavailable because a bundle has exactly
+    /// one assignment stream. Each ``add_*`` operation commits immediately.
+    ///
+    /// Args:
+    ///     file_path: Existing finalized ``.bendl`` bundle.
+    ///
+    /// Returns:
+    ///     BendlEncoder: An encoder in append mode.
+    ///
+    /// Raises:
+    ///     OSError: If the bundle cannot be opened for append.
+    ///     Exception: If the file is not a finalized bundle.
+    ///
+    /// Example:
+    ///     >>> encoder = BendlEncoder.append("ensemble.bendl")
+    ///     >>> encoder.add_asset("notes.txt", "reviewed", content_type="text")
+    ///     >>> encoder.close()
     #[staticmethod]
     #[pyo3(signature = (file_path))]
     #[pyo3(text_signature = "(file_path)")]
@@ -128,7 +155,20 @@ impl PyBendlEncoder {
         })
     }
 
-    /// Add a custom asset (asset type `CUSTOM`). `content_type` is `"json"` or `"text"`.
+    /// Add a custom asset (asset type ``CUSTOM``).
+    ///
+    /// Args:
+    ///     name: Asset name stored in the bundle directory.
+    ///     payload: UTF-8 text or JSON bytes to store.
+    ///     content_type: Either ``"json"`` or ``"text"``. JSON assets are marked so
+    ///         :meth:`binary_ensemble.bundle.BendlDecoder.read_json_asset` can parse them.
+    ///
+    /// Raises:
+    ///     ValueError: If ``content_type`` is not ``"json"`` or ``"text"``.
+    ///     Exception: If the encoder is closed, failed, or currently streaming.
+    ///
+    /// Example:
+    ///     >>> encoder.add_asset("scores.json", '{"cut_edges": [10]}', content_type="json")
     #[pyo3(signature = (name, payload, content_type))]
     #[pyo3(text_signature = "(self, name, payload, content_type)")]
     fn add_asset(&mut self, name: &str, payload: Vec<u8>, content_type: &str) -> PyResult<()> {
@@ -144,8 +184,20 @@ impl PyBendlEncoder {
         Err(state_error(&self.state, "add_asset"))
     }
 
-    /// Add the canonical `metadata.json` known asset. `metadata` accepts the same inputs as a graph
-    /// (dict/list, bytes, a file-like with `.read()`, or a path).
+    /// Add the canonical ``metadata.json`` known asset.
+    ///
+    /// ``metadata`` accepts a Python ``dict``/``list``, UTF-8 JSON bytes, a file-like object with
+    /// ``.read()``, or a path to JSON. The decoder returns it with :meth:`read_metadata`.
+    ///
+    /// Args:
+    ///     metadata: JSON-compatible metadata payload.
+    ///
+    /// Raises:
+    ///     Exception: If the metadata cannot be converted to JSON bytes, or if the encoder is in
+    ///         an invalid state.
+    ///
+    /// Example:
+    ///     >>> encoder.add_metadata({"sampler": "ReCom", "seed": 1234})
     #[pyo3(signature = (metadata))]
     #[pyo3(text_signature = "(self, metadata)")]
     fn add_metadata(&mut self, py: Python<'_>, metadata: Bound<'_, PyAny>) -> PyResult<()> {
@@ -163,7 +215,7 @@ impl PyBendlEncoder {
         Err(state_error(&self.state, "add_metadata"))
     }
 
-    /// Add the `graph.json` known asset.
+    /// Add the ``graph.json`` known asset and return the graph to use for assignments.
     ///
     /// `sort` defaults to `"mlc"`, so by default the graph is reordered for better compression.
     /// `sort` is `"mlc"` (multi-level clustering), `"rcm"` (reverse Cuthill-McKee), `"key"` to sort
@@ -173,6 +225,22 @@ impl PyBendlEncoder {
     /// `BendlDecoder.read_graph`) so the chain runs on that ordering. Reordering is pre-stream
     /// only; a raw graph (`sort=None`) may also be attached post-stream / in append mode. The
     /// returned graph's node count is recorded for per-write validation.
+    ///
+    /// Args:
+    ///     graph: NetworkX adjacency JSON as a dict/list, bytes, file-like object, or path.
+    ///     sort: ``"mlc"``, ``"rcm"``, ``"key"``, or ``None``.
+    ///     key: Node attribute used when ``sort="key"``. Use ``"id"`` for node id ordering.
+    ///
+    /// Returns:
+    ///     networkx.Graph: The stored graph, after any reordering.
+    ///
+    /// Raises:
+    ///     ValueError: If ``sort``/``key`` is invalid.
+    ///     Exception: If a reordering graph is added after the stream has started.
+    ///
+    /// Example:
+    ///     >>> stored_graph = encoder.add_graph("graph.json", sort="mlc")
+    ///     >>> write_order = list(stored_graph.nodes)
     #[pyo3(signature = (graph, sort = Some("mlc".to_string()), key = None))]
     #[pyo3(text_signature = "(self, graph, sort='mlc', key=None)")]
     fn add_graph(
@@ -233,8 +301,27 @@ impl PyBendlEncoder {
         Err(state_error(&self.state, "add_graph"))
     }
 
-    /// Open the single-use assignment stream. Only `"ben"` is accepted today; XBEN comes from
-    /// `bundle.compress_stream`. `variant` selects the BEN variant (default `"twodelta"`).
+    /// Open the single-use assignment stream.
+    ///
+    /// Only ``"ben"`` is accepted today; XBEN bundles are produced by
+    /// :func:`binary_ensemble.bundle.compress_stream` after writing. ``variant`` selects the BEN
+    /// variant and defaults to ``"twodelta"``.
+    ///
+    /// Args:
+    ///     format: Stream format, currently only ``"ben"``.
+    ///     variant: BEN variant: ``"standard"``, ``"mkv_chain"``, ``"twodelta"``, or ``None``.
+    ///
+    /// Returns:
+    ///     BendlStreamSession: Context manager whose :meth:`write` method accepts assignments.
+    ///
+    /// Raises:
+    ///     ValueError: If ``format`` or ``variant`` is invalid.
+    ///     Exception: If a stream has already been written, append mode is active, or the encoder
+    ///         is closed/failed.
+    ///
+    /// Example:
+    ///     >>> with encoder.stream("ben", variant="twodelta") as stream:
+    ///     ...     stream.write([1, 1, 2, 2])
     #[pyo3(signature = (format = "ben", variant = None))]
     #[pyo3(text_signature = "(self, format='ben', variant=None)")]
     fn stream(
@@ -304,9 +391,12 @@ impl PyBendlEncoder {
         }
     }
 
-    /// Finalize the bundle. Idempotent. In create mode a normal close (including before any
-    /// `stream()`) finalizes the bundle; after a failed stream it does not finalize. In append mode
-    /// it is a no-op after the already-committed appends.
+    /// Finalize or close the bundle. Idempotent.
+    ///
+    /// In create mode, closing before any stream creates a finalized assets-only bundle. The
+    /// stream context normally finalizes the bundle for you. After a failed stream, ``close()``
+    /// does not stamp the partial bundle as complete. In append mode, asset writes have already
+    /// committed and ``close()`` is a no-op.
     fn close(&mut self) -> PyResult<()> {
         match &self.state {
             // The session owns the writer and finalizes on its own close.
@@ -408,10 +498,16 @@ impl PyBendlStreamSession {
     ///     assignment: The plan as a ``list[int]`` of district ids, one per node in
     ///         dual-graph node order.
     ///
+    /// Returns:
+    ///     None.
+    ///
     /// Raises:
     ///     ValueError: If the bundle carries a pre-stream graph and the assignment length does
     ///         not equal the graph's node count.
     ///     OSError: If the session is already closed, or the write fails.
+    ///
+    /// Example:
+    ///     >>> stream.write([1, 1, 2, 2])
     #[pyo3(signature = (assignment))]
     #[pyo3(text_signature = "(self, assignment)")]
     fn write(&mut self, assignment: Vec<u16>) -> PyResult<()> {
@@ -433,6 +529,8 @@ impl PyBendlStreamSession {
     }
 
     /// Finalize the bundle and close the stream. Idempotent.
+    ///
+    /// You usually do not call this directly; leaving the stream ``with`` block cleanly calls it.
     fn close(&mut self, py: Python<'_>) -> PyResult<()> {
         let Some(writer) = self.writer.take() else {
             return Ok(());

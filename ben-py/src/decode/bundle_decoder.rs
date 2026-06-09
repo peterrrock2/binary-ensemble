@@ -162,14 +162,18 @@ impl PyBendlDecoder {
         Ok(slf.into())
     }
 
-    /// Restrict iteration to a contiguous, half-open range of samples ``[start, end)``.
+    /// Restrict iteration to a contiguous, 1-indexed inclusive range of samples.
     ///
     /// Args:
     ///     start: First sample number to keep (1-indexed, inclusive).
-    ///     end: One past the last sample number to keep (exclusive).
+    ///     end: Last sample number to keep (1-indexed, inclusive).
     ///
     /// Returns:
     ///     BendlDecoder: ``self``, for chaining into a ``for`` loop.
+    ///
+    /// Example:
+    ///     >>> list(BendlDecoder("ensemble.bendl").subsample_range(10, 15))
+    ///     # samples 10, 11, 12, 13, 14, and 15
     #[pyo3(text_signature = "(self, start, end, /)")]
     fn subsample_range<'py>(
         mut slf: PyRefMut<'py, Self>,
@@ -205,13 +209,19 @@ impl PyBendlDecoder {
     // Bundle inspection surface.
     // -----------------------------------------------------------------
 
-    /// Return the container format of the embedded assignment stream as `"ben"` or `"xben"`.
+    /// Return the container format of the embedded assignment stream.
+    ///
+    /// Returns:
+    ///     str: ``"ben"`` or ``"xben"``.
     #[pyo3(text_signature = "(self)")]
     fn assignment_format(&self) -> &'static str {
         self.cursor.mode().as_str()
     }
 
-    /// Return the bundle's format version as a `(major, minor)` tuple.
+    /// Return the bundle's format version as a ``(major, minor)`` tuple.
+    ///
+    /// Returns:
+    ///     tuple[int, int]: Bundle format version.
     #[pyo3(text_signature = "(self)")]
     fn version(&self) -> (u16, u16) {
         let h = self.reader.header();
@@ -219,12 +229,18 @@ impl PyBendlDecoder {
     }
 
     /// Whether the bundle was successfully finalized.
+    ///
+    /// Returns:
+    ///     bool: ``True`` for a complete bundle, ``False`` for a recoverable partial bundle.
     #[pyo3(text_signature = "(self)")]
     fn is_complete(&self) -> bool {
         self.reader.is_finalized()
     }
 
     /// Names of every entry in the bundle's directory, in directory order.
+    ///
+    /// Returns:
+    ///     list[str]: Asset names such as ``"graph.json"`` and ``"metadata.json"``.
     #[pyo3(text_signature = "(self)")]
     fn asset_names(&self) -> Vec<String> {
         self.reader
@@ -234,8 +250,12 @@ impl PyBendlDecoder {
             .collect()
     }
 
-    /// Return the full bundle directory as a list of dicts with keys `name`, `type`, `offset`,
-    /// `len`, and `flags` (a list of string tags).
+    /// Return the full bundle directory.
+    ///
+    /// Returns:
+    ///     list[dict]: Each dict has ``name``, ``type``, ``offset``, ``len``, and ``flags``.
+    ///     ``flags`` is a list of string tags such as ``"json"``, ``"xz"``, and
+    ///     ``"checksum"``.
     #[pyo3(text_signature = "(self)")]
     fn list_assets<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyDict>>> {
         let entries = self.reader.assets();
