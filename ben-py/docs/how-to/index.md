@@ -61,7 +61,7 @@ encode_ben_to_xben("chain.ben", "chain.xben", overwrite=True)
 :link: end-to-end-workflow
 :link-type: doc
 
-Build a working BEN bundle, inspect it, attach provenance, and archive it as XBEN.
+Build a working `.bendl` bundle, inspect it, attach provenance, and archive it with XBEN.
 :::
 
 :::{grid-item-card} API cookbook
@@ -76,6 +76,13 @@ Copy focused snippets for the most common Python API tasks.
 :link-type: doc
 
 Small standalone patterns for minimal bundles, rich bundles, conversion, subsampling, and archival.
+:::
+
+:::{grid-item-card} Anti-patterns
+:link: anti-patterns
+:link-type: doc
+
+Avoid node-order mistakes, repeated bundle extensions, wrong working formats, and fragile sharing.
 :::
 
 :::{grid-item-card} Compress a GerryChain run

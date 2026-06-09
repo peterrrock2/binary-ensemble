@@ -1,8 +1,8 @@
 # Shrink a bundle for sharing
 
-A bundle you build while sampling is usually a BEN bundle in the graph's original node order —
-convenient, but not as small as it could be. Before handing it to a collaborator or archiving
-it, two steps get it to its smallest form:
+A `.bendl` bundle you build while sampling usually has an embedded BEN stream in the graph's
+original node order — convenient, but not as small as it could be. Before handing it to a
+collaborator or archiving it, two steps get it to its smallest form:
 
 1. **Relabel and reorder** so assignments form long runs and equivalent plans encode
    identically.

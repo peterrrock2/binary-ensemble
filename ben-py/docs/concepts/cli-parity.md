@@ -18,7 +18,7 @@ the CLI split so workflows can move between notebooks, scripts, and shell pipeli
 | Extract a bundle stream | `BendlDecoder(...).extract_stream(...)` | Copies embedded BEN/XBEN stream bytes |
 | Append bundle assets | `BendlEncoder.append(...)` | Asset appends only; no stream appends |
 | Relabel/reorder a bundle | `relabel_bundle(...)` | Requires BEN stream plus graph |
-| Recompress bundle stream | `compress_stream(...)` | BEN bundle to XBEN bundle |
+| Recompress bundle stream | `compress_stream(...)` | Embedded BEN stream to embedded XBEN stream |
 | Reorder a graph | `binary_ensemble.graph.reorder(...)` | Same orderings as bundle relabeling |
 
 ## Plain stream conversion

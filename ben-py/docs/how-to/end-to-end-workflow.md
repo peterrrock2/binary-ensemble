@@ -3,7 +3,7 @@
 This tutorial follows the recommended lifecycle:
 
 1. prepare a graph,
-2. write a BEN bundle while producing assignments,
+2. write a `.bendl` bundle with a BEN stream while producing assignments,
 3. inspect and analyze the bundle,
 4. add provenance,
 5. relabel and recompress for sharing.
@@ -27,7 +27,7 @@ for node in dual_graph.nodes:
 adjacency = nx.adjacency_data(dual_graph)
 ```
 
-## Write the working BEN bundle
+## Write the working bundle
 
 `add_graph()` returns the graph in the order assignments should use. In this toy example the
 assignment generator already uses integer node positions, so we only need the node count.

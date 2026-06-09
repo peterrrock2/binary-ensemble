@@ -39,6 +39,9 @@ jobs:
       - name: Test documentation code snippets
         run: uv run --with pytest pytest tests/test_docs_snippets.py -q
 
+      - name: Check documentation links
+        run: uv run sphinx-build -b linkcheck docs docs/_build/linkcheck
+
       - name: Upload built site
         uses: actions/upload-artifact@v4
         with:

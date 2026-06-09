@@ -41,7 +41,7 @@ plans — no separate graph file to track down, no chance of pairing the wrong o
 the bundle is the recommended default.
 
 A bundle can wrap *either* a BEN stream (the working form) or an XBEN stream (the compressed
-form). You typically build a BEN bundle while sampling, then
+form). You typically build a `.bendl` bundle with a BEN stream while sampling, then
 [recompress it to XBEN](../how-to/shrink-for-sharing.md) for distribution.
 
 ## Choosing a format
@@ -123,8 +123,8 @@ the embedded assignment stream, then a directory table at the end:
   metadata, and any custom assets — by offset and length, each with its own CRC32C. A reader can
   pull out just the graph without scanning the file, and verify it before trusting it.
 - The **assignment stream** is stored opaquely: the bundle never parses BEN/XBEN internals, it just
-  carries the bytes and notes the format. That's what lets you swap a BEN bundle for an XBEN one by
-  recompressing only the inner stream.
+  carries the bytes and notes the format. That's what lets you replace the embedded BEN stream
+  with an embedded XBEN stream by recompressing only the inner stream.
 
 The writer lays the file down in order — a provisional header marked *unfinalized*, then assets,
 then the stream, then the directory — and **patches the header last** to flip it to finalized and
@@ -137,6 +137,6 @@ that final header patch is the single commit point.
 The exact byte layouts are documented in the format specifications, for readers building
 interoperating tools:
 
-- [BEN / XBEN stream format](https://github.com/peterrrock2/binary-ensemble/blob/main/docs/ben-format-spec.md)
-- [TwoDelta variant format](https://github.com/peterrrock2/binary-ensemble/blob/main/docs/twodelta-format-spec.md)
-- [BENDL bundle format](https://github.com/peterrrock2/binary-ensemble/blob/main/docs/bendl-format-spec.md)
+- [BEN / XBEN stream format](https://github.com/peterrrock2/binary-ensemble/blob/1.0.0/docs/ben-format-spec.md)
+- [TwoDelta variant format](https://github.com/peterrrock2/binary-ensemble/blob/1.0.0/docs/twodelta-format-spec.md)
+- [BENDL bundle format](https://github.com/peterrrock2/binary-ensemble/blob/1.0.0/docs/bendl-format-spec.md)

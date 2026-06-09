@@ -67,8 +67,9 @@ assert len(write_order) == 4
 
 ## Use an ordering after a bundle already exists
 
-If you already have a BEN bundle with a graph, use `relabel_bundle()`. It reorders the graph,
-rewrites every assignment into that new order, and stores a fresh permutation map.
+If you already have a `.bendl` bundle with a BEN stream and a graph, use `relabel_bundle()`.
+It reorders the graph, rewrites every assignment into that new order, and stores a fresh
+permutation map.
 
 ```python
 from binary_ensemble import relabel_bundle

@@ -4,6 +4,8 @@ This page is intentionally blunt. `binary-ensemble` is designed for a specific d
 large streams of district-assignment vectors over a fixed dual graph. It is very good at
 that job, but it does not try to be a general geospatial archive format.
 
+For concrete examples of what not to do, see [Anti-patterns](../how-to/anti-patterns.md).
+
 ## Assignment-only streams
 
 Plain `.ben` and `.xben` files store only assignment streams. They do not store:
@@ -55,8 +57,8 @@ subsampling; recompress to XBEN once the file is ready to share.
 
 ## Relabel before XBEN
 
-`relabel_bundle()` expects a BEN bundle with an embedded graph. Run it before
-`compress_stream()`.
+`relabel_bundle()` expects a `.bendl` bundle with an embedded BEN stream and graph. Run it
+before `compress_stream()`.
 
 ```python
 from binary_ensemble import compress_stream, relabel_bundle

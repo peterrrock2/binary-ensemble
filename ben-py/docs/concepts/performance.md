@@ -104,7 +104,7 @@ can still skip through the decoded stream efficiently.
 For serious runs:
 
 1. Reorder the graph before or during bundle creation.
-2. Write a BEN bundle while sampling.
+2. Write a `.bendl` bundle with a BEN stream while sampling.
 3. Attach metadata, graph, and provenance assets.
 4. Use BEN for quality checks and analysis.
 5. Relabel/reorder the final bundle if needed.

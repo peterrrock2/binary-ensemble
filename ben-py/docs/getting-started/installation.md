@@ -51,10 +51,10 @@ maturin develop --release      # builds the extension and installs it editable
 ## Command-line tools
 
 This Python package wraps the same engine as the project's CLI tools (`ben`, `reben`,
-`bendl`, `pcben`), which are distributed through Cargo:
+`bendl`, `pcben`). From a checkout, build or install those tools with Cargo:
 
 ```bash
-cargo install binary-ensemble
+cargo install --path ben
 ```
 
 The Python API mirrors the CLI's structure — see [The API map](../concepts/api-map.md).

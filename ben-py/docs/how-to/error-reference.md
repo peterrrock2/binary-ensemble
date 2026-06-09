@@ -70,7 +70,8 @@ with encoder.stream("ben") as stream:
 
 ## Relabeling fails after XBEN recompression
 
-**Cause:** `relabel_bundle()` works on BEN bundles. XBEN is the final archive step.
+**Cause:** `relabel_bundle()` works on `.bendl` bundles with embedded BEN streams. XBEN is the
+final archive step.
 
 **Fix:** relabel first, then recompress.
 

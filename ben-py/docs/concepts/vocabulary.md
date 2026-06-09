@@ -1,8 +1,7 @@
 # Vocabulary
 
-These are the core terms used throughout the docs and the API. They come from the project's
-[glossary](https://github.com/peterrrock2/binary-ensemble/blob/main/docs/glossary.md), which
-is the source of truth for the whole workspace.
+These are the core terms used throughout the docs and the API. They align with the project's
+repository-level glossary.
 
 ## Dual graph
 
@@ -72,3 +71,21 @@ you never specify a variant when reading. See [Encoding variants](variants.md).
 - **Chain** — specifically an MCMC method, where the Markov property matters.
 
 Use *sampler* unless you specifically mean a Markov chain.
+
+## Preferred wording
+
+Use these terms consistently in docs, examples, and user-facing messages.
+
+| Prefer | Avoid | Reason |
+|---|---|---|
+| `.bendl` bundle | `xben bundle`, `BEN-DL file` | The container is BENDL; the embedded stream may be BEN or XBEN. |
+| assignment stream | plan stream, map stream | The bytes store assignment vectors, not geometries or rendered maps. |
+| assignment | encoded plan, vector plan | An assignment is the concrete `list[int]` representation of a plan. |
+| sample | step, row | A sample is one decoded assignment in an ensemble. |
+| graph order or node order | file order, JSON order | The order is the positional contract between graph and assignments. |
+| reorder | relabel, sort labels | Reordering changes node positions. |
+| district relabeling | reordering districts | Relabeling changes district ids, not node positions. |
+| `run-archive.bendl` | `run.xben.bendl` | Bundle filenames should have one `.bendl` extension. |
+
+When a page needs to mention both node reordering and district relabeling, name both
+explicitly. They are different compression levers.

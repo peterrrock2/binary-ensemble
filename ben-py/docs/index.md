@@ -28,7 +28,7 @@ toolkit built for exactly this data: it turns those JSONL mountains into compact
 files you can store, share, and stream sample-by-sample without unpacking the whole thing.
 
 `binary-ensemble` is the Python interface to the
-[binary-ensemble](https://crates.io/crates/binary-ensemble) Rust library.
+[binary-ensemble Rust crate](https://github.com/peterrrock2/binary-ensemble/tree/1.0.0/ben).
 
 ```{admonition} How much smaller?
 :class: tip
@@ -98,6 +98,13 @@ shrink a bundle for sharing, diagnose errors, and copy cookbook patterns.
 Every public class and function in `binary_ensemble`, organized by module.
 :::
 
+:::{grid-item-card} {octicon}`mortar-board` Tutorial notebooks
+:link: user/using_bendl
+:link-type: doc
+
+Executable notebooks with rendered outputs. CI runs them end to end against the live API.
+:::
+
 ::::
 
 ```{toctree}
@@ -125,6 +132,7 @@ concepts/api-map
 concepts/cli-parity
 concepts/limitations
 concepts/compatibility
+concepts/release-versioning
 ```
 
 ```{toctree}
@@ -135,6 +143,7 @@ how-to/index
 how-to/end-to-end-workflow
 how-to/api-cookbook
 how-to/examples-gallery
+how-to/anti-patterns
 how-to/compress-gerrychain-run
 how-to/read-and-iterate
 how-to/subsample
@@ -164,7 +173,7 @@ api/index
 :hidden:
 :caption: Project
 
-format stability <https://github.com/peterrrock2/binary-ensemble/blob/main/docs/format-stability.md>
-Rust crate <https://crates.io/crates/binary-ensemble>
+format stability <https://github.com/peterrrock2/binary-ensemble/blob/1.0.0/docs/format-stability.md>
+Rust crate source <https://github.com/peterrrock2/binary-ensemble/tree/1.0.0/ben>
 GitHub <https://github.com/peterrrock2/binary-ensemble>
 ```

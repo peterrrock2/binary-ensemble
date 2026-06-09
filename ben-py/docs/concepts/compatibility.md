@@ -3,6 +3,9 @@
 This page covers what is stable at the Python package boundary and what belongs to the
 underlying binary format.
 
+For release-boundary guidance and what to include in compatibility reports, see
+[Release and versioning](release-versioning.md).
+
 ## Python package compatibility
 
 `binary-ensemble` requires Python 3.11 or newer and depends on NetworkX at runtime.
@@ -39,7 +42,7 @@ implementation detail behind the public modules.
 ## File-format stability
 
 The byte-level format stability policy lives in the repository-level
-[format stability document](https://github.com/peterrrock2/binary-ensemble/blob/main/docs/format-stability.md).
+[format stability document](https://github.com/peterrrock2/binary-ensemble/blob/1.0.0/docs/format-stability.md).
 At the Python level, the important rule is simpler: readers auto-detect stream variants, and
 bundle readers expose the bundle version through `BendlDecoder.version()`.
 
@@ -96,4 +99,3 @@ encoder.add_metadata(
 with encoder.stream("ben") as stream:
     stream.write([1, 1, 2, 2])
 ```
-

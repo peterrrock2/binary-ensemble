@@ -362,6 +362,12 @@ tasks:
     cmds:
       - uv run pytest tests/test_docs_snippets.py
 
+  docs-linkcheck:
+    desc: Check external links in the Python docs
+    dir: ben-py
+    cmds:
+      - uv run --extra docs sphinx-build -b linkcheck docs docs/_build/linkcheck
+
   clean-linux: &clean-unix
     desc: Clean build artifacts
     internal: true

@@ -14,10 +14,10 @@ and compress them into pure binary files.
 
 ## Usage
 
-You may install the binary-ensemble package from the cargo package manager using
+From a checkout, install the command-line tools with Cargo using
 
 ```
-cargo install binary-ensemble
+cargo install --path ben
 ```
 
 [Here](./example/small_example.jsonl) is a link to a small example file that you can use to see what
