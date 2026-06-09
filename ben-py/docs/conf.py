@@ -94,6 +94,21 @@ intersphinx_mapping = {
     "networkx": ("https://networkx.org/documentation/stable/", None),
 }
 
+# -- linkcheck ---------------------------------------------------------------
+#
+# Keep link checking separate from normal HTML builds because it depends on external
+# services. CI runs it as its own step so transient failures are easy to diagnose.
+linkcheck_timeout = 10
+linkcheck_retries = 2
+linkcheck_anchors = False
+linkcheck_ignore = [
+    r"http://localhost:\d+/",
+    r"http://127\.0\.0\.1:\d+/",
+    # GitHub source/blob URLs are useful in rendered docs but frequently rate-limit
+    # unauthenticated CI linkcheck runs.
+    r"https://github\.com/peterrrock2/binary-ensemble/(blob|tree)/.*",
+]
+
 # -- HTML output -------------------------------------------------------------
 
 html_theme = "furo"
@@ -368,7 +383,7 @@ def _warm_light():
                 Comment.Preproc: "noitalic #c2410c",
                 Keyword: "bold #c2410c",
                 Keyword.Type: "nobold #623c00",
-                Keyword.Constant: "nobold #e36397",
+                Keyword.Constant: "nobold #b8336a",
                 Operator: "#6a4a2a",
                 Operator.Word: "bold #c2410c",
                 Name.Builtin: "bold #08527d",
@@ -380,15 +395,15 @@ def _warm_light():
                 Name.Constant: "#623c00",
                 Name.Decorator: "#c2410c",
                 Name.Attribute: "#0a5a86",
-                Name.Tag: "bold #09814a",
-                String: "bold #09814a",
+                Name.Tag: "bold #0a6d3f",
+                String: "bold #0a6d3f",
                 String.Doc: "italic #685c4b",
                 String.Escape: "bold #c2410c",
                 Number: "bold #861657",
                 Generic.Heading: "bold #20180f",
                 Generic.Subheading: "bold #0a5a86",
                 Generic.Deleted: "#b3261e",
-                Generic.Inserted: "#09814a",
+                Generic.Inserted: "#0a6d3f",
                 Generic.Error: "#b3261e",
                 Generic.Emph: "italic",
                 Generic.Strong: "bold",
@@ -439,12 +454,12 @@ def _warm_dark():
                 Name.Function: "bold #3a96cf",
                 Name.Class: "bold #3a96cf",
                 Name.Namespace: "bold #3a96cf",
-                Name.Exception: "bold #e92063",
+                Name.Exception: "bold #ff5d80",
                 Name.Variable: "#f4efe6",
                 Name.Constant: "#d8a657",
                 Name.Decorator: "#ff750f",
                 Name.Attribute: "#3a96cf",
-                Name.Tag: "bold #3fb950",
+                Name.Tag: "bold #79b473",
                 String: "bold #79b473",
                 String.Doc: "italic #9a8f7c",
                 String.Escape: "bold #ff750f",
@@ -452,7 +467,7 @@ def _warm_dark():
                 Generic.Heading: "bold #f4efe6",
                 Generic.Subheading: "bold #3a96cf",
                 Generic.Deleted: "#ff6b6b",
-                Generic.Inserted: "#3fb950",
+                Generic.Inserted: "#79b473",
                 Generic.Error: "#ff6b6b",
                 Generic.Emph: "italic",
                 Generic.Strong: "bold",
