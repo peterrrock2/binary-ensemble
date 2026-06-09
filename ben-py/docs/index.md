@@ -80,7 +80,7 @@ Install the package and compress your first ensemble in a few lines.
 :link-type: doc
 
 Dual graphs, assignments, the BEN/XBEN/BENDL formats, and the compression levers —
-the mental model behind the API.
+the mental model, data contract, performance model, and compatibility story behind the API.
 :::
 
 :::{grid-item-card} {octicon}`tools` How-to guides
@@ -88,7 +88,7 @@ the mental model behind the API.
 :link-type: doc
 
 Task-focused recipes: compress a GerryChain run, subsample, convert formats,
-shrink a bundle for sharing.
+shrink a bundle for sharing, diagnose errors, and copy cookbook patterns.
 :::
 
 :::{grid-item-card} {octicon}`code` API reference
@@ -114,10 +114,17 @@ getting-started/quickstart
 
 concepts/overview
 concepts/vocabulary
+concepts/data-model
+concepts/jsonl-schema
 concepts/formats
 concepts/variants
 concepts/compression
+concepts/ordering-deep-dive
+concepts/performance
 concepts/api-map
+concepts/cli-parity
+concepts/limitations
+concepts/compatibility
 ```
 
 ```{toctree}
@@ -125,12 +132,17 @@ concepts/api-map
 :caption: How-to guides
 
 how-to/index
+how-to/end-to-end-workflow
+how-to/api-cookbook
+how-to/examples-gallery
 how-to/compress-gerrychain-run
 how-to/read-and-iterate
 how-to/subsample
 how-to/convert-formats
 how-to/shrink-for-sharing
 how-to/custom-assets-and-append
+how-to/troubleshooting
+how-to/error-reference
 ```
 
 ```{toctree}

@@ -65,3 +65,10 @@ The Python package mirrors the project's CLI tools:
 See [The API map](api-map.md) for when to reach for each, and the
 [Vocabulary](vocabulary.md) page for the precise meaning of *plan*, *assignment*,
 *sample*, and *ensemble*.
+
+For the invariants that must hold across a real run — assignment length, graph node order,
+JSONL shape, and bundle assets — see [The data contract](data-model.md).
+
+For operational guidance after the basics, see [Performance guide](performance.md),
+[Graph ordering deep dive](ordering-deep-dive.md), [Limitations and invariants](limitations.md),
+and [Compatibility and stability](compatibility.md).

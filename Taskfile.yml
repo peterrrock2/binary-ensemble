@@ -344,11 +344,17 @@ tasks:
       - uv run --extra docs --extra docs-exec sphinx-build -W -b dirhtml docs docs/_build
 
   docs-serve:
-    desc: Build the docs and serve them at http://localhost:8000
+    desc: Serve the docs at http://localhost:8000, live-rebuilding on every change
     dir: ben-py
     cmds:
-      - task: docs
-      - uv run python -m http.server 8000 --directory docs/_build
+      # sphinx-autobuild watches the docs source and rebuilds + reloads the browser on
+      # save. Editing conf.py (palettes, Pygments styles) triggers a full rebuild. The
+      # generated pygments-themes.css lives under docs/_generated, which conf.py rewrites
+      # each build — ignore it (and the build/cache dirs) so the watcher doesn't loop.
+      - >-
+        uv run --extra docs sphinx-autobuild -b dirhtml docs docs/_build
+        --ignore "*/_generated/*" --ignore "*/_build/*" --ignore "*/.jupyter_cache/*"
+        --port 8000 --open-browser
 
   docs-test:
     desc: Execute every Python code block in the Markdown docs

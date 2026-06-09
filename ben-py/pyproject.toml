@@ -37,6 +37,8 @@ docs = [
   # MyST markdown + notebook rendering
   "myst-nb>=1.3.0",
   "linkify-it-py>=2.0.3",
+  # Live-reloading local preview server (used by `task docs-serve`)
+  "sphinx-autobuild>=2024.2.4",
 ]
 # Extra deps to *execute* the tutorial notebooks (used by CI and local verification
 # with NB_EXECUTION_MODE=cache), so every example is run end to end.

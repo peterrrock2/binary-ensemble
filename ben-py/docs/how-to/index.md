@@ -57,6 +57,27 @@ encode_ben_to_xben("chain.ben", "chain.xben", overwrite=True)
 ::::{grid} 1 1 2 2
 :gutter: 3
 
+:::{grid-item-card} End-to-end workflow
+:link: end-to-end-workflow
+:link-type: doc
+
+Build a working BEN bundle, inspect it, attach provenance, and archive it as XBEN.
+:::
+
+:::{grid-item-card} API cookbook
+:link: api-cookbook
+:link-type: doc
+
+Copy focused snippets for the most common Python API tasks.
+:::
+
+:::{grid-item-card} Examples gallery
+:link: examples-gallery
+:link-type: doc
+
+Small standalone patterns for minimal bundles, rich bundles, conversion, subsampling, and archival.
+:::
+
 :::{grid-item-card} Compress a GerryChain run
 :link: compress-gerrychain-run
 :link-type: doc
@@ -97,6 +118,20 @@ Reorder, relabel, and recompress a bundle to its smallest shareable form.
 :link-type: doc
 
 Attach metadata and arbitrary blobs, then add more to a finalized bundle.
+:::
+
+:::{grid-item-card} Troubleshooting
+:link: troubleshooting
+:link-type: doc
+
+Diagnose wrong readers, incomplete bundles, missing graphs, and node-order mismatches.
+:::
+
+:::{grid-item-card} Error reference
+:link: error-reference
+:link-type: doc
+
+Map common exceptions and confusing symptoms to causes and fixes.
 :::
 
 ::::

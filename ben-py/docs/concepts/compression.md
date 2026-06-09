@@ -135,8 +135,8 @@ assignment into the new order, and stores the permutation map:
 ```python
 from binary_ensemble import relabel_bundle, compress_stream
 
-relabel_bundle("ensemble.bendl", out_file="ensemble.relabeled.bendl", sort="key", key="GEOID20")
-compress_stream("ensemble.relabeled.bendl", out_file="ensemble.xben.bendl")
+relabel_bundle("ensemble.bendl", out_file="ensemble-relabeled.bendl", sort="key", key="GEOID20")
+compress_stream("ensemble-relabeled.bendl", out_file="ensemble-archive.bendl")
 ```
 
 See [Shrink a bundle for sharing](../how-to/shrink-for-sharing.md) for the full recipe.

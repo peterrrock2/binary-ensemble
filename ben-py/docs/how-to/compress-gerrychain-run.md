@@ -9,7 +9,11 @@ This recipe needs GerryChain installed: `pip install gerrychain`. `binary-ensemb
 only ever sees plain lists of integers, so the same pattern works with any sampler.
 ```
 
-## Set up the chain
+## Reorder the graph before building the chain
+
+The best compression wins come from graph order. `BendlEncoder.add_graph(..., sort="mlc")`
+embeds an MLC-reordered graph and returns that reordered graph as a live NetworkX graph. Build
+the GerryChain run on that returned graph so the sampler and the bundle agree on node order.
 
 ```python
 from functools import partial
@@ -18,7 +22,17 @@ from gerrychain import Partition, Graph, MarkovChain, updaters, accept
 from gerrychain.proposals import recom
 from gerrychain.constraints import contiguous
 
-graph = Graph.from_json("gerrymandria.json")
+from binary_ensemble import BendlEncoder
+
+encoder = BendlEncoder("ensemble.bendl", overwrite=True)
+
+# Explicitly show the default: MLC reorders the graph for better run-length compression.
+mlc_graph = encoder.add_graph("gerrymandria.json", sort="mlc")
+
+# Hand the reordered graph back into GerryChain. This is the load-bearing step:
+# the chain now runs in the same node order the bundle stores.
+graph = Graph.from_networkx(mlc_graph)
+node_order = list(graph.nodes)
 
 initial_partition = Partition(
     graph,
@@ -43,18 +57,19 @@ chain = MarkovChain(
 
 ## Stream the chain into a bundle
 
-The one thing to get right is **node order**: an assignment vector is only meaningful in the
-dual graph's node order, so reorder each plan to match the order you embed.
+The one thing to get right is still **node order**. Since the chain was built on
+`Graph.from_networkx(mlc_graph)`, each plan should be written in `node_order`, the node order
+from that same GerryChain graph.
 
 ```python
-from binary_ensemble import BendlEncoder
-
-# The order assignments must be written in.
-node_order = list(graph.nodes)
-
-encoder = BendlEncoder("ensemble.bendl", overwrite=True)
-encoder.add_graph("gerrymandria.json", sort=None)          # embed the dual graph as-is
-encoder.add_metadata({"sampler": "ReCom", "epsilon": 0.01, "steps": 1000})
+encoder.add_metadata(
+    {
+        "sampler": "ReCom",
+        "epsilon": 0.01,
+        "steps": 1000,
+        "node_order": "mlc",
+    }
+)
 
 with encoder.stream("ben", variant="twodelta") as stream:  # twodelta suits ReCom chains
     for partition in chain:
@@ -67,12 +82,29 @@ with encoder.stream("ben", variant="twodelta") as stream:  # twodelta suits ReCo
 That's it — `ensemble.bendl` now holds all 1,000 plans plus the graph and metadata in one
 file. To read it back, see [Read and iterate an ensemble](read-and-iterate.md).
 
-## Make it smaller
+## Why this is better than reordering later
 
-The bundle above stores the graph in its original node order. For a much smaller file, reorder
-the graph (so assignments form long runs) and recompress to XBEN — see
-[Shrink a bundle for sharing](shrink-for-sharing.md). You can do this after the fact, so it
-never complicates the sampling loop.
+You *can* write a raw-order BEN bundle and later call `relabel_bundle()` to reorder the graph
+and rewrite the stream. But when you control the sampling code, it is cleaner to reorder first:
+
+1. `add_graph(..., sort="mlc")` stores the reordered graph and permutation map.
+2. `Graph.from_networkx(mlc_graph)` makes GerryChain run on that exact graph.
+3. `series.loc[node_order]` writes assignments in that exact order.
+
+That means the working BEN file is already locality-friendly, so every downstream step starts
+from the compressed-friendly order.
+
+## Archive the result
+
+After the run, recompress the embedded BEN stream to XBEN for sharing:
+
+```python
+from binary_ensemble import compress_stream
+
+compress_stream("ensemble.bendl", out_file="ensemble-archive.bendl")
+```
+
+For more on final archival workflows, see [Shrink a bundle for sharing](shrink-for-sharing.md).
 
 ```{tip}
 Encoding `twodelta` (the default) delta-compresses pairwise ReCom moves. If you log a full

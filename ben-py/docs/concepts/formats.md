@@ -59,6 +59,79 @@ when you specifically don't want the bundle packaging — for example, feeding a
 another tool that expects it.
 ```
 
+## How each format works
+
+The three containers build on each other: BEN defines the encoding, XBEN compresses a BEN
+stream, and BENDL packages a BEN or XBEN stream with its assets. Here's the mechanism behind
+each.
+
+### BEN: a layered encoding of one assignment at a time
+
+A BEN stream encodes each sample (one district id per node, read in node order) through four
+stacked layers:
+
+1. **Run-length encoding (RLE).** Consecutive nodes in the same district collapse to
+   `(district, length)` pairs — `[1, 1, 1, 2, 2, 2, 2, 3]` becomes `[(1, 3), (2, 4), (3, 1)]`.
+   Fewer, longer runs mean a smaller frame, which is exactly why
+   [node reordering](compression.md) is the biggest compression lever.
+2. **Bit-packing.** Each frame inspects its own largest district id and largest run length, then
+   packs every value and length to *exactly* that many bits — no wasted bytes. The example above
+   has a max id of `3` (2 bits) and a max length of `4` (3 bits), so each run costs 5 bits.
+3. **Frames.** Each sample becomes one self-describing frame: a short header (the two bit-widths
+   plus the payload's byte length) followed by the packed payload. Because the header states the
+   byte length up front, a reader can **skip** a sample it doesn't want without unpacking a single
+   payload bit — that's what makes [subsampling](../how-to/subsample.md) cheap.
+4. **Stream.** A 17-byte banner that names the [variant](variants.md), then the frames written
+   back-to-back. There's no global index or end marker, so frames can be appended one at a time
+   while sampling and read back until the input simply runs out.
+
+The variant only changes the **frame shape** — independent snapshots (`standard`), snapshots plus
+repeat counts (`mkv_chain`), or deltas against the previous sample (`twodelta`). All three ride on
+the same RLE and bit-packing layers underneath.
+
+### XBEN: LZMA2 over a byte-aligned rewrite
+
+XBEN is a BEN stream run through [LZMA2](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm)
+(the `xz` algorithm) — but **not** over the bit-packed frames directly. Bit-packing makes each plan
+small, but it pushes runs across byte boundaries (a run can start mid-byte), so identical patterns
+in different plans don't line up as identical bytes — and a byte-oriented compressor can't see the
+repetition.
+
+So XBEN first re-expands the stream into an intermediate columnar form where each run is a
+fixed-width, byte-aligned `(value, length)` pair and each frame ends with a zero sentinel. Now
+equivalent runs across plans line up **byte-for-byte**, and LZMA2 — which hunts for repeated byte
+sequences — collapses the redundancy across the whole ensemble. This is also why
+[district relabeling](compression.md) pays off: it makes structurally identical plans encode to
+identical bytes, which LZMA2 then deduplicates.
+
+```{admonition} Asymmetric cost
+:class: note
+Decompressing XBEN is fast (minutes, even for large files), but high-ratio LZMA2 *compression* is
+slow — block-level ensembles can take an hour. Encode to XBEN once for archival or transfer; do
+day-to-day reading against a BEN stream.
+```
+
+### BENDL: a self-describing, crash-recoverable bundle
+
+A bundle is a single seekable file laid out as a fixed-size header, then the asset payloads, then
+the embedded assignment stream, then a directory table at the end:
+
+- The **header** records which stream format is embedded (BEN or XBEN), where the stream lives, the
+  expanded **sample count** (so counting an ensemble is an O(1) header read, not a full scan), and a
+  CRC32C checksum over the stream bytes.
+- The **directory table** indexes every asset — the dual graph, the node permutation map, the
+  metadata, and any custom assets — by offset and length, each with its own CRC32C. A reader can
+  pull out just the graph without scanning the file, and verify it before trusting it.
+- The **assignment stream** is stored opaquely: the bundle never parses BEN/XBEN internals, it just
+  carries the bytes and notes the format. That's what lets you swap a BEN bundle for an XBEN one by
+  recompressing only the inner stream.
+
+The writer lays the file down in order — a provisional header marked *unfinalized*, then assets,
+then the stream, then the directory — and **patches the header last** to flip it to finalized and
+fill in the final lengths, checksum, and sample count. So if the process dies mid-write, the
+partial file is still recoverable (assignments read to end-of-file) and clearly flagged incomplete;
+that final header patch is the single commit point.
+
 ## Going deeper
 
 The exact byte layouts are documented in the format specifications, for readers building

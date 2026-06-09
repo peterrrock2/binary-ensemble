@@ -19,7 +19,7 @@ from binary_ensemble import relabel_bundle
 
 # Sort by a geographic key (often the most effective ordering). Use sort="mlc" or
 # sort="rcm" for a topology-based ordering instead.
-relabel_bundle("ensemble.bendl", out_file="ensemble.sorted.bendl", sort="key", key="GEOID20")
+relabel_bundle("ensemble.bendl", out_file="ensemble-sorted.bendl", sort="key", key="GEOID20")
 ```
 
 See [Why reordering shrinks files](../concepts/compression.md) for what `mlc`, `rcm`, and
@@ -33,7 +33,7 @@ unchanged:
 ```python
 from binary_ensemble import compress_stream
 
-compress_stream("ensemble.sorted.bendl", out_file="ensemble.xben.bendl")
+compress_stream("ensemble-sorted.bendl", out_file="ensemble-archive.bendl")
 ```
 
 The result is a single `.bendl` that's typically orders of magnitude smaller — and still

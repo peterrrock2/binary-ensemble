@@ -104,6 +104,7 @@ html_css_files = ["css/custom.css"]
 pygments_style = "friendly"
 pygments_dark_style = "github-dark"
 
+
 # -- Color palettes ----------------------------------------------------------
 #
 # Each palette gives furo a light-mode and a dark-mode brand color as
@@ -129,12 +130,12 @@ def _brand(primary, content):
 
 
 PALETTES = {
-    "ocean":  {"light": _brand("#0099cd", "#0066a0"), "dark": _brand("#36c5f0", "#5cc8f5")},
+    "ocean": {"light": _brand("#0099cd", "#0066a0"), "dark": _brand("#36c5f0", "#5cc8f5")},
     "indigo": {"light": _brand("#4f46e5", "#4338ca"), "dark": _brand("#818cf8", "#a5b4fc")},
     "forest": {"light": _brand("#047857", "#065f46"), "dark": _brand("#34d399", "#6ee7b7")},
     "sunset": {"light": _brand("#ea580c", "#c2410c"), "dark": _brand("#fb923c", "#fdba74")},
-    "plum":   {"light": _brand("#7c3aed", "#6d28d9"), "dark": _brand("#a78bfa", "#c4b5fd")},
-    "slate":  {"light": _brand("#334155", "#1e293b"), "dark": _brand("#94a3b8", "#cbd5e1")},
+    "plum": {"light": _brand("#7c3aed", "#6d28d9"), "dark": _brand("#a78bfa", "#c4b5fd")},
+    "slate": {"light": _brand("#334155", "#1e293b"), "dark": _brand("#94a3b8", "#cbd5e1")},
     # From a Huemint palette: a charcoal dark mode with neon-teal accents, and a
     # matching light mode that carries the teal as a darker, legible shade on white.
     "aurora": {
@@ -215,6 +216,8 @@ PALETTES = {
     },
     # From a Huemint palette: a warm near-black dark mode with a bright orange /
     # cerulean (complementary) accent pair; light mode darkens both for white.
+    # "color-brand-content": "#075985",
+    # "color-brand-content": "#176995",
     "tangerine": {
         "dark_pygments": "fruity",
         "light_pygments": "warm-light",
@@ -223,7 +226,7 @@ PALETTES = {
             "color-background-secondary": "#f1f0e6",
             "color-foreground-primary": "#140f0c",
             "color-brand-primary": "#c2410c",
-            "color-brand-content": "#004483",
+            "color-brand-content": "#0077c4",
         },
         "dark": {
             "color-background-primary": "#1c1917",
@@ -340,7 +343,15 @@ CODE_THEMES = {
 def _warm_light():
     from pygments.style import Style
     from pygments.token import (
-        Comment, Error, Generic, Keyword, Name, Number, Operator, String, Token,
+        Comment,
+        Error,
+        Generic,
+        Keyword,
+        Name,
+        Number,
+        Operator,
+        String,
+        Token,
     )
 
     return type(
@@ -352,35 +363,35 @@ def _warm_light():
             "highlight_color": "#e7dcc4",
             "styles": {
                 Token: "#20180f",
-                Comment: "italic #857762",
+                Comment: "italic #685c4b",
                 Comment.Preproc: "noitalic #b0420a",
                 Keyword: "bold #b0420a",
-                Keyword.Type: "nobold #9a5b00",
-                Keyword.Constant: "nobold #9a5b00",
+                Keyword.Type: "nobold #623c00",
+                Keyword.Constant: "nobold #623c00",
                 Operator: "#6a4a2a",
                 Operator.Word: "bold #b0420a",
-                Name.Builtin: "#9a5b00",
-                Name.Function: "#0a5a86",
+                Name.Builtin: "bold #623c00",
+                Name.Function: "#08527d",
                 Name.Class: "bold #0a5a86",
                 Name.Namespace: "bold #0a5a86",
                 Name.Exception: "bold #b3261e",
                 Name.Variable: "#20180f",
-                Name.Constant: "#9a5b00",
+                Name.Constant: "#623c00",
                 Name.Decorator: "#b0420a",
                 Name.Attribute: "#0a5a86",
-                Name.Tag: "bold #0e6a60",
-                String: "#0e6a60",
-                String.Doc: "italic #857762",
+                Name.Tag: "bold #0a544c",
+                String: "#0a544c",
+                String.Doc: "italic #685c4b",
                 String.Escape: "bold #b0420a",
-                Number: "#8a5a00",
+                Number: "bold #7c2560",
                 Generic.Heading: "bold #20180f",
                 Generic.Subheading: "bold #0a5a86",
                 Generic.Deleted: "#b3261e",
-                Generic.Inserted: "#0e6a60",
+                Generic.Inserted: "#0a544c",
                 Generic.Error: "#b3261e",
                 Generic.Emph: "italic",
                 Generic.Strong: "bold",
-                Generic.Prompt: "bold #857762",
+                Generic.Prompt: "bold #685c4b",
                 Error: "border:#b3261e",
             },
         },

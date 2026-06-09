@@ -18,6 +18,9 @@ for assignment in BendlDecoder("ensemble.bendl").subsample_indices([1, 50, 100])
 
 ## By a contiguous range
 
+Ranges are **1-based and inclusive**: `subsample_range(10, 15)` yields samples 10, 11, 12,
+13, 14, and 15.
+
 ```python
 for assignment in BendlDecoder("ensemble.bendl").subsample_range(10, 15):
     print(assignment[:10])
