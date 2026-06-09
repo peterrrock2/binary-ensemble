@@ -219,7 +219,7 @@ PALETTES = {
     # "color-brand-content": "#075985",
     # "color-brand-content": "#176995",
     "tangerine": {
-        "dark_pygments": "fruity",
+        "dark_pygments": "warm-dark",
         "light_pygments": "warm-light",
         "light": {
             "color-background-primary": "#fbfaf2",
@@ -300,6 +300,7 @@ ogp_social_cards = {"enable": False}
 # the "Dark"/"Light" labels are just hints about which mode a style suits.
 CODE_THEMES = {
     "Dark": [
+        "warm-dark",
         "github-dark",
         "gruvbox-dark",
         "one-dark",
@@ -364,30 +365,30 @@ def _warm_light():
             "styles": {
                 Token: "#20180f",
                 Comment: "italic #685c4b",
-                Comment.Preproc: "noitalic #b0420a",
-                Keyword: "bold #b0420a",
+                Comment.Preproc: "noitalic #c2410c",
+                Keyword: "bold #c2410c",
                 Keyword.Type: "nobold #623c00",
-                Keyword.Constant: "nobold #623c00",
+                Keyword.Constant: "nobold #e36397",
                 Operator: "#6a4a2a",
-                Operator.Word: "bold #b0420a",
-                Name.Builtin: "bold #623c00",
-                Name.Function: "#08527d",
+                Operator.Word: "bold #c2410c",
+                Name.Builtin: "bold #08527d",
+                Name.Function: "bold #08527d",
                 Name.Class: "bold #0a5a86",
                 Name.Namespace: "bold #0a5a86",
-                Name.Exception: "bold #b3261e",
+                Name.Exception: "bold #d10a46",
                 Name.Variable: "#20180f",
                 Name.Constant: "#623c00",
-                Name.Decorator: "#b0420a",
+                Name.Decorator: "#c2410c",
                 Name.Attribute: "#0a5a86",
-                Name.Tag: "bold #0a544c",
-                String: "#0a544c",
+                Name.Tag: "bold #09814a",
+                String: "bold #09814a",
                 String.Doc: "italic #685c4b",
-                String.Escape: "bold #b0420a",
-                Number: "bold #7c2560",
+                String.Escape: "bold #c2410c",
+                Number: "bold #861657",
                 Generic.Heading: "bold #20180f",
                 Generic.Subheading: "bold #0a5a86",
                 Generic.Deleted: "#b3261e",
-                Generic.Inserted: "#0a544c",
+                Generic.Inserted: "#09814a",
                 Generic.Error: "#b3261e",
                 Generic.Emph: "italic",
                 Generic.Strong: "bold",
@@ -398,7 +399,71 @@ def _warm_light():
     )
 
 
-CUSTOM_STYLES = {"warm-light": _warm_light()}
+# "warm-dark" is the dark companion to warm-light: the SAME token roles and bold/italic
+# treatment, in bright dark-mode colors. It keeps fruity's blue / green / orange family and
+# warm-light's magenta numbers; every token is chosen to clear ~5.5:1+ on the dark canvas.
+# (Mirrors warm-light's token set, so the two themes feel consistent across light/dark.)
+def _warm_dark():
+    from pygments.style import Style
+    from pygments.token import (
+        Comment,
+        Error,
+        Generic,
+        Keyword,
+        Name,
+        Number,
+        Operator,
+        String,
+        Token,
+    )
+
+    return type(
+        "WarmDarkStyle",
+        (Style,),
+        {
+            "name": "warm-dark",
+            "background_color": "#292524",
+            "highlight_color": "#2a2218",
+            "line_number_color": "inherit",
+            "line_number_background_color": "transparent",
+            "styles": {
+                Token: "#f4efe6",
+                Comment: "italic #9a8f7c",
+                Comment.Preproc: "noitalic #ff750f",
+                Keyword: "bold #ff750f",
+                Keyword.Type: "nobold #d8a657",
+                Keyword.Constant: "nobold #f27da4",
+                Operator: "#c2b9a8",
+                Operator.Word: "bold #ff750f",
+                Name.Builtin: "bold #3a96cf",
+                Name.Function: "bold #3a96cf",
+                Name.Class: "bold #3a96cf",
+                Name.Namespace: "bold #3a96cf",
+                Name.Exception: "bold #e92063",
+                Name.Variable: "#f4efe6",
+                Name.Constant: "#d8a657",
+                Name.Decorator: "#ff750f",
+                Name.Attribute: "#3a96cf",
+                Name.Tag: "bold #3fb950",
+                String: "bold #79b473",
+                String.Doc: "italic #9a8f7c",
+                String.Escape: "bold #ff750f",
+                Number: "bold #c490d1",
+                Generic.Heading: "bold #f4efe6",
+                Generic.Subheading: "bold #3a96cf",
+                Generic.Deleted: "#ff6b6b",
+                Generic.Inserted: "#3fb950",
+                Generic.Error: "#ff6b6b",
+                Generic.Emph: "italic",
+                Generic.Strong: "bold",
+                Generic.Prompt: "bold #9a8f7c",
+                Error: "border:#ff6b6b",
+            },
+        },
+    )
+
+
+CUSTOM_STYLES = {"warm-light": _warm_light(), "warm-dark": _warm_dark()}
 
 
 def _pygments_theme_css():
