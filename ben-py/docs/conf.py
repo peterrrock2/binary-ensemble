@@ -145,12 +145,30 @@ def _brand(primary, content):
 
 
 PALETTES = {
-    "ocean": {"light": _brand("#0099cd", "#0066a0"), "dark": _brand("#36c5f0", "#5cc8f5")},
-    "indigo": {"light": _brand("#4f46e5", "#4338ca"), "dark": _brand("#818cf8", "#a5b4fc")},
-    "forest": {"light": _brand("#047857", "#065f46"), "dark": _brand("#34d399", "#6ee7b7")},
-    "sunset": {"light": _brand("#ea580c", "#c2410c"), "dark": _brand("#fb923c", "#fdba74")},
-    "plum": {"light": _brand("#7c3aed", "#6d28d9"), "dark": _brand("#a78bfa", "#c4b5fd")},
-    "slate": {"light": _brand("#334155", "#1e293b"), "dark": _brand("#94a3b8", "#cbd5e1")},
+    "ocean": {
+        "light": _brand("#0099cd", "#0066a0"),
+        "dark": _brand("#36c5f0", "#5cc8f5"),
+    },
+    "indigo": {
+        "light": _brand("#4f46e5", "#4338ca"),
+        "dark": _brand("#818cf8", "#a5b4fc"),
+    },
+    "forest": {
+        "light": _brand("#047857", "#065f46"),
+        "dark": _brand("#34d399", "#6ee7b7"),
+    },
+    "sunset": {
+        "light": _brand("#ea580c", "#c2410c"),
+        "dark": _brand("#fb923c", "#fdba74"),
+    },
+    "plum": {
+        "light": _brand("#7c3aed", "#6d28d9"),
+        "dark": _brand("#a78bfa", "#c4b5fd"),
+    },
+    "slate": {
+        "light": _brand("#334155", "#1e293b"),
+        "dark": _brand("#94a3b8", "#cbd5e1"),
+    },
     # From a Huemint palette: a charcoal dark mode with neon-teal accents, and a
     # matching light mode that carries the teal as a darker, legible shade on white.
     "aurora": {
@@ -258,7 +276,12 @@ _palette = PALETTES[ACTIVE_PALETTE]
 # Whether to render the in-browser palette/code-theme dropdowns. Off by default so the
 # published site ships locked to the active palette and its default code themes; set
 # DOCS_SWITCHER=1 while developing to expose the controls and experiment live.
-SHOW_SWITCHER = os.environ.get("DOCS_SWITCHER", "").lower() not in ("", "0", "false", "no")
+SHOW_SWITCHER = os.environ.get("DOCS_SWITCHER", "").lower() not in (
+    "",
+    "0",
+    "false",
+    "no",
+)
 
 html_theme_options = {
     "source_repository": "https://github.com/peterrrock2/binary-ensemble/",
@@ -485,8 +508,12 @@ def _pygments_theme_css():
     from pygments.formatters import HtmlFormatter
 
     menu = [s for group in CODE_THEMES.values() for s in group]
-    dark_defaults = [p["dark_pygments"] for p in PALETTES.values() if p.get("dark_pygments")]
-    light_defaults = [p["light_pygments"] for p in PALETTES.values() if p.get("light_pygments")]
+    dark_defaults = [
+        p["dark_pygments"] for p in PALETTES.values() if p.get("dark_pygments")
+    ]
+    light_defaults = [
+        p["light_pygments"] for p in PALETTES.values() if p.get("light_pygments")
+    ]
 
     # A style name may resolve to a builtin (the string) or a registered custom class.
     def make_formatter(style):
@@ -506,7 +533,9 @@ def _pygments_theme_css():
     # Explicit picks (and any palette default, so it resolves even if absent from the
     # menu) apply in any mode via the order-independent `html body` prefix.
     for style in dict.fromkeys(menu + dark_defaults + light_defaults):
-        blocks.append(rules(make_formatter(style), f'html body[data-code-theme="{style}"]'))
+        blocks.append(
+            rules(make_formatter(style), f'html body[data-code-theme="{style}"]')
+        )
     # "Auto" applies a palette's dark/light default, each scoped to its own mode so the
     # other mode keeps the global Pygments style. The auto-mode (`prefers-color-scheme`)
     # variants mirror Furo's `:not([data-theme=…])` selectors for system readers.
@@ -517,8 +546,12 @@ def _pygments_theme_css():
         blocks.append("@media (prefers-color-scheme: dark){\n" + auto + "\n}")
     for style in dict.fromkeys(light_defaults):
         fmt = make_formatter(style)
-        blocks.append(rules(fmt, f'body[data-theme="light"][data-code-auto-light="{style}"]'))
-        auto = rules(fmt, f'body:not([data-theme="dark"])[data-code-auto-light="{style}"]')
+        blocks.append(
+            rules(fmt, f'body[data-theme="light"][data-code-auto-light="{style}"]')
+        )
+        auto = rules(
+            fmt, f'body:not([data-theme="dark"])[data-code-auto-light="{style}"]'
+        )
         blocks.append("@media (prefers-color-scheme: light){\n" + auto + "\n}")
     return "\n".join(blocks)
 
