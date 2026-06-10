@@ -79,6 +79,49 @@ fn assignment_encode_ben_offsets_values_and_writes_ben() {
 }
 
 #[test]
+fn assignment_decode_ben_rejects_district_id_zero() {
+    // BEN ids are one-based in the PCOMPRESS convention; id 0 has no zero-based counterpart.
+    // Saturating it onto 0 would silently alias districts 0 and 1.
+    let jsonl = br#"{"assignment":[0,1,1],"sample":1}
+"#;
+    let mut ben = Vec::new();
+    encode_jsonl_to_ben(BufReader::new(&jsonl[..]), &mut ben, BenVariant::Standard).unwrap();
+
+    let mut out = Vec::new();
+    let err = assignment_decode_ben(Cursor::new(ben), &mut out).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("district id 0"));
+}
+
+#[test]
+fn assignment_encode_ben_rejects_district_id_65535() {
+    // Zero-based id 65535 has no one-based u16 counterpart; wrapping would silently map it to 0.
+    let input = b"[0,65535]\n";
+    let mut ben = Vec::new();
+    let err = assignment_encode_ben(BufReader::new(&input[..]), &mut ben).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("65535"));
+}
+
+#[test]
+fn assignment_encode_ben_rejects_malformed_line_without_panicking() {
+    let input = b"[0,1]\nnot json at all\n";
+    let mut ben = Vec::new();
+    let err = assignment_encode_ben(BufReader::new(&input[..]), &mut ben).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("malformed"));
+}
+
+#[test]
+fn assignment_encode_xben_rejects_malformed_line_without_panicking() {
+    let input = b"[0,1,oops\n";
+    let mut xben = Vec::new();
+    let err = assignment_encode_xben(BufReader::new(&input[..]), &mut xben).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("malformed"));
+}
+
+#[test]
 fn resolved_output_path_returns_none_when_both_paths_absent() {
     // When neither output_file nor input_file is given, stdout mode: Ok(None).
     let result = resolved_output_path(Mode::BenToPc, None, None, false).unwrap();
