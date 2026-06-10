@@ -27,6 +27,12 @@ pub enum RelabelError {
         assignment_len: usize,
     },
 
+    #[error(
+        "node permutation map references old index {old_idx} more than once; \
+         a permutation must use each old index exactly once"
+    )]
+    DuplicateOldIndex { old_idx: usize },
+
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
 }

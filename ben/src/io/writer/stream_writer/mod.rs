@@ -321,7 +321,15 @@ impl<W: Write> Drop for BenStreamWriter<W> {
     fn drop(&mut self) {
         if self.inner.is_some() && matches!(self.state, WriterState::Open | WriterState::BodyClosed)
         {
-            let _ = self.finish();
+            // Best-effort safety net only: Drop cannot propagate errors, so a failed final flush
+            // here means the output is incomplete. Callers that care must call `finish()`
+            // explicitly; the warn makes a forgotten finish diagnosable instead of silent.
+            if let Err(e) = self.finish() {
+                tracing::warn!(
+                    "BenStreamWriter dropped without an explicit finish and the final flush \
+                     failed; output is incomplete: {e}"
+                );
+            }
         }
     }
 }

@@ -183,7 +183,7 @@ pub fn relabel_ben_file<R: Read, W: Write>(
         options.run_policy,
         |a| match &options.transform {
             RelabelTransform::Identity => Ok(a.to_vec()),
-            RelabelTransform::FirstSeen => Ok(first_seen_relabel_assignment(a)),
+            RelabelTransform::FirstSeen => first_seen_relabel_assignment(a),
             RelabelTransform::NodePermutation(_) => {
                 permute_assignment(a, permutation.as_ref().expect("set above"))
             }
@@ -312,10 +312,18 @@ fn relabel_first_seen_via_byte_walk<R: Read, W: Write>(
         let n_bytes = reader.read_u32::<BigEndian>()?;
 
         let mut ben_line = decode_ben_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
-        first_seen_relabel_rle(&mut ben_line);
+        first_seen_relabel_rle(&mut ben_line)?;
 
         let count_occurrences = if input_variant == BenVariant::MkvChain {
             let count = reader.read_u16::<BigEndian>()?;
+            // A zero count is a corrupt frame; re-emitting it would write output every reader
+            // rejects, so fail at the source instead.
+            if count == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "MkvChain frame count must be greater than zero",
+                ));
+            }
             max_samples
                 .map(|limit| ((limit - sample_number).min(count as usize)) as u16)
                 .unwrap_or(count)

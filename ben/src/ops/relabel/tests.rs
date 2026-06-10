@@ -28,16 +28,20 @@ impl Read for ErrorAfterOneByte {
 
 fn shuffle_with_mapping<T>(vec: &mut [T]) -> HashMap<usize, usize>
 where
-    T: Clone + std::cmp::PartialEq,
+    T: Clone,
 {
+    // Shuffle *indices* and apply that permutation, so the returned `new -> old` map is a true
+    // bijection. (Matching shuffled values back to `position(first equal value)` would collapse
+    // duplicate values onto one old index and produce a non-permutation map.)
     let mut rng = ChaCha8Rng::seed_from_u64(42);
     let original_vec = vec.to_vec();
-    vec.shuffle(&mut rng);
+    let mut old_indices: Vec<usize> = (0..vec.len()).collect();
+    old_indices.shuffle(&mut rng);
 
     let mut map = HashMap::new();
-    for (new_index, item) in vec.iter().enumerate() {
-        let original_index = original_vec.iter().position(|i| i == item).unwrap();
-        map.insert(new_index, original_index);
+    for (new_index, &old_index) in old_indices.iter().enumerate() {
+        vec[new_index] = original_vec[old_index].clone();
+        map.insert(new_index, old_index);
     }
     map
 }
@@ -280,6 +284,23 @@ fn test_relabel_ben_line_with_map() {
         crate::format::banners::STANDARD_BEN_BANNER
     );
     assert_eq!(&buf[BANNER_LEN..], expected.as_slice());
+}
+
+#[test]
+fn first_seen_fast_path_rejects_zero_count_frame() {
+    // A MkvChain frame with count == 0 is corrupt; the byte-walking fast path must error rather
+    // than re-emit a frame every downstream reader rejects.
+    let frame = BenEncodeFrame::from_assignment(vec![1u16, 2, 2], BenVariant::MkvChain, Some(0));
+    let with_banner_in = with_banner(BenVariant::MkvChain, frame.as_slice());
+
+    let err = relabel_ben_file(
+        with_banner_in.as_slice(),
+        Vec::new(),
+        RelabelOptions::first_seen(),
+    )
+    .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("count"));
 }
 
 #[test]
