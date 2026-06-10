@@ -1,4 +1,3 @@
-use super::encode::BenEncodeFrame;
 use crate::codec::decode::MAX_FRAME_PAYLOAD_BYTES;
 use crate::BenVariant;
 use byteorder::{BigEndian, ReadBytesExt};
@@ -18,6 +17,54 @@ fn check_payload_len(n_bytes: u32) -> io::Result<()> {
         ));
     }
     Ok(())
+}
+
+/// Unpack a TwoDelta frame's bit-packed run lengths, rejecting interior zeros.
+///
+/// The encoder never emits a zero run length, so a zero slot is legal only as a trailing
+/// byte-padding artifact (when `max_len_bits` is narrow, the final byte's zero padding can form
+/// one or more complete all-zero slots). A zero followed by a real run length is interior
+/// corruption: silently dropping it would shift the alternation parity of every subsequent run
+/// and decode to a plausible-but-wrong assignment, so it is rejected instead. This is the
+/// TwoDelta analog of the interior-zero discipline in
+/// [`decode_ben_line`](crate::codec::decode::decode_ben_line).
+pub(crate) fn unpack_twodelta_run_lengths(
+    payload: &[u8],
+    max_len_bits: u8,
+) -> io::Result<Vec<u16>> {
+    let mut run_lengths = Vec::new();
+    let mut buffer: u32 = 0;
+    let mut n_bits_in_buff: u16 = 0;
+    // Zero slots seen since the last real run length. Accepted as padding if the frame ends,
+    // rejected as interior corruption if a real run length follows.
+    let mut pending_zero_slots: usize = 0;
+
+    for &byte in payload {
+        // Place the incoming byte at the top of the 32-bit shift register, below any bits already
+        // buffered; extraction always reads from the register's high end.
+        buffer |= ((byte as u32) << 24) >> n_bits_in_buff;
+        n_bits_in_buff += 8;
+
+        while n_bits_in_buff >= max_len_bits as u16 {
+            let item = (buffer >> (32 - max_len_bits)) as u16;
+            buffer <<= max_len_bits;
+            n_bits_in_buff -= max_len_bits as u16;
+            if item == 0 {
+                pending_zero_slots += 1;
+            } else {
+                if pending_zero_slots > 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "TwoDelta frame contains an interior zero run length; the encoder never \
+                         emits zero-length runs",
+                    ));
+                }
+                run_lengths.push(item);
+            }
+        }
+    }
+
+    Ok(run_lengths)
 }
 
 /// One sample's encoded bytes at the frame layer, freshly read from a wire stream.
@@ -158,17 +205,23 @@ impl BenDecodeFrame {
 
         let count = reader.read_u16::<BigEndian>()?;
 
-        // Reuse the encode-side bit unpacker so the unpack logic lives in one place; we then drop
-        // the resulting BenEncodeFrame's raw_bytes since the decode-side TwoDelta arm doesn't keep
-        // them.
         let pair = (pair_a, pair_b);
-        let encode_frame = BenEncodeFrame::from_parts(pair, max_len_bits, payload, count);
-        let run_lengths = match encode_frame {
-            BenEncodeFrame::TwoDelta {
-                run_length_vector, ..
-            } => run_length_vector,
-            _ => unreachable!("BenEncodeFrame::from_parts always returns TwoDelta"),
-        };
+        let run_lengths = unpack_twodelta_run_lengths(&payload, max_len_bits)?;
+
+        // n_bytes consistency: the encoder writes `n_bytes = ceil(runs * width / 8)`. Any other
+        // relationship between n_bytes and the recovered run count is a corrupt-frame signal,
+        // exactly mirroring the Standard/MkvChain payload check in `decode_ben_line`.
+        let expected_bytes = (run_lengths.len() as u64 * u64::from(max_len_bits)).div_ceil(8);
+        if u64::from(n_bytes) != expected_bytes {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "inconsistent TwoDelta frame size: n_bytes={n_bytes} but {} run length(s) at \
+                     {max_len_bits} bit(s) each require {expected_bytes} byte(s)",
+                    run_lengths.len()
+                ),
+            ));
+        }
 
         Ok(Some(Self::TwoDelta {
             pair,

@@ -162,6 +162,47 @@ fn ben_decode_standard_non_eof_read_error_propagates() {
     assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
 }
 
+// ── unpack_twodelta_run_lengths ──────────────────────────────────────────────
+
+#[test]
+fn twodelta_unpack_accepts_trailing_zero_padding() {
+    // width=4, payload 0xF0 → slots [15, 0]. The zero slot is the final byte's padding artifact
+    // and must be dropped without error.
+    let runs = super::decode::unpack_twodelta_run_lengths(&[0xF0], 4).unwrap();
+    assert_eq!(runs, vec![15]);
+}
+
+#[test]
+fn twodelta_unpack_rejects_interior_zero_run_length() {
+    // width=4, payload 0x0F → slots [0, 15]. The zero precedes a real run length, so it cannot be
+    // padding: silently dropping it would shift the alternation parity of every later run and
+    // decode to a plausible-but-wrong assignment.
+    let err = super::decode::unpack_twodelta_run_lengths(&[0x0F], 4).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("interior zero"));
+}
+
+#[test]
+fn ben_decode_twodelta_interior_zero_errors_through_frame_reader() {
+    // Delta frame body: pair (1,2), width 4, n_bytes 1, payload 0x0F (interior zero), count 1.
+    let data: Vec<u8> = vec![0, 1, 0, 2, 4, 0, 0, 0, 1, 0x0F, 0, 1];
+    let err = BenDecodeFrame::from_reader(&mut io::Cursor::new(data), BenVariant::TwoDelta)
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("interior zero"));
+}
+
+#[test]
+fn ben_decode_twodelta_inconsistent_n_bytes_errors() {
+    // Delta frame claiming n_bytes=2 whose payload decodes to a single width-4 run length: the
+    // encoder would have written n_bytes = ceil(1 * 4 / 8) = 1, so 2 is a corrupt-frame signal.
+    let data: Vec<u8> = vec![0, 1, 0, 2, 4, 0, 0, 0, 2, 0xF0, 0x00, 0, 1];
+    let err = BenDecodeFrame::from_reader(&mut io::Cursor::new(data), BenVariant::TwoDelta)
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("inconsistent"));
+}
+
 #[test]
 fn ben_decode_oversized_n_bytes_rejected_before_allocating() {
     // Headers declaring an absurd payload length must be rejected before the payload buffer is

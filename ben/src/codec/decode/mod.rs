@@ -1,5 +1,14 @@
 //! Decoding routines for BEN and XBEN formats.
 
+/// Upper bound on the *expanded* length of a single decoded assignment (the sum of a frame's run
+/// lengths — i.e. the number of dual-graph nodes). Each 4-byte ben32 run can legally demand up to
+/// 65,535 elements, so without a bound on the sum a small adversarial frame could request a
+/// multi-gigabyte expansion from a few kilobytes of input. The cap is a reader-side sanity bound,
+/// not a wire-format limit: at ~134 million nodes it sits more than an order of magnitude above
+/// any real dual graph (national census-block graphs run ~10 million nodes) while keeping the
+/// worst-case single-assignment allocation at 256 MiB.
+pub(crate) const MAX_ASSIGNMENT_LEN: u64 = 1 << 27;
+
 mod ben;
 mod ben32;
 pub(crate) mod errors;

@@ -286,6 +286,16 @@ fn test_ben32_to_ben_line_rejects_invalid_length() {
 }
 
 #[test]
+fn test_ben32_to_ben_line_rejects_zero_length_run() {
+    // Run (7, 0) is not the sentinel, and the encoder never emits zero-length runs. Re-emitting
+    // it would write a BEN frame that downstream readers reject, so the translator errors here.
+    let err =
+        ben32_to_ben_line(vec![0, 7, 0, 0, 0, 0, 0, 0], XBenVariant::Standard, 0).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("zero length"));
+}
+
+#[test]
 fn test_ben32_to_ben_line_rejects_missing_terminator() {
     let err =
         ben32_to_ben_line(vec![0, 1, 0, 2, 0, 0, 0, 1], XBenVariant::Standard, 0).unwrap_err();

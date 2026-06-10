@@ -205,6 +205,19 @@ fn encode_ben_to_xben_mkvchain_roundtrip() {
 }
 
 #[test]
+fn decode_twodelta_frame_rejects_zero_run_length() {
+    use crate::codec::decode::decode_twodelta_frame;
+    use crate::codec::BenEncodeFrame;
+
+    // The delta paint loop assumes no zero-length runs exist (a zero would underflow its
+    // per-run countdown and mispaint positions), so a frame carrying one is rejected up front.
+    let frame = BenEncodeFrame::from_run_lengths((1, 2), vec![1, 0, 1], Some(1));
+    let err = decode_twodelta_frame(vec![1, 2], &frame).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("zero"));
+}
+
+#[test]
 fn decode_error_remaining_variants() {
     // Test DecodeError variants we haven't covered
     let err = super::DecodeError::XBenUnknownFrameTag { tag: 0xFF };

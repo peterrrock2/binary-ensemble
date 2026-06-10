@@ -227,6 +227,17 @@ A reader MUST:
 A reader MUST surface an error (not a truncated result) if input ends partway through a frame
 header, payload, or trailing count.
 
+A reader MUST reject a run with a zero length anywhere it can observe one: in a bit-packed frame
+payload (outside the final byte's zero-padding region) and in a BEN32 run that is not the frame
+sentinel. The encoder never produces zero-length runs, so any such run is a corruption signal;
+tolerating one would either silently drop data or shift later runs out of position.
+
+A reader MAY impose an implementation-defined sanity bound on the expanded length of a single
+assignment (the sum of a frame's run lengths) and reject frames that exceed it. The wire format
+places no limit on assignment length, but each run can demand up to 65535 elements, so without a
+bound a small malicious frame could request an arbitrarily large allocation. The bound MUST sit
+well above any real dual graph (this implementation uses 2^27 ≈ 134 million elements).
+
 Frame-level subsampling does not require unpacking payload bits: a reader can skip a frame by
 reading its 6-byte header, seeking past `n_bytes` (and, for MkvChain, the 2-byte count), and only
 unpacking the payloads of frames it keeps.

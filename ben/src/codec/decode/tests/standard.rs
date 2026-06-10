@@ -370,6 +370,35 @@ fn test_decode_xben_to_jsonl_rejects_truncated_ben32_body() {
 }
 
 #[test]
+fn test_decode_xben_to_jsonl_rejects_zero_length_ben32_run() {
+    // Run (value=7, len=0): not the frame sentinel (value bytes are non-zero), and the encoder
+    // never emits zero-length runs — silently skipping it would mask corruption.
+    let xz = standard_xben_from_ben32_body(&[0, 7, 0, 0, 0, 0, 0, 0]);
+
+    let mut out = Vec::new();
+    let err = decode_xben_to_jsonl(BufReader::new(xz.as_slice()), &mut out).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("zero length"));
+}
+
+#[test]
+fn test_decode_xben_to_jsonl_rejects_oversized_expansion() {
+    // 2049 runs of 65,535 elements expand past the 2^27 sanity bound. Each run is individually
+    // legal, so only the bound on the sum catches this.
+    let mut body = Vec::new();
+    for _ in 0..2049 {
+        body.extend_from_slice(&[0, 1, 0xFF, 0xFF]);
+    }
+    body.extend_from_slice(&[0, 0, 0, 0]);
+    let xz = standard_xben_from_ben32_body(&body);
+
+    let mut out = Vec::new();
+    let err = decode_xben_to_jsonl(BufReader::new(xz.as_slice()), &mut out).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("sanity bound"));
+}
+
+#[test]
 fn test_decode_xben_to_ben_accepts_empty_ben32_body() {
     // A banner with no frames is a clean end at a frame boundary, not a truncation.
     let xz = standard_xben_from_ben32_body(&[]);

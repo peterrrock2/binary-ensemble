@@ -52,6 +52,18 @@ pub(crate) fn ben32_to_ben_line(
         let value = (encoded >> 16) as u16;
         let len = (encoded & 0xFFFF) as u16;
 
+        // Only the frame sentinel may carry a zero length. Re-emitting a zero-length run would
+        // write a BEN frame that every downstream reader rejects, so fail at the source instead.
+        if len == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "ben32 run for value {value} has zero length; only the frame sentinel may \
+                     carry a zero length"
+                ),
+            ));
+        }
+
         ben32_rle.push((value, len));
     }
 

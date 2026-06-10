@@ -16,12 +16,23 @@ use std::io;
 /// # Returns
 ///
 /// Returns the updated assignment vector, or an error if the run lengths are exhausted before all
-/// relevant positions are covered.
+/// relevant positions are covered or any run length is zero.
 pub(crate) fn apply_twodelta_runs_to_assignment(
     mut assignment: Vec<u16>,
     pair: (u16, u16),
     run_lengths: &[u16],
 ) -> io::Result<Vec<u16>> {
+    // The encoder never emits a zero run length, and the paint loop below assumes none exist: a
+    // zero reaching it would underflow `remaining_in_run` and silently mispaint positions. Every
+    // unpacker rejects zeros before this point; this check keeps the invariant local so no future
+    // caller can reintroduce the hazard.
+    if run_lengths.contains(&0) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "TwoDelta run lengths contain a zero; the encoder never emits zero-length runs",
+        ));
+    }
+
     let (first, second) = pair;
 
     let mut run_idx = 0usize;

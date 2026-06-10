@@ -34,6 +34,8 @@ pub(crate) const MAX_FRAME_PAYLOAD_BYTES: u32 = 1 << 26;
 /// - `n_bytes` not equal to `ceil(real_pairs * (mvb + mlb) / 8)` after decoding (the encoder uses
 ///   `div_ceil` to compute `n_bytes`, so any other value indicates a malformed or maliciously
 ///   crafted frame).
+/// - The sum of the run lengths exceeding [`super::MAX_ASSIGNMENT_LEN`], so a small frame cannot
+///   demand a multi-gigabyte expansion when the runs are later materialized.
 pub fn decode_ben_line<R: Read>(
     mut reader: R,
     max_val_bits: u8,
@@ -162,6 +164,21 @@ pub fn decode_ben_line<R: Read>(
         ));
     }
 
+    // Expansion sanity bound: callers materialize the runs into a full assignment vector, so the
+    // sum of the run lengths is the allocation a frame can demand. Reject absurd sums here, before
+    // any caller pays for the expansion.
+    let expanded_len: u64 = output_rle.iter().map(|&(_, len)| u64::from(len)).sum();
+    if expanded_len > super::MAX_ASSIGNMENT_LEN {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "BEN frame expands to {expanded_len} elements, which exceeds the \
+                 {} sanity bound",
+                super::MAX_ASSIGNMENT_LEN
+            ),
+        ));
+    }
+
     Ok(output_rle)
 }
 
@@ -198,6 +215,25 @@ mod tests {
             .expect_err("must reject");
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         assert!(err.to_string().contains("inconsistent"));
+    }
+
+    #[test]
+    fn decode_ben_line_rejects_oversized_expansion() {
+        use crate::codec::BenEncodeFrame;
+        use crate::BenVariant;
+        // 2049 runs of 65,535 elements expand past the 2^27 sanity bound; each run is
+        // individually legal, so only the bound on the sum catches this.
+        let frame =
+            BenEncodeFrame::from_rle(vec![(1u16, u16::MAX); 2049], BenVariant::Standard, None);
+        let err = decode_ben_line(
+            Cursor::new(frame.payload()),
+            frame.max_val_bit_count().unwrap(),
+            frame.max_len_bit_count(),
+            frame.n_bytes(),
+        )
+        .expect_err("must reject");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("sanity bound"));
     }
 
     #[test]

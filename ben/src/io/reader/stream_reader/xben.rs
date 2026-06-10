@@ -70,9 +70,32 @@ fn pop_twodelta_frame_from_overflow(overflow: &[u8]) -> Option<io::Result<Popped
 
             let mut runs = Vec::with_capacity(run_count);
             let mut cursor = 5usize;
+            let mut expanded_len = 0u64;
             for _ in 0..run_count {
                 let value = u16::from_be_bytes([overflow[cursor], overflow[cursor + 1]]);
                 let len = u16::from_be_bytes([overflow[cursor + 2], overflow[cursor + 3]]);
+                // The encoder never emits zero-length runs; tolerating one here would silently
+                // diverge from the bit-packed TwoDelta path, which rejects them.
+                if len == 0 {
+                    return Some(Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!(
+                            "XBEN TwoDelta full frame contains a zero-length run for value {value}"
+                        ),
+                    )));
+                }
+                // Expansion sanity bound: each run can demand up to 65,535 elements, so the sum is
+                // what a frame can force the reader to allocate.
+                expanded_len += u64::from(len);
+                if expanded_len > crate::codec::decode::MAX_ASSIGNMENT_LEN {
+                    return Some(Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!(
+                            "XBEN TwoDelta full frame expands past the {} element sanity bound",
+                            crate::codec::decode::MAX_ASSIGNMENT_LEN
+                        ),
+                    )));
+                }
                 runs.push((value, len));
                 cursor += 4;
             }
@@ -190,8 +213,16 @@ pub(super) fn next_record_xben<R: Read>(
                         inner.overflow.drain(..consumed);
                         return Some(Err(zero_count_frame_error("XBEN")));
                     }
-                    let assignment = decode_xben_frame_to_assignment(frame_bytes, variant)
-                        .expect("complete frame from pop_frame_from_overflow");
+                    // The popped frame is structurally complete (sentinel found), but its runs can
+                    // still be semantically corrupt (zero-length run, oversized expansion), so the
+                    // decode is fallible.
+                    let assignment = match decode_xben_frame_to_assignment(frame_bytes, variant) {
+                        Ok(assignment) => assignment,
+                        Err(e) => {
+                            inner.overflow.drain(..consumed);
+                            return Some(Err(e));
+                        }
+                    };
                     inner.previous_assignment = Some(assignment.clone());
                     inner.overflow.drain(..consumed);
                     return Some(Ok((assignment, count)));

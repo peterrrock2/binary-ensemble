@@ -108,8 +108,9 @@ pub fn extract_assignment_xben<R: Read>(
     for frame in frame_iterator {
         let (decode_frame, count) = frame.map_err(SampleError::new_io_error)?;
         if current_sample == sample_number || current_sample + count as usize > sample_number {
-            // The frame iterator guarantees complete zero-sentinel ben32 frames in the XBEN arm, so
-            // decode_ben32_line always succeeds.
+            // The frame iterator guarantees structurally complete zero-sentinel ben32 frames in
+            // the XBEN arm, but the runs inside can still be semantically corrupt (zero-length
+            // run, oversized expansion), so the decode is fallible.
             let bytes = match &decode_frame {
                 crate::io::reader::DecodeFrame::XBen(b, _) => b,
                 crate::io::reader::DecodeFrame::Ben(_) => {
@@ -117,7 +118,7 @@ pub fn extract_assignment_xben<R: Read>(
                 }
             };
             let (assignment, _) = decode_ben32_line(Cursor::new(bytes), variant)
-                .expect("complete frame from XBEN frame reader");
+                .map_err(SampleError::new_io_error)?;
             return Ok(assignment);
         }
         current_sample += count as usize;
