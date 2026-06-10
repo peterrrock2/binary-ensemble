@@ -119,7 +119,13 @@ tasks:
     env:
       PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
     cmds:
-      - cargo test -- --ignored
+      # The fixture regenerators are #[ignore]d so they never run by accident — including here.
+      # Running them rewrites the committed wire-format fixtures (see docs/format-stability.md),
+      # so they must only ever be invoked by name in a dedicated fixtures PR.
+      - >-
+        cargo test -- --ignored
+        --skip generate_format_stability_fixtures
+        --skip regenerate_twodelta_fixtures
 
   test-rust:
     desc: Run Rust tests for the workspace (fast suite plus #[ignore]-gated stress tests)

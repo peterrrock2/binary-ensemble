@@ -63,7 +63,9 @@ impl BenEncodeFrame {
     /// # Panics
     ///
     /// Panics if `variant` is [`BenVariant::TwoDelta`]; use [`BenEncodeFrame::from_run_lengths`]
-    /// for that.
+    /// for that. Also panics if the packed payload would exceed the `u32` byte length the frame
+    /// header can carry — that bound sits far beyond any real assignment, so reaching it means
+    /// the caller's input is corrupt rather than merely large.
     pub fn from_rle(runs: Vec<(u16, u16)>, variant: BenVariant, count: Option<u16>) -> Self {
         let (max_val, max_len) = runs
             .iter()
@@ -72,9 +74,15 @@ impl BenEncodeFrame {
             });
         let max_val_bit_count = (16 - max_val.leading_zeros() as u8).max(1);
         let max_len_bit_count = (16 - max_len.leading_zeros() as u8).max(1);
-        let assign_bits = (max_val_bit_count + max_len_bit_count) as u32;
-        let payload_bits = assign_bits * runs.len() as u32;
-        let n_bytes = payload_bits.div_ceil(8);
+        let assign_bits = (max_val_bit_count + max_len_bit_count) as u64;
+        let payload_bits = assign_bits * runs.len() as u64;
+        let n_bytes = u32::try_from(payload_bits.div_ceil(8)).unwrap_or_else(|_| {
+            panic!(
+                "BEN frame payload of {} run(s) at {assign_bits} bit(s)/run overflows the u32 \
+                 n_bytes field",
+                runs.len()
+            )
+        });
         let mut raw_bytes =
             compress_rle_to_ben_bytes(max_val_bit_count, max_len_bit_count, n_bytes, &runs);
 
@@ -122,6 +130,12 @@ impl BenEncodeFrame {
     /// Build a `TwoDelta` frame from a pair and pre-computed run lengths.
     ///
     /// `count` defaults to `1` if `None`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the packed payload would exceed the `u32` byte length the frame header can
+    /// carry — that bound sits far beyond any real delta, so reaching it means the caller's
+    /// input is corrupt rather than merely large.
     pub fn from_run_lengths(
         pair: (u16, u16),
         run_length_vector: Vec<u16>,
@@ -132,8 +146,14 @@ impl BenEncodeFrame {
         let max_len = run_length_vector.iter().copied().max().unwrap_or(0);
         let max_len_bit_count = (16 - max_len.leading_zeros() as u8).max(1);
 
-        let payload_bits = max_len_bit_count as u32 * run_length_vector.len() as u32;
-        let n_bytes = payload_bits.div_ceil(8);
+        let payload_bits = max_len_bit_count as u64 * run_length_vector.len() as u64;
+        let n_bytes = u32::try_from(payload_bits.div_ceil(8)).unwrap_or_else(|_| {
+            panic!(
+                "TwoDelta frame payload of {} run length(s) at {max_len_bit_count} bit(s) each \
+                 overflows the u32 n_bytes field",
+                run_length_vector.len()
+            )
+        });
 
         // pair_bytes (4) + max_len_bit_count (1) + n_bytes (4) + payload (n_bytes) + count (2)
         let mut raw_bytes = Vec::with_capacity((n_bytes + 11) as usize);
@@ -200,7 +220,10 @@ impl BenEncodeFrame {
         let mut n_bits_in_buff: u16 = 0;
 
         for &byte in payload[..n_bytes as usize].iter() {
-            buffer |= (byte as u32).to_be() >> n_bits_in_buff;
+            // Place the incoming byte at the top of the 32-bit shift register, below any bits
+            // already buffered. The explicit shift is endian-independent; extraction below always
+            // reads from the register's high end.
+            buffer |= ((byte as u32) << 24) >> n_bits_in_buff;
             n_bits_in_buff += 8;
 
             while n_bits_in_buff >= max_len_bit_count as u16 {

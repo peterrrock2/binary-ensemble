@@ -110,7 +110,8 @@ pub fn xz_compress<R: BufRead, W: Write>(
         }
         encoder.write_all(&buff[..count])?;
     }
-    drop(encoder);
+
+    encoder.finish()?;
     Ok(())
 }
 

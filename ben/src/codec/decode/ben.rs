@@ -1,10 +1,11 @@
 use std::io::{self, Read};
 
-/// Upper bound on `n_bytes` accepted by [`decode_ben_line`]. A frame larger than this is rejected
-/// without allocating, so malformed or adversarial input cannot OOM the process during fuzzing or
-/// stream decoding. The cap is well above any legitimate BEN frame: at 64 MiB of packed RLE data
-/// it would hold tens of millions of run pairs.
-const MAX_FRAME_PAYLOAD_BYTES: u32 = 1 << 26;
+/// Upper bound on `n_bytes` accepted by [`decode_ben_line`] and by the frame readers in
+/// [`crate::codec::BenDecodeFrame`]. A frame larger than this is rejected without allocating, so
+/// malformed or adversarial input cannot OOM the process during fuzzing or stream decoding. The
+/// cap is well above any legitimate BEN frame: at 64 MiB of packed RLE data it would hold tens of
+/// millions of run pairs.
+pub(crate) const MAX_FRAME_PAYLOAD_BYTES: u32 = 1 << 26;
 
 /// Decode a single BEN frame payload into run-length encoded assignments.
 ///
@@ -85,7 +86,10 @@ pub fn decode_ben_line<R: Read>(
     let mut pending_zero_pairs: usize = 0;
 
     for &byte in &assign_bits {
-        buffer |= (byte as u32).to_be() >> n_bits_in_buff;
+        // Place the incoming byte at the top of the 32-bit shift register, below any bits already
+        // buffered. The explicit shift is endian-independent; bit extraction below always reads
+        // from the register's high end.
+        buffer |= ((byte as u32) << 24) >> n_bits_in_buff;
         n_bits_in_buff += 8;
 
         if n_bits_in_buff >= max_val_bits as u16 && !val_set {

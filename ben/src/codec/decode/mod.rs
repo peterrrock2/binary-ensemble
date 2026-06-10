@@ -10,6 +10,7 @@ mod twodelta;
 mod xz;
 
 pub use ben::decode_ben_line;
+pub(crate) use ben::MAX_FRAME_PAYLOAD_BYTES;
 pub(crate) use ben32::decode_ben32_line;
 pub use jsonl::{decode_ben_to_jsonl, decode_xben_to_jsonl};
 pub use path::{

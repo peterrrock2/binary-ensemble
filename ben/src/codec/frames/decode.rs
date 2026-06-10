@@ -1,7 +1,24 @@
 use super::encode::BenEncodeFrame;
+use crate::codec::decode::MAX_FRAME_PAYLOAD_BYTES;
 use crate::BenVariant;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::io::{self, Read};
+
+/// Reject a declared payload length above [`MAX_FRAME_PAYLOAD_BYTES`] **before** allocating the
+/// payload buffer, so a corrupt or adversarial frame header cannot force a multi-gigabyte
+/// reservation. Well-formed frames never approach the cap.
+fn check_payload_len(n_bytes: u32) -> io::Result<()> {
+    if n_bytes > MAX_FRAME_PAYLOAD_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "BEN frame payload of {n_bytes} bytes exceeds {MAX_FRAME_PAYLOAD_BYTES}; \
+                 refusing to allocate"
+            ),
+        ));
+    }
+    Ok(())
+}
 
 /// One sample's encoded bytes at the frame layer, freshly read from a wire stream.
 ///
@@ -80,6 +97,7 @@ impl BenDecodeFrame {
 
         let max_len_bit_count = reader.read_u8()?;
         let n_bytes = reader.read_u32::<BigEndian>()?;
+        check_payload_len(n_bytes)?;
 
         let mut raw_bytes = vec![0u8; n_bytes as usize];
         reader.read_exact(&mut raw_bytes)?;
@@ -101,6 +119,7 @@ impl BenDecodeFrame {
 
         let max_len_bit_count = reader.read_u8()?;
         let n_bytes = reader.read_u32::<BigEndian>()?;
+        check_payload_len(n_bytes)?;
 
         let mut raw_bytes = vec![0u8; n_bytes as usize];
         reader.read_exact(&mut raw_bytes)?;
@@ -132,6 +151,7 @@ impl BenDecodeFrame {
             ));
         }
         let n_bytes = reader.read_u32::<BigEndian>()?;
+        check_payload_len(n_bytes)?;
 
         let mut payload = vec![0u8; n_bytes as usize];
         reader.read_exact(&mut payload)?;

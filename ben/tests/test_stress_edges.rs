@@ -368,6 +368,39 @@ fn xz_compress_propagates_input_reader_errors() {
 }
 
 #[test]
+fn xz_compress_propagates_output_writer_errors_at_finish() {
+    // A writer that swallows nothing during streaming but fails once the encoder flushes its
+    // final block. xz buffers small inputs internally, so the only write the sink ever sees is
+    // the finish-time flush — exactly the failure a `drop(encoder)` would silently discard.
+    struct FailingWriter;
+    impl Write for FailingWriter {
+        fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::StorageFull,
+                "disk full",
+            ))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::StorageFull,
+                "disk full",
+            ))
+        }
+    }
+
+    let payload = b"some bytes that fit inside xz's internal buffer";
+    let err = xz_compress(
+        std::io::BufReader::new(payload.as_slice()),
+        FailingWriter,
+        Some(1),
+        Some(0),
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::StorageFull);
+}
+
+#[test]
 fn relabel_map_out_of_range_old_indices_error_cleanly() {
     let mut ben = Vec::new();
     {

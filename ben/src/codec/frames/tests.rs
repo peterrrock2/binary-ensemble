@@ -162,6 +162,38 @@ fn ben_decode_standard_non_eof_read_error_propagates() {
     assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
 }
 
+#[test]
+fn ben_decode_oversized_n_bytes_rejected_before_allocating() {
+    // Headers declaring an absurd payload length must be rejected before the payload buffer is
+    // allocated — no payload bytes are supplied here, so reaching the allocation would surface as
+    // an UnexpectedEof (or worse, an OOM under fuzzing) instead of the cap's InvalidData.
+    let oversized = u32::MAX.to_be_bytes();
+
+    // Standard: [mvb, mlb, n_bytes].
+    let mut data = vec![2u8, 3];
+    data.extend_from_slice(&oversized);
+    let err = BenDecodeFrame::from_reader(&mut io::Cursor::new(data), BenVariant::Standard)
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("refusing to allocate"));
+
+    // MkvChain: same header shape.
+    let mut data = vec![2u8, 3];
+    data.extend_from_slice(&oversized);
+    let err = BenDecodeFrame::from_reader(&mut io::Cursor::new(data), BenVariant::MkvChain)
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("refusing to allocate"));
+
+    // TwoDelta: [pair_a, pair_b, max_len_bits, n_bytes].
+    let mut data = vec![0u8, 1, 0, 2, 4];
+    data.extend_from_slice(&oversized);
+    let err = BenDecodeFrame::from_reader(&mut io::Cursor::new(data), BenVariant::TwoDelta)
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("refusing to allocate"));
+}
+
 // ── BenDecodeFrame::from_reader (MkvChain) ──────────────────────────────────
 
 #[test]
