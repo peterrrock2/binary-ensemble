@@ -1,7 +1,6 @@
 use crate::BenVariant;
 use byteorder::{BigEndian, ReadBytesExt};
-use serde_json::json;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead};
 
 /// Decode a single ben32 frame into an assignment vector and repetition count.
 ///
@@ -51,49 +50,4 @@ pub(crate) fn decode_ben32_line<R: BufRead>(
     };
 
     Ok((output_vec, count))
-}
-
-/// Decode a ben32 stream into JSONL assignment records.
-///
-/// # Arguments
-///
-/// * `reader` - The ben32 input stream.
-/// * `writer` - The destination for the JSONL output.
-/// * `starting_sample` - The 0-based sample offset that should be added to the emitted sample
-///   numbers.
-/// * `variant` - The BEN variant used to interpret repetition counts.
-///
-/// # Returns
-///
-/// Returns `Ok(())` after the ben32 stream has been fully decoded.
-pub(crate) fn jsonl_decode_ben32<R: BufRead, W: Write>(
-    mut reader: R,
-    mut writer: W,
-    starting_sample: usize,
-    variant: BenVariant,
-) -> io::Result<()> {
-    let mut sample_number = 1;
-    loop {
-        let result = decode_ben32_line(&mut reader, variant);
-        if let Err(e) = result {
-            if e.kind() == io::ErrorKind::UnexpectedEof {
-                return Ok(());
-            }
-            return Err(e);
-        }
-
-        let (output_vec, count) = result.unwrap();
-
-        for _ in 0..count {
-            let line = json!({
-                "assignment": output_vec,
-                "sample": sample_number + starting_sample,
-            })
-            .to_string()
-                + "\n";
-
-            writer.write_all(line.as_bytes())?;
-            sample_number += 1;
-        }
-    }
 }

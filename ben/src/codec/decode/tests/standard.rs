@@ -3,13 +3,27 @@
 // layout under test.
 #![allow(clippy::unusual_byte_groupings)]
 
-use crate::codec::decode::jsonl_decode_ben32;
 use crate::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl};
 use crate::codec::encode::xz_compress;
 use crate::util::rle::rle_to_vec;
-use crate::BenVariant;
 use serde_json::{json, Value};
 use std::io::{self, BufRead, BufReader};
+
+/// Wrap a raw Standard ben32 body in its banner and xz-compress it into a complete XBEN stream.
+fn standard_xben_from_ben32_body(body: &[u8]) -> Vec<u8> {
+    let mut inner = b"STANDARD BEN FILE".to_vec();
+    inner.extend_from_slice(body);
+    let mut xz = Vec::new();
+    xz_compress(
+        BufReader::new(inner.as_slice()),
+        &mut xz,
+        Some(1),
+        Some(0),
+        None,
+    )
+    .unwrap();
+    xz
+}
 
 #[test]
 fn test_jsonl_decode_ben_underflow() {
@@ -274,7 +288,7 @@ fn test_decode_ben_max_val_and_len_at_65535() {
 }
 
 #[test]
-fn test_jsonl_decode_ben32_propagates_non_eof_error() {
+fn test_decode_xben_to_jsonl_propagates_non_eof_reader_errors() {
     struct AlwaysErrBuf;
 
     impl io::Read for AlwaysErrBuf {
@@ -291,7 +305,7 @@ fn test_jsonl_decode_ben32_propagates_non_eof_error() {
         fn consume(&mut self, _amt: usize) {}
     }
 
-    let err = jsonl_decode_ben32(AlwaysErrBuf, Vec::new(), 0, BenVariant::Standard).unwrap_err();
+    let err = decode_xben_to_jsonl(AlwaysErrBuf, Vec::new()).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::Other);
     assert_eq!(err.to_string(), "boom");
 }
@@ -329,18 +343,36 @@ fn test_decode_xben_to_jsonl_rejects_invalid_inner_header() {
 }
 
 #[test]
-fn test_decode_xben_to_ben_handles_partial_overflow_without_frame() {
-    let mut xz = Vec::new();
-    let mut inner = b"STANDARD BEN FILE".to_vec();
-    inner.extend_from_slice(&[1, 2, 3]);
-    xz_compress(
-        BufReader::new(inner.as_slice()),
-        &mut xz,
-        Some(1),
-        Some(0),
-        None,
-    )
-    .unwrap();
+fn test_decode_xben_to_ben_rejects_truncated_ben32_body() {
+    // The decompressed body ends three bytes into a ben32 run — a truncated stream, not a clean
+    // end at a frame boundary. The reader must reject it rather than silently dropping the tail.
+    let xz = standard_xben_from_ben32_body(&[1, 2, 3]);
+
+    let mut out = Vec::new();
+    let err = decode_xben_to_ben(BufReader::new(xz.as_slice()), &mut out).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().to_lowercase().contains("truncated"));
+}
+
+#[test]
+fn test_decode_xben_to_jsonl_rejects_truncated_ben32_body() {
+    // Same truncated body as the to_ben case; the JSONL path must reject it identically.
+    let xz = standard_xben_from_ben32_body(&[1, 2, 3]);
+
+    let mut out = Vec::new();
+    let err = decode_xben_to_jsonl(BufReader::new(xz.as_slice()), &mut out).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().to_lowercase().contains("truncated"));
+    assert!(
+        out.is_empty(),
+        "no samples should be emitted for a truncated single-frame body"
+    );
+}
+
+#[test]
+fn test_decode_xben_to_ben_accepts_empty_ben32_body() {
+    // A banner with no frames is a clean end at a frame boundary, not a truncation.
+    let xz = standard_xben_from_ben32_body(&[]);
 
     let mut out = Vec::new();
     decode_xben_to_ben(BufReader::new(xz.as_slice()), &mut out).unwrap();
@@ -348,18 +380,8 @@ fn test_decode_xben_to_ben_handles_partial_overflow_without_frame() {
 }
 
 #[test]
-fn test_decode_xben_to_jsonl_handles_partial_overflow_without_frame() {
-    let mut xz = Vec::new();
-    let mut inner = b"STANDARD BEN FILE".to_vec();
-    inner.extend_from_slice(&[1, 2, 3]);
-    xz_compress(
-        BufReader::new(inner.as_slice()),
-        &mut xz,
-        Some(1),
-        Some(0),
-        None,
-    )
-    .unwrap();
+fn test_decode_xben_to_jsonl_accepts_empty_ben32_body() {
+    let xz = standard_xben_from_ben32_body(&[]);
 
     let mut out = Vec::new();
     decode_xben_to_jsonl(BufReader::new(xz.as_slice()), &mut out).unwrap();
@@ -505,15 +527,18 @@ fn test_decode_ben_multiple_simple_lines() {
     assert_eq!(output, expected_output.concat().as_bytes());
 }
 
-#[test]
-fn test_jsonl_decode_ben32_simple() {
-    let input = vec![0, 1, 0, 4, 0, 2, 0, 1, 0, 3, 0, 3, 0, 0, 0, 0];
+// ─── decode_xben_to_jsonl — byte-level ben32 bodies ────────────────────
+// Each test wraps a hand-built Standard ben32 body in a banner + xz so the public decoder is
+// exercised against exact wire bytes.
 
-    let mut reader = input.as_slice();
+#[test]
+fn test_decode_xben_to_jsonl_ben32_simple() {
+    let input = standard_xben_from_ben32_body(&[0, 1, 0, 4, 0, 2, 0, 1, 0, 3, 0, 3, 0, 0, 0, 0]);
+
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben32(&mut reader, writer, 0, BenVariant::Standard);
+    let result = decode_xben_to_jsonl(BufReader::new(input.as_slice()), writer);
 
     if let Err(e) = result {
         panic!("Error: {}", e);
@@ -530,14 +555,13 @@ fn test_jsonl_decode_ben32_simple() {
 }
 
 #[test]
-fn test_jsonl_decode_ben32_16_bit_val() {
-    let input = vec![0, 1, 0, 4, 2, 0, 0, 1, 0, 3, 0, 3, 0, 0, 0, 0];
+fn test_decode_xben_to_jsonl_ben32_16_bit_val() {
+    let input = standard_xben_from_ben32_body(&[0, 1, 0, 4, 2, 0, 0, 1, 0, 3, 0, 3, 0, 0, 0, 0]);
 
-    let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben32(&mut reader, writer, 0, BenVariant::Standard);
+    let result = decode_xben_to_jsonl(BufReader::new(input.as_slice()), writer);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -553,14 +577,13 @@ fn test_jsonl_decode_ben32_16_bit_val() {
 }
 
 #[test]
-fn test_jsonl_decode_ben32_16_bit_len() {
-    let input = vec![0, 1, 0, 4, 0, 2, 2, 0, 0, 3, 0, 3, 0, 0, 0, 0];
+fn test_decode_xben_to_jsonl_ben32_16_bit_len() {
+    let input = standard_xben_from_ben32_body(&[0, 1, 0, 4, 0, 2, 2, 0, 0, 3, 0, 3, 0, 0, 0, 0]);
 
-    let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben32(&mut reader, writer, 0, BenVariant::Standard);
+    let result = decode_xben_to_jsonl(BufReader::new(input.as_slice()), writer);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -576,14 +599,14 @@ fn test_jsonl_decode_ben32_16_bit_len() {
 }
 
 #[test]
-fn test_jsonl_decode_ben32_max_val_65535() {
-    let input = vec![0, 23, 0, 4, 255, 255, 0, 15, 0, 8, 0, 3, 0, 0, 0, 0];
+fn test_decode_xben_to_jsonl_ben32_max_val_65535() {
+    let input =
+        standard_xben_from_ben32_body(&[0, 23, 0, 4, 255, 255, 0, 15, 0, 8, 0, 3, 0, 0, 0, 0]);
 
-    let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben32(&mut reader, writer, 0, BenVariant::Standard);
+    let result = decode_xben_to_jsonl(BufReader::new(input.as_slice()), writer);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -599,14 +622,14 @@ fn test_jsonl_decode_ben32_max_val_65535() {
 }
 
 #[test]
-fn test_jsonl_decode_ben32_max_len_65535() {
-    let input = vec![0, 23, 0, 4, 0, 60, 255, 255, 0, 8, 0, 3, 0, 0, 0, 0];
+fn test_decode_xben_to_jsonl_ben32_max_len_65535() {
+    let input =
+        standard_xben_from_ben32_body(&[0, 23, 0, 4, 0, 60, 255, 255, 0, 8, 0, 3, 0, 0, 0, 0]);
 
-    let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben32(&mut reader, writer, 0, BenVariant::Standard);
+    let result = decode_xben_to_jsonl(BufReader::new(input.as_slice()), writer);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -622,15 +645,13 @@ fn test_jsonl_decode_ben32_max_len_65535() {
 }
 
 #[test]
-fn test_decode_ben32_single_element() {
-    let input: Vec<u8> = vec![0, 23, 0, 1, 0, 0, 0, 0];
+fn test_decode_xben_to_jsonl_ben32_single_element() {
+    let input = standard_xben_from_ben32_body(&[0, 23, 0, 1, 0, 0, 0, 0]);
 
-    let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben32(&mut reader, writer, 0, BenVariant::Standard);
-    println!("result {:?}", result);
+    let result = decode_xben_to_jsonl(BufReader::new(input.as_slice()), writer);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }
@@ -644,18 +665,17 @@ fn test_decode_ben32_single_element() {
 }
 
 #[test]
-fn test_decode_ben32_multiple_simple_lines() {
-    let input = vec![
+fn test_decode_xben_to_jsonl_ben32_multiple_simple_lines() {
+    let input = standard_xben_from_ben32_body(&[
         0, 1, 0, 4, 0, 2, 0, 4, 0, 3, 0, 4, 0, 4, 0, 4, 0, 0, 0, 0, 0, 2, 0, 2, 0, 3, 0, 7, 0, 1,
         0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 4, 0, 1,
         0, 5, 0, 1, 0, 6, 0, 1, 0, 7, 0, 1, 0, 8, 0, 1, 0, 9, 0, 1, 0, 10, 0, 1, 0, 0, 0, 0,
-    ];
+    ]);
 
-    let mut reader = input.as_slice();
     let mut output: Vec<u8> = Vec::new();
     let writer = &mut output;
 
-    let result = jsonl_decode_ben32(&mut reader, writer, 0, BenVariant::Standard);
+    let result = decode_xben_to_jsonl(BufReader::new(input.as_slice()), writer);
     if let Err(e) = result {
         panic!("Error: {}", e);
     }

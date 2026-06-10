@@ -1,16 +1,20 @@
-use crate::codec::translate::ben32_to_ben_lines;
-use crate::format::banners::{banner_for_variant, variant_from_banner, BANNER_LEN};
-use crate::format::FormatError;
-use crate::io::reader::BenStreamReader;
+use crate::codec::translate::ben32_to_ben_line;
+use crate::format::banners::banner_for_variant;
+use crate::io::reader::{BenStreamReader, DecodeFrame};
 use crate::io::writer::BenStreamWriter;
 use crate::progress::Spinner;
 use crate::{BenVariant, XBenVariant};
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, Read, Write};
 use xz2::read::XzDecoder;
 
 /// Decode an XBEN stream into an equivalent BEN stream.
 ///
 /// The output begins with the normal BEN banner followed by uncompressed BEN frames.
+///
+/// `Standard` and `MkvChain` streams are translated frame-by-frame at the ben32 layer, which
+/// preserves each frame's original run boundaries and never materializes assignment vectors.
+/// `TwoDelta` streams use a different compressed layout, so their assignments are materialized and
+/// re-encoded through the TwoDelta stream writer.
 ///
 /// # Arguments
 ///
@@ -20,87 +24,52 @@ use xz2::read::XzDecoder;
 /// # Returns
 ///
 /// Returns `Ok(())` after the full XBEN stream has been decoded into BEN.
+///
+/// # Errors
+///
+/// Surfaces an error (rather than a truncated result) if the decompressed stream ends partway
+/// through a frame, declares a zero repetition count, or carries an unknown banner.
 pub fn decode_xben_to_ben<R: BufRead, W: Write>(reader: R, mut writer: W) -> io::Result<()> {
-    let mut decoder = XzDecoder::new(reader);
+    let xben = BenStreamReader::from_xben(reader).map_err(io::Error::from)?;
+    let variant = xben.variant();
 
-    let mut first_buffer = [0u8; BANNER_LEN];
-
-    decoder.read_exact(&mut first_buffer)?;
-
-    let variant: XBenVariant = match variant_from_banner(&first_buffer) {
-        Some(BenVariant::Standard) => {
-            writer.write_all(banner_for_variant(BenVariant::Standard))?;
-            XBenVariant::Standard
-        }
-        Some(BenVariant::MkvChain) => {
-            writer.write_all(banner_for_variant(BenVariant::MkvChain))?;
-            XBenVariant::MkvChain
-        }
-        Some(BenVariant::TwoDelta) => {
-            let mut xben = BenStreamReader::from_xben_decompressed(
-                BufReader::new(decoder),
-                BenVariant::TwoDelta,
-            );
-            let mut ben = BenStreamWriter::for_ben(writer, BenVariant::TwoDelta)?;
-            for record in &mut xben {
-                let (assignment, count) = record?;
+    if variant == BenVariant::TwoDelta {
+        let mut ben = BenStreamWriter::for_ben(writer, BenVariant::TwoDelta)?;
+        for record in xben {
+            let (assignment, count) = record?;
+            for _ in 0..count {
                 ben.write_assignment(assignment.clone())?;
-                for _ in 1..count {
-                    ben.write_assignment(assignment.clone())?;
-                }
             }
-            ben.finish()?;
-            return Ok(());
         }
-        None => {
-            return Err(io::Error::from(FormatError::UnknownBanner {
-                actual: first_buffer.to_vec(),
-            }));
-        }
+        ben.finish()?;
+        return Ok(());
+    }
+
+    let xben_variant = match variant {
+        BenVariant::Standard => XBenVariant::Standard,
+        BenVariant::MkvChain => XBenVariant::MkvChain,
+        BenVariant::TwoDelta => unreachable!("TwoDelta was dispatched above"),
     };
+    writer.write_all(banner_for_variant(variant))?;
 
-    let mut buffer = [0u8; 1048576];
-    let mut overflow: Vec<u8> = Vec::new();
-
-    let mut line_count: usize = 0;
     let spinner = Spinner::new("Decoding sample");
-    loop {
-        let count = decoder.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-
-        overflow.extend(&buffer[..count]);
-
-        let mut last_valid_assignment = 0;
-
-        // TwoDelta was dispatched before this loop and returned early.
-        if variant == XBenVariant::Standard {
-            for i in (3..overflow.len()).step_by(4) {
-                if overflow[i - 3..=i] == [0, 0, 0, 0] {
-                    last_valid_assignment = i + 1;
-                    line_count += 1;
-                    spinner.set_count(line_count as u64);
-                }
+    let mut sample_count = 0usize;
+    for item in xben.into_frames() {
+        let (frame, count) = item?;
+        let mut frame_bytes = match frame {
+            DecodeFrame::XBen(bytes, _) => bytes,
+            DecodeFrame::Ben(_) => {
+                unreachable!("an XBEN stream's frame iterator always yields ben32 frames")
             }
-        } else {
-            for i in (3..overflow.len() - 2).step_by(2) {
-                if overflow[i - 3..=i] == [0, 0, 0, 0] {
-                    last_valid_assignment = i + 3;
-                    let lines = &overflow[i + 1..i + 3];
-                    let n_lines = u16::from_be_bytes([lines[0], lines[1]]);
-                    line_count += n_lines as usize;
-                    spinner.set_count(line_count as u64);
-                }
-            }
+        };
+        // A MkvChain ben32 frame carries its repetition count after the zero sentinel; the
+        // translator takes the count as a separate argument, so drop it from the frame bytes.
+        if xben_variant == XBenVariant::MkvChain {
+            frame_bytes.truncate(frame_bytes.len() - 2);
         }
-
-        if last_valid_assignment == 0 {
-            continue;
-        }
-
-        ben32_to_ben_lines(&overflow[0..last_valid_assignment], &mut writer, variant)?;
-        overflow = overflow[last_valid_assignment..].to_vec();
+        writer.write_all(&ben32_to_ben_line(frame_bytes, xben_variant, count)?)?;
+        sample_count += count as usize;
+        spinner.set_count(sample_count as u64);
     }
     Ok(())
 }

@@ -297,6 +297,44 @@ fn test_ben32_to_ben_line_rejects_missing_terminator() {
 }
 
 #[test]
+fn test_ben32_to_ben_lines_rejects_mid_run_eof() {
+    // Input ends partway through a 4-byte ben32 run. The translator must reject this as a
+    // truncated stream rather than silently dropping the partial frame.
+    let input = [0u8, 7, 0];
+    let err = ben32_to_ben_lines(&input[..], Vec::new(), XBenVariant::Standard).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+    assert!(err.to_string().contains("mid-run"));
+}
+
+#[test]
+fn test_ben32_to_ben_lines_rejects_mid_frame_eof() {
+    // One complete run but no zero sentinel before EOF: the frame is incomplete and must error
+    // instead of being silently discarded.
+    let input = [0u8, 7, 0, 3];
+    let err = ben32_to_ben_lines(&input[..], Vec::new(), XBenVariant::Standard).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+    assert!(err.to_string().contains("mid-frame"));
+}
+
+#[test]
+fn test_ben32_to_ben_lines_rejects_missing_mkv_count() {
+    // Sentinel present but the trailing u16 repetition count is missing.
+    let input = [0u8, 7, 0, 3, 0, 0, 0, 0];
+    let err = ben32_to_ben_lines(&input[..], Vec::new(), XBenVariant::MkvChain).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn test_ben32_to_ben_lines_rejects_zero_mkv_count() {
+    // A complete frame with count == 0 is corrupt: re-emitting it would write a BEN frame that
+    // every reader downstream rejects, so the translator errors at the source instead.
+    let input = [0u8, 7, 0, 3, 0, 0, 0, 0, 0, 0];
+    let err = ben32_to_ben_lines(&input[..], Vec::new(), XBenVariant::MkvChain).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("count"));
+}
+
+#[test]
 fn test_ben32_to_ben_lines_preserves_mkv_counts() {
     let input = [
         0, 7, 0, 3, 0, 0, 0, 0, 0, 5, // one ben32 record and count=5

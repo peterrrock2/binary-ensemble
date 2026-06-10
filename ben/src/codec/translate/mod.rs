@@ -20,7 +20,8 @@ use crate::{BenVariant, XBenVariant};
 ///
 /// # Arguments
 ///
-/// * `ben32_vec` - The ben32 frame bytes, including the four-byte terminator.
+/// * `ben32_vec` - The ben32 frame bytes, including the four-byte terminator but excluding any
+///   trailing repetition count.
 /// * `variant` - The BEN32-supporting variant. Determines whether the resulting BEN frame embeds a
 ///   trailing repetition count.
 /// * `count` - The repetition count for `MkvChain`. Ignored for `Standard`.
@@ -28,7 +29,11 @@ use crate::{BenVariant, XBenVariant};
 /// # Returns
 ///
 /// Returns the encoded BEN frame payload and header.
-fn ben32_to_ben_line(ben32_vec: Vec<u8>, variant: XBenVariant, count: u16) -> io::Result<Vec<u8>> {
+pub(crate) fn ben32_to_ben_line(
+    ben32_vec: Vec<u8>,
+    variant: XBenVariant,
+    count: u16,
+) -> io::Result<Vec<u8>> {
     let mut buffer = [0u8; 4];
     let mut ben32_rle: Vec<(u16, u16)> = Vec::new();
 
@@ -62,6 +67,32 @@ fn ben32_to_ben_line(ben32_vec: Vec<u8>, variant: XBenVariant, count: u16) -> io
     Ok(BenEncodeFrame::from_rle(ben32_rle, BenVariant::from(variant), Some(count)).into_bytes())
 }
 
+/// Read one 4-byte ben32 word, distinguishing a clean end of input from a truncated word.
+///
+/// Returns `Ok(true)` when the word was fully read and `Ok(false)` when the reader was already at
+/// EOF before yielding any byte. EOF after one to three bytes is a corrupt-stream signal and
+/// surfaces as `UnexpectedEof` rather than a silently short read.
+fn read_ben32_word<R: Read>(reader: &mut R, buf: &mut [u8; 4]) -> io::Result<bool> {
+    let mut filled = 0usize;
+    while filled < buf.len() {
+        match reader.read(&mut buf[filled..]) {
+            Ok(0) => {
+                if filled == 0 {
+                    return Ok(false);
+                }
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "ben32 stream ends mid-run: input exhausted partway through a 4-byte run",
+                ));
+            }
+            Ok(n) => filled += n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(true)
+}
+
 /// Translate a stream of ben32 frames into BEN frames.
 ///
 /// This is primarily used while decoding XBEN, where the compressed payload is stored in ben32
@@ -78,43 +109,54 @@ fn ben32_to_ben_line(ben32_vec: Vec<u8>, variant: XBenVariant, count: u16) -> io
 ///
 /// # Returns
 ///
-/// Returns `Ok(())` after the input stream has been fully translated.
+/// Returns `Ok(())` once the input ends cleanly at a frame boundary.
+///
+/// # Errors
+///
+/// Returns `UnexpectedEof` if the input ends partway through a frame (mid-run, before the zero
+/// sentinel, or before a MkvChain repetition count) and `InvalidData` if a MkvChain frame declares
+/// a repetition count of zero. A truncated tail is never silently dropped.
 pub fn ben32_to_ben_lines<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,
     variant: XBenVariant,
 ) -> io::Result<()> {
-    'outer: loop {
+    loop {
         let mut ben32_vec: Vec<u8> = Vec::new();
         let mut ben32_read_buff: [u8; 4] = [0u8; 4];
 
         let mut n_reps = 0;
 
-        'inner: loop {
-            match reader.read_exact(&mut ben32_read_buff) {
-                Ok(()) => {
-                    ben32_vec.extend(ben32_read_buff);
-                    if ben32_read_buff == [0u8; 4] {
-                        if variant == XBenVariant::MkvChain {
-                            n_reps = reader.read_u16::<BigEndian>()?;
-                        }
-                        break 'inner;
+        loop {
+            if !read_ben32_word(&mut reader, &mut ben32_read_buff)? {
+                if ben32_vec.is_empty() {
+                    // Clean end of input at a frame boundary.
+                    return Ok(());
+                }
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "ben32 stream ends mid-frame: input exhausted before the 4-byte zero sentinel",
+                ));
+            }
+
+            ben32_vec.extend(ben32_read_buff);
+            if ben32_read_buff == [0u8; 4] {
+                if variant == XBenVariant::MkvChain {
+                    n_reps = reader.read_u16::<BigEndian>()?;
+                    if n_reps == 0 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "ben32 frame count must be greater than zero",
+                        ));
                     }
                 }
-                Err(e) => {
-                    if e.kind() == io::ErrorKind::UnexpectedEof {
-                        break 'outer;
-                    }
-                    return Err(e);
-                }
+                break;
             }
         }
 
         let ben_vec = ben32_to_ben_line(ben32_vec, variant, n_reps)?;
         writer.write_all(&ben_vec)?;
     }
-
-    Ok(())
 }
 
 /// Convert a single BEN frame payload into its ben32 representation.

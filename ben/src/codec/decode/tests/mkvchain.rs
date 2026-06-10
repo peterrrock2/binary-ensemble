@@ -3,13 +3,27 @@
 // layout under test.
 #![allow(clippy::unusual_byte_groupings)]
 
-use crate::codec::decode::jsonl_decode_ben32;
 use crate::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl};
 use crate::codec::encode::{encode_ben_to_xben, xz_compress};
 use crate::util::rle::rle_to_vec;
-use crate::BenVariant;
 use serde_json::{json, Value};
 use std::io::{self, BufReader};
+
+/// Wrap a raw MkvChain ben32 body in its banner and xz-compress it into a complete XBEN stream.
+fn mkv_xben_from_ben32_body(body: &[u8]) -> Vec<u8> {
+    let mut inner = b"MKVCHAIN BEN FILE".to_vec();
+    inner.extend_from_slice(body);
+    let mut xz = Vec::new();
+    xz_compress(
+        BufReader::new(inner.as_slice()),
+        &mut xz,
+        Some(1),
+        Some(0),
+        None,
+    )
+    .unwrap();
+    xz
+}
 
 // The bit-packed payload for assignment [(1,4),(2,1),(3,3)] = [1,1,1,1,2,3,3,3].
 // max_val_bit_count=2, max_len_bit_count=3, n_bytes=2:
@@ -110,64 +124,53 @@ fn decode_ben_to_jsonl_empty_stream_produces_no_output() {
     assert!(out.is_empty());
 }
 
-// ─── jsonl_decode_ben32 ────────────────────────────────────────────────
+// ─── decode_xben_to_jsonl — byte-level ben32 bodies ───────────────────
 
 #[test]
-fn jsonl_decode_ben32_mkvchain_count_one() {
+fn decode_xben_to_jsonl_ben32_mkvchain_count_one() {
     // ben32: [(1,4),(2,1),(3,3)] + terminator + count=1
-    let input: Vec<u8> = vec![
+    let input = mkv_xben_from_ben32_body(&[
         0, 1, 0, 4, // (1, 4)
         0, 2, 0, 1, // (2, 1)
         0, 3, 0, 3, // (3, 3)
         0, 0, 0, 0, // terminator
         0, 1, // count = 1
-    ];
+    ]);
     let mut out = Vec::new();
-    jsonl_decode_ben32(input.as_slice(), &mut out, 0, BenVariant::MkvChain).unwrap();
+    decode_xben_to_jsonl(BufReader::new(input.as_slice()), &mut out).unwrap();
 
     let assign = rle_to_vec(vec![(1u16, 4), (2, 1), (3, 3)]);
     assert_eq!(out, expected_line(&assign, 1).as_bytes());
 }
 
 #[test]
-fn jsonl_decode_ben32_mkvchain_count_five_expands_correctly() {
+fn decode_xben_to_jsonl_ben32_mkvchain_count_five_expands_correctly() {
     // Single record with count=5 → 5 lines
-    let mut input: Vec<u8> = vec![0, 23, 0, 1, 0, 0, 0, 0];
-    input.extend_from_slice(&5u16.to_be_bytes());
+    let mut body: Vec<u8> = vec![0, 23, 0, 1, 0, 0, 0, 0];
+    body.extend_from_slice(&5u16.to_be_bytes());
+    let input = mkv_xben_from_ben32_body(&body);
 
     let mut out = Vec::new();
-    jsonl_decode_ben32(input.as_slice(), &mut out, 0, BenVariant::MkvChain).unwrap();
+    decode_xben_to_jsonl(BufReader::new(input.as_slice()), &mut out).unwrap();
 
     let expected: String = (1..=5).map(|i| expected_line(&[23], i)).collect();
     assert_eq!(out, expected.as_bytes());
 }
 
 #[test]
-fn jsonl_decode_ben32_mkvchain_two_records_correct_sample_numbers() {
+fn decode_xben_to_jsonl_ben32_mkvchain_two_records_correct_sample_numbers() {
     // Record 1: [23] count=2 → samples 1,2 Record 2: [1,2,3,4] count=1 → sample 3
-    let mut input: Vec<u8> = vec![0, 23, 0, 1, 0, 0, 0, 0];
-    input.extend_from_slice(&2u16.to_be_bytes());
-    input.extend_from_slice(&[0, 1, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 4, 0, 1, 0, 0, 0, 0]);
-    input.extend_from_slice(&1u16.to_be_bytes());
+    let mut body: Vec<u8> = vec![0, 23, 0, 1, 0, 0, 0, 0];
+    body.extend_from_slice(&2u16.to_be_bytes());
+    body.extend_from_slice(&[0, 1, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 4, 0, 1, 0, 0, 0, 0]);
+    body.extend_from_slice(&1u16.to_be_bytes());
+    let input = mkv_xben_from_ben32_body(&body);
 
     let mut out = Vec::new();
-    jsonl_decode_ben32(input.as_slice(), &mut out, 0, BenVariant::MkvChain).unwrap();
+    decode_xben_to_jsonl(BufReader::new(input.as_slice()), &mut out).unwrap();
 
     let expected =
         expected_line(&[23], 1) + &expected_line(&[23], 2) + &expected_line(&[1, 2, 3, 4], 3);
-    assert_eq!(out, expected.as_bytes());
-}
-
-#[test]
-fn jsonl_decode_ben32_mkvchain_starting_sample_offset() {
-    // starting_sample=5 → first output line has sample=6
-    let mut input: Vec<u8> = vec![0, 7, 0, 1, 0, 0, 0, 0];
-    input.extend_from_slice(&2u16.to_be_bytes());
-
-    let mut out = Vec::new();
-    jsonl_decode_ben32(input.as_slice(), &mut out, 5, BenVariant::MkvChain).unwrap();
-
-    let expected = expected_line(&[7], 6) + &expected_line(&[7], 7);
     assert_eq!(out, expected.as_bytes());
 }
 
@@ -237,22 +240,52 @@ fn decode_ben_to_jsonl_truncated_count_field_errors() {
 
 #[test]
 fn decode_xben_to_jsonl_rejects_mkvchain_partial_overflow() {
-    // Compress just the banner + 3 garbage bytes → no valid frames
-    let mut xz = Vec::new();
-    let mut inner = b"MKVCHAIN BEN FILE".to_vec();
-    inner.extend_from_slice(&[1, 2, 3]);
-    xz_compress(
-        BufReader::new(inner.as_slice()),
-        &mut xz,
-        Some(1),
-        Some(0),
-        None,
-    )
-    .unwrap();
+    // Banner + 3 stray bytes: the decompressed body ends partway through a ben32 run. This is a
+    // truncated stream, not a clean end at a frame boundary, and must be rejected.
+    let xz = mkv_xben_from_ben32_body(&[1, 2, 3]);
 
     let mut out = Vec::new();
-    decode_xben_to_jsonl(BufReader::new(xz.as_slice()), &mut out).unwrap();
+    let err = decode_xben_to_jsonl(BufReader::new(xz.as_slice()), &mut out).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().to_lowercase().contains("truncated"));
     assert!(out.is_empty());
+}
+
+#[test]
+fn decode_xben_to_jsonl_rejects_mkvchain_frame_missing_count() {
+    // A full run and the zero sentinel, but no trailing u16 count: the frame is incomplete and the
+    // stream must be rejected as truncated rather than the frame being silently dropped.
+    let xz = mkv_xben_from_ben32_body(&[0, 7, 0, 3, 0, 0, 0, 0]);
+
+    let mut out = Vec::new();
+    let err = decode_xben_to_jsonl(BufReader::new(xz.as_slice()), &mut out).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().to_lowercase().contains("truncated"));
+}
+
+#[test]
+fn decode_xben_to_jsonl_rejects_mkvchain_zero_count_frame() {
+    // A complete frame whose repetition count is zero. The wire format requires count >= 1, so the
+    // reader must error instead of silently emitting nothing for the frame.
+    let xz = mkv_xben_from_ben32_body(&[0, 7, 0, 3, 0, 0, 0, 0, 0, 0]);
+
+    let mut out = Vec::new();
+    let err = decode_xben_to_jsonl(BufReader::new(xz.as_slice()), &mut out).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("count"));
+    assert!(out.is_empty());
+}
+
+#[test]
+fn decode_xben_to_ben_rejects_mkvchain_zero_count_frame() {
+    // The BEN-translation path must reject a zero count rather than writing a corrupt BEN frame
+    // that downstream readers would only reject later.
+    let xz = mkv_xben_from_ben32_body(&[0, 7, 0, 3, 0, 0, 0, 0, 0, 0]);
+
+    let mut out = Vec::new();
+    let err = decode_xben_to_ben(BufReader::new(xz.as_slice()), &mut out).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("count"));
 }
 
 // ─── decode_ben_to_jsonl — byte-level frame encoding counterparts ────── These mirror the Standard
@@ -512,17 +545,18 @@ fn decode_ben_to_jsonl_three_frames() {
     assert_eq!(out, expected.as_bytes());
 }
 
-// ─── jsonl_decode_ben32 — byte-level counterparts ───────────────────── Each Standard ben32 record
-// has [pairs...][0,0,0,0] terminator. Each MkvChain ben32 record appends a u16 BE count after the
-// terminator.
+// ─── decode_xben_to_jsonl — more byte-level counterparts ─────────────── Each Standard ben32
+// record has [pairs...][0,0,0,0] terminator. Each MkvChain ben32 record appends a u16 BE count
+// after the terminator.
 
 #[test]
-fn jsonl_decode_ben32_16bit_val() {
-    let mut input = vec![0, 1, 0, 4, 2, 0, 0, 1, 0, 3, 0, 3, 0, 0, 0, 0];
-    input.extend_from_slice(&1u16.to_be_bytes());
+fn decode_xben_to_jsonl_ben32_16bit_val() {
+    let mut body = vec![0, 1, 0, 4, 2, 0, 0, 1, 0, 3, 0, 3, 0, 0, 0, 0];
+    body.extend_from_slice(&1u16.to_be_bytes());
+    let input = mkv_xben_from_ben32_body(&body);
 
     let mut out = Vec::new();
-    jsonl_decode_ben32(input.as_slice(), &mut out, 0, BenVariant::MkvChain).unwrap();
+    decode_xben_to_jsonl(BufReader::new(input.as_slice()), &mut out).unwrap();
 
     let rle_assign = vec![(1u16, 4), (512, 1), (3, 3)];
     let expected = json!({
@@ -535,12 +569,13 @@ fn jsonl_decode_ben32_16bit_val() {
 }
 
 #[test]
-fn jsonl_decode_ben32_16bit_len() {
-    let mut input = vec![0, 1, 0, 4, 0, 2, 2, 0, 0, 3, 0, 3, 0, 0, 0, 0];
-    input.extend_from_slice(&1u16.to_be_bytes());
+fn decode_xben_to_jsonl_ben32_16bit_len() {
+    let mut body = vec![0, 1, 0, 4, 0, 2, 2, 0, 0, 3, 0, 3, 0, 0, 0, 0];
+    body.extend_from_slice(&1u16.to_be_bytes());
+    let input = mkv_xben_from_ben32_body(&body);
 
     let mut out = Vec::new();
-    jsonl_decode_ben32(input.as_slice(), &mut out, 0, BenVariant::MkvChain).unwrap();
+    decode_xben_to_jsonl(BufReader::new(input.as_slice()), &mut out).unwrap();
 
     let rle_assign = vec![(1u16, 4), (2, 512), (3, 3)];
     let expected = json!({
@@ -553,12 +588,13 @@ fn jsonl_decode_ben32_16bit_len() {
 }
 
 #[test]
-fn jsonl_decode_ben32_max_val_65535() {
-    let mut input = vec![0, 23, 0, 4, 255, 255, 0, 15, 0, 8, 0, 3, 0, 0, 0, 0];
-    input.extend_from_slice(&1u16.to_be_bytes());
+fn decode_xben_to_jsonl_ben32_max_val_65535() {
+    let mut body = vec![0, 23, 0, 4, 255, 255, 0, 15, 0, 8, 0, 3, 0, 0, 0, 0];
+    body.extend_from_slice(&1u16.to_be_bytes());
+    let input = mkv_xben_from_ben32_body(&body);
 
     let mut out = Vec::new();
-    jsonl_decode_ben32(input.as_slice(), &mut out, 0, BenVariant::MkvChain).unwrap();
+    decode_xben_to_jsonl(BufReader::new(input.as_slice()), &mut out).unwrap();
 
     let rle_assign = vec![(23u16, 4), (65535, 15), (8, 3)];
     let expected = json!({
@@ -571,12 +607,13 @@ fn jsonl_decode_ben32_max_val_65535() {
 }
 
 #[test]
-fn jsonl_decode_ben32_max_len_65535() {
-    let mut input = vec![0, 23, 0, 4, 0, 60, 255, 255, 0, 8, 0, 3, 0, 0, 0, 0];
-    input.extend_from_slice(&1u16.to_be_bytes());
+fn decode_xben_to_jsonl_ben32_max_len_65535() {
+    let mut body = vec![0, 23, 0, 4, 0, 60, 255, 255, 0, 8, 0, 3, 0, 0, 0, 0];
+    body.extend_from_slice(&1u16.to_be_bytes());
+    let input = mkv_xben_from_ben32_body(&body);
 
     let mut out = Vec::new();
-    jsonl_decode_ben32(input.as_slice(), &mut out, 0, BenVariant::MkvChain).unwrap();
+    decode_xben_to_jsonl(BufReader::new(input.as_slice()), &mut out).unwrap();
 
     let rle_assign = vec![(23u16, 4), (60, 65535), (8, 3)];
     let expected = json!({
@@ -589,38 +626,40 @@ fn jsonl_decode_ben32_max_len_65535() {
 }
 
 #[test]
-fn jsonl_decode_ben32_single_element() {
-    let mut input = vec![0, 23, 0, 1, 0, 0, 0, 0];
-    input.extend_from_slice(&1u16.to_be_bytes());
+fn decode_xben_to_jsonl_ben32_single_element() {
+    let mut body = vec![0, 23, 0, 1, 0, 0, 0, 0];
+    body.extend_from_slice(&1u16.to_be_bytes());
+    let input = mkv_xben_from_ben32_body(&body);
 
     let mut out = Vec::new();
-    jsonl_decode_ben32(input.as_slice(), &mut out, 0, BenVariant::MkvChain).unwrap();
+    decode_xben_to_jsonl(BufReader::new(input.as_slice()), &mut out).unwrap();
 
     let expected = json!({"assignment": [23u16], "sample": 1}).to_string() + "\n";
     assert_eq!(out, expected.as_bytes());
 }
 
 #[test]
-fn jsonl_decode_ben32_three_frames() {
+fn decode_xben_to_jsonl_ben32_three_frames() {
     // Three ben32 records with count=1 each — mirrors test_decode_ben32_multiple_simple_lines.
-    let mut input: Vec<u8> = Vec::new();
+    let mut body: Vec<u8> = Vec::new();
     // Record 1: rle [(1,4),(2,4),(3,4),(4,4)]
-    input.extend_from_slice(&[0, 1, 0, 4, 0, 2, 0, 4, 0, 3, 0, 4, 0, 4, 0, 4, 0, 0, 0, 0]);
-    input.extend_from_slice(&1u16.to_be_bytes());
+    body.extend_from_slice(&[0, 1, 0, 4, 0, 2, 0, 4, 0, 3, 0, 4, 0, 4, 0, 4, 0, 0, 0, 0]);
+    body.extend_from_slice(&1u16.to_be_bytes());
     // Record 2: rle [(2,2),(3,7),(1,1),(2,1),(3,1)]
-    input.extend_from_slice(&[
+    body.extend_from_slice(&[
         0, 2, 0, 2, 0, 3, 0, 7, 0, 1, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 0, 0, 0,
     ]);
-    input.extend_from_slice(&1u16.to_be_bytes());
+    body.extend_from_slice(&1u16.to_be_bytes());
     // Record 3: rle [(1..10, each 1)]
-    input.extend_from_slice(&[
+    body.extend_from_slice(&[
         0, 1, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 4, 0, 1, 0, 5, 0, 1, 0, 6, 0, 1, 0, 7, 0, 1, 0, 8,
         0, 1, 0, 9, 0, 1, 0, 10, 0, 1, 0, 0, 0, 0,
     ]);
-    input.extend_from_slice(&1u16.to_be_bytes());
+    body.extend_from_slice(&1u16.to_be_bytes());
+    let input = mkv_xben_from_ben32_body(&body);
 
     let mut out = Vec::new();
-    jsonl_decode_ben32(input.as_slice(), &mut out, 0, BenVariant::MkvChain).unwrap();
+    decode_xben_to_jsonl(BufReader::new(input.as_slice()), &mut out).unwrap();
 
     let rle_lst: Vec<Vec<(u16, u16)>> = vec![
         vec![(1, 4), (2, 4), (3, 4), (4, 4)],
