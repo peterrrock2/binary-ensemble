@@ -7,6 +7,13 @@ use std::io::{self, Read};
 /// millions of run pairs.
 pub(crate) const MAX_FRAME_PAYLOAD_BYTES: u32 = 1 << 26;
 
+/// Upper bound on the *speculative* run-pair reservation made before decoding a frame payload.
+/// The header-derived pair count is attacker-controlled: a minimum-width frame at the payload cap
+/// implies ~268 million pairs (≈1 GiB) before a single payload byte has been read. Legitimate
+/// frames rarely exceed a few hundred thousand runs, and `Vec` growth covers any that do, so the
+/// reservation is clamped and a hostile header costs kilobytes instead of a gigabyte.
+const MAX_RLE_PREALLOC_PAIRS: usize = 1 << 16;
+
 /// Decode a single BEN frame payload into run-length encoded assignments.
 ///
 /// This function expects only the packed payload bytes for one BEN frame, not the leading per-frame
@@ -70,7 +77,8 @@ pub fn decode_ben_line<R: Read>(
     let bit_width = u64::from(max_val_bits) + u64::from(max_len_bits);
     let total_bits = u64::from(n_bytes) * 8;
     let n_assignments_upper_bound = (total_bits / bit_width) as usize;
-    let mut output_rle: Vec<(u16, u16)> = Vec::with_capacity(n_assignments_upper_bound);
+    let mut output_rle: Vec<(u16, u16)> =
+        Vec::with_capacity(n_assignments_upper_bound.min(MAX_RLE_PREALLOC_PAIRS));
 
     let mut buffer: u32 = 0;
     let mut n_bits_in_buff: u16 = 0;
@@ -215,6 +223,24 @@ mod tests {
             .expect_err("must reject");
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         assert!(err.to_string().contains("inconsistent"));
+    }
+
+    #[test]
+    fn decode_ben_line_grows_past_the_clamped_preallocation() {
+        use crate::codec::BenEncodeFrame;
+        use crate::BenVariant;
+        // 100,000 pairs sit above MAX_RLE_PREALLOC_PAIRS, so the output vector must grow past its
+        // clamped initial reservation without losing or reordering pairs.
+        let runs = vec![(1u16, 1u16); 100_000];
+        let frame = BenEncodeFrame::from_rle(runs.clone(), BenVariant::Standard, None);
+        let decoded = decode_ben_line(
+            Cursor::new(frame.payload()),
+            frame.max_val_bit_count().unwrap(),
+            frame.max_len_bit_count(),
+            frame.n_bytes(),
+        )
+        .unwrap();
+        assert_eq!(decoded, runs);
     }
 
     #[test]

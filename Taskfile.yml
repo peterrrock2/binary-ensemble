@@ -3,11 +3,11 @@
 version: "3"
 
 vars:
-  CARGO_BIN: '{{.HOME}}/.cargo/bin'
-  LOCAL_BIN: '{{.HOME}}/.local/bin'
-  LLVM_BIN: '{{.HOME}}/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/bin'
-  COV_TARGET_DIR: '{{.ROOT_DIR}}/target/llvm-cov-target'
-  BEN_PY_TEST_PATHS: 'tests/'
+  CARGO_BIN: "{{.HOME}}/.cargo/bin"
+  LOCAL_BIN: "{{.HOME}}/.local/bin"
+  LLVM_BIN: "{{.HOME}}/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/bin"
+  COV_TARGET_DIR: "{{.ROOT_DIR}}/target/llvm-cov-target"
+  BEN_PY_TEST_PATHS: "tests/"
 
 tasks:
   default:
@@ -19,7 +19,7 @@ tasks:
     desc: List available tasks
     silent: true
     cmds:
-      - 'command -v go-task >/dev/null 2>&1 && go-task --list-all || task --list-all'
+      - "command -v go-task >/dev/null 2>&1 && go-task --list-all || task --list-all"
 
   ensure-rust-linux: &ensure-rust-unix
     desc: Install Rust if it is not already available
@@ -151,6 +151,7 @@ tasks:
     cmds:
       - task: test-rust
       - task: test-python
+      - task: docs-test
 
   format-rust:
     desc: Format Rust code

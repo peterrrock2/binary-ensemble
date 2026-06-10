@@ -186,8 +186,8 @@ fn twodelta_unpack_rejects_interior_zero_run_length() {
 fn ben_decode_twodelta_interior_zero_errors_through_frame_reader() {
     // Delta frame body: pair (1,2), width 4, n_bytes 1, payload 0x0F (interior zero), count 1.
     let data: Vec<u8> = vec![0, 1, 0, 2, 4, 0, 0, 0, 1, 0x0F, 0, 1];
-    let err = BenDecodeFrame::from_reader(&mut io::Cursor::new(data), BenVariant::TwoDelta)
-        .unwrap_err();
+    let err =
+        BenDecodeFrame::from_reader(&mut io::Cursor::new(data), BenVariant::TwoDelta).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     assert!(err.to_string().contains("interior zero"));
 }
@@ -197,8 +197,8 @@ fn ben_decode_twodelta_inconsistent_n_bytes_errors() {
     // Delta frame claiming n_bytes=2 whose payload decodes to a single width-4 run length: the
     // encoder would have written n_bytes = ceil(1 * 4 / 8) = 1, so 2 is a corrupt-frame signal.
     let data: Vec<u8> = vec![0, 1, 0, 2, 4, 0, 0, 0, 2, 0xF0, 0x00, 0, 1];
-    let err = BenDecodeFrame::from_reader(&mut io::Cursor::new(data), BenVariant::TwoDelta)
-        .unwrap_err();
+    let err =
+        BenDecodeFrame::from_reader(&mut io::Cursor::new(data), BenVariant::TwoDelta).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     assert!(err.to_string().contains("inconsistent"));
 }
@@ -213,24 +213,24 @@ fn ben_decode_oversized_n_bytes_rejected_before_allocating() {
     // Standard: [mvb, mlb, n_bytes].
     let mut data = vec![2u8, 3];
     data.extend_from_slice(&oversized);
-    let err = BenDecodeFrame::from_reader(&mut io::Cursor::new(data), BenVariant::Standard)
-        .unwrap_err();
+    let err =
+        BenDecodeFrame::from_reader(&mut io::Cursor::new(data), BenVariant::Standard).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     assert!(err.to_string().contains("refusing to allocate"));
 
     // MkvChain: same header shape.
     let mut data = vec![2u8, 3];
     data.extend_from_slice(&oversized);
-    let err = BenDecodeFrame::from_reader(&mut io::Cursor::new(data), BenVariant::MkvChain)
-        .unwrap_err();
+    let err =
+        BenDecodeFrame::from_reader(&mut io::Cursor::new(data), BenVariant::MkvChain).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     assert!(err.to_string().contains("refusing to allocate"));
 
     // TwoDelta: [pair_a, pair_b, max_len_bits, n_bytes].
     let mut data = vec![0u8, 1, 0, 2, 4];
     data.extend_from_slice(&oversized);
-    let err = BenDecodeFrame::from_reader(&mut io::Cursor::new(data), BenVariant::TwoDelta)
-        .unwrap_err();
+    let err =
+        BenDecodeFrame::from_reader(&mut io::Cursor::new(data), BenVariant::TwoDelta).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     assert!(err.to_string().contains("refusing to allocate"));
 }

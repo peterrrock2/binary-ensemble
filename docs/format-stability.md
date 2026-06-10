@@ -4,6 +4,11 @@ This crate ships committed binary fixtures under `ben/tests/fixtures/v<n>/` and 
 `ben/tests/test_format_stability.rs` that decodes each one. The fixtures are the v1.0.0 wire-format
 stability contract.
 
+The fixtures have a second consumer: `ben/tests/test_fixture_mutations.rs` drives every
+single-byte mutation and truncation prefix of each binary fixture through every public read entry
+point, asserting panic freedom on corrupt input. Both suites must keep passing against the same
+committed bytes.
+
 ## Contract
 
 **Once a fixture directory is committed for a stable major version, every file inside it MUST

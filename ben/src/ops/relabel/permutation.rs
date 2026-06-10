@@ -63,7 +63,9 @@ pub(super) fn first_seen_relabel_assignment(assignment: &[u16]) -> io::Result<Ve
         let mapped = match label_map.get(&value) {
             Some(mapped) => *mapped,
             None => {
-                next_label = next_label.checked_add(1).ok_or_else(too_many_labels_error)?;
+                next_label = next_label
+                    .checked_add(1)
+                    .ok_or_else(too_many_labels_error)?;
                 label_map.insert(value, next_label);
                 next_label
             }
