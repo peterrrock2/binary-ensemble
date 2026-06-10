@@ -32,7 +32,7 @@ pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
         return Ok(());
     }
 
-    let reader = open_reader(args.input_file.as_deref());
+    let reader = open_reader(args.input_file.as_deref())?;
     let writer = match args.input_file.as_ref() {
         Some(in_file) if !args.print => {
             let path = encode_setup(
@@ -42,7 +42,7 @@ pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
                 args.overwrite,
                 false,
             )?;
-            open_derived_writer(path)
+            open_derived_writer(path)?
         }
         _ => open_writer(args.output_file.as_deref(), args.print, args.overwrite)?,
     };

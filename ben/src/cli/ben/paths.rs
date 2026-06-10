@@ -113,11 +113,16 @@ pub(super) fn decode_setup(
 ///
 /// # Returns
 ///
-/// Returns a buffered reader for the requested file or stdin.
-pub(super) fn open_reader(input_file: Option<&str>) -> DynReader {
+/// Returns a buffered reader for the requested file or stdin, or the open error (e.g. a missing
+/// input file) for the caller to surface as a normal CLI failure.
+pub(super) fn open_reader(input_file: Option<&str>) -> Result<DynReader> {
     match input_file {
-        Some(path) => Box::new(BufReader::new(File::open(path).unwrap())),
-        None => Box::new(BufReader::new(io::stdin())),
+        Some(path) => {
+            let file = File::open(path)
+                .map_err(|e| io::Error::new(e.kind(), format!("cannot open {path}: {e}")))?;
+            Ok(Box::new(BufReader::new(file)))
+        }
+        None => Ok(Box::new(BufReader::new(io::stdin()))),
     }
 }
 
@@ -144,7 +149,9 @@ pub(super) fn open_writer(
     match output_file {
         Some(path) => {
             check_overwrite(path, overwrite)?;
-            Ok(Box::new(BufWriter::new(File::create(path).unwrap())))
+            let file = File::create(path)
+                .map_err(|e| io::Error::new(e.kind(), format!("cannot create {path}: {e}")))?;
+            Ok(Box::new(BufWriter::new(file)))
         }
         None => Ok(Box::new(BufWriter::new(io::stdout()))),
     }
@@ -158,9 +165,12 @@ pub(super) fn open_writer(
 ///
 /// # Returns
 ///
-/// Returns a buffered writer for `path`.
-pub(super) fn open_derived_writer(path: String) -> DynWriter {
-    Box::new(BufWriter::new(File::create(path).unwrap()))
+/// Returns a buffered writer for `path`, or the create error for the caller to surface as a
+/// normal CLI failure.
+pub(super) fn open_derived_writer(path: String) -> Result<DynWriter> {
+    let file = File::create(&path)
+        .map_err(|e| io::Error::new(e.kind(), format!("cannot create {path}: {e}")))?;
+    Ok(Box::new(BufWriter::new(file)))
 }
 
 /// Count the number of non-empty lines in a JSONL file. Used to populate the bundle header's

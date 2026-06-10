@@ -240,7 +240,7 @@ fn open_reader_reads_file_contents() {
     let path = unique_path("reader.txt");
     fs::write(&path, "hello\nworld\n").unwrap();
 
-    let mut reader = open_reader(Some(path.to_str().unwrap()));
+    let mut reader = open_reader(Some(path.to_str().unwrap())).unwrap();
     let mut content = String::new();
     std::io::Read::read_to_string(&mut reader, &mut content).unwrap();
 
@@ -250,7 +250,17 @@ fn open_reader_reads_file_contents() {
 
 #[test]
 fn open_reader_accepts_stdin() {
-    let _reader = open_reader(None);
+    let _reader = open_reader(None).unwrap();
+}
+
+#[test]
+fn open_reader_missing_file_errors_instead_of_panicking() {
+    let err = match open_reader(Some("/nonexistent/definitely-missing.jsonl")) {
+        Ok(_) => panic!("expected open_reader to fail for a missing file"),
+        Err(e) => e,
+    };
+    assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    assert!(err.to_string().contains("definitely-missing"));
 }
 
 #[test]
@@ -278,7 +288,7 @@ fn open_writer_supports_stdout_and_print() {
 fn open_derived_writer_creates_file() {
     let path = unique_path("derived.txt");
     {
-        let mut writer = open_derived_writer(path.to_string_lossy().into_owned());
+        let mut writer = open_derived_writer(path.to_string_lossy().into_owned()).unwrap();
         writer.write_all(b"derived").unwrap();
     }
 
