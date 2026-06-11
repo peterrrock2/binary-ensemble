@@ -126,6 +126,7 @@ tasks:
         cargo test -- --ignored
         --skip generate_format_stability_fixtures
         --skip regenerate_twodelta_fixtures
+        --skip generate_pcompress_interop_fixture
 
   test-rust:
     desc: Run Rust tests for the workspace (fast suite plus #[ignore]-gated stress tests)

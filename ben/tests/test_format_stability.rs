@@ -437,6 +437,35 @@ fn generate_format_stability_fixtures() {
     eprintln!("Wrote v1.0.0 fixtures to {:?}", fixtures_dir());
 }
 
+/// The canonical assignments rendered in PCompress's zero-based line format (one JSON array per
+/// line) — the input the foreign `pcompress` encoder consumes. District ids are CANONICAL_JSONL's
+/// minus one, so the pcben bridge's one-based shift converts the fixture back to CANONICAL_JSONL
+/// exactly.
+const CANONICAL_PCOMPRESS_INPUT: &str = "\
+[0,0,1,1]
+[0,1,0,1]
+[0,0,0,1]
+[0,0,0,1]
+[1,1,1,0]
+";
+
+#[test]
+#[ignore = "mints only the foreign-format pcompress interop fixture; never run as part of normal CI"]
+fn generate_pcompress_interop_fixture() {
+    // Minted by the *foreign implementation*: the `pcompress` crates.io dependency is mggg's real
+    // encoder, so these bytes pin interop with genuine PCompress output rather than with this
+    // workspace's own rendering of the format. Re-minting is legitimate only if the pinned
+    // `pcompress` dependency version changes its wire format, which would itself be an interop
+    // event worth a dedicated PR.
+    let mut reader = BufReader::new(CANONICAL_PCOMPRESS_INPUT.as_bytes());
+    let mut writer = std::io::BufWriter::new(Vec::new());
+    pcompress::encode::encode(&mut reader, &mut writer, false);
+    let out = writer.into_inner().expect("flush pcompress fixture bytes");
+    write_fixture("interop.pcompress", &out);
+
+    eprintln!("Wrote interop.pcompress to {:?}", fixtures_dir());
+}
+
 #[test]
 #[ignore = "regenerates only the (unreleased) TwoDelta fixtures; never run as part of normal CI"]
 fn regenerate_twodelta_fixtures() {

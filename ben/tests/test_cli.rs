@@ -1524,6 +1524,44 @@ fn reben_cli_supports_multi_level_cluster_ordering() {
 }
 
 #[test]
+fn pcben_decodes_committed_foreign_pcompress_fixture() {
+    // `interop.pcompress` was minted by the real PCompress implementation (the `pcompress`
+    // crates.io dependency), so this pins the foreign-format interop contract: bytes produced by
+    // genuine PCompress must keep converting to BEN that decodes back to the canonical JSONL.
+    // The expected output is the committed `source.jsonl`, whose one-based ids are the fixture's
+    // zero-based ids shifted by the bridge.
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("v1.0.0");
+    let expected = fs::read_to_string(fixtures.join("source.jsonl")).unwrap();
+
+    let temp = TempDir::new("pcben-interop");
+    let ben_path = temp.path().join("interop.ben");
+    let pc_to_ben = run(
+        "pcben",
+        &[
+            "--mode",
+            "pc-to-ben",
+            "--input-file",
+            fixtures.join("interop.pcompress").to_str().unwrap(),
+            "--output-file",
+            ben_path.to_str().unwrap(),
+        ],
+        temp.path(),
+    );
+    assert_success(&pc_to_ben);
+
+    let mut jsonl = Vec::new();
+    decode_ben_to_jsonl(fs::File::open(&ben_path).unwrap(), &mut jsonl).unwrap();
+    assert_eq!(
+        String::from_utf8(jsonl).unwrap(),
+        expected,
+        "foreign pcompress fixture no longer converts to the canonical ensemble"
+    );
+}
+
+#[test]
 fn pben_cli_converts_between_formats() {
     let temp = TempDir::new("pcben");
     let jsonl_path = temp.path().join("samples.jsonl");
