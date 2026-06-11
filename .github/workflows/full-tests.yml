@@ -3,9 +3,10 @@ name: Full tests (on demand)
 # The heavy gates, run only when asked:
 #
 #   - From the Actions tab via "Run workflow" (workflow_dispatch), picking any branch.
-#   - From a PR by commenting `/ci-full` (Rust + Python suites + big-endian) or `/ci-endian`
-#     (big-endian only). Comment triggers are restricted to the repo owner, members, and
-#     collaborators, because the jobs check out and execute the PR head.
+#   - From a PR by commenting `/ci-full` (Rust + Python suites + big-endian), `/ci-endian`
+#     (big-endian only), or `/ci-fuzz` (time-boxed coverage-guided fuzzing). Comment triggers
+#     are restricted to the repo owner, members, and collaborators, because the jobs check out
+#     and execute the PR head.
 #
 # Note: GitHub only evaluates `issue_comment` triggers against the workflow file on the default
 # branch, so the comment commands start working once this file lands on main.
@@ -26,6 +27,7 @@ jobs:
     outputs:
       run_full: ${{ steps.flags.outputs.run_full }}
       run_endian: ${{ steps.flags.outputs.run_endian }}
+      run_fuzz: ${{ steps.flags.outputs.run_fuzz }}
       ref: ${{ steps.flags.outputs.ref }}
     steps:
       - name: compute trigger flags
@@ -42,10 +44,12 @@ jobs:
         run: |
           run_full=false
           run_endian=false
+          run_fuzz=false
           ref="$DISPATCH_REF"
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             run_full=true
             run_endian=true
+            run_fuzz=true
           elif [ "$IS_PR_COMMENT" = "true" ]; then
             case "$AUTHOR_ASSOCIATION" in
               OWNER|MEMBER|COLLABORATOR)
@@ -55,6 +59,9 @@ jobs:
                 case "$COMMENT_BODY" in
                   *"/ci-endian"*) run_endian=true ;;
                 esac
+                case "$COMMENT_BODY" in
+                  *"/ci-fuzz"*) run_fuzz=true ;;
+                esac
                 ;;
             esac
             ref="refs/pull/$PR_NUMBER/head"
@@ -62,10 +69,11 @@ jobs:
           {
             echo "run_full=$run_full"
             echo "run_endian=$run_endian"
+            echo "run_fuzz=$run_fuzz"
             echo "ref=$ref"
           } >> "$GITHUB_OUTPUT"
       - name: acknowledge the triggering comment
-        if: github.event_name == 'issue_comment' && (steps.flags.outputs.run_full == 'true' || steps.flags.outputs.run_endian == 'true')
+        if: github.event_name == 'issue_comment' && (steps.flags.outputs.run_full == 'true' || steps.flags.outputs.run_endian == 'true' || steps.flags.outputs.run_fuzz == 'true')
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
@@ -131,3 +139,29 @@ jobs:
           tool: cross
       - name: cross test on s390x
         run: cross test -p binary-ensemble --target s390x-unknown-linux-gnu
+
+  fuzz:
+    name: coverage-guided fuzzing (time-boxed)
+    needs: decide
+    if: needs.decide.outputs.run_fuzz == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.decide.outputs.ref }}
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - uses: arduino/setup-task@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: fuzz every read surface (120s per target)
+        run: task fuzz FUZZ_SECONDS=120
+      - name: upload crash artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/
