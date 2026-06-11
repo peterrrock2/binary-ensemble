@@ -9,6 +9,7 @@ use xz2::write::XzEncoder;
 use crate::codec::decode::decode_ben_line;
 use crate::codec::encode::{encode_ben32_assignments, encode_twodelta_frame_with_hint};
 use crate::codec::translate::ben_to_ben32_lines;
+use crate::codec::frames::{check_payload_len, check_twodelta_run_width};
 use crate::codec::BenEncodeFrame;
 use crate::format::banners::{has_known_banner_prefix, BANNER_LEN};
 use crate::progress::Spinner;
@@ -309,29 +310,35 @@ impl<W: Write> XBenInner<W> {
                     sample_count += count as usize;
                     spinner.set_count(sample_count as u64);
                 }
-                // Delta: unpack the bit-packed run lengths and buffer into the current chunk.
+                // Delta: unpack the bit-packed run lengths and buffer into the current chunk. The
+                // input stream is untrusted, so the header fields are validated (bit width,
+                // payload cap) before the payload buffer is allocated, and the strict constructor
+                // rejects corrupt payloads instead of silently dropping zero run lengths.
                 BEN_TWODELTA_DELTA_TAG => {
                     let pair_a = reader.read_u16::<BigEndian>()?;
                     let pair_b = reader.read_u16::<BigEndian>()?;
                     let delta_max_len_bits = reader.read_u8()?;
+                    check_twodelta_run_width(delta_max_len_bits)?;
                     let delta_n_bytes = reader.read_u32::<BigEndian>()?;
+                    check_payload_len(delta_n_bytes)?;
 
                     let mut payload = vec![0u8; delta_n_bytes as usize];
                     reader.read_exact(&mut payload)?;
                     let count = reader.read_u16::<BigEndian>()?;
 
-                    let (pair, run_lengths) = match BenEncodeFrame::from_parts(
+                    let frame = BenEncodeFrame::try_from_parts(
                         (pair_a, pair_b),
                         delta_max_len_bits,
                         payload,
                         count,
-                    ) {
+                    )?;
+                    let (pair, run_lengths) = match frame {
                         BenEncodeFrame::TwoDelta {
                             pair,
                             run_length_vector,
                             ..
                         } => (pair, run_length_vector),
-                        _ => unreachable!("BenEncodeFrame::from_parts always returns TwoDelta"),
+                        _ => unreachable!("try_from_parts always returns TwoDelta"),
                     };
 
                     chunk_buffer.push(BufferedDeltaFrame {

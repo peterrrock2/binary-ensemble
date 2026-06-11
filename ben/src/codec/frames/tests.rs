@@ -421,7 +421,7 @@ fn encode_from_assignment_mkv_carries_count() {
     assert_eq!(count, 9);
 }
 
-// ── BenEncodeFrame::from_run_lengths / from_parts (TwoDelta) ────────────────
+// ── BenEncodeFrame::from_run_lengths / try_from_parts (TwoDelta) ────────────
 
 #[test]
 fn twodelta_from_run_lengths_count_none_defaults_to_one() {
@@ -433,27 +433,66 @@ fn twodelta_from_run_lengths_count_none_defaults_to_one() {
 }
 
 #[test]
-fn twodelta_from_run_lengths_then_from_parts_roundtrip() {
+fn twodelta_from_run_lengths_then_try_from_parts_roundtrip() {
     let original = BenEncodeFrame::from_run_lengths((3, 4), vec![5, 5, 5], Some(2));
     let bytes = original.as_slice().to_vec();
     let (pair, max_len_bits, n_bytes, _, _, count) = unwrap_encode_twodelta(original.clone());
     let payload_slice = &bytes[9..9 + n_bytes as usize];
-    let rebuilt = BenEncodeFrame::from_parts(pair, max_len_bits, payload_slice.to_vec(), count);
-    let (rb_pair, _, _, rb_runs, _, rb_count) = unwrap_encode_twodelta(rebuilt);
+    let rebuilt =
+        BenEncodeFrame::try_from_parts(pair, max_len_bits, payload_slice.to_vec(), count).unwrap();
+    let (rb_pair, _, _, rb_runs, rb_raw, rb_count) = unwrap_encode_twodelta(rebuilt);
     assert_eq!(rb_pair, pair);
     assert_eq!(rb_runs, vec![5, 5, 5]);
     assert_eq!(rb_count, count);
+    assert_eq!(rb_raw, bytes, "rebuilt frame must serialize byte-identically");
 }
 
 #[test]
-fn twodelta_from_parts_preserves_nontrivial_count() {
+fn twodelta_try_from_parts_preserves_nontrivial_count() {
     let original = BenEncodeFrame::from_run_lengths((1, 9), vec![3, 3], Some(42));
     let bytes = original.as_slice().to_vec();
     let (_, max_len_bits, n_bytes, _, _, _) = unwrap_encode_twodelta(original);
     let payload = bytes[9..9 + n_bytes as usize].to_vec();
-    let rebuilt = BenEncodeFrame::from_parts((1, 9), max_len_bits, payload, 42);
+    let rebuilt = BenEncodeFrame::try_from_parts((1, 9), max_len_bits, payload, 42).unwrap();
     let (_, _, _, _, _, count) = unwrap_encode_twodelta(rebuilt);
     assert_eq!(count, 42);
+}
+
+#[test]
+fn twodelta_try_from_parts_rejects_invalid_width() {
+    for width in [0u8, 17] {
+        let err = BenEncodeFrame::try_from_parts((1, 2), width, vec![0xF0], 1).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("bit width"));
+    }
+}
+
+#[test]
+fn twodelta_try_from_parts_rejects_interior_zero_run_length() {
+    // width=4, payload 0x0F → slots [0, 15]: an interior zero, not trailing padding.
+    let err = BenEncodeFrame::try_from_parts((1, 2), 4, vec![0x0F], 1).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("interior zero"));
+}
+
+#[test]
+fn twodelta_try_from_parts_rejects_inconsistent_payload_len() {
+    // width=4, payload [0xF0, 0x00] recovers one run; the encoder writes ceil(1*4/8) = 1 byte,
+    // so a 2-byte payload is a corrupt-frame signal.
+    let err = BenEncodeFrame::try_from_parts((1, 2), 4, vec![0xF0, 0x00], 1).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("inconsistent"));
+}
+
+#[test]
+#[allow(deprecated)]
+fn twodelta_from_parts_legacy_zero_drop_pinned_until_removal() {
+    // The deprecated constructor's documented behavior: zero slots are dropped wherever they
+    // appear. Pinned so the behavior cannot drift while the API survives its deprecation window;
+    // new code uses try_from_parts, which rejects this same payload.
+    let frame = BenEncodeFrame::from_parts((1, 2), 4, vec![0x0F], 1);
+    let (_, _, _, runs, _, _) = unwrap_encode_twodelta(frame);
+    assert_eq!(runs, vec![15], "interior zero slot is silently dropped");
 }
 
 #[test]

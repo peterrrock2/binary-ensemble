@@ -1525,16 +1525,17 @@ fn encode_twodelta_frame_single_value_swap() {
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn twodelta_frame_from_parts_round_trip() {
+fn twodelta_frame_try_from_parts_round_trip() {
     let pair = (10u16, 20u16);
     let run_lengths = vec![2u16, 5, 1];
     let original = BenEncodeFrame::from_run_lengths(pair, run_lengths, None);
-    let reconstructed = BenEncodeFrame::from_parts(
+    let reconstructed = BenEncodeFrame::try_from_parts(
         pair,
         original.max_len_bit_count(),
         original.payload().to_vec(),
         original.count(),
-    );
+    )
+    .expect("encoder-produced parts must reconstruct");
     assert_eq!(original.as_slice(), reconstructed.as_slice());
     assert_eq!(original.pair().unwrap(), reconstructed.pair().unwrap());
     assert_eq!(

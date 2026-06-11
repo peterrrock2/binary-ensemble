@@ -1,6 +1,25 @@
 use super::compress_rle_to_ben_bytes;
 use crate::util::rle::assign_to_rle;
 use crate::BenVariant;
+use std::io;
+
+/// Serialize a TwoDelta frame's wire bytes from its parsed parts:
+/// `[pair.0 u16][pair.1 u16][width u8][n_bytes u32][payload][count u16]`, all big-endian.
+fn assemble_twodelta_raw_bytes(
+    pair: (u16, u16),
+    max_len_bit_count: u8,
+    payload: &[u8],
+    count: u16,
+) -> Vec<u8> {
+    let mut raw_bytes = Vec::with_capacity(9 + payload.len() + 2);
+    raw_bytes.extend_from_slice(&pair.0.to_be_bytes());
+    raw_bytes.extend_from_slice(&pair.1.to_be_bytes());
+    raw_bytes.push(max_len_bit_count);
+    raw_bytes.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+    raw_bytes.extend_from_slice(payload);
+    raw_bytes.extend_from_slice(&count.to_be_bytes());
+    raw_bytes
+}
 
 /// One sample's encoded bytes at the frame layer.
 ///
@@ -195,11 +214,59 @@ impl BenEncodeFrame {
         }
     }
 
-    /// Reconstruct a `TwoDelta` frame from already-parsed header fields and a raw payload.
+    /// Reconstruct a `TwoDelta` frame from already-parsed header fields and a raw payload,
+    /// validating the payload as it is unpacked.
     ///
     /// This is the inverse of [`BenEncodeFrame::from_run_lengths`]: it re-assembles the serialized
     /// bytes and decodes the bit-packed payload back into the run-length vector so that both
     /// representations are available on the resulting frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::ErrorKind::InvalidData`] when:
+    ///
+    /// - `max_len_bit_count` is outside `1..=16`;
+    /// - the payload contains an interior zero run length (only the final byte's zero padding may
+    ///   form zero slots — the encoder never emits zero-length runs, and silently dropping one
+    ///   would shift the alternation parity of every later run);
+    /// - the payload length is not `ceil(runs * width / 8)` for the recovered run count.
+    pub fn try_from_parts(
+        pair: (u16, u16),
+        max_len_bit_count: u8,
+        payload: Vec<u8>,
+        count: u16,
+    ) -> io::Result<Self> {
+        use super::decode::{
+            check_twodelta_frame_consistency, check_twodelta_run_width,
+            unpack_twodelta_run_lengths,
+        };
+
+        check_twodelta_run_width(max_len_bit_count)?;
+        let n_bytes = payload.len() as u32;
+        let run_length_vector = unpack_twodelta_run_lengths(&payload, max_len_bit_count)?;
+        check_twodelta_frame_consistency(n_bytes, run_length_vector.len(), max_len_bit_count)?;
+
+        let raw_bytes = assemble_twodelta_raw_bytes(pair, max_len_bit_count, &payload, count);
+        Ok(Self::TwoDelta {
+            pair,
+            max_len_bit_count,
+            n_bytes,
+            run_length_vector,
+            raw_bytes,
+            count,
+        })
+    }
+
+    /// Reconstruct a `TwoDelta` frame from already-parsed header fields and a raw payload.
+    ///
+    /// Unlike [`BenEncodeFrame::try_from_parts`], this performs no validation: zero run-length
+    /// slots anywhere in the payload are silently dropped, the bit width is trusted, and the
+    /// payload length is not checked against the recovered run count. On a corrupt payload that
+    /// can silently shift the run alternation and decode to a plausible-but-wrong delta.
+    #[deprecated(
+        note = "performs no payload validation and silently drops zero run-length slots; \
+                use try_from_parts"
+    )]
     pub fn from_parts(
         pair: (u16, u16),
         max_len_bit_count: u8,
@@ -207,13 +274,7 @@ impl BenEncodeFrame {
         count: u16,
     ) -> Self {
         let n_bytes = payload.len() as u32;
-        let mut raw_bytes = Vec::with_capacity(9 + payload.len() + 2);
-        raw_bytes.extend_from_slice(&pair.0.to_be_bytes());
-        raw_bytes.extend_from_slice(&pair.1.to_be_bytes());
-        raw_bytes.push(max_len_bit_count);
-        raw_bytes.extend_from_slice(&n_bytes.to_be_bytes());
-        raw_bytes.extend_from_slice(&payload);
-        raw_bytes.extend_from_slice(&count.to_be_bytes());
+        let raw_bytes = assemble_twodelta_raw_bytes(pair, max_len_bit_count, &payload, count);
 
         let mut run_length_vector = Vec::new();
         let mut buffer: u32 = 0;

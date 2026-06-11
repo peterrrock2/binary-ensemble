@@ -6,13 +6,48 @@ use std::io::{self, Read};
 /// Reject a declared payload length above [`MAX_FRAME_PAYLOAD_BYTES`] **before** allocating the
 /// payload buffer, so a corrupt or adversarial frame header cannot force a multi-gigabyte
 /// reservation. Well-formed frames never approach the cap.
-fn check_payload_len(n_bytes: u32) -> io::Result<()> {
+pub(crate) fn check_payload_len(n_bytes: u32) -> io::Result<()> {
     if n_bytes > MAX_FRAME_PAYLOAD_BYTES {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
                 "BEN frame payload of {n_bytes} bytes exceeds {MAX_FRAME_PAYLOAD_BYTES}; \
                  refusing to allocate"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Reject a TwoDelta run-length bit width outside `1..=16`. The bit unpackers shift a 32-bit
+/// register by `32 - width` and decrement a counter by `width`, so a zero or oversized width
+/// is not merely corrupt — it would shift out of range or never terminate.
+pub(crate) fn check_twodelta_run_width(max_len_bits: u8) -> io::Result<()> {
+    if max_len_bits == 0 || max_len_bits > 16 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("invalid TwoDelta run-length bit width: {max_len_bits}"),
+        ));
+    }
+    Ok(())
+}
+
+/// n_bytes consistency for a TwoDelta frame: the encoder writes `n_bytes = ceil(runs * width / 8)`.
+/// Any other relationship between the payload length and the recovered run count is a
+/// corrupt-frame signal, exactly mirroring the Standard/MkvChain payload check in
+/// [`decode_ben_line`](crate::codec::decode::decode_ben_line).
+pub(crate) fn check_twodelta_frame_consistency(
+    n_bytes: u32,
+    run_count: usize,
+    max_len_bits: u8,
+) -> io::Result<()> {
+    let expected_bytes = (run_count as u64 * u64::from(max_len_bits)).div_ceil(8);
+    if u64::from(n_bytes) != expected_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "inconsistent TwoDelta frame size: n_bytes={n_bytes} but {run_count} run \
+                 length(s) at {max_len_bits} bit(s) each require {expected_bytes} byte(s)"
             ),
         ));
     }
@@ -191,12 +226,7 @@ impl BenDecodeFrame {
 
         let pair_b = reader.read_u16::<BigEndian>()?;
         let max_len_bits = reader.read_u8()?;
-        if max_len_bits == 0 || max_len_bits > 16 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("invalid TwoDelta run-length bit width: {max_len_bits}"),
-            ));
-        }
+        check_twodelta_run_width(max_len_bits)?;
         let n_bytes = reader.read_u32::<BigEndian>()?;
         check_payload_len(n_bytes)?;
 
@@ -207,21 +237,7 @@ impl BenDecodeFrame {
 
         let pair = (pair_a, pair_b);
         let run_lengths = unpack_twodelta_run_lengths(&payload, max_len_bits)?;
-
-        // n_bytes consistency: the encoder writes `n_bytes = ceil(runs * width / 8)`. Any other
-        // relationship between n_bytes and the recovered run count is a corrupt-frame signal,
-        // exactly mirroring the Standard/MkvChain payload check in `decode_ben_line`.
-        let expected_bytes = (run_lengths.len() as u64 * u64::from(max_len_bits)).div_ceil(8);
-        if u64::from(n_bytes) != expected_bytes {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "inconsistent TwoDelta frame size: n_bytes={n_bytes} but {} run length(s) at \
-                     {max_len_bits} bit(s) each require {expected_bytes} byte(s)",
-                    run_lengths.len()
-                ),
-            ));
-        }
+        check_twodelta_frame_consistency(n_bytes, run_lengths.len(), max_len_bits)?;
 
         Ok(Some(Self::TwoDelta {
             pair,

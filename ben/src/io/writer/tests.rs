@@ -764,16 +764,16 @@ fn twodelta_repeat_frame_run_exceeds_u16_max_errors() {
 fn translate_twodelta_non_eof_read_error_propagates() {
     use std::io::{self, Read};
 
-    // ingest_ben_stream in TwoDelta mode calls translate_ben_twodelta_to_xben. After reading the
-    // anchor frame it loops reading delta frames; a non-EOF error on pair_a (first u16 read in the
-    // loop) must propagate.
+    // ingest_ben_stream in TwoDelta mode calls translate_ben_twodelta_to_xben. After consuming a
+    // complete snapshot frame it loops reading the next frame's tag byte; a non-EOF error there
+    // must propagate.
     let mut xben = Vec::new();
     let mut writer = build_xben_writer(&mut xben, BenVariant::TwoDelta, None);
 
-    // Banner (17 bytes) + minimal anchor frame:
-    //   max_val_bits=1, max_len_bits=1, n_bytes=0 (no payload), count=1
+    // Banner (17 bytes) + a complete snapshot frame:
+    //   snapshot tag, then max_val_bits=1, max_len_bits=1, n_bytes=0 (no payload), count=1.
     let mut input: Vec<u8> = b"TWODELTA BEN FILE".to_vec();
-    input.extend_from_slice(&[0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]);
+    input.extend_from_slice(&[0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]);
 
     struct ErrorAfterEof;
     impl Read for ErrorAfterEof {

@@ -21,7 +21,7 @@ use std::path::Path;
 use binary_ensemble::codec::decode::{
     decode_ben_to_jsonl, decode_xben_to_ben, decode_xben_to_jsonl, xz_decompress,
 };
-use binary_ensemble::codec::encode::xz_compress;
+use binary_ensemble::codec::encode::{encode_ben_to_xben, xz_compress};
 use binary_ensemble::io::bundle::reader::BendlReader;
 use binary_ensemble::io::bundle::writer::BendlAppender;
 use binary_ensemble::io::reader::{BenStreamFrameReader, BenStreamReader};
@@ -142,6 +142,19 @@ fn drive_ben_entry_points(fixture_name: &str, pos: usize, byte: u8, bytes: &[u8]
     run("extract_assignment_ben", &|| {
         let _ = extract_assignment_ben(bytes, 1);
         let _ = extract_assignment_ben(bytes, 3);
+    });
+    // Encode-side entry point that *reads* untrusted BEN: the BEN→XBEN converter re-parses every
+    // frame (including the TwoDelta ingest path), so it faces the same corruption surface as the
+    // decoders.
+    run("encode_ben_to_xben", &|| {
+        let _ = encode_ben_to_xben(
+            io::BufReader::new(bytes),
+            io::sink(),
+            Some(1),
+            Some(0),
+            None,
+            None,
+        );
     });
 }
 

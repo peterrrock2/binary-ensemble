@@ -15,6 +15,7 @@ mod encode;
 mod tests;
 
 pub use decode::BenDecodeFrame;
+pub(crate) use decode::{check_payload_len, check_twodelta_run_width};
 pub use encode::BenEncodeFrame;
 
 /// Bit-pack an RLE run vector into a serialized BEN frame payload.
