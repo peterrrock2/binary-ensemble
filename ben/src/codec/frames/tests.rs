@@ -484,16 +484,6 @@ fn twodelta_try_from_parts_rejects_inconsistent_payload_len() {
     assert!(err.to_string().contains("inconsistent"));
 }
 
-#[test]
-#[allow(deprecated)]
-fn twodelta_from_parts_legacy_zero_drop_pinned_until_removal() {
-    // The deprecated constructor's documented behavior: zero slots are dropped wherever they
-    // appear. Pinned so the behavior cannot drift while the API survives its deprecation window;
-    // new code uses try_from_parts, which rejects this same payload.
-    let frame = BenEncodeFrame::from_parts((1, 2), 4, vec![0x0F], 1);
-    let (_, _, _, runs, _, _) = unwrap_encode_twodelta(frame);
-    assert_eq!(runs, vec![15], "interior zero slot is silently dropped");
-}
 
 #[test]
 fn twodelta_from_run_lengths_single_run() {

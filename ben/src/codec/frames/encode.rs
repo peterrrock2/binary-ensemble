@@ -257,56 +257,6 @@ impl BenEncodeFrame {
         })
     }
 
-    /// Reconstruct a `TwoDelta` frame from already-parsed header fields and a raw payload.
-    ///
-    /// Unlike [`BenEncodeFrame::try_from_parts`], this performs no validation: zero run-length
-    /// slots anywhere in the payload are silently dropped, the bit width is trusted, and the
-    /// payload length is not checked against the recovered run count. On a corrupt payload that
-    /// can silently shift the run alternation and decode to a plausible-but-wrong delta.
-    #[deprecated(
-        note = "performs no payload validation and silently drops zero run-length slots; \
-                use try_from_parts"
-    )]
-    pub fn from_parts(
-        pair: (u16, u16),
-        max_len_bit_count: u8,
-        payload: Vec<u8>,
-        count: u16,
-    ) -> Self {
-        let n_bytes = payload.len() as u32;
-        let raw_bytes = assemble_twodelta_raw_bytes(pair, max_len_bit_count, &payload, count);
-
-        let mut run_length_vector = Vec::new();
-        let mut buffer: u32 = 0;
-        let mut n_bits_in_buff: u16 = 0;
-
-        for &byte in payload[..n_bytes as usize].iter() {
-            // Place the incoming byte at the top of the 32-bit shift register, below any bits
-            // already buffered. The explicit shift is endian-independent; extraction below always
-            // reads from the register's high end.
-            buffer |= ((byte as u32) << 24) >> n_bits_in_buff;
-            n_bits_in_buff += 8;
-
-            while n_bits_in_buff >= max_len_bit_count as u16 {
-                let item = (buffer >> (32 - max_len_bit_count)) as u16;
-                buffer <<= max_len_bit_count;
-                n_bits_in_buff -= max_len_bit_count as u16;
-                if item > 0 {
-                    run_length_vector.push(item);
-                }
-            }
-        }
-
-        Self::TwoDelta {
-            pair,
-            max_len_bit_count,
-            n_bytes,
-            run_length_vector,
-            raw_bytes,
-            count,
-        }
-    }
-
     /// Borrow the serialized frame bytes.
     pub fn as_slice(&self) -> &[u8] {
         match self {
