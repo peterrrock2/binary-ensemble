@@ -25,6 +25,12 @@ pub enum EncodeError {
     )]
     TwoDeltaRunTooLong,
 
+    #[error(
+        "frame payload of {runs} run(s) at {bits_per_run} bit(s)/run overflows the u32 \
+         n_bytes field"
+    )]
+    FramePayloadOverflow { runs: usize, bits_per_run: u64 },
+
     #[error("TwoDelta received identical assignment to previous frame")]
     TwoDeltaIdentical,
 

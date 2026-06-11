@@ -59,10 +59,10 @@ fn with_banner(variant: BenVariant, payload: &[u8]) -> Vec<u8> {
 fn test_relabel_ben_line_simple() {
     let in_rle = vec![(2, 2), (3, 2), (1, 2), (4, 2)];
 
-    let input = BenEncodeFrame::from_rle(in_rle, BenVariant::Standard, None);
+    let input = BenEncodeFrame::from_rle(in_rle, BenVariant::Standard, None).unwrap();
 
     let out_rle = vec![(1, 2), (2, 2), (3, 2), (4, 2)];
-    let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None);
+    let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None).unwrap();
 
     let with_banner_in = with_banner(BenVariant::Standard, input.as_slice());
     let mut buf = Vec::new();
@@ -253,11 +253,11 @@ fn test_relabel_ben_line_with_map() {
     let in_assign = vec![2, 3, 1, 4, 5, 5, 3, 4, 2];
     let in_rle = assign_to_rle(in_assign);
 
-    let input = BenEncodeFrame::from_rle(in_rle, BenVariant::Standard, None);
+    let input = BenEncodeFrame::from_rle(in_rle, BenVariant::Standard, None).unwrap();
 
     let out_assign = vec![1, 2, 2, 3, 3, 4, 4, 5, 5];
     let out_rle = assign_to_rle(out_assign);
-    let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None);
+    let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None).unwrap();
 
     let mut new_to_old_map = HashMap::new();
     new_to_old_map.insert(0, 2);
@@ -290,7 +290,8 @@ fn test_relabel_ben_line_with_map() {
 fn first_seen_fast_path_rejects_zero_count_frame() {
     // A MkvChain frame with count == 0 is corrupt; the byte-walking fast path must error rather
     // than re-emit a frame every downstream reader rejects.
-    let frame = BenEncodeFrame::from_assignment(vec![1u16, 2, 2], BenVariant::MkvChain, Some(0));
+    let frame =
+        BenEncodeFrame::from_assignment(vec![1u16, 2, 2], BenVariant::MkvChain, Some(0)).unwrap();
     let with_banner_in = with_banner(BenVariant::MkvChain, frame.as_slice());
 
     let err = relabel_ben_file(
@@ -309,11 +310,11 @@ fn test_relabel_ben_line_with_shuffle() {
     let mut out_assign = in_assign.clone();
 
     let in_rle = assign_to_rle(in_assign);
-    let input = BenEncodeFrame::from_rle(in_rle, BenVariant::Standard, None);
+    let input = BenEncodeFrame::from_rle(in_rle, BenVariant::Standard, None).unwrap();
 
     let new_to_old_map = shuffle_with_mapping(&mut out_assign);
     let out_rle = assign_to_rle(out_assign);
-    let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None);
+    let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None).unwrap();
 
     let with_banner_in = with_banner(BenVariant::Standard, input.as_slice());
     let mut buf = Vec::new();
@@ -340,11 +341,11 @@ fn test_relabel_ben_line_with_large_shuffle() {
     let mut out_assign = in_assign.clone();
 
     let in_rle = assign_to_rle(&in_assign);
-    let input = BenEncodeFrame::from_rle(in_rle, BenVariant::Standard, None);
+    let input = BenEncodeFrame::from_rle(in_rle, BenVariant::Standard, None).unwrap();
 
     let new_to_old_map = shuffle_with_mapping(&mut out_assign);
     let out_rle = assign_to_rle(out_assign);
-    let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None);
+    let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None).unwrap();
 
     let with_banner_in = with_banner(BenVariant::Standard, input.as_slice());
     let mut buf = Vec::new();
@@ -1258,8 +1259,10 @@ fn run_policy_pins_frame_preservation_and_collapse() {
     {
         let banner = crate::format::banners::MKVCHAIN_BEN_BANNER;
         input.extend_from_slice(banner);
-        let frame_a = BenEncodeFrame::from_assignment([1u16, 2, 3], BenVariant::MkvChain, Some(5));
-        let frame_b = BenEncodeFrame::from_assignment([1u16, 2, 3], BenVariant::MkvChain, Some(7));
+        let frame_a =
+            BenEncodeFrame::from_assignment([1u16, 2, 3], BenVariant::MkvChain, Some(5)).unwrap();
+        let frame_b =
+            BenEncodeFrame::from_assignment([1u16, 2, 3], BenVariant::MkvChain, Some(7)).unwrap();
         input.extend_from_slice(frame_a.as_slice());
         input.extend_from_slice(frame_b.as_slice());
     }
@@ -1334,8 +1337,10 @@ fn standard_target_cross_policy_byte_identity() {
     {
         let banner = crate::format::banners::MKVCHAIN_BEN_BANNER;
         input.extend_from_slice(banner);
-        let frame_a = BenEncodeFrame::from_assignment([1u16, 2, 3], BenVariant::MkvChain, Some(5));
-        let frame_b = BenEncodeFrame::from_assignment([1u16, 2, 3], BenVariant::MkvChain, Some(7));
+        let frame_a =
+            BenEncodeFrame::from_assignment([1u16, 2, 3], BenVariant::MkvChain, Some(5)).unwrap();
+        let frame_b =
+            BenEncodeFrame::from_assignment([1u16, 2, 3], BenVariant::MkvChain, Some(7)).unwrap();
         input.extend_from_slice(frame_a.as_slice());
         input.extend_from_slice(frame_b.as_slice());
     }

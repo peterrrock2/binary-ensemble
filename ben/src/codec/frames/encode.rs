@@ -1,4 +1,5 @@
 use super::compress_rle_to_ben_bytes;
+use crate::codec::encode::errors::EncodeError;
 use crate::util::rle::assign_to_rle;
 use crate::BenVariant;
 use std::io;
@@ -79,13 +80,17 @@ impl BenEncodeFrame {
     ///
     /// `count` is ignored for `Standard` and defaults to `1` for `MkvChain`.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `variant` is [`BenVariant::TwoDelta`]; use [`BenEncodeFrame::from_run_lengths`]
-    /// for that. Also panics if the packed payload would exceed the `u32` byte length the frame
-    /// header can carry — that bound sits far beyond any real assignment, so reaching it means
-    /// the caller's input is corrupt rather than merely large.
-    pub fn from_rle(runs: Vec<(u16, u16)>, variant: BenVariant, count: Option<u16>) -> Self {
+    /// Returns `InvalidInput` if `variant` is [`BenVariant::TwoDelta`] (use
+    /// [`BenEncodeFrame::from_run_lengths`] for that) or if the packed payload would exceed the
+    /// `u32` byte length the frame header can carry — a bound far beyond any real assignment,
+    /// so reaching it means the input is corrupt rather than merely large.
+    pub fn from_rle(
+        runs: Vec<(u16, u16)>,
+        variant: BenVariant,
+        count: Option<u16>,
+    ) -> io::Result<Self> {
         let (max_val, max_len) = runs
             .iter()
             .fold((0u16, 0u16), |(max_val, max_len), &(val, len)| {
@@ -95,54 +100,58 @@ impl BenEncodeFrame {
         let max_len_bit_count = (16 - max_len.leading_zeros() as u8).max(1);
         let assign_bits = (max_val_bit_count + max_len_bit_count) as u64;
         let payload_bits = assign_bits * runs.len() as u64;
-        let n_bytes = u32::try_from(payload_bits.div_ceil(8)).unwrap_or_else(|_| {
-            panic!(
-                "BEN frame payload of {} run(s) at {assign_bits} bit(s)/run overflows the u32 \
-                 n_bytes field",
-                runs.len()
+        let n_bytes = u32::try_from(payload_bits.div_ceil(8)).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                EncodeError::FramePayloadOverflow {
+                    runs: runs.len(),
+                    bits_per_run: assign_bits,
+                },
             )
-        });
+        })?;
         let mut raw_bytes =
             compress_rle_to_ben_bytes(max_val_bit_count, max_len_bit_count, n_bytes, &runs);
 
         match variant {
-            BenVariant::Standard => Self::Standard {
+            BenVariant::Standard => Ok(Self::Standard {
                 runs,
                 max_val_bit_count,
                 max_len_bit_count,
                 n_bytes,
                 raw_bytes,
-            },
+            }),
             BenVariant::MkvChain => {
                 let count = count.unwrap_or(1);
                 raw_bytes.extend(count.to_be_bytes());
-                Self::MkvChain {
+                Ok(Self::MkvChain {
                     runs,
                     max_val_bit_count,
                     max_len_bit_count,
                     n_bytes,
                     raw_bytes,
                     count,
-                }
+                })
             }
-            BenVariant::TwoDelta => panic!(
+            BenVariant::TwoDelta => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
                 "BenEncodeFrame::from_rle does not support TwoDelta; \
                  use BenEncodeFrame::from_run_lengths instead",
-            ),
+            )),
         }
     }
 
     /// Build a `Standard` or `MkvChain` frame from an assignment vector.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `variant` is [`BenVariant::TwoDelta`]; TwoDelta frames cannot be derived from a
-    /// single assignment vector.
+    /// Returns `InvalidInput` if `variant` is [`BenVariant::TwoDelta`] (TwoDelta frames cannot be
+    /// derived from a single assignment vector) or if the packed payload would overflow the
+    /// frame header's `u32` byte length; see [`BenEncodeFrame::from_rle`].
     pub fn from_assignment(
         assignment: impl AsRef<[u16]>,
         variant: BenVariant,
         count: Option<u16>,
-    ) -> Self {
+    ) -> io::Result<Self> {
         Self::from_rle(assign_to_rle(assignment), variant, count)
     }
 
@@ -150,29 +159,31 @@ impl BenEncodeFrame {
     ///
     /// `count` defaults to `1` if `None`.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the packed payload would exceed the `u32` byte length the frame header can
-    /// carry — that bound sits far beyond any real delta, so reaching it means the caller's
-    /// input is corrupt rather than merely large.
+    /// Returns `InvalidInput` if the packed payload would exceed the `u32` byte length the frame
+    /// header can carry — a bound far beyond any real delta, so reaching it means the input is
+    /// corrupt rather than merely large.
     pub fn from_run_lengths(
         pair: (u16, u16),
         run_length_vector: Vec<u16>,
         count: Option<u16>,
-    ) -> Self {
+    ) -> io::Result<Self> {
         let count = count.unwrap_or(1);
 
         let max_len = run_length_vector.iter().copied().max().unwrap_or(0);
         let max_len_bit_count = (16 - max_len.leading_zeros() as u8).max(1);
 
         let payload_bits = max_len_bit_count as u64 * run_length_vector.len() as u64;
-        let n_bytes = u32::try_from(payload_bits.div_ceil(8)).unwrap_or_else(|_| {
-            panic!(
-                "TwoDelta frame payload of {} run length(s) at {max_len_bit_count} bit(s) each \
-                 overflows the u32 n_bytes field",
-                run_length_vector.len()
+        let n_bytes = u32::try_from(payload_bits.div_ceil(8)).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                EncodeError::FramePayloadOverflow {
+                    runs: run_length_vector.len(),
+                    bits_per_run: u64::from(max_len_bit_count),
+                },
             )
-        });
+        })?;
 
         // pair_bytes (4) + max_len_bit_count (1) + n_bytes (4) + payload (n_bytes) + count (2)
         let mut raw_bytes = Vec::with_capacity((n_bytes + 11) as usize);
@@ -204,14 +215,14 @@ impl BenEncodeFrame {
 
         raw_bytes.extend(count.to_be_bytes());
 
-        Self::TwoDelta {
+        Ok(Self::TwoDelta {
             pair,
             max_len_bit_count,
             n_bytes,
             run_length_vector,
             raw_bytes,
             count,
-        }
+        })
     }
 
     /// Reconstruct a `TwoDelta` frame from already-parsed header fields and a raw payload,
@@ -237,8 +248,7 @@ impl BenEncodeFrame {
         count: u16,
     ) -> io::Result<Self> {
         use super::decode::{
-            check_twodelta_frame_consistency, check_twodelta_run_width,
-            unpack_twodelta_run_lengths,
+            check_twodelta_frame_consistency, check_twodelta_run_width, unpack_twodelta_run_lengths,
         };
 
         check_twodelta_run_width(max_len_bit_count)?;

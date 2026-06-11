@@ -308,7 +308,8 @@ fn malformed_ben_bit_widths_return_invalid_data() {
 
 #[test]
 fn malformed_twodelta_bit_width_and_extra_runs_return_errors() {
-    let anchor = BenEncodeFrame::from_assignment(vec![1u16, 2], BenVariant::MkvChain, Some(1));
+    let anchor =
+        BenEncodeFrame::from_assignment(vec![1u16, 2], BenVariant::MkvChain, Some(1)).unwrap();
     let mut ben = TWODELTA_BEN_BANNER.to_vec();
     ben.push(0x00); // snapshot tag for the anchor (MkvChain-formatted body)
     ben.extend_from_slice(anchor.as_slice());
@@ -322,7 +323,7 @@ fn malformed_twodelta_bit_width_and_extra_runs_return_errors() {
     let err = reader.next().unwrap().unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
 
-    let frame = BenEncodeFrame::from_run_lengths((1, 2), vec![1, 1], Some(1));
+    let frame = BenEncodeFrame::from_run_lengths((1, 2), vec![1, 1], Some(1)).unwrap();
     let err = decode_twodelta_frame(vec![1u16], &frame).unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
 }
@@ -502,7 +503,7 @@ fn xben_twodelta_huge_incomplete_chunk_errors_without_panicking() {
 
 #[test]
 fn zero_count_frames_are_rejected() {
-    let frame = BenEncodeFrame::from_assignment(vec![1u16], BenVariant::MkvChain, Some(0));
+    let frame = BenEncodeFrame::from_assignment(vec![1u16], BenVariant::MkvChain, Some(0)).unwrap();
     let mut ben = MKVCHAIN_BEN_BANNER.to_vec();
     ben.extend_from_slice(frame.as_slice());
     let err = BenStreamReader::from_ben(ben.as_slice())

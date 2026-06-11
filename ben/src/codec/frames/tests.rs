@@ -292,7 +292,7 @@ fn ben_decode_mkv_non_eof_read_error_propagates() {
 #[test]
 fn ben_decode_twodelta_from_reader() {
     // Build a TwoDelta encode frame, then read it back as a decode frame.
-    let encoded = BenEncodeFrame::from_run_lengths((1, 2), vec![2, 2], Some(5));
+    let encoded = BenEncodeFrame::from_run_lengths((1, 2), vec![2, 2], Some(5)).unwrap();
     let bytes = encoded.into_bytes();
 
     let mut cursor = io::Cursor::new(bytes);
@@ -332,7 +332,7 @@ fn ben_decode_twodelta_invalid_max_len_bits_zero_errors() {
 
 #[test]
 fn ben_decode_twodelta_count_max_u16() {
-    let encoded = BenEncodeFrame::from_run_lengths((3, 4), vec![1, 1], Some(u16::MAX));
+    let encoded = BenEncodeFrame::from_run_lengths((3, 4), vec![1, 1], Some(u16::MAX)).unwrap();
     let bytes = encoded.into_bytes();
     let mut cursor = io::Cursor::new(bytes);
     let frame = BenDecodeFrame::from_reader(&mut cursor, BenVariant::TwoDelta)
@@ -347,7 +347,7 @@ fn ben_decode_twodelta_count_max_u16() {
 #[test]
 fn encode_from_rle_standard_carries_runs_and_bytes() {
     let runs = vec![(1u16, 2u16), (2, 3), (3, 1)];
-    let frame = BenEncodeFrame::from_rle(runs.clone(), BenVariant::Standard, None);
+    let frame = BenEncodeFrame::from_rle(runs.clone(), BenVariant::Standard, None).unwrap();
     let (got_runs, mvb, mlb, n, raw) = unwrap_encode_standard(frame);
     assert_eq!(got_runs, runs);
     assert_eq!(mvb, 2); // max value 3 fits in 2 bits
@@ -361,7 +361,7 @@ fn encode_from_rle_standard_carries_runs_and_bytes() {
 #[test]
 fn encode_from_rle_mkv_count_none_defaults_to_one() {
     let runs = vec![(1u16, 2u16), (2, 3)];
-    let frame = BenEncodeFrame::from_rle(runs, BenVariant::MkvChain, None);
+    let frame = BenEncodeFrame::from_rle(runs, BenVariant::MkvChain, None).unwrap();
     let (_, _, _, _, raw, count) = unwrap_encode_mkv(frame);
     assert_eq!(count, 1);
     let trailing = &raw[raw.len() - 2..];
@@ -371,7 +371,7 @@ fn encode_from_rle_mkv_count_none_defaults_to_one() {
 #[test]
 fn encode_from_rle_mkv_with_count() {
     let runs = vec![(1u16, 2u16)];
-    let frame = BenEncodeFrame::from_rle(runs, BenVariant::MkvChain, Some(7));
+    let frame = BenEncodeFrame::from_rle(runs, BenVariant::MkvChain, Some(7)).unwrap();
     let (_, _, _, _, raw, count) = unwrap_encode_mkv(frame);
     assert_eq!(count, 7);
     let trailing = &raw[raw.len() - 2..];
@@ -379,16 +379,19 @@ fn encode_from_rle_mkv_with_count() {
 }
 
 #[test]
-#[should_panic(expected = "TwoDelta")]
-fn encode_from_rle_twodelta_panics() {
+fn encode_from_rle_twodelta_returns_invalid_input() {
+    // TwoDelta frames cannot be built from a bare RLE vector; the misuse surfaces as a typed
+    // error (not a panic) so bindings can present it cleanly.
     let runs = vec![(1u16, 2u16)];
-    let _ = BenEncodeFrame::from_rle(runs, BenVariant::TwoDelta, None);
+    let err = BenEncodeFrame::from_rle(runs, BenVariant::TwoDelta, None).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    assert!(err.to_string().contains("from_run_lengths"));
 }
 
 #[test]
 fn encode_single_run_frame() {
     let runs = vec![(5u16, 1u16)];
-    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
+    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None).unwrap();
     let (_, mvb, mlb, _, _) = unwrap_encode_standard(frame);
     assert_eq!(mvb, 3); // 5 fits in 3 bits
     assert_eq!(mlb, 1); // 1 fits in 1 bit
@@ -397,7 +400,7 @@ fn encode_single_run_frame() {
 #[test]
 fn encode_large_values_near_u16_max() {
     let runs = vec![(u16::MAX, u16::MAX)];
-    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None);
+    let frame = BenEncodeFrame::from_rle(runs, BenVariant::Standard, None).unwrap();
     let (_, mvb, mlb, _, _) = unwrap_encode_standard(frame);
     assert_eq!(mvb, 16);
     assert_eq!(mlb, 16);
@@ -408,7 +411,7 @@ fn encode_large_values_near_u16_max() {
 #[test]
 fn encode_from_assignment_standard() {
     let assignment = vec![1u16, 1, 2, 2, 3];
-    let frame = BenEncodeFrame::from_assignment(&assignment, BenVariant::Standard, None);
+    let frame = BenEncodeFrame::from_assignment(&assignment, BenVariant::Standard, None).unwrap();
     let (runs, _, _, _, _) = unwrap_encode_standard(frame);
     assert_eq!(runs, vec![(1, 2), (2, 2), (3, 1)]);
 }
@@ -416,7 +419,8 @@ fn encode_from_assignment_standard() {
 #[test]
 fn encode_from_assignment_mkv_carries_count() {
     let assignment = vec![1u16, 1, 2, 2];
-    let frame = BenEncodeFrame::from_assignment(&assignment, BenVariant::MkvChain, Some(9));
+    let frame =
+        BenEncodeFrame::from_assignment(&assignment, BenVariant::MkvChain, Some(9)).unwrap();
     let (_, _, _, _, _, count) = unwrap_encode_mkv(frame);
     assert_eq!(count, 9);
 }
@@ -425,7 +429,7 @@ fn encode_from_assignment_mkv_carries_count() {
 
 #[test]
 fn twodelta_from_run_lengths_count_none_defaults_to_one() {
-    let frame = BenEncodeFrame::from_run_lengths((1, 2), vec![2, 2], None);
+    let frame = BenEncodeFrame::from_run_lengths((1, 2), vec![2, 2], None).unwrap();
     let (pair, _, _, runs, _, count) = unwrap_encode_twodelta(frame);
     assert_eq!(pair, (1, 2));
     assert_eq!(runs, vec![2, 2]);
@@ -434,7 +438,7 @@ fn twodelta_from_run_lengths_count_none_defaults_to_one() {
 
 #[test]
 fn twodelta_from_run_lengths_then_try_from_parts_roundtrip() {
-    let original = BenEncodeFrame::from_run_lengths((3, 4), vec![5, 5, 5], Some(2));
+    let original = BenEncodeFrame::from_run_lengths((3, 4), vec![5, 5, 5], Some(2)).unwrap();
     let bytes = original.as_slice().to_vec();
     let (pair, max_len_bits, n_bytes, _, _, count) = unwrap_encode_twodelta(original.clone());
     let payload_slice = &bytes[9..9 + n_bytes as usize];
@@ -444,12 +448,15 @@ fn twodelta_from_run_lengths_then_try_from_parts_roundtrip() {
     assert_eq!(rb_pair, pair);
     assert_eq!(rb_runs, vec![5, 5, 5]);
     assert_eq!(rb_count, count);
-    assert_eq!(rb_raw, bytes, "rebuilt frame must serialize byte-identically");
+    assert_eq!(
+        rb_raw, bytes,
+        "rebuilt frame must serialize byte-identically"
+    );
 }
 
 #[test]
 fn twodelta_try_from_parts_preserves_nontrivial_count() {
-    let original = BenEncodeFrame::from_run_lengths((1, 9), vec![3, 3], Some(42));
+    let original = BenEncodeFrame::from_run_lengths((1, 9), vec![3, 3], Some(42)).unwrap();
     let bytes = original.as_slice().to_vec();
     let (_, max_len_bits, n_bytes, _, _, _) = unwrap_encode_twodelta(original);
     let payload = bytes[9..9 + n_bytes as usize].to_vec();
@@ -484,10 +491,9 @@ fn twodelta_try_from_parts_rejects_inconsistent_payload_len() {
     assert!(err.to_string().contains("inconsistent"));
 }
 
-
 #[test]
 fn twodelta_from_run_lengths_single_run() {
-    let frame = BenEncodeFrame::from_run_lengths((1, 2), vec![5], Some(3));
+    let frame = BenEncodeFrame::from_run_lengths((1, 2), vec![5], Some(3)).unwrap();
     let (pair, _, _, runs, _, count) = unwrap_encode_twodelta(frame);
     assert_eq!(pair, (1, 2));
     assert_eq!(runs, vec![5]);
@@ -499,7 +505,7 @@ fn twodelta_from_run_lengths_single_run() {
 #[test]
 fn standard_encode_decode_roundtrip() {
     let runs = vec![(1u16, 4u16), (2, 3), (3, 1)];
-    let encoded = BenEncodeFrame::from_rle(runs.clone(), BenVariant::Standard, None);
+    let encoded = BenEncodeFrame::from_rle(runs.clone(), BenVariant::Standard, None).unwrap();
     let bytes = encoded.into_bytes();
 
     let mut cursor = io::Cursor::new(bytes);
@@ -516,7 +522,7 @@ fn standard_encode_decode_roundtrip() {
 #[test]
 fn mkv_encode_decode_roundtrip() {
     let runs = vec![(1u16, 4u16), (2, 3)];
-    let encoded = BenEncodeFrame::from_rle(runs, BenVariant::MkvChain, Some(11));
+    let encoded = BenEncodeFrame::from_rle(runs, BenVariant::MkvChain, Some(11)).unwrap();
     let bytes = encoded.into_bytes();
 
     let mut cursor = io::Cursor::new(bytes);
@@ -529,7 +535,7 @@ fn mkv_encode_decode_roundtrip() {
 
 #[test]
 fn twodelta_encode_decode_roundtrip() {
-    let encoded = BenEncodeFrame::from_run_lengths((4, 7), vec![3, 3, 3], Some(8));
+    let encoded = BenEncodeFrame::from_run_lengths((4, 7), vec![3, 3, 3], Some(8)).unwrap();
     let bytes = encoded.into_bytes();
 
     let mut cursor = io::Cursor::new(bytes);
@@ -546,8 +552,8 @@ fn twodelta_encode_decode_roundtrip() {
 
 #[test]
 fn standard_decode_two_frames_back_to_back() {
-    let f1 = BenEncodeFrame::from_rle(vec![(1, 2), (2, 1)], BenVariant::Standard, None);
-    let f2 = BenEncodeFrame::from_rle(vec![(3, 1), (4, 2)], BenVariant::Standard, None);
+    let f1 = BenEncodeFrame::from_rle(vec![(1, 2), (2, 1)], BenVariant::Standard, None).unwrap();
+    let f2 = BenEncodeFrame::from_rle(vec![(3, 1), (4, 2)], BenVariant::Standard, None).unwrap();
     let mut bytes = f1.into_bytes();
     bytes.extend(f2.into_bytes());
 
@@ -564,8 +570,8 @@ fn standard_decode_two_frames_back_to_back() {
 
 #[test]
 fn mkv_decode_two_frames_back_to_back() {
-    let f1 = BenEncodeFrame::from_rle(vec![(1, 2)], BenVariant::MkvChain, Some(3));
-    let f2 = BenEncodeFrame::from_rle(vec![(2, 4)], BenVariant::MkvChain, Some(5));
+    let f1 = BenEncodeFrame::from_rle(vec![(1, 2)], BenVariant::MkvChain, Some(3)).unwrap();
+    let f2 = BenEncodeFrame::from_rle(vec![(2, 4)], BenVariant::MkvChain, Some(5)).unwrap();
     let mut bytes = f1.into_bytes();
     bytes.extend(f2.into_bytes());
 
@@ -582,8 +588,8 @@ fn mkv_decode_two_frames_back_to_back() {
 
 #[test]
 fn twodelta_decode_two_frames_back_to_back() {
-    let f1 = BenEncodeFrame::from_run_lengths((1, 2), vec![2, 2], Some(1));
-    let f2 = BenEncodeFrame::from_run_lengths((3, 4), vec![1, 1, 1, 1], Some(1));
+    let f1 = BenEncodeFrame::from_run_lengths((1, 2), vec![2, 2], Some(1)).unwrap();
+    let f2 = BenEncodeFrame::from_run_lengths((3, 4), vec![1, 1, 1, 1], Some(1)).unwrap();
     let mut bytes = f1.into_bytes();
     bytes.extend(f2.into_bytes());
 
@@ -602,7 +608,7 @@ fn twodelta_decode_two_frames_back_to_back() {
 
 #[test]
 fn decode_count_returns_one_for_standard() {
-    let encoded = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::Standard, None);
+    let encoded = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::Standard, None).unwrap();
     let mut cursor = io::Cursor::new(encoded.into_bytes());
     let frame = BenDecodeFrame::from_reader(&mut cursor, BenVariant::Standard)
         .unwrap()
@@ -612,21 +618,21 @@ fn decode_count_returns_one_for_standard() {
 
 #[test]
 fn decode_variant_method() {
-    let encoded = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::Standard, None);
+    let encoded = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::Standard, None).unwrap();
     let mut cursor = io::Cursor::new(encoded.into_bytes());
     let frame = BenDecodeFrame::from_reader(&mut cursor, BenVariant::Standard)
         .unwrap()
         .unwrap();
     assert_eq!(frame.variant(), BenVariant::Standard);
 
-    let encoded = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::MkvChain, Some(2));
+    let encoded = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::MkvChain, Some(2)).unwrap();
     let mut cursor = io::Cursor::new(encoded.into_bytes());
     let frame = BenDecodeFrame::from_reader(&mut cursor, BenVariant::MkvChain)
         .unwrap()
         .unwrap();
     assert_eq!(frame.variant(), BenVariant::MkvChain);
 
-    let encoded = BenEncodeFrame::from_run_lengths((1, 2), vec![1, 1], Some(1));
+    let encoded = BenEncodeFrame::from_run_lengths((1, 2), vec![1, 1], Some(1)).unwrap();
     let mut cursor = io::Cursor::new(encoded.into_bytes());
     let frame = BenDecodeFrame::from_reader(&mut cursor, BenVariant::TwoDelta)
         .unwrap()
@@ -636,21 +642,22 @@ fn decode_variant_method() {
 
 #[test]
 fn decode_raw_bytes_returns_some_for_snapshot_arms_none_for_twodelta() {
-    let std_encoded = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::Standard, None);
+    let std_encoded = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::Standard, None).unwrap();
     let mut cursor = io::Cursor::new(std_encoded.into_bytes());
     let std_frame = BenDecodeFrame::from_reader(&mut cursor, BenVariant::Standard)
         .unwrap()
         .unwrap();
     assert!(std_frame.raw_bytes().is_some());
 
-    let mkv_encoded = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::MkvChain, Some(1));
+    let mkv_encoded =
+        BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::MkvChain, Some(1)).unwrap();
     let mut cursor = io::Cursor::new(mkv_encoded.into_bytes());
     let mkv_frame = BenDecodeFrame::from_reader(&mut cursor, BenVariant::MkvChain)
         .unwrap()
         .unwrap();
     assert!(mkv_frame.raw_bytes().is_some());
 
-    let td_encoded = BenEncodeFrame::from_run_lengths((1, 2), vec![1, 1], Some(1));
+    let td_encoded = BenEncodeFrame::from_run_lengths((1, 2), vec![1, 1], Some(1)).unwrap();
     let mut cursor = io::Cursor::new(td_encoded.into_bytes());
     let td_frame = BenDecodeFrame::from_reader(&mut cursor, BenVariant::TwoDelta)
         .unwrap()
@@ -662,7 +669,8 @@ fn decode_raw_bytes_returns_some_for_snapshot_arms_none_for_twodelta() {
 
 #[test]
 fn encode_as_slice_to_bytes_into_bytes_agree() {
-    let encoded = BenEncodeFrame::from_rle(vec![(1, 2), (3, 4)], BenVariant::Standard, None);
+    let encoded =
+        BenEncodeFrame::from_rle(vec![(1, 2), (3, 4)], BenVariant::Standard, None).unwrap();
     let s = encoded.as_slice().to_vec();
     let t = encoded.to_bytes();
     let i = encoded.into_bytes();
@@ -672,31 +680,31 @@ fn encode_as_slice_to_bytes_into_bytes_agree() {
 
 #[test]
 fn encode_count_method() {
-    let std_frame = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::Standard, None);
+    let std_frame = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::Standard, None).unwrap();
     assert_eq!(std_frame.count(), 1);
 
-    let mkv_frame = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::MkvChain, Some(7));
+    let mkv_frame = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::MkvChain, Some(7)).unwrap();
     assert_eq!(mkv_frame.count(), 7);
 
-    let td_frame = BenEncodeFrame::from_run_lengths((1, 2), vec![1, 1], Some(13));
+    let td_frame = BenEncodeFrame::from_run_lengths((1, 2), vec![1, 1], Some(13)).unwrap();
     assert_eq!(td_frame.count(), 13);
 }
 
 #[test]
 fn encode_variant_method() {
-    let std_frame = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::Standard, None);
+    let std_frame = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::Standard, None).unwrap();
     assert_eq!(std_frame.variant(), BenVariant::Standard);
 
-    let mkv_frame = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::MkvChain, None);
+    let mkv_frame = BenEncodeFrame::from_rle(vec![(1, 1)], BenVariant::MkvChain, None).unwrap();
     assert_eq!(mkv_frame.variant(), BenVariant::MkvChain);
 
-    let td_frame = BenEncodeFrame::from_run_lengths((1, 2), vec![1, 1], None);
+    let td_frame = BenEncodeFrame::from_run_lengths((1, 2), vec![1, 1], None).unwrap();
     assert_eq!(td_frame.variant(), BenVariant::TwoDelta);
 }
 
 #[test]
 fn encode_payload_returns_packed_payload_region() {
-    let frame = BenEncodeFrame::from_rle(vec![(1, 2), (3, 4)], BenVariant::Standard, None);
+    let frame = BenEncodeFrame::from_rle(vec![(1, 2), (3, 4)], BenVariant::Standard, None).unwrap();
     let bytes = frame.as_slice().to_vec();
     let payload = frame.payload().to_vec();
     // For Standard, payload is bytes[6..6+n_bytes].
@@ -706,7 +714,7 @@ fn encode_payload_returns_packed_payload_region() {
 
 #[test]
 fn encode_as_ref_and_deref_match_as_slice() {
-    let frame = BenEncodeFrame::from_rle(vec![(1, 2)], BenVariant::Standard, None);
+    let frame = BenEncodeFrame::from_rle(vec![(1, 2)], BenVariant::Standard, None).unwrap();
     let s = frame.as_slice();
     let r: &[u8] = frame.as_ref();
     assert_eq!(s, r);
@@ -716,7 +724,7 @@ fn encode_as_ref_and_deref_match_as_slice() {
 
 #[test]
 fn encode_partial_eq_vec_both_directions() {
-    let frame = BenEncodeFrame::from_rle(vec![(1, 2)], BenVariant::Standard, None);
+    let frame = BenEncodeFrame::from_rle(vec![(1, 2)], BenVariant::Standard, None).unwrap();
     let bytes: Vec<u8> = frame.as_slice().to_vec();
     assert_eq!(frame, bytes);
     assert_eq!(bytes, frame);
@@ -727,7 +735,8 @@ fn encode_partial_eq_vec_both_directions() {
 #[test]
 fn decode_expand_standard_assignment() {
     // An assignment of [1, 1, 2, 2, 3] becomes RLE [(1,2),(2,2),(3,1)].
-    let encoded = BenEncodeFrame::from_assignment([1u16, 1, 2, 2, 3], BenVariant::Standard, None);
+    let encoded =
+        BenEncodeFrame::from_assignment([1u16, 1, 2, 2, 3], BenVariant::Standard, None).unwrap();
     let mut cursor = io::Cursor::new(encoded.into_bytes());
     let decoded = BenDecodeFrame::from_reader(&mut cursor, BenVariant::Standard)
         .unwrap()
@@ -738,7 +747,7 @@ fn decode_expand_standard_assignment() {
 
 #[test]
 fn decode_expand_twodelta_requires_prev() {
-    let encoded = BenEncodeFrame::from_run_lengths((1, 2), vec![2, 2], Some(1));
+    let encoded = BenEncodeFrame::from_run_lengths((1, 2), vec![2, 2], Some(1)).unwrap();
     let mut cursor = io::Cursor::new(encoded.into_bytes());
     let decoded = BenDecodeFrame::from_reader(&mut cursor, BenVariant::TwoDelta)
         .unwrap()

@@ -9,8 +9,8 @@ use xz2::write::XzEncoder;
 use crate::codec::decode::decode_ben_line;
 use crate::codec::encode::errors::is_twodelta_run_too_long;
 use crate::codec::encode::{encode_ben32_assignments, encode_twodelta_frame_with_hint};
-use crate::codec::translate::ben_to_ben32_lines;
 use crate::codec::frames::{check_payload_len, check_twodelta_run_width};
+use crate::codec::translate::ben_to_ben32_lines;
 use crate::codec::BenEncodeFrame;
 use crate::format::banners::{has_known_banner_prefix, BANNER_LEN};
 use crate::progress::Spinner;
@@ -198,21 +198,23 @@ impl<W: Write> XBenInner<W> {
                     // `previous == assign_vec` only reaches here when the chunk was just flushed
                     // (so the repeat-of-last-delta fast path above was skipped). Encode it as a
                     // repeat delta against the previous frame.
-                    TransitionKind::Repeat => match twodelta_repeat_buffered_frame(&assign_vec, 1)
-                    {
-                        Ok(repeat) => {
-                            chunk_buffer.push(repeat);
-                            *previous_assignment = assign_vec;
+                    TransitionKind::Repeat => {
+                        match twodelta_repeat_buffered_frame(&assign_vec, 1) {
+                            Ok(repeat) => {
+                                chunk_buffer.push(repeat);
+                                *previous_assignment = assign_vec;
+                            }
+                            // Same representability limit as the saturation paths: defer as a
+                            // pending full frame. `previous_assignment`
+                            // already equals the repeated value.
+                            Err(e) if is_twodelta_run_too_long(&e) => {
+                                flush_chunk_inner(&mut self.encoder, chunk_buffer)?;
+                                *pending_full_assignment = Some(assign_vec);
+                                *pending_full_count = 1;
+                            }
+                            Err(e) => return Err(e),
                         }
-                        // Same representability limit as the saturation paths: defer as a pending
-                        // full frame. `previous_assignment` already equals the repeated value.
-                        Err(e) if is_twodelta_run_too_long(&e) => {
-                            flush_chunk_inner(&mut self.encoder, chunk_buffer)?;
-                            *pending_full_assignment = Some(assign_vec);
-                            *pending_full_count = 1;
-                        }
-                        Err(e) => return Err(e),
-                    },
+                    }
                     // Clean 2-swap where both districts already exist: cheap delta.
                     TransitionKind::Delta(a, b) if pair_has_masks(previous_masks, a, b) => {
                         match encode_twodelta_frame_with_hint(

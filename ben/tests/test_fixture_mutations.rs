@@ -113,7 +113,11 @@ fn drive_ben_entry_points(fixture_name: &str, pos: usize, byte: u8, bytes: &[u8]
     });
     run("into_subsample_every", &|| {
         if let Ok(reader) = BenStreamReader::from_ben(bytes) {
-            for record in reader.silent(true).into_subsample_every(2, 1).take(MAX_PULLS) {
+            for record in reader
+                .silent(true)
+                .into_subsample_every(2, 1)
+                .take(MAX_PULLS)
+            {
                 let _ = record;
             }
         }

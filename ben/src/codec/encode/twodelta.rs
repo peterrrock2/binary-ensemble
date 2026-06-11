@@ -339,11 +339,7 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
 
     previous_masks.insert(pair.first_run_district(), new_mask_a);
     previous_masks.insert(pair.second_run_district(), new_mask_b);
-    Ok(BenEncodeFrame::from_run_lengths(
-        pair.as_ordered_pair(),
-        run_lengths,
-        count,
-    ))
+    BenEncodeFrame::from_run_lengths(pair.as_ordered_pair(), run_lengths, count)
 }
 
 /// Build a TwoDelta frame using only pre-computed position masks, inferring the pair from the first
@@ -454,11 +450,7 @@ fn construct_twodelta_frame_from_scratch(
     }
     run_lengths.push(active_run_length);
 
-    Ok(BenEncodeFrame::from_run_lengths(
-        enc_pair,
-        run_lengths,
-        count,
-    ))
+    BenEncodeFrame::from_run_lengths(enc_pair, run_lengths, count)
 }
 
 /// Encode a transition between two assignment vectors as a TwoDelta frame.

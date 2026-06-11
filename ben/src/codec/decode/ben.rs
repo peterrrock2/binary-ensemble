@@ -232,7 +232,7 @@ mod tests {
         // 100,000 pairs sit above MAX_RLE_PREALLOC_PAIRS, so the output vector must grow past its
         // clamped initial reservation without losing or reordering pairs.
         let runs = vec![(1u16, 1u16); 100_000];
-        let frame = BenEncodeFrame::from_rle(runs.clone(), BenVariant::Standard, None);
+        let frame = BenEncodeFrame::from_rle(runs.clone(), BenVariant::Standard, None).unwrap();
         let decoded = decode_ben_line(
             Cursor::new(frame.payload()),
             frame.max_val_bit_count().unwrap(),
@@ -250,7 +250,8 @@ mod tests {
         // 2049 runs of 65,535 elements expand past the 2^27 sanity bound; each run is
         // individually legal, so only the bound on the sum catches this.
         let frame =
-            BenEncodeFrame::from_rle(vec![(1u16, u16::MAX); 2049], BenVariant::Standard, None);
+            BenEncodeFrame::from_rle(vec![(1u16, u16::MAX); 2049], BenVariant::Standard, None)
+                .unwrap();
         let err = decode_ben_line(
             Cursor::new(frame.payload()),
             frame.max_val_bit_count().unwrap(),

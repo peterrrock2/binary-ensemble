@@ -331,7 +331,7 @@ fn relabel_first_seen_via_byte_walk<R: Read, W: Write>(
             1
         };
 
-        let frame = BenEncodeFrame::from_rle(ben_line, input_variant, Some(count_occurrences));
+        let frame = BenEncodeFrame::from_rle(ben_line, input_variant, Some(count_occurrences))?;
         writer.write_all(frame.as_slice())?;
 
         sample_number += count_occurrences as usize;

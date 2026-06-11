@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use std::io::{self, Write};
 
-use crate::codec::encode::errors::is_twodelta_run_too_long;
 use crate::codec::encode::encode_twodelta_frame_with_hint;
+use crate::codec::encode::errors::is_twodelta_run_too_long;
 use crate::codec::BenEncodeFrame;
 use crate::BenVariant;
 
@@ -54,14 +54,15 @@ impl<W: Write> BenState<W> {
     fn encode_and_write_frame(&mut self, assignment: &[u16], count: u16) -> io::Result<()> {
         match self.variant {
             BenVariant::Standard => {
-                let frame = BenEncodeFrame::from_assignment(assignment, BenVariant::Standard, None);
+                let frame =
+                    BenEncodeFrame::from_assignment(assignment, BenVariant::Standard, None)?;
                 for _ in 0..count {
                     self.writer.write_all(frame.as_slice())?;
                 }
             }
             BenVariant::MkvChain => {
                 let frame =
-                    BenEncodeFrame::from_assignment(assignment, BenVariant::MkvChain, Some(count));
+                    BenEncodeFrame::from_assignment(assignment, BenVariant::MkvChain, Some(count))?;
                 self.writer.write_all(frame.as_slice())?;
             }
             BenVariant::TwoDelta => {
@@ -129,7 +130,7 @@ impl<W: Write> BenState<W> {
         for (idx, &val) in assignment.iter().enumerate() {
             self.previous_masks.entry(val).or_default().push(idx);
         }
-        let frame = BenEncodeFrame::from_assignment(assignment, BenVariant::MkvChain, Some(count));
+        let frame = BenEncodeFrame::from_assignment(assignment, BenVariant::MkvChain, Some(count))?;
         self.writer.write_all(&[BEN_TWODELTA_SNAPSHOT_TAG])?;
         self.writer.write_all(frame.as_slice())?;
         Ok(())
@@ -168,9 +169,5 @@ impl<W: Write> BenState<W> {
 
 pub(crate) fn twodelta_repeat_frame(assignment: &[u16], count: u16) -> io::Result<BenEncodeFrame> {
     let (pair, run_lengths) = twodelta_repeat_runs(assignment)?;
-    Ok(BenEncodeFrame::from_run_lengths(
-        pair,
-        run_lengths,
-        Some(count),
-    ))
+    BenEncodeFrame::from_run_lengths(pair, run_lengths, Some(count))
 }

@@ -78,11 +78,11 @@ fn repaint_pair(prev: &[u16], seed: u64) -> Vec<u16> {
     let mut value = if seed & 1 == 0 { a } else { b };
     let mut stretch = 1 + (seed >> 16) as usize % 80_000;
     let mut placed = 0usize;
-    for idx in 0..next.len() {
-        if next[idx] != a && next[idx] != b {
+    for slot in next.iter_mut() {
+        if *slot != a && *slot != b {
             continue;
         }
-        next[idx] = value;
+        *slot = value;
         placed += 1;
         if placed == stretch {
             value = if value == a { b } else { a };

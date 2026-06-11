@@ -267,12 +267,14 @@ fn test_encode_jsonl_to_ben_len_65535() {
 #[test]
 fn test_encode_ben_vec_from_assign_matches_rle_entrypoint() {
     let assign_vec = vec![4u16, 4, 4, 1, 1, 3, 3, 3, 2];
-    let direct = BenEncodeFrame::from_assignment(assign_vec.clone(), BenVariant::Standard, None);
+    let direct =
+        BenEncodeFrame::from_assignment(assign_vec.clone(), BenVariant::Standard, None).unwrap();
     let via_rle = BenEncodeFrame::from_rle(
         crate::util::rle::assign_to_rle(assign_vec),
         BenVariant::Standard,
         None,
-    );
+    )
+    .unwrap();
     assert_eq!(direct, via_rle);
 }
 
@@ -474,12 +476,9 @@ fn encode_jsonl_to_ben_multiple_simple_lines() {
 }
 
 fn encode_jsonl_to_ben32<R: BufRead, W: Write>(reader: R, mut writer: W) -> std::io::Result<()> {
-    let mut line_num = 1;
-
     writer.write_all("STANDARD BEN FILE".as_bytes())?;
-    for line_result in reader.lines() {
+    for (line_num, line_result) in (1..).zip(reader.lines()) {
         eprint!("Encoding line: {}\r", line_num);
-        line_num += 1;
         let line = line_result?;
         let data: Value = serde_json::from_str(&line).expect("Error parsing JSON from line");
 
@@ -1561,7 +1560,8 @@ fn bit_packing_boundary_widths_round_trip() {
 #[test]
 fn bit_packing_boundary_widths_pin_encoder_choice() {
     fn standard_widths(assignment: Vec<u16>) -> (u8, u8) {
-        let frame = BenEncodeFrame::from_assignment(assignment, BenVariant::Standard, None);
+        let frame =
+            BenEncodeFrame::from_assignment(assignment, BenVariant::Standard, None).unwrap();
         if let BenEncodeFrame::Standard {
             max_val_bit_count,
             max_len_bit_count,

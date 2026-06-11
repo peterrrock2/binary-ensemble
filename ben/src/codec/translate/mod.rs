@@ -76,7 +76,7 @@ pub(crate) fn ben32_to_ben_line(
         }));
     }
 
-    Ok(BenEncodeFrame::from_rle(ben32_rle, BenVariant::from(variant), Some(count)).into_bytes())
+    Ok(BenEncodeFrame::from_rle(ben32_rle, BenVariant::from(variant), Some(count))?.into_bytes())
 }
 
 /// Read one 4-byte ben32 word, distinguishing a clean end of input from a truncated word.

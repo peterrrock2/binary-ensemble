@@ -69,7 +69,11 @@ fn cli_command(bin: &str) -> Command {
 }
 
 fn run(bin: &str, args: &[&str], cwd: &Path) -> Output {
-    cli_command(bin).current_dir(cwd).args(args).output().unwrap()
+    cli_command(bin)
+        .current_dir(cwd)
+        .args(args)
+        .output()
+        .unwrap()
 }
 
 fn run_with_stdin(bin: &str, args: &[&str], cwd: &Path, stdin: &[u8]) -> Output {

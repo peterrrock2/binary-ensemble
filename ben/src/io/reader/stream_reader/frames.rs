@@ -90,11 +90,14 @@ impl<R: Read> Iterator for BenStreamFrameReader<R> {
                         silent,
                     ) {
                         Some(Ok((assignment, count))) => {
-                            let encoded = BenEncodeFrame::from_assignment(
+                            let encoded = match BenEncodeFrame::from_assignment(
                                 &assignment,
                                 BenVariant::Standard,
                                 None,
-                            );
+                            ) {
+                                Ok(encoded) => encoded,
+                                Err(e) => return Some(Err(e)),
+                            };
                             let (max_val_bit_count, max_len_bit_count, n_bytes, raw_bytes) =
                                 match encoded {
                                     BenEncodeFrame::Standard {

@@ -621,7 +621,7 @@ fn ben_encoder_twodelta_base_frame_then_delta_round_trip() {
 #[test]
 fn encode_ben_vec_from_rle_empty_rle() {
     // Empty RLE produces a minimal frame with zero payload bytes.
-    let frame = BenEncodeFrame::from_rle(vec![], BenVariant::Standard, None);
+    let frame = BenEncodeFrame::from_rle(vec![], BenVariant::Standard, None).unwrap();
     // 1 byte max_val_bits + 1 byte max_len_bits + 4 bytes n_bytes = 6 bytes
     assert_eq!(frame.as_slice().len(), 6);
 }
@@ -630,21 +630,21 @@ fn encode_ben_vec_from_rle_empty_rle() {
 fn encode_ben_vec_from_assign_and_rle_are_equivalent() {
     let assign = vec![3u16, 3, 3, 1, 2, 2];
     let rle = assign_to_rle(&assign);
-    let via_assign = BenEncodeFrame::from_assignment(&assign, BenVariant::Standard, None);
-    let via_rle = BenEncodeFrame::from_rle(rle, BenVariant::Standard, None);
+    let via_assign = BenEncodeFrame::from_assignment(&assign, BenVariant::Standard, None).unwrap();
+    let via_rle = BenEncodeFrame::from_rle(rle, BenVariant::Standard, None).unwrap();
     assert_eq!(via_assign.as_slice(), via_rle.as_slice());
 }
 
 #[test]
 fn encode_ben_vec_from_assign_single_element() {
-    let frame = BenEncodeFrame::from_assignment([42u16], BenVariant::Standard, None);
+    let frame = BenEncodeFrame::from_assignment([42u16], BenVariant::Standard, None).unwrap();
     assert!(!frame.as_slice().is_empty());
 }
 
 #[test]
 fn encode_ben_vec_from_assign_all_same() {
     let assign = vec![7u16; 500];
-    let frame = BenEncodeFrame::from_assignment(&assign, BenVariant::Standard, None);
+    let frame = BenEncodeFrame::from_assignment(&assign, BenVariant::Standard, None).unwrap();
     // Should encode efficiently — the payload compresses a single run.
     assert!(!frame.as_slice().is_empty());
 }
@@ -1528,7 +1528,7 @@ fn encode_twodelta_frame_single_value_swap() {
 fn twodelta_frame_try_from_parts_round_trip() {
     let pair = (10u16, 20u16);
     let run_lengths = vec![2u16, 5, 1];
-    let original = BenEncodeFrame::from_run_lengths(pair, run_lengths, None);
+    let original = BenEncodeFrame::from_run_lengths(pair, run_lengths, None).unwrap();
     let reconstructed = BenEncodeFrame::try_from_parts(
         pair,
         original.max_len_bit_count(),
@@ -1553,7 +1553,7 @@ fn twodelta_frame_try_from_parts_round_trip() {
 #[test]
 fn encode_ben_frame_from_assignment() {
     let assignment = vec![1u16, 1, 2, 2, 3];
-    let frame = BenEncodeFrame::from_assignment(&assignment, BenVariant::Standard, None);
+    let frame = BenEncodeFrame::from_assignment(&assignment, BenVariant::Standard, None).unwrap();
     // Frame from assignment should produce runs
     let runs = frame.runs().unwrap();
     assert_eq!(runs, &[(1u16, 2u16), (2u16, 2u16), (3u16, 1u16)]);

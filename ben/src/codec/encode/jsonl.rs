@@ -45,12 +45,10 @@ pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
 
     let mut ben_encoder = BenStreamWriter::for_xben_with_encoder(encoder, variant, chunk_size)?;
 
-    let mut line_num = 1u64;
     let spinner = Spinner::new("Encoding line");
 
-    for line_result in reader.lines() {
+    for (line_num, line_result) in (1u64..).zip(reader.lines()) {
         spinner.set_count(line_num);
-        line_num += 1;
         let line = line_result?;
         let data: Value = serde_json::from_str(&line).map_err(|e| {
             io::Error::new(
@@ -85,12 +83,10 @@ pub fn encode_jsonl_to_ben<R: BufRead, W: Write>(
     writer: W,
     variant: BenVariant,
 ) -> Result<()> {
-    let mut line_num = 1u64;
     let spinner = Spinner::new("Encoding line");
     let mut ben_encoder = BenStreamWriter::for_ben(writer, variant)?;
-    for line_result in reader.lines() {
+    for (line_num, line_result) in (1u64..).zip(reader.lines()) {
         spinner.set_count(line_num);
-        line_num += 1;
         let line = line_result?;
         let data: Value = serde_json::from_str(&line).map_err(|e| {
             io::Error::new(

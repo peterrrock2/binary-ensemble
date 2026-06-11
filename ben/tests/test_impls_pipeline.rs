@@ -853,7 +853,7 @@ fn xben_truncated_frame_reports_unexpected_eof() {
 fn encode_decode_ben32_odd_bit_packing_roundtrip() {
     // values up to 3 (2 bits), lengths big to make non-byte boundary
     let rle = vec![(1u16, 3u16), (2, 5), (3, 7)];
-    let ben_frame = BenEncodeFrame::from_rle(rle.clone(), BenVariant::Standard, None);
+    let ben_frame = BenEncodeFrame::from_rle(rle.clone(), BenVariant::Standard, None).unwrap();
     let ben = ben_frame.as_slice();
     // ben layout: [max_val_bits, max_len_bits, n_bytes, payload...]
     let max_val_bits = ben[0];
@@ -1472,7 +1472,8 @@ fn twodelta_first_frame_carries_repeat_trailer() {
 
     // The first frame is a snapshot: a 1-byte snapshot tag (0x00) precedes the MkvChain-formatted
     // body, which is the Standard frame bytes plus a trailing u16 repetition count.
-    let expected_first = BenEncodeFrame::from_assignment(&first, BenVariant::Standard, None);
+    let expected_first =
+        BenEncodeFrame::from_assignment(&first, BenVariant::Standard, None).unwrap();
     assert_eq!(&ben[..17], b"TWODELTA BEN FILE");
     assert_eq!(ben[17], 0x00, "first frame should carry the snapshot tag");
     let body_start = 18;
