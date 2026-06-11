@@ -153,6 +153,43 @@ tasks:
       - task: test-rust
       - task: test-python
 
+  ensure-cargo-fuzz:
+    desc: Install the `cargo-fuzz` runner if it is not already available
+    internal: true
+    silent: true
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    status:
+      - command -v cargo-fuzz
+    cmds:
+      - cargo install cargo-fuzz --locked
+
+  fuzz:
+    desc: >-
+      Time-boxed coverage-guided fuzzing of the read surfaces (libFuzzer via cargo-fuzz; requires
+      the nightly toolchain). Explores compound multi-byte corruptions that the exhaustive
+      single-byte mutation harness cannot reach. FUZZ_SECONDS bounds each target (default 60).
+    silent: true
+    deps:
+      - ensure-toolchain
+      - ensure-cargo-fuzz
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    vars:
+      FUZZ_SECONDS: '{{.FUZZ_SECONDS | default "60"}}'
+    cmds:
+      # Seed every corpus from the committed wire-format fixtures so the fuzzer starts from
+      # valid structures instead of rediscovering the banners byte by byte.
+      - mkdir -p fuzz/corpus/ben_reader fuzz/corpus/xben_body fuzz/corpus/xben_container fuzz/corpus/bendl_reader
+      - cp ben/tests/fixtures/v1.0.0/*.ben fuzz/corpus/ben_reader/
+      - cp ben/tests/fixtures/v1.0.0/*.ben fuzz/corpus/xben_body/
+      - cp ben/tests/fixtures/v1.0.0/*.xben fuzz/corpus/xben_container/
+      - cp ben/tests/fixtures/v1.0.0/*.bendl fuzz/corpus/bendl_reader/
+      - cargo +nightly fuzz run ben_reader -- -max_total_time={{.FUZZ_SECONDS}}
+      - cargo +nightly fuzz run xben_body -- -max_total_time={{.FUZZ_SECONDS}}
+      - cargo +nightly fuzz run xben_container -- -max_total_time={{.FUZZ_SECONDS}}
+      - cargo +nightly fuzz run bendl_reader -- -max_total_time={{.FUZZ_SECONDS}}
+
   ensure-be-target:
     desc: Install the big-endian (s390x) std target if it is not already available
     internal: true

@@ -8,6 +8,7 @@ members = [
 exclude = [
   "dev_files/*",
   "example/*",
+  "fuzz",
   "tests/*",
   "TODO.md",
 ]
