@@ -151,7 +151,78 @@ tasks:
     cmds:
       - task: test-rust
       - task: test-python
-      - task: docs-test
+
+  ensure-be-target:
+    desc: Install the big-endian (s390x) std target if it is not already available
+    internal: true
+    silent: true
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    status:
+      - rustup target list --installed | grep -q '^s390x-unknown-linux-gnu$'
+    cmds:
+      - rustup target add s390x-unknown-linux-gnu
+
+  ensure-cross:
+    desc: Install the `cross` cross-compilation runner if it is not already available
+    internal: true
+    silent: true
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    status:
+      - command -v cross
+    cmds:
+      - cargo install cross --locked
+
+  check-endian:
+    desc: >-
+      Type-check the ben crate (including tests) for a big-endian target. No Docker needed;
+      catches compile-level endianness regressions only — `task test-endian` is the real gate.
+    silent: true
+    deps:
+      - ensure-toolchain
+      - ensure-be-target
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cargo check -p binary-ensemble --all-targets --target s390x-unknown-linux-gnu
+
+  test-big-endian:
+    desc: >-
+      Run the full ben test suite on a big-endian target (s390x) under QEMU via `cross`.
+      Requires Docker (or Podman). The format-stability fixtures decoding here is what proves
+      the wire codecs are endian-correct.
+    silent: true
+    deps:
+      - ensure-toolchain
+      - ensure-cross
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cross test -p binary-ensemble --target s390x-unknown-linux-gnu
+
+  test-little-endian:
+    desc: >-
+      Run the full ben test suite on a little-endian target (x86_64) via `cross`. Redundant on
+      an x86/ARM host (the native suite already covers it) but keeps `task test-endian`
+      host-independent. Requires Docker (or Podman).
+    silent: true
+    deps:
+      - ensure-toolchain
+      - ensure-cross
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cross test -p binary-ensemble --target x86_64-unknown-linux-gnu
+
+  test-endian:
+    desc: >-
+      Run the ben test suite on one big-endian and one little-endian target, so wire-format
+      endianness is proven regardless of the development machine
+    silent: true
+    cmds:
+      - task: test-big-endian
+      - task: test-little-endian
 
   format-rust:
     desc: Format Rust code

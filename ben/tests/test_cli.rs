@@ -44,16 +44,36 @@ fn bin_path(name: &str) -> &'static str {
     }
 }
 
+/// Build a `Command` for one of the workspace CLIs, honoring any cross-compilation runner cargo
+/// was configured with (e.g. `CARGO_TARGET_S390X_UNKNOWN_LINUX_GNU_RUNNER` inside a `cross`
+/// container running the suite under QEMU). Cargo routes the *test binary itself* through that
+/// runner automatically, but subprocesses spawned by tests exec directly — without this shim, a
+/// foreign-architecture CLI binary is handed straight to the host kernel, which rejects it (or
+/// hands it to a shell that mangles the ELF as a script). The variable is only ever set in
+/// cross-compilation environments, so native runs take the plain-exec path.
+fn cli_command(bin: &str) -> Command {
+    let runner = std::env::vars().find_map(|(key, value)| {
+        (key.starts_with("CARGO_TARGET_") && key.ends_with("_RUNNER") && !value.trim().is_empty())
+            .then_some(value)
+    });
+    match runner {
+        Some(runner) => {
+            let mut parts = runner.split_whitespace();
+            let mut cmd = Command::new(parts.next().expect("runner value is non-empty"));
+            cmd.args(parts);
+            cmd.arg(bin_path(bin));
+            cmd
+        }
+        None => Command::new(bin_path(bin)),
+    }
+}
+
 fn run(bin: &str, args: &[&str], cwd: &Path) -> Output {
-    Command::new(bin_path(bin))
-        .current_dir(cwd)
-        .args(args)
-        .output()
-        .unwrap()
+    cli_command(bin).current_dir(cwd).args(args).output().unwrap()
 }
 
 fn run_with_stdin(bin: &str, args: &[&str], cwd: &Path, stdin: &[u8]) -> Output {
-    let mut child = Command::new(bin_path(bin))
+    let mut child = cli_command(bin)
         .current_dir(cwd)
         .args(args)
         .stdin(Stdio::piped())
