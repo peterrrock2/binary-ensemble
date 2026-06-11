@@ -252,6 +252,16 @@ tasks:
       - task: format-rust
       - task: format-python
 
+  lint-rust:
+    desc: Lint Rust code (clippy over every workspace target, warnings denied)
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cargo clippy --workspace --all-targets -- -D warnings
+
   lint-python:
     desc: Lint ben-py Python code
     silent: true
@@ -267,6 +277,7 @@ tasks:
     desc: Run linters
     silent: true
     cmds:
+      - task: lint-rust
       - task: lint-python
 
   coverage-ben:
