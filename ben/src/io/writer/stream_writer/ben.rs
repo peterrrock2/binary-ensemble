@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::io::{self, Write};
 
+use crate::codec::encode::errors::is_twodelta_run_too_long;
 use crate::codec::encode::encode_twodelta_frame_with_hint;
 use crate::codec::BenEncodeFrame;
 use crate::BenVariant;
@@ -69,25 +70,44 @@ impl<W: Write> BenState<W> {
                     self.write_twodelta_snapshot(assignment, count)?;
                 } else {
                     match classify_transition(&self.previous_assignment, assignment)? {
-                        TransitionKind::Repeat => {
-                            let frame = twodelta_repeat_frame(assignment, count)?;
-                            self.writer.write_all(&[BEN_TWODELTA_DELTA_TAG])?;
-                            self.writer.write_all(frame.as_slice())?;
-                        }
+                        TransitionKind::Repeat => match twodelta_repeat_frame(assignment, count) {
+                            Ok(frame) => {
+                                self.writer.write_all(&[BEN_TWODELTA_DELTA_TAG])?;
+                                self.writer.write_all(frame.as_slice())?;
+                            }
+                            // A pair-projected run longer than u16::MAX cannot be expressed in a
+                            // delta-shaped frame (splitting it would require zero-length runs,
+                            // which readers reject as corruption); a snapshot splits long runs
+                            // natively.
+                            Err(e) if is_twodelta_run_too_long(&e) => {
+                                self.write_twodelta_snapshot(assignment, count)?;
+                            }
+                            Err(e) => return Err(e),
+                        },
                         // Clean 2-swap where both districts already exist: cheap delta against the
                         // maintained masks.
                         TransitionKind::Delta(a, b)
                             if pair_has_masks(&self.previous_masks, a, b) =>
                         {
-                            let frame = encode_twodelta_frame_with_hint(
+                            match encode_twodelta_frame_with_hint(
                                 &self.previous_assignment,
                                 assignment,
                                 Some((a, b)),
                                 Some(&mut self.previous_masks),
                                 Some(count),
-                            )?;
-                            self.writer.write_all(&[BEN_TWODELTA_DELTA_TAG])?;
-                            self.writer.write_all(frame.as_slice())?;
+                            ) {
+                                Ok(frame) => {
+                                    self.writer.write_all(&[BEN_TWODELTA_DELTA_TAG])?;
+                                    self.writer.write_all(frame.as_slice())?;
+                                }
+                                // Same representability limit as the repeat arm. The failed
+                                // encode leaves `previous_masks` untouched, and the snapshot
+                                // reseeds them from `assignment`.
+                                Err(e) if is_twodelta_run_too_long(&e) => {
+                                    self.write_twodelta_snapshot(assignment, count)?;
+                                }
+                                Err(e) => return Err(e),
+                            }
                         }
                         // A >2-district transition, or a 2-id transition that introduces a district
                         // absent from the previous assignment (no mask to delta against): full

@@ -1,3 +1,4 @@
+use crate::codec::encode::errors::EncodeError;
 use std::collections::HashMap;
 use std::io;
 
@@ -17,8 +18,10 @@ pub const DEFAULT_TWODELTA_CHUNK_SIZE: usize = 10_000;
 /// Walk a TwoDelta repeat-eligible assignment and emit the `(pair, run_lengths)` describing it.
 ///
 /// Used by both the BEN and XBEN writers to construct the body of a TwoDelta "repeat" frame: each
-/// writer wraps the result in its own frame type. Returns an `InvalidInput` error if any run
-/// exceeds `u16::MAX` in length.
+/// writer wraps the result in its own frame type. Returns an `InvalidInput` error carrying
+/// [`EncodeError::TwoDeltaRunTooLong`] if any run exceeds `u16::MAX` in length — the wire format
+/// cannot represent such a run in a delta-shaped frame, and the writers recover by emitting a
+/// snapshot frame instead.
 pub(crate) fn twodelta_repeat_runs(assignment: &[u16]) -> io::Result<((u16, u16), Vec<u16>)> {
     let first = assignment.first().copied().unwrap_or(0);
     let second = assignment
@@ -39,7 +42,7 @@ pub(crate) fn twodelta_repeat_runs(assignment: &[u16]) -> io::Result<((u16, u16)
             if run_len == u16::MAX {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    "TwoDelta repeat frame contains a run longer than u16::MAX",
+                    EncodeError::TwoDeltaRunTooLong,
                 ));
             }
             run_len += 1;

@@ -760,6 +760,192 @@ fn twodelta_repeat_frame_run_exceeds_u16_max_errors() {
     assert!(err.to_string().contains("u16::MAX"));
 }
 
+// ── TwoDelta long-run snapshot fallback ──────────────────────────────
+//
+// A pair-projected run longer than u16::MAX cannot be expressed in a delta-shaped frame (splitting
+// it would require zero-length runs, which readers reject as corruption). The writers fall back to
+// snapshot/full frames, whose RLE splits long runs natively. One test per fallback site.
+
+/// Smallest assignment whose single-district body exceeds the u16::MAX run limit when projected
+/// onto a repeat/delta pair.
+fn long_run_assignment() -> Vec<u16> {
+    vec![1u16; u16::MAX as usize + 1]
+}
+
+/// Drain a plain-BEN TwoDelta stream, asserting every sample equals `expected` and returning the
+/// expanded sample total.
+fn drain_ben_expecting(ben: &[u8], expected: &[u16]) -> usize {
+    let mut total = 0usize;
+    BenStreamReader::from_ben(ben)
+        .unwrap()
+        .silent(true)
+        .for_each_assignment(|a, count| {
+            assert_eq!(a, expected, "decoded assignment diverged");
+            total += count as usize;
+            Ok(true)
+        })
+        .unwrap();
+    total
+}
+
+#[test]
+fn ben_twodelta_long_run_repeat_falls_back_to_snapshot() {
+    let a = long_run_assignment();
+    let mut ben = Vec::new();
+    {
+        let mut writer = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
+        writer.write_frame(a.clone(), 3).unwrap();
+        // Repeat of the previous frame: unrepresentable as a repeat delta → snapshot fallback.
+        writer.write_frame(a.clone(), 4).unwrap();
+        writer.finish().unwrap();
+    }
+    assert_eq!(drain_ben_expecting(&ben, &a), 7);
+}
+
+#[test]
+fn ben_twodelta_long_run_delta_falls_back_to_snapshot() {
+    // A → B is a clean 2-swap at position 0, but the delta's pair covers every position and B's
+    // leading run exceeds u16::MAX → snapshot fallback.
+    let mut a = vec![1u16; u16::MAX as usize + 2];
+    *a.last_mut().unwrap() = 2;
+    let mut b = a.clone();
+    b[0] = 2;
+
+    let mut ben = Vec::new();
+    {
+        let mut writer = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
+        writer.write_frame(a.clone(), 1).unwrap();
+        writer.write_frame(b.clone(), 2).unwrap();
+        writer.finish().unwrap();
+    }
+
+    let mut seen = Vec::new();
+    BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .silent(true)
+        .for_each_assignment(|assignment, count| {
+            seen.push((assignment.to_vec(), count));
+            Ok(true)
+        })
+        .unwrap();
+    assert_eq!(seen, vec![(a, 1), (b, 2)]);
+}
+
+#[test]
+fn xben_twodelta_long_run_delta_falls_back_to_full_frame() {
+    // Same construction as the plain-BEN delta test, through the XBEN columnar writer.
+    let mut a = vec![1u16; u16::MAX as usize + 2];
+    *a.last_mut().unwrap() = 2;
+    let mut b = a.clone();
+    b[0] = 2;
+
+    assert_eq!(
+        roundtrip_xben_counts(&[a.clone(), b.clone()], BenVariant::TwoDelta),
+        vec![(a, 1), (b, 1)]
+    );
+}
+
+#[test]
+fn xben_twodelta_long_run_repeat_after_chunk_flush_falls_back_to_full_frame() {
+    // chunk_size = 1 forces a chunk flush after the A→B delta, so the next repeat of B reaches
+    // the classify-Repeat arm with an empty chunk. B's repeat pair (1, 4) projects onto a run
+    // longer than u16::MAX → pending-full fallback. The A→B delta itself stays representable
+    // because its pair (3, 4) covers only the two tail positions.
+    let mut a = vec![1u16; u16::MAX as usize + 3];
+    a[u16::MAX as usize + 1] = 3;
+    a[u16::MAX as usize + 2] = 4;
+    let mut b = a.clone();
+    b[u16::MAX as usize + 1] = 4;
+
+    let mut xben = Vec::new();
+    {
+        let mut writer = build_xben_writer(&mut xben, BenVariant::TwoDelta, Some(1));
+        writer.write_assignment(a.clone()).unwrap();
+        writer.write_assignment(b.clone()).unwrap();
+        writer.write_assignment(b.clone()).unwrap();
+        writer.finish().unwrap();
+    }
+
+    let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
+    let decoded: Vec<(Vec<u16>, u16)> = reader.map(|r| r.unwrap()).collect();
+    let total: usize = decoded.iter().map(|&(_, c)| c as usize).sum();
+    assert_eq!(total, 3);
+    assert_eq!(decoded[0].0, a);
+    for (assignment, _) in &decoded[1..] {
+        assert_eq!(assignment, &b);
+    }
+}
+
+#[test]
+fn xben_twodelta_long_run_repeat_saturation_falls_back_to_full_frame() {
+    // u16::MAX identical samples saturate the pending full frame's count; the next repeat cannot
+    // be a delta-shaped frame (single-district body → pair-projected run beyond u16::MAX), so the
+    // writer re-buffers it as a fresh full frame and keeps merging later repeats into it.
+    let a = long_run_assignment();
+    let n = u16::MAX as usize + 2;
+
+    let mut xben = Vec::new();
+    {
+        let mut writer = build_xben_writer(&mut xben, BenVariant::TwoDelta, None);
+        for _ in 0..n {
+            writer.write_assignment(a.clone()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    let mut total = 0usize;
+    BenStreamReader::from_xben(Cursor::new(xben))
+        .unwrap()
+        .silent(true)
+        .for_each_assignment(|assignment, count| {
+            assert_eq!(assignment, a.as_slice());
+            total += count as usize;
+            Ok(true)
+        })
+        .unwrap();
+    assert_eq!(total, n);
+}
+
+#[test]
+fn xben_twodelta_long_run_chunk_repeat_saturation_falls_back_to_full_frame() {
+    // An A→B delta seeds the chunk, u16::MAX repeats of B saturate that delta's count, and the
+    // next repeat trips the chunk-saturation path: B's repeat pair projects onto a run beyond
+    // u16::MAX → pending-full fallback.
+    let mut a = vec![1u16; u16::MAX as usize + 3];
+    a[u16::MAX as usize + 1] = 3;
+    a[u16::MAX as usize + 2] = 4;
+    let mut b = a.clone();
+    b[u16::MAX as usize + 1] = 4;
+    let n_b = u16::MAX as usize + 2;
+
+    let mut xben = Vec::new();
+    {
+        let mut writer = build_xben_writer(&mut xben, BenVariant::TwoDelta, None);
+        writer.write_assignment(a.clone()).unwrap();
+        for _ in 0..n_b {
+            writer.write_assignment(b.clone()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    let mut a_total = 0usize;
+    let mut b_total = 0usize;
+    BenStreamReader::from_xben(Cursor::new(xben))
+        .unwrap()
+        .silent(true)
+        .for_each_assignment(|assignment, count| {
+            if assignment == a.as_slice() {
+                a_total += count as usize;
+            } else {
+                assert_eq!(assignment, b.as_slice());
+                b_total += count as usize;
+            }
+            Ok(true)
+        })
+        .unwrap();
+    assert_eq!((a_total, b_total), (1, n_b));
+}
+
 #[test]
 fn translate_twodelta_non_eof_read_error_propagates() {
     use std::io::{self, Read};

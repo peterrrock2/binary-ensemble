@@ -19,6 +19,12 @@ pub enum EncodeError {
     #[error("TwoDelta transition involves more than two distinct district ids")]
     TwoDeltaTooManyIds,
 
+    #[error(
+        "TwoDelta run length exceeds u16::MAX, which the wire format cannot represent in a \
+         delta frame"
+    )]
+    TwoDeltaRunTooLong,
+
     #[error("TwoDelta received identical assignment to previous frame")]
     TwoDeltaIdentical,
 
@@ -59,4 +65,13 @@ impl From<EncodeError> for io::Error {
             other => io::Error::new(io::ErrorKind::InvalidData, other),
         }
     }
+}
+
+/// Whether `err` is the TwoDelta run-length representability error
+/// ([`EncodeError::TwoDeltaRunTooLong`]). Writers recover from this one error by emitting a
+/// snapshot frame, which splits long runs natively, instead of a delta or repeat frame.
+pub(crate) fn is_twodelta_run_too_long(err: &io::Error) -> bool {
+    err.get_ref()
+        .and_then(|inner| inner.downcast_ref::<EncodeError>())
+        .is_some_and(|e| matches!(e, EncodeError::TwoDeltaRunTooLong))
 }

@@ -229,6 +229,15 @@ preserve the *expanded* sample count:
 
 As with the other variants, a frame `count` of `0` is invalid and MUST be rejected by readers.
 
+## Run-Length Representability
+
+Run lengths in delta-shaped frames (deltas, chunks, and no-op repeat deltas) are `u16` and MUST be
+greater than zero, so a pair-projected run longer than `65535` positions cannot be expressed in a
+delta-shaped frame: splitting it would require interleaving zero-length runs, which readers reject
+as corruption. A writer that encounters such a run MUST fall back to a snapshot (plain `.ben`) or
+full (`.xben`) frame, whose RLE layer splits long runs into consecutive maximal runs natively.
+Readers need no special handling — the fallback arrives as an ordinary snapshot/full frame.
+
 ## Reader Rules
 
 A reader MUST:
