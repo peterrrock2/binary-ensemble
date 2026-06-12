@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
 pub mod common;
+pub mod compact;
 pub mod decode;
 pub mod encode;
 pub mod graph;
@@ -22,6 +23,11 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crate::encode::encode_jsonl_to_xben, m)?)?;
     m.add_function(wrap_pyfunction!(crate::encode::encode_ben_to_xben, m)?)?;
     m.add_function(wrap_pyfunction!(crate::graph::graph_reorder, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::compact::compact_bundle, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::compact::compact_bundle_in_place,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(crate::recompress::recompress_bundle, m)?)?;
     m.add_function(wrap_pyfunction!(crate::relabel::relabel_bundle, m)?)?;
 

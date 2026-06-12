@@ -1,4 +1,4 @@
-//! Python bindings for BEN/XBEN decoding and `.bendl` bundle inspection.
+//! Python bindings for BEN/XBEN decoding and `.bendl` file inspection.
 
 mod bundle_decoder;
 mod cursor;

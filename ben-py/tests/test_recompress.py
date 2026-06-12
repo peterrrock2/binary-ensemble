@@ -22,7 +22,7 @@ def _build_ben_bundle(path: Path):
     with BendlEncoder(path, overwrite=True) as enc:
         enc.add_graph(_graph(), sort="rcm")
         enc.add_metadata({"seed": 99})
-        with enc.stream("ben") as s:
+        with enc.stream() as s:
             for a in samples:
                 s.write(a)
         enc.add_asset("notes.txt", "hi", content_type="text")
@@ -57,28 +57,20 @@ def test_compress_stream_explicit_out_path(tmp_path: Path) -> None:
     assert BendlDecoder(src).assignment_format() == "ben"
 
 
-def test_compress_stream_in_place(tmp_path: Path) -> None:
+def test_compress_stream_in_place_by_default(tmp_path: Path) -> None:
     src = tmp_path / "in.bendl"
     samples = _build_ben_bundle(src)
     before = BendlDecoder(src)
     before_assets = {n: before.read_asset_bytes(n) for n in before.asset_names()}
 
-    compress_stream(src, in_place=True)
+    # out_file=None means in place: src is atomically replaced.
+    compress_stream(src)
 
     after = BendlDecoder(src)
     assert after.assignment_format() == "xben"
     assert list(after) == samples
     for name, payload in before_assets.items():
         assert after.read_asset_bytes(name) == payload
-
-
-def test_compress_stream_arg_validation(tmp_path: Path) -> None:
-    src = tmp_path / "in.bendl"
-    _build_ben_bundle(src)
-    with pytest.raises(ValueError, match="either in_place=True or out_file"):
-        compress_stream(src)
-    with pytest.raises(ValueError, match="not both"):
-        compress_stream(src, out_file=tmp_path / "o.bendl", in_place=True)
 
 
 def test_compress_stream_assets_only_bundle(tmp_path: Path) -> None:
@@ -105,3 +97,6 @@ def test_compress_stream_out_file_refuses_existing(tmp_path: Path) -> None:
     out.write_bytes(b"existing")
     with pytest.raises(OSError, match="already exists"):
         compress_stream(src, out_file=out)
+    # overwrite=True is the explicit opt-in to replace it.
+    compress_stream(src, out_file=out, overwrite=True)
+    assert BendlDecoder(out).assignment_format() == "xben"

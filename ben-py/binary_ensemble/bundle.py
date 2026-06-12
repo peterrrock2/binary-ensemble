@@ -1,16 +1,15 @@
 """The ``.bendl`` bundle format — the recommended single-file container.
 
-A bundle wraps a BEN/XBEN assignment stream together with front-loaded assets: a
-dual ``graph.json``, a ``node_permutation_map.json``, a ``metadata.json``, and
-arbitrary custom blobs. :class:`BendlEncoder` writes one; :class:`BendlDecoder`
-reads and iterates one.
+A bundle wraps a BEN/XBEN assignment stream together with front-loaded assets: a dual
+``graph.json``, a ``node_permutation_map.json``, a ``metadata.json``, and arbitrary custom blobs.
+:class:`BendlEncoder` writes one; :class:`BendlDecoder` reads and iterates one.
 
 Typical write::
 
     with BendlEncoder(path, overwrite=True) as enc:
         enc.add_graph(graph, sort="rcm")                # sort=None => store raw
         enc.add_metadata({"seed": 1234})
-        with enc.stream("ben") as stream:
+        with enc.stream() as stream:
             for assignment in chain:
                 stream.write(assignment)
 
@@ -27,12 +26,29 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from typing import Any, Optional
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Literal, cast, overload
 
 from binary_ensemble._core import BendlDecoder, BendlStreamSession
 from binary_ensemble._core import BendlEncoder as _CoreBendlEncoder
+from binary_ensemble._core import compact_bundle_in_place as _compact_bundle_in_place
 from binary_ensemble._core import recompress_bundle as _recompress_bundle
 from binary_ensemble._core import relabel_bundle as _relabel_bundle
+from binary_ensemble.types import (
+    BinaryAssetPayload,
+    GraphInput,
+    JsonAssetPayload,
+    MetadataInput,
+    SortMethod,
+    StrPath,
+    TextAssetPayload,
+    Variant,
+)
+
+if TYPE_CHECKING:
+    from types import TracebackType
+
+    import networkx as nx
 
 __all__ = [
     "BendlEncoder",
@@ -43,45 +59,47 @@ __all__ = [
 ]
 
 
-def _atomic_or_out(transform, path, out_file, in_place, suffix=".bendl"):
-    """Shared in_place-swap / out_file dispatch for whole-bundle transforms.
+def _atomic_or_out(
+    transform: Callable[[StrPath, StrPath, bool], None],
+    path: StrPath,
+    out_file: StrPath | None,
+    overwrite: bool,
+    suffix: str = ".bendl",
+) -> None:
+    """Shared in-place-swap / out_file dispatch for whole-bundle transforms.
 
-    ``transform(src, dst, overwrite)`` writes the result. Exactly one of
-    ``in_place`` / ``out_file`` must be given.
+    ``transform(src, dst, overwrite)`` writes the result. ``out_file=None`` means in place: the
+    result is written to a temp file and atomically swapped over ``path``. ``overwrite`` governs
+    an existing ``out_file`` (the in-place swap always replaces ``path``).
     """
-    if in_place and out_file is not None:
-        raise ValueError("pass either in_place=True or out_file, not both")
-    if not in_place and out_file is None:
-        raise ValueError("pass either in_place=True or out_file")
+    if out_file is not None:
+        transform(path, out_file, overwrite)
+        return
 
-    if in_place:
-        directory = os.path.dirname(os.path.abspath(os.fspath(path)))
-        fd, tmp = tempfile.mkstemp(suffix=suffix, dir=directory)
-        os.close(fd)
-        try:
-            transform(path, tmp, True)
-            os.replace(tmp, path)
-        except BaseException:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-            raise
-    else:
-        transform(path, out_file, False)
+    directory = os.path.dirname(os.path.abspath(os.fspath(path)))
+    fd, tmp = tempfile.mkstemp(suffix=suffix, dir=directory)
+    os.close(fd)
+    try:
+        transform(path, tmp, True)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
 
 
-def _coerce_asset_payload(payload: Any, content_type: str) -> bytes:
+def _coerce_asset_payload(payload: object, content_type: str) -> bytes:
     """Coerce an ``add_asset`` payload to bytes.
 
     Accepted forms:
 
-    - ``dict`` / ``list`` — serialized via ``json.dumps`` (requires
-      ``content_type="json"``).
-    - ``str`` — UTF-8 encoded **content** (not a path; pass a ``pathlib.Path``
-      to read a file — this deliberately differs from :meth:`BendlEncoder.add_metadata`,
-      whose payloads are never plain text, so there a ``str`` is a path).
+    - ``dict`` / ``list`` — serialized via ``json.dumps`` (requires ``content_type="json"``).
+    - ``str`` — UTF-8 encoded **content** (not a path; pass a ``pathlib.Path`` to read a file —
+      this deliberately differs from :meth:`BendlEncoder.add_metadata`, whose payloads are never
+      plain text, so there a ``str`` is a path).
     - ``bytes`` / ``bytearray`` / ``memoryview`` — used verbatim.
-    - any object with a ``.read()`` method (open files, ``io.BytesIO``) — read,
-      with ``str`` results UTF-8 encoded.
+    - any object with a ``.read()`` method (open files, ``io.BytesIO``) — read, with ``str``
+      results UTF-8 encoded.
     - ``os.PathLike`` (e.g. ``pathlib.Path``) — the file at that path is read.
     """
     if isinstance(payload, (dict, list)):
@@ -95,8 +113,9 @@ def _coerce_asset_payload(payload: Any, content_type: str) -> bytes:
         return payload.encode("utf-8")
     if isinstance(payload, (bytes, bytearray, memoryview)):
         return bytes(payload)
-    if hasattr(payload, "read"):
-        data = payload.read()
+    reader = getattr(payload, "read", None)
+    if callable(reader):
+        data = reader()
         if isinstance(data, str):
             return data.encode("utf-8")
         if isinstance(data, (bytes, bytearray, memoryview)):
@@ -116,105 +135,165 @@ def _coerce_asset_payload(payload: Any, content_type: str) -> bytes:
 class BendlEncoder:
     """Writer for a ``.bendl`` bundle (create mode) or an asset appender (append mode).
 
-    In create mode (the constructor), assets may be added before or after a
-    single-use ``stream()``. You do **not** need to use ``BendlEncoder`` itself as
-    a context manager: closing the ``stream()`` context finalizes the bundle, so
-    the common pattern is::
+    In create mode (the constructor), assets may be added before or after a single-use
+    ``stream()``. You do **not** need to use ``BendlEncoder`` itself as a context manager: closing
+    the ``stream()`` context finalizes the bundle, so the common pattern is::
 
         enc = BendlEncoder(path, overwrite=True)
         graph = enc.add_graph(my_graph)          # MLC-reordered by default
-        with enc.stream("ben") as stream:        # only the stream needs ``with``
+        with enc.stream() as stream:             # only the stream needs ``with``
             for assignment in chain:
                 stream.write(assignment)
         # bundle is finalized here
 
-    The encoder is still usable as a context manager if you prefer, and that is
-    the easy way to finalize an *assets-only* bundle (one written with no
-    ``stream()``): either ``with BendlEncoder(...) as enc: ...`` or an explicit
-    :meth:`close`. In append mode (:meth:`append`), an existing finalized bundle
-    is grown with new assets and ``stream()`` is unavailable.
+    The encoder is still usable as a context manager if you prefer, and that is the easy way to
+    finalize an *assets-only* bundle (one written with no ``stream()``): either
+    ``with BendlEncoder(...) as enc: ...`` or an explicit :meth:`close`. In append mode
+    (:meth:`append`), an existing finalized bundle is grown with new assets and ``stream()`` is
+    unavailable.
 
     Args:
-        file_path: Output path for the new bundle. Must not exist unless
-            ``overwrite=True``.
-        overwrite: Replace an existing file at ``file_path``. Defaults to ``False``.
+        file_path (StrPath): Output path for the new bundle (``str`` or ``os.PathLike``, e.g.
+            ``pathlib.Path``). Must not exist unless ``overwrite=True``.
+        overwrite (bool, optional): Replace an existing file at ``file_path``. Default is
+            ``False``.
 
     Raises:
-        OSError: If ``file_path`` exists and ``overwrite`` is ``False``, or it
-            cannot be created.
+        OSError: If ``file_path`` exists and ``overwrite`` is ``False``, or it cannot be created.
     """
 
-    def __init__(self, file_path, overwrite: bool = False) -> None:
+    def __init__(self, file_path: StrPath, overwrite: bool = False) -> None:
+        self._path = file_path
         self._enc = _CoreBendlEncoder(file_path, overwrite=overwrite)
 
     @classmethod
-    def append(cls, file_path) -> "BendlEncoder":
+    def append(cls, file_path: StrPath) -> "BendlEncoder":
         """Open an existing *finalized* bundle to append new assets.
 
-        ``stream()`` is unavailable in append mode; each ``add_*`` commits
-        immediately.
+        ``stream()`` is unavailable in append mode; each ``add_*`` commits immediately.
+
+        Args:
+            file_path (StrPath): Path to an existing, finalized ``.bendl`` bundle (``str`` or
+                ``os.PathLike``).
+
+        Returns:
+            BendlEncoder: An encoder in append mode.
+
+        Raises:
+            Exception: If the file is missing, is not a bundle, or is not finalized.
         """
         self = cls.__new__(cls)
+        self._path = file_path
         self._enc = _CoreBendlEncoder.append(file_path)
         return self
 
     def add_graph(
-        self, graph: Any, sort: Optional[str] = "mlc", key: Optional[str] = None
-    ) -> Any:
+        self,
+        graph: GraphInput,
+        sort: SortMethod | None = "mlc",
+        key: str | None = None,
+    ) -> "nx.Graph":
         """Embed the dual ``graph.json`` and return the (possibly reordered) graph.
 
-        ``sort`` selects how nodes are ordered and defaults to ``"mlc"`` (so the
-        graph is reordered for better compression):
+        When reordering, both ``graph.json`` and ``node_permutation_map.json`` are stored and the
+        reordered graph is returned so the chain runs on that ordering. Reordering is pre-stream
+        only; a raw graph (``sort=None``) may also be attached post-stream / in append mode.
 
-        - ``"mlc"`` — multi-level clustering,
-        - ``"rcm"`` — reverse Cuthill-McKee,
-        - ``"key"`` — sort by the node attribute named in ``key`` (e.g.
-          ``sort="key", key="GEOID"``; ``key="id"`` sorts by the NetworkX node id),
-        - ``None`` — store the graph as-is, with no permutation map.
+        Args:
+            graph (GraphInput): The dual graph (:data:`~binary_ensemble.types.GraphInput`): a
+                live ``networkx.Graph`` (subclasses such as ``gerrychain.Graph`` count; its node
+                iteration order is preserved), or adjacency-format JSON as a parsed ``dict`` or
+                ``list``, raw ``bytes``, a file-like object with ``.read()``, or a ``str`` /
+                ``os.PathLike`` path to a JSON file. A plain ``str`` is a *path* here.
+            sort (SortMethod | None, optional): How to order the nodes
+                (:data:`~binary_ensemble.types.SortMethod` or ``None``): ``"mlc"`` (multi-level
+                clustering — reorders the graph for better compression), ``"rcm"`` (reverse
+                Cuthill-McKee), ``"key"`` (sort by the node attribute named in ``key``), or
+                ``None`` to store the graph as-is with no permutation map. Default is ``"mlc"``.
+            key (str | None, optional): Node attribute to sort by, e.g. ``key="GEOID"``;
+                ``key="id"`` sorts by the NetworkX node id. Required with — and only valid with —
+                ``sort="key"``. Default is ``None``.
 
-        When reordering, both ``graph.json`` and ``node_permutation_map.json`` are
-        stored and the reordered graph is returned so the chain runs on that
-        ordering. Reordering is pre-stream only; a raw graph (``sort=None``) may
-        also be attached post-stream / in append mode. ``key`` is only valid with
-        ``sort="key"``.
+        Returns:
+            networkx.Graph: The stored graph after any reordering (matching
+            :meth:`BendlDecoder.read_graph`). Its node iteration order is the order the chain
+            must write assignments in.
 
-        The graph is returned as a NetworkX graph (matching
-        :meth:`BendlDecoder.read_graph`), so its node order is the order the
-        chain should write assignments in.
+        Raises:
+            ValueError: If ``sort`` / ``key`` is invalid.
+            Exception: If a reordering graph is added after the stream has started.
         """
         return self._enc.add_graph(graph, sort, key)
 
-    def add_metadata(self, metadata: Any) -> None:
-        """Embed the canonical ``metadata.json`` asset (a dict/list, bytes, or path)."""
+    def add_metadata(self, metadata: MetadataInput) -> None:
+        """Embed the canonical ``metadata.json`` asset (run provenance).
+
+        Args:
+            metadata (MetadataInput): The JSON payload
+                (:data:`~binary_ensemble.types.MetadataInput`): a ``dict`` or ``list``
+                (serialized for you), raw JSON ``bytes``, a file-like object with ``.read()``, or
+                a ``str`` / ``os.PathLike`` path to a JSON file. A plain ``str`` is a *path*
+                here, never inline JSON.
+
+        Raises:
+            Exception: If the payload cannot be converted to JSON bytes, or the encoder is in an
+                invalid state.
+        """
         self._enc.add_metadata(metadata)
 
+    @overload
+    def add_asset(
+        self, name: str, payload: JsonAssetPayload, content_type: Literal["json"]
+    ) -> None: ...
+    @overload
+    def add_asset(
+        self, name: str, payload: TextAssetPayload, content_type: Literal["text"]
+    ) -> None: ...
+    @overload
+    def add_asset(
+        self, name: str, payload: BinaryAssetPayload, content_type: Literal["binary"]
+    ) -> None: ...
+    @overload
+    def add_asset(self, name: str, payload: StrPath, content_type: Literal["file"]) -> None: ...
     def add_asset(
         self,
         name: str,
-        payload: Any,
+        payload: object,
         content_type: str,
     ) -> None:
         """Embed a custom asset under ``name``.
 
-        ``payload`` may be bytes-like or a ``str`` (stored as UTF-8 content), a
-        ``dict``/``list`` (serialized as JSON; requires ``content_type="json"``),
-        an open file or other object with ``.read()``, or a ``pathlib.Path``
-        whose file contents are read. A plain ``str`` is always *content*, never
-        a path — pass a ``Path`` to read from disk.
+        Every asset carries a CRC32C integrity checksum, and payloads of 1 KiB or more are
+        xz-compressed on disk by default (both transparent on read).
 
-        ``content_type`` is ``"json"`` (payload must be valid UTF-8 JSON; the
-        decoder will auto-parse it), ``"text"`` (payload must be valid UTF-8),
-        ``"binary"`` (arbitrary bytes, stored verbatim — e.g. a zipped
-        shapefile or a GeoPackage), or ``"file"`` (the payload is a ``str`` or
-        ``pathlib.Path`` naming a file whose contents are read and stored as
-        binary). Every asset carries a CRC32C integrity checksum, and payloads
-        of 1 KiB or more are xz-compressed on disk by default (transparent on
-        read).
+        Args:
+            name (str): Asset name, the key used to read it back (e.g. ``"params.json"``).
+            payload (JsonAssetPayload | TextAssetPayload | BinaryAssetPayload | StrPath):
+                The asset content; the accepted shapes depend on ``content_type``:
 
-        ``"file"`` is the one content type under which a plain ``str`` payload
-        is a *path*; to store a typed file (e.g. JSON the decoder should
-        auto-parse), pass a ``pathlib.Path`` with ``content_type="json"``
-        instead.
+                - for ``"json"`` (:data:`~binary_ensemble.types.JsonAssetPayload`): a ``dict`` /
+                  ``list`` (serialized via ``json.dumps``), a JSON ``str``, bytes-like JSON, a
+                  file-like object with ``.read()``, or an ``os.PathLike`` whose file is read.
+                  Must yield valid UTF-8 JSON; the decoder will auto-parse it.
+                - for ``"text"`` (:data:`~binary_ensemble.types.TextAssetPayload`): the same
+                  shapes, minus ``dict`` / ``list``; must yield valid UTF-8.
+                - for ``"binary"`` (:data:`~binary_ensemble.types.BinaryAssetPayload`): the same
+                  shapes as ``"text"``; stored verbatim (e.g. a zipped shapefile or a
+                  GeoPackage).
+                - for ``"file"`` (:data:`~binary_ensemble.types.StrPath`): a ``str`` or
+                  ``os.PathLike`` naming a file whose contents are read and stored as binary.
+
+                Outside ``content_type="file"``, a plain ``str`` is always *content*, never a
+                path — pass a ``pathlib.Path`` to read from disk (e.g. a ``Path`` with
+                ``content_type="json"`` stores a JSON file the decoder will auto-parse).
+            content_type (AssetContentType): One of ``"json"``, ``"text"``, ``"binary"``, or
+                ``"file"`` (:data:`~binary_ensemble.types.AssetContentType`).
+
+        Raises:
+            ValueError: If the payload does not satisfy ``content_type`` (e.g. malformed JSON,
+                non-UTF-8 text, an unknown content type).
+            TypeError: If the payload shape is not accepted (e.g. a ``dict`` with
+                ``content_type="text"``, or a non-path with ``content_type="file"``).
         """
         if content_type == "file":
             if not isinstance(payload, (str, os.PathLike)):
@@ -231,31 +310,73 @@ class BendlEncoder:
             try:
                 json.loads(data.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise ValueError(
-                    f"content_type='json' requires valid UTF-8 JSON: {exc}"
-                ) from exc
+                raise ValueError(f"content_type='json' requires valid UTF-8 JSON: {exc}") from exc
         elif content_type == "text":
             try:
                 data.decode("utf-8")
             except UnicodeDecodeError as exc:
-                raise ValueError(
-                    f"content_type='text' requires valid UTF-8: {exc}"
-                ) from exc
+                raise ValueError(f"content_type='text' requires valid UTF-8: {exc}") from exc
         elif content_type != "binary":
             raise ValueError(
-                f"content_type must be 'json', 'text', 'binary', or 'file', "
-                f"got {content_type!r}"
+                f"content_type must be 'json', 'text', 'binary', or 'file', got {content_type!r}"
             )
-        self._enc.add_asset(name, data, content_type)
+        # The branches above leave only the core-supported literals.
+        core_type = cast('Literal["json", "text", "binary"]', content_type)
+        self._enc.add_asset(name, data, core_type)
 
-    def stream(self, format: str = "ben", variant: Optional[str] = None):
+    def remove_asset(self, name: str) -> None:
+        """Remove a named asset from a finalized bundle, reclaiming its bytes.
+
+        Available wherever :meth:`add_asset` commits immediately: append mode, or create mode
+        after the stream has closed. The directory entry is dropped and the bundle is then
+        compacted in place, so the asset's payload bytes are actually gone from the file — not
+        just unreferenced. The name (and any singleton-type claim, e.g. ``metadata.json``)
+        becomes free again, so remove-then-add is the way to replace an asset's payload.
+
+        Removing appended (post-stream) assets is cheap at any scale: the compaction rebuilds
+        only the small post-stream tail and never touches the assignment stream, even when the
+        stream is tens of gigabytes. Removing a *pre-stream* asset (the graph, or metadata
+        added before streaming) costs one whole-file rewrite instead. For the rare bundle that
+        arrives with dead space from elsewhere (every public write path here leaves bundles
+        compact), the raw ``_core.compact_bundle_in_place`` reclaims it directly, and the raw
+        ``_core.BendlEncoder.remove_asset`` drops only the directory entry if you specifically
+        need that form.
+
+        Args:
+            name (str): The asset's name, as listed by
+                :meth:`~binary_ensemble._core.BendlDecoder.asset_names`.
+
+        Raises:
+            KeyError: If no asset with that name exists in the bundle.
+            Exception: If the encoder is in create mode before the stream (just don't add the
+                asset), is currently streaming, or is closed.
+        """
+        self._enc.remove_asset(name)
+        _compact_bundle_in_place(self._path)
+
+    def stream(self, *, variant: Variant = "twodelta") -> BendlStreamSession:
         """Open the single-use assignment stream context manager.
 
-        Only ``"ben"`` is accepted; produce XBEN bundles via
-        :func:`compress_stream`. ``variant`` selects the BEN variant
-        (default ``"twodelta"``).
+        The embedded stream is always written in the BEN wire format; produce an XBEN bundle with
+        :func:`compress_stream` after writing (XBEN is a whole-stream LZMA2 wrap, so it cannot be
+        written live sample-by-sample).
+
+        Args:
+            variant (Variant, optional): BEN encoding variant
+                (:data:`~binary_ensemble.types.Variant`): ``"standard"``, ``"mkv_chain"``, or
+                ``"twodelta"``. Default is ``"twodelta"``.
+
+        Returns:
+            BendlStreamSession: A single-use context manager. ``write`` each assignment inside
+            the ``with`` block; a clean close finalizes the bundle, an exception leaves it
+            unfinalized.
+
+        Raises:
+            ValueError: If ``variant`` is invalid.
+            Exception: If a stream was already written, append mode is active, or the encoder is
+                closed.
         """
-        return self._enc.stream(format, variant)
+        return self._enc.stream(variant=variant)
 
     def close(self) -> None:
         """Finalize (create mode) or finish (append mode) the bundle. Idempotent."""
@@ -264,59 +385,87 @@ class BendlEncoder:
     def __enter__(self) -> "BendlEncoder":
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> bool:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: "TracebackType | None",
+    ) -> bool:
         self.close()
         return False
 
 
 def compress_stream(
-    path,
-    out_file=None,
-    in_place: bool = False,
+    path: StrPath,
+    out_file: StrPath | None = None,
+    overwrite: bool = False,
 ) -> None:
     """Recompress a bundle's embedded BEN stream to XBEN, preserving every asset.
 
-    Provide exactly one of ``in_place=True`` (recompress to a temp file and
-    atomically swap it over ``path``) or ``out_file`` (write a new bundle).
-    Passing both, or neither, raises.
+    All assets (graph, metadata, node_permutation_map, custom blobs) are preserved by decoded
+    payload, name, type, and JSON flag; storage compression is normalized to the writer's default
+    policy. An assets-only bundle (empty stream) recompresses to an empty XBEN bundle.
 
-    All assets (graph, metadata, node_permutation_map, custom blobs) are
-    preserved by decoded payload, name, type, and JSON flag; storage compression
-    is normalized to the writer's default policy. An assets-only bundle (empty
-    stream) recompresses to an empty XBEN bundle.
+    Args:
+        path (StrPath): Path to the source ``.bendl`` bundle (``str`` or ``os.PathLike``).
+        out_file (StrPath | None, optional): Destination path for the recompressed bundle
+            (``str`` or ``os.PathLike``), leaving ``path`` untouched. Default is ``None`` which
+            recompresses in place: the result is written to a temp file and atomically swapped
+            over ``path``.
+        overwrite (bool, optional): Replace ``out_file`` if it already exists. Irrelevant in
+            place, which always replaces ``path``. Default is ``False``.
+
+    Raises:
+        OSError: If ``out_file`` exists and ``overwrite`` is ``False``.
     """
     _atomic_or_out(
-        lambda src, dst, overwrite: _recompress_bundle(src, dst, overwrite=overwrite),
+        lambda src, dst, ow: _recompress_bundle(src, dst, overwrite=ow),
         path,
         out_file,
-        in_place,
+        overwrite,
     )
 
 
 def relabel_bundle(
-    path,
-    out_file=None,
-    sort: str = "mlc",
-    key: Optional[str] = None,
-    in_place: bool = False,
+    path: StrPath,
+    out_file: StrPath | None = None,
+    sort: SortMethod = "mlc",
+    key: str | None = None,
+    overwrite: bool = False,
 ) -> None:
     """Reorder a BEN bundle's graph and relabel its stream to match.
 
-    ``sort`` selects the ordering — ``"mlc"`` (default), ``"rcm"``, or ``"key"``
-    to sort by the node attribute named in ``key`` (e.g. ``sort="key",
-    key="GEOID"``). It reorders the embedded ``graph.json``, rewrites every
-    assignment into the new node order, and writes a fresh bundle storing the
-    reordered graph and a ``node_permutation_map.json`` (so the reordering is
-    reversible). Metadata and custom assets are preserved. This is the
-    bundle-level form of the CLI's ``reben`` ordering flow — typically run to
-    shrink a bundle before an XBEN recompress.
+    Reorders the embedded ``graph.json``, rewrites every assignment into the new node order, and
+    writes a fresh bundle storing the reordered graph and a ``node_permutation_map.json`` (so the
+    reordering is reversible). Metadata and custom assets are preserved. This is the bundle-level
+    form of the CLI's ``reben`` ordering flow — typically run to shrink a bundle before an XBEN
+    recompress.
 
-    Provide exactly one of ``in_place=True`` or ``out_file``. Only BEN bundles are
-    supported (relabel before compressing to XBEN); the source must carry a graph.
+    Only BEN bundles are supported (relabel before compressing to XBEN); the source must carry a
+    graph.
+
+    Args:
+        path (StrPath): Path to the source ``.bendl`` bundle (``str`` or ``os.PathLike``). Must
+            hold a BEN (not XBEN) stream and a ``graph.json``.
+        out_file (StrPath | None, optional): Destination path for the relabeled bundle (``str``
+            or ``os.PathLike``), leaving ``path`` untouched. Default is ``None`` which relabels
+            in place: the result is written to a temp file and atomically swapped over ``path``.
+        sort (SortMethod, optional): The ordering (:data:`~binary_ensemble.types.SortMethod`):
+            ``"mlc"`` (multi-level clustering), ``"rcm"`` (reverse Cuthill-McKee), or ``"key"``
+            (sort by the node attribute named in ``key``). Default is ``"mlc"``.
+        key (str | None, optional): Node attribute to sort by, e.g. ``key="GEOID"``. Required
+            with — and only valid with — ``sort="key"``. Default is ``None``.
+        overwrite (bool, optional): Replace ``out_file`` if it already exists. Irrelevant in
+            place, which always replaces ``path``. Default is ``False``.
+
+    Raises:
+        ValueError: If ``sort`` / ``key`` is invalid, or if the bundle has no graph or a non-BEN
+            stream.
+        OSError: If ``out_file`` exists and ``overwrite`` is ``False``.
     """
     _atomic_or_out(
-        lambda src, dst, overwrite: _relabel_bundle(src, dst, sort, key, overwrite),
+        lambda src, dst, ow: _relabel_bundle(src, dst, sort, key, ow),
         path,
         out_file,
-        in_place,
+        overwrite,
     )

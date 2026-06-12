@@ -1809,6 +1809,127 @@ fn bendl_cli_create_inspect_extract_append_roundtrip() {
     assert_failure(&append_duplicate);
 }
 
+#[test]
+fn bendl_cli_remove_reclaims_bytes_and_compact_is_stable() {
+    let temp = TempDir::new("bendl-remove");
+
+    // Seed: a .ben assignment file plus a large incompressible custom asset.
+    let jsonl_path = temp.path().join("samples.jsonl");
+    let ben_path = temp.path().join("samples.ben");
+    fs::write(&jsonl_path, sample_jsonl()).unwrap();
+    assert_success(&run(
+        "ben",
+        &[
+            "--mode",
+            "encode",
+            jsonl_path.to_str().unwrap(),
+            "--output-file",
+            ben_path.to_str().unwrap(),
+            "--save-all",
+            "--overwrite",
+        ],
+        temp.path(),
+    ));
+    // xorshift32 output is effectively incompressible, so the blob genuinely occupies bytes
+    // even though `bendl create` stores large assets xz-compressed by default.
+    let mut state = 0x1234_5678u32;
+    let blob: Vec<u8> = (0..65536u32)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            (state >> 24) as u8
+        })
+        .collect();
+    let blob_path = temp.path().join("bloat.bin");
+    fs::write(&blob_path, &blob).unwrap();
+
+    let bundle_path = temp.path().join("out.bendl");
+    assert_success(&run(
+        "bendl",
+        &[
+            "create",
+            "--input",
+            ben_path.to_str().unwrap(),
+            "--output",
+            bundle_path.to_str().unwrap(),
+            "--asset",
+            &format!("bloat.bin={}", blob_path.display()),
+            "--overwrite",
+        ],
+        temp.path(),
+    ));
+    let bloated = fs::metadata(&bundle_path).unwrap().len();
+    assert!(bloated > 60_000, "blob should dominate the file size");
+
+    // `bendl remove` drops the asset AND reclaims its bytes (auto-compaction).
+    assert_success(&run(
+        "bendl",
+        &[
+            "remove",
+            bundle_path.to_str().unwrap(),
+            "--asset",
+            "bloat.bin",
+        ],
+        temp.path(),
+    ));
+    let after = fs::metadata(&bundle_path).unwrap().len();
+    assert!(
+        after + 60_000 < bloated,
+        "removal must reclaim the blob's bytes ({bloated} -> {after})"
+    );
+
+    // The bundle stays finalized, the asset is gone, and the stream is byte-identical.
+    let inspect = run(
+        "bendl",
+        &["inspect", bundle_path.to_str().unwrap()],
+        temp.path(),
+    );
+    assert_success(&inspect);
+    let inspect_out = String::from_utf8_lossy(&inspect.stdout);
+    assert!(!inspect_out.contains("bloat.bin"));
+    assert!(inspect_out.contains("finalized:         true"));
+
+    let recovered = temp.path().join("recovered.ben");
+    assert_success(&run(
+        "bendl",
+        &[
+            "extract",
+            bundle_path.to_str().unwrap(),
+            "--stream",
+            "--output",
+            recovered.to_str().unwrap(),
+            "--overwrite",
+        ],
+        temp.path(),
+    ));
+    assert_eq!(fs::read(&recovered).unwrap(), fs::read(&ben_path).unwrap());
+
+    // Removing a missing asset fails and leaves the file byte-identical (the command is
+    // atomic: nothing commits unless every removal succeeds).
+    let before = fs::read(&bundle_path).unwrap();
+    let missing = run(
+        "bendl",
+        &[
+            "remove",
+            bundle_path.to_str().unwrap(),
+            "--asset",
+            "nope.bin",
+        ],
+        temp.path(),
+    );
+    assert_failure(&missing);
+    assert_eq!(fs::read(&bundle_path).unwrap(), before);
+
+    // Standalone `bendl compact` on an already-compact bundle is byte-stable.
+    assert_success(&run(
+        "bendl",
+        &["compact", bundle_path.to_str().unwrap()],
+        temp.path(),
+    ));
+    assert_eq!(fs::read(&bundle_path).unwrap(), before);
+}
+
 // =====================================================================
 // `ben encode --graph` and `ben x-encode --graph`
 // =====================================================================

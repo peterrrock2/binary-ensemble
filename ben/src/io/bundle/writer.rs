@@ -182,6 +182,13 @@ impl AssetNameRegistry {
         }
         Ok(())
     }
+
+    /// Release a name (and any singleton-type claim) after its entry is removed, so the name can
+    /// be reused by a subsequent claim in the same session.
+    fn release(&mut self, asset_type: u16, name: &str) {
+        self.names.remove(name);
+        self.singleton_types.remove(&asset_type);
+    }
 }
 
 /// Writer for a single `.bendl` file.
@@ -505,6 +512,10 @@ pub enum BendlWriteError {
     #[error("duplicate asset name: {0:?}")]
     DuplicateName(String),
 
+    /// A removal named an asset that does not exist in the bundle's directory.
+    #[error("no asset named {0:?} in bundle")]
+    UnknownAssetName(String),
+
     /// A second singleton asset of this type was requested.
     #[error("duplicate singleton asset type: {0}")]
     DuplicateSingletonType(u16),
@@ -572,8 +583,12 @@ pub struct BendlAppender<W: Read + Write + Seek> {
     existing_entries: Vec<BendlDirectoryEntry>,
     pending: Vec<PendingAsset>,
     /// Names and singleton types claimed by the existing directory plus any pending adds. Seeded
-    /// from the existing entries at open time, then extended as each pending asset is enqueued.
+    /// from the existing entries at open time, then extended as each pending asset is enqueued
+    /// (and shrunk by removals, so a removed name can be re-added in the same session).
     registry: AssetNameRegistry,
+    /// Whether any existing entry was removed; forces a directory rewrite on commit even when
+    /// nothing was added.
+    removed_any: bool,
 }
 
 /// An asset queued for append but not yet written to disk.
@@ -634,7 +649,28 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
             existing_entries,
             pending: Vec::new(),
             registry,
+            removed_any: false,
         })
+    }
+
+    /// Remove the named asset from the bundle's directory.
+    ///
+    /// Only the directory entry is dropped: the payload bytes remain in the file as unreferenced
+    /// dead space until the next whole-bundle rewrite (e.g. a recompression) compacts them.
+    /// Readers navigate solely via directory offsets, so the gap is invisible to them. The name
+    /// (and any singleton-type claim) becomes reusable by a subsequent add in the same session,
+    /// which makes remove-then-add the way to replace an asset's payload.
+    ///
+    /// Removal targets *committed* entries only; it does not touch assets enqueued with
+    /// [`Self::add_asset`] but not yet committed.
+    pub fn remove_asset(&mut self, name: &str) -> Result<(), BendlWriteError> {
+        let Some(pos) = self.existing_entries.iter().position(|e| e.name == name) else {
+            return Err(BendlWriteError::UnknownAssetName(name.to_string()));
+        };
+        let entry = self.existing_entries.remove(pos);
+        self.registry.release(entry.asset_type, &entry.name);
+        self.removed_any = true;
+        Ok(())
     }
 
     /// Enqueue a new asset for append.
@@ -737,8 +773,8 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
     ///
     /// If compression fails, the file is left unchanged.
     pub fn commit(mut self) -> Result<W, BendlWriteError> {
-        // If nothing was enqueued, commit is a no-op — return the file untouched.
-        if self.pending.is_empty() {
+        // If nothing was enqueued or removed, commit is a no-op — return the file untouched.
+        if self.pending.is_empty() && !self.removed_any {
             return Ok(self.inner);
         }
 

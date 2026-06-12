@@ -1,4 +1,4 @@
-//! Coverage-guided fuzzing of the `.bendl` bundle read surface.
+//! Coverage-guided fuzzing of the `.bendl` file read surface.
 //!
 //! Mutants split into the same two classes as the deterministic harness: open-rejected (the
 //! constructor is the whole reachable surface) and openable (every accessor must then hold the

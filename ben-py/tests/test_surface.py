@@ -215,16 +215,13 @@ def test_core_stub_covers_runtime_and_matches_signatures() -> None:
             stub_methods = {m for m in payload if not m.startswith("__")}
             runtime_methods = _runtime_public_names(obj)
             assert stub_methods == runtime_methods, (
-                f"method set drift on _core.{name}: "
-                f"stub={stub_methods} runtime={runtime_methods}"
+                f"method set drift on _core.{name}: stub={stub_methods} runtime={runtime_methods}"
             )
             for method in stub_methods:
                 runtime = _params_from_text_sig(getattr(obj, method).__text_signature__)
                 if runtime is None:
                     continue
-                assert runtime == payload[method], (
-                    f"signature drift on _core.{name}.{method}"
-                )
+                assert runtime == payload[method], f"signature drift on _core.{name}.{method}"
 
 
 # ---------------------------------------------------------------------------
@@ -249,13 +246,9 @@ def test_bundle_facade_matches_stub() -> None:
 
     # Module-level functions.
     assert (
-        _params_from_inspect(bundle.compress_stream, drop_self=False)
-        == stub["compress_stream"][1]
+        _params_from_inspect(bundle.compress_stream, drop_self=False) == stub["compress_stream"][1]
     )
-    assert (
-        _params_from_inspect(bundle.relabel_bundle, drop_self=False)
-        == stub["relabel_bundle"][1]
-    )
+    assert _params_from_inspect(bundle.relabel_bundle, drop_self=False) == stub["relabel_bundle"][1]
 
     # BendlEncoder methods.
     enc_methods = stub["BendlEncoder"][1]

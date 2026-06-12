@@ -1,10 +1,9 @@
 """Plain BEN/XBEN stream encoding and decoding.
 
-``BenEncoder`` writes a plain ``.ben`` stream; ``BenDecoder`` iterates a plain
-``.ben`` / ``.xben`` stream. Both are stream-only: opening a decoder on a
-``.bendl`` bundle, or trying to read bundle assets, raises and points you at
-:mod:`binary_ensemble.bundle`. For the recommended single-file bundle format,
-use :class:`binary_ensemble.bundle.BendlEncoder` /
+``BenEncoder`` writes a plain ``.ben`` stream; ``BenDecoder`` iterates a plain ``.ben`` /
+``.xben`` stream. Both are stream-only: opening a decoder on a ``.bendl`` bundle, or trying to
+read bundle assets, raises and points you at :mod:`binary_ensemble.bundle`. For the recommended
+single-file bundle format, use :class:`binary_ensemble.bundle.BendlEncoder` /
 :class:`binary_ensemble.bundle.BendlDecoder`.
 """
 

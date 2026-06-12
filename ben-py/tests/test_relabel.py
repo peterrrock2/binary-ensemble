@@ -32,7 +32,7 @@ def _build_ben_bundle(path: Path, with_graph: bool = True):
     if with_graph:
         enc.add_graph(_graph(), sort=None)  # store in raw order
     enc.add_metadata({"seed": 99})
-    with enc.stream("ben") as s:
+    with enc.stream() as s:
         for a in samples:
             s.write(a)
     enc.add_asset("notes.txt", "hi", content_type="text")
@@ -77,21 +77,19 @@ def test_relabel_out_file_is_lossless_and_preserves_assets(tmp_path: Path) -> No
     assert list(BendlDecoder(src)) == samples
 
 
-def test_relabel_in_place(tmp_path: Path) -> None:
+def test_relabel_in_place_by_default(tmp_path: Path) -> None:
     src = tmp_path / "in.bendl"
     samples = _build_ben_bundle(src)
 
-    relabel_bundle(src, in_place=True, sort="rcm")
+    # out_file=None means in place: src is atomically replaced.
+    relabel_bundle(src, sort="rcm")
 
     dec = BendlDecoder(src)
     assert dec.assignment_format() == "ben"
     assert len(dec) == len(samples)
     assert dec.read_node_permutation_map()["ordering_method"] == "reverse-cuthill-mckee"
     old_to_new = {
-        int(k): v
-        for k, v in dec.read_node_permutation_map()[
-            "node_permutation_old_to_new"
-        ].items()
+        int(k): v for k, v in dec.read_node_permutation_map()["node_permutation_old_to_new"].items()
     }
     assert [_depermute(p, old_to_new) for p in dec] == samples
 
@@ -114,10 +112,6 @@ def test_relabel_by_key(tmp_path: Path) -> None:
 def test_relabel_arg_validation(tmp_path: Path) -> None:
     src = tmp_path / "in.bendl"
     _build_ben_bundle(src)
-    with pytest.raises(ValueError, match="either in_place=True or out_file"):
-        relabel_bundle(src)
-    with pytest.raises(ValueError, match="not both"):
-        relabel_bundle(src, out_file=tmp_path / "o.bendl", in_place=True)
     with pytest.raises(ValueError, match="sort='key' requires key"):
         relabel_bundle(src, out_file=tmp_path / "o.bendl", sort="key")
 
@@ -143,7 +137,7 @@ def test_relabel_rejects_unfinalized_bundle(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="boom"):
         with BendlEncoder(src, overwrite=True) as enc:
             enc.add_graph(_graph(), sort=None)
-            with enc.stream("ben") as s:
+            with enc.stream() as s:
                 s.write([1] * _n())
                 raise RuntimeError("boom")
 
@@ -162,8 +156,11 @@ def test_relabel_rejects_empty_stream_bundle(tmp_path: Path) -> None:
 
 def test_relabel_out_file_refuses_existing(tmp_path: Path) -> None:
     src = tmp_path / "in.bendl"
-    _build_ben_bundle(src)
+    samples = _build_ben_bundle(src)
     out = tmp_path / "exists.bendl"
     out.write_bytes(b"existing")
     with pytest.raises(OSError, match="already exists"):
         relabel_bundle(src, out_file=out)
+    # overwrite=True is the explicit opt-in to replace it.
+    relabel_bundle(src, out_file=out, overwrite=True)
+    assert len(BendlDecoder(out)) == len(samples)

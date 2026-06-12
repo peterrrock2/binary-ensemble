@@ -24,6 +24,17 @@ filterwarnings = [
     "ignore:.*XBEN may take a second*:UserWarning",
 ]
 
+[tool.ruff]
+line-length = 100
+
+[tool.pyright]
+include = ["binary_ensemble", "tests/typing_assertions.py"]
+venvPath = "."
+venv = ".venv"
+# The negative assertions in tests/typing_assertions.py rely on this: a
+# `type: ignore` on a call that becomes legal must fail the check.
+reportUnnecessaryTypeIgnoreComment = "error"
+
 [project.optional-dependencies]
 # Render the site (used by ReadTheDocs). Notebook outputs are rendered from the
 # committed .ipynb files, so no execution dependencies are needed here.
@@ -57,7 +68,9 @@ dev = [
     # Used directly by the docs how-to snippets, which run under pytest.
     "numpy>=1.26",
     "pandas>=2.0",
+    "pyright>=1.1",
     "pytest>=8.4.2",
     "ruff>=0.11.0",
     "tqdm>=4.67.1",
+    "ty",
 ]

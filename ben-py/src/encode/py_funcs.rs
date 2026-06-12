@@ -15,13 +15,16 @@ use std::path::PathBuf;
 /// :func:`~binary_ensemble.bundle.relabel_bundle`) for the best ratios.
 ///
 /// Args:
-///     in_file: Path to the input ``.ben`` file.
-///     out_file: Path to write the ``.xben`` output.
-///     overwrite: Replace ``out_file`` if it already exists. Defaults to ``False``.
-///     n_threads: Number of worker threads. ``None`` uses all available cores.
-///     compression_level: LZMA2 level from 0 (fastest) to 9 (smallest). ``None`` uses the
-///         default (9).
-///     xz_block_size: Override the xz block size in bytes. ``None`` uses the default.
+///     in_file (StrPath): Path to the input ``.ben`` file (``str`` or ``os.PathLike``).
+///     out_file (StrPath): Path to write the ``.xben`` output (``str`` or ``os.PathLike``).
+///     overwrite (bool, optional): Replace ``out_file`` if it already exists. Default is
+///         ``False``.
+///     n_threads (int | None, optional): Number of worker threads. Default is ``None``
+///         which uses all available cores.
+///     compression_level (int | None, optional): LZMA2 level from 0 (fastest) to 9
+///         (smallest). Default is ``None`` which uses level 9.
+///     xz_block_size (int | None, optional): Override the xz block size in bytes. Default
+///         is ``None`` which uses the xz default.
 ///
 /// Raises:
 ///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``, or the conversion fails.
@@ -67,11 +70,12 @@ pub fn encode_ben_to_xben(
 /// format; encode further to XBEN with :func:`encode_ben_to_xben` for storage.
 ///
 /// Args:
-///     in_file: Path to the input ``.jsonl`` file.
-///     out_file: Path to write the ``.ben`` output.
-///     overwrite: Replace ``out_file`` if it already exists. Defaults to ``False``.
-///     variant: BEN encoding variant — ``"standard"``, ``"mkv_chain"``, or ``"twodelta"``.
-///         Defaults to ``"twodelta"``.
+///     in_file (StrPath): Path to the input ``.jsonl`` file (``str`` or ``os.PathLike``).
+///     out_file (StrPath): Path to write the ``.ben`` output (``str`` or ``os.PathLike``).
+///     overwrite (bool, optional): Replace ``out_file`` if it already exists. Default is
+///         ``False``.
+///     variant (Variant, optional): BEN encoding variant — ``"standard"``, ``"mkv_chain"``,
+///         or ``"twodelta"``. Default is ``"twodelta"``.
 ///
 /// Raises:
 ///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``, or the conversion fails.
@@ -107,15 +111,18 @@ pub fn encode_jsonl_to_ben(
 /// line. Compression can be slow for large block-level ensembles.
 ///
 /// Args:
-///     in_file: Path to the input ``.jsonl`` file.
-///     out_file: Path to write the ``.xben`` output.
-///     overwrite: Replace ``out_file`` if it already exists. Defaults to ``False``.
-///     variant: BEN encoding variant — ``"standard"``, ``"mkv_chain"``, or ``"twodelta"``.
-///         Defaults to ``"twodelta"``.
-///     n_threads: Number of worker threads. ``None`` uses all available cores.
-///     compression_level: LZMA2 level from 0 (fastest) to 9 (smallest). ``None`` uses the
-///         default (9).
-///     xz_block_size: Override the xz block size in bytes. ``None`` uses the default.
+///     in_file (StrPath): Path to the input ``.jsonl`` file (``str`` or ``os.PathLike``).
+///     out_file (StrPath): Path to write the ``.xben`` output (``str`` or ``os.PathLike``).
+///     overwrite (bool, optional): Replace ``out_file`` if it already exists. Default is
+///         ``False``.
+///     variant (Variant, optional): BEN encoding variant — ``"standard"``, ``"mkv_chain"``,
+///         or ``"twodelta"``. Default is ``"twodelta"``.
+///     n_threads (int | None, optional): Number of worker threads. Default is ``None``
+///         which uses all available cores.
+///     compression_level (int | None, optional): LZMA2 level from 0 (fastest) to 9
+///         (smallest). Default is ``None`` which uses level 9.
+///     xz_block_size (int | None, optional): Override the xz block size in bytes. Default
+///         is ``None`` which uses the xz default.
 ///
 /// Raises:
 ///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``, or the conversion fails.

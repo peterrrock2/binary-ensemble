@@ -28,7 +28,7 @@ impl std::str::FromStr for NamedAsset {
 #[derive(Parser, Debug)]
 #[command(
     name = "bendl",
-    about = "Create, inspect, extract from, and append to .bendl bundle files.",
+    about = "Create, inspect, extract from, and append to .bendl file files.",
     version
 )]
 pub(super) struct Args {
@@ -52,8 +52,14 @@ pub(super) enum Command {
     Inspect(InspectArgs),
     /// Extract the embedded stream or a named asset to a file.
     Extract(ExtractArgs),
-    /// Append new assets to an already-finalized `.bendl` bundle.
+    /// Append new assets to an already-finalized `.bendl` file.
     Append(AppendArgs),
+    /// Remove named assets from a finalized `.bendl` file, compacting it afterwards so the
+    /// payload bytes are actually reclaimed.
+    Remove(RemoveArgs),
+    /// Rewrite a `.bendl` file in place without unreferenced byte ranges (dead space left by
+    /// asset removals and superseded directories).
+    Compact(CompactArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -113,6 +119,21 @@ pub(super) struct ExtractArgs {
     /// Overwrite the output file if it already exists.
     #[arg(short = 'w', long)]
     pub overwrite: bool,
+}
+
+#[derive(Parser, Debug)]
+pub(super) struct RemoveArgs {
+    /// `.bendl` file to remove assets from. Must be finalized.
+    pub input: PathBuf,
+    /// Name of an asset to remove (e.g. `notes.txt`). May be repeated.
+    #[arg(long = "asset", required = true)]
+    pub assets: Vec<String>,
+}
+
+#[derive(Parser, Debug)]
+pub(super) struct CompactArgs {
+    /// `.bendl` file to compact in place.
+    pub input: PathBuf,
 }
 
 #[derive(Parser, Debug)]

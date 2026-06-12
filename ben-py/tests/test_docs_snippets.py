@@ -56,9 +56,7 @@ _SETUP_CODE = "\n".join(
 )
 
 
-@pytest.mark.parametrize(
-    "doc", _markdown_files(), ids=lambda p: str(p.relative_to(DOCS_DIR))
-)
+@pytest.mark.parametrize("doc", _markdown_files(), ids=lambda p: str(p.relative_to(DOCS_DIR)))
 def test_markdown_snippets_execute(doc: Path, tmp_path, monkeypatch) -> None:
     runnable = [
         (i, code)

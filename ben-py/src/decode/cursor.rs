@@ -2,7 +2,7 @@
 //!
 //! [`SampleCursor`] owns everything needed to walk an assignment stream and to apply a subsample
 //! selection, independent of whether the bytes come from a plain `.ben`/`.xben` file or from a
-//! `.bendl` bundle's embedded stream region. Both `PyBenDecoder` and `PyBendlDecoder` embed one and
+//! `.bendl` file's embedded stream region. Both `PyBenDecoder` and `PyBendlDecoder` embed one and
 //! forward their iteration / `len` / `subsample_*` methods to it, so the single-pass restart logic,
 //! the `MkvRecord` run expansion, and the subsample bounds checks cannot drift between the two.
 

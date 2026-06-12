@@ -13,9 +13,9 @@ use std::path::PathBuf;
 /// subsample. The encoding variant is preserved and detected automatically on the next read.
 ///
 /// Args:
-///     in_file: Path to the input ``.xben`` file.
-///     out_file: Path to write the ``.ben`` output.
-///     overwrite: Replace ``out_file`` if it already exists. Defaults to ``False``.
+///     in_file (StrPath): Path to the input ``.xben`` file (``str`` or ``os.PathLike``).
+///     out_file (StrPath): Path to write the ``.ben`` output (``str`` or ``os.PathLike``).
+///     overwrite (bool, optional): Replace ``out_file`` if it already exists. Default is ``False``.
 ///
 /// Raises:
 ///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``, or the conversion fails.
@@ -44,9 +44,9 @@ pub fn decode_xben_to_ben(in_file: PathBuf, out_file: PathBuf, overwrite: bool) 
 /// starting at 1.
 ///
 /// Args:
-///     in_file: Path to the input ``.xben`` file.
-///     out_file: Path to write the ``.jsonl`` output.
-///     overwrite: Replace ``out_file`` if it already exists. Defaults to ``False``.
+///     in_file (StrPath): Path to the input ``.xben`` file (``str`` or ``os.PathLike``).
+///     out_file (StrPath): Path to write the ``.jsonl`` output (``str`` or ``os.PathLike``).
+///     overwrite (bool, optional): Replace ``out_file`` if it already exists. Default is ``False``.
 ///
 /// Raises:
 ///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``, or the conversion fails.
@@ -75,9 +75,9 @@ pub fn decode_xben_to_jsonl(in_file: PathBuf, out_file: PathBuf, overwrite: bool
 /// starting at 1. This is the inverse of :func:`encode_jsonl_to_ben`.
 ///
 /// Args:
-///     in_file: Path to the input ``.ben`` file.
-///     out_file: Path to write the ``.jsonl`` output.
-///     overwrite: Replace ``out_file`` if it already exists. Defaults to ``False``.
+///     in_file (StrPath): Path to the input ``.ben`` file (``str`` or ``os.PathLike``).
+///     out_file (StrPath): Path to write the ``.jsonl`` output (``str`` or ``os.PathLike``).
+///     overwrite (bool, optional): Replace ``out_file`` if it already exists. Default is ``False``.
 ///
 /// Raises:
 ///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``, or the conversion fails.

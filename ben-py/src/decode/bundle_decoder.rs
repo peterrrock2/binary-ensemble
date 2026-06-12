@@ -28,9 +28,9 @@ use std::path::PathBuf;
 /// bundle (one written with no assignment stream) iterates to nothing with ``len() == 0``.
 ///
 /// Args:
-///     file_path: Path to the input ``.bendl`` file. Whether the embedded stream is BEN or
-///         XBEN is read from the bundle header; an XBEN stream warns about a one-time
-///         decompression startup cost.
+///     file_path (StrPath): Path to the input ``.bendl`` file (``str`` or ``os.PathLike``). Whether
+/// the embedded stream is BEN or         XBEN is read from the bundle header; an XBEN stream warns
+/// about a one-time         decompression startup cost.
 ///
 /// Raises:
 ///     Exception: If ``file_path`` is not a bundle (use
@@ -60,7 +60,7 @@ impl PyBendlDecoder {
     /// pays a one-time decompression startup cost.
     ///
     /// Args:
-    ///     file_path: Path to the input ``.bendl`` file.
+    ///     file_path (StrPath): Path to the input ``.bendl`` file (``str`` or ``os.PathLike``).
     ///
     /// Raises:
     ///     Exception: If ``file_path`` is not a bundle (use
@@ -76,7 +76,7 @@ impl PyBendlDecoder {
         })?;
         if !is_bundle {
             return Err(PyException::new_err(format!(
-                "{} is not a .bendl bundle (missing BENDL magic). Open plain BEN/XBEN \
+                "{} is not a .bendl file (missing BENDL magic). Open plain BEN/XBEN \
                  streams with binary_ensemble.stream.BenDecoder instead.",
                 file_path.display()
             )));
@@ -162,15 +162,15 @@ impl PyBendlDecoder {
     /// being unpacked.
     ///
     /// Args:
-    ///     indices: The 1-indexed sample numbers to keep. An unsorted or duplicated list
-    ///         is sorted and deduplicated, with a ``UserWarning``.
+    ///     indices (Sequence[int]): The 1-indexed sample numbers to keep. Duplicates are dropped;
+    /// an         unsorted list is sorted, with a ``UserWarning``.
     ///
     /// Returns:
     ///     BendlDecoder: ``self``, so the call can be chained into a ``for`` loop.
     ///
     /// Raises:
-    ///     Exception: If any index is ``0`` (indices are 1-based) or greater than the
-    ///         number of samples in the stream.
+    ///     Exception: If ``indices`` is empty, contains ``0`` (indices are 1-based), or
+    ///         contains an index greater than the number of samples in the stream.
     #[pyo3(text_signature = "(self, indices, /)")]
     fn subsample_indices<'py>(
         mut slf: PyRefMut<'py, Self>,
@@ -184,8 +184,8 @@ impl PyBendlDecoder {
     /// Restrict iteration to a contiguous, 1-indexed inclusive range of samples.
     ///
     /// Args:
-    ///     start: First sample number to keep (1-indexed, inclusive).
-    ///     end: Last sample number to keep (1-indexed, inclusive).
+    ///     start (int): First sample number to keep (1-indexed, inclusive).
+    ///     end (int): Last sample number to keep (1-indexed, inclusive).
     ///
     /// Returns:
     ///     BendlDecoder: ``self``, for chaining into a ``for`` loop.
@@ -211,8 +211,8 @@ impl PyBendlDecoder {
     /// Restrict iteration to every ``step``-th sample.
     ///
     /// Args:
-    ///     step: Stride between kept samples (e.g. ``10`` keeps every tenth sample).
-    ///     offset: 1-indexed position of the first kept sample. Defaults to ``1``.
+    ///     step (int): Stride between kept samples (e.g. ``10`` keeps every tenth sample).
+    ///     offset (int, optional): 1-indexed position of the first kept sample. Default is ``1``.
     ///
     /// Returns:
     ///     BendlDecoder: ``self``, for chaining into a ``for`` loop.
@@ -252,6 +252,51 @@ impl PyBendlDecoder {
     fn version(&self) -> (u16, u16) {
         let h = self.reader.header();
         (h.major_version, h.minor_version)
+    }
+
+    /// Return the on-disk byte length of the embedded assignment stream.
+    ///
+    /// Read straight from the bundle header's ``stream_len`` field — no decoding or copying.
+    /// This is the size of the stream region as stored (BEN bytes, or compressed XBEN bytes),
+    /// the same bytes ``extract_stream`` would copy out. For an unfinalized bundle the stream
+    /// is taken to extend to the directory (or EOF), matching recovery extraction.
+    ///
+    /// Returns:
+    ///     int: Byte length of the embedded stream region; ``0`` for an assets-only bundle.
+    ///
+    /// Example:
+    ///     >>> BendlDecoder("ensemble.bendl").stream_size()
+    ///     40110
+    #[pyo3(text_signature = "(self)")]
+    fn stream_size(&mut self) -> PyResult<u64> {
+        let (_offset, len) = self
+            .reader
+            .assignment_stream_range()
+            .map_err(|e| PyIOError::new_err(format!("Failed to read stream range: {e}")))?;
+        Ok(len)
+    }
+
+    /// Return the on-disk byte length of a named asset's stored payload.
+    ///
+    /// Read straight from the bundle directory — no decoding or copying. For assets stored
+    /// xz-compressed (the ``"xz"`` flag in :meth:`list_assets`), this is the compressed size;
+    /// the decoded payload can be larger — use ``len(read_asset_bytes(name))`` for that.
+    ///
+    /// Args:
+    ///     name (str): The asset's name, as listed by :meth:`asset_names`.
+    ///
+    /// Returns:
+    ///     int: Stored byte length of the asset's payload region.
+    ///
+    /// Raises:
+    ///     KeyError: If no asset with that name exists in the bundle.
+    #[pyo3(text_signature = "(self, name, /)")]
+    fn asset_size(&self, name: &str) -> PyResult<u64> {
+        let entry = self
+            .reader
+            .find_asset_by_name(name)
+            .ok_or_else(|| PyKeyError::new_err(format!("no asset named {name:?} in bundle")))?;
+        Ok(entry.payload_len)
     }
 
     /// Whether the bundle was successfully finalized.
@@ -338,7 +383,7 @@ impl PyBendlDecoder {
     /// Read the (decoded) bytes of a named asset as a Python ``bytes`` object.
     ///
     /// Args:
-    ///     name: The asset's name, as listed by :meth:`asset_names`.
+    ///     name (str): The asset's name, as listed by :meth:`asset_names`.
     ///
     /// Returns:
     ///     bytes: The asset's decoded payload.
@@ -360,7 +405,7 @@ impl PyBendlDecoder {
     /// Parse a JSON asset into a Python object (``dict``, ``list``, …).
     ///
     /// Args:
-    ///     name: The asset's name, as listed by :meth:`asset_names`.
+    ///     name (str): The asset's name, as listed by :meth:`asset_names`.
     ///
     /// Returns:
     ///     The parsed JSON value.
@@ -415,10 +460,12 @@ impl PyBendlDecoder {
     /// ``BenDecoder(out_path, mode=dec.assignment_format())``.
     ///
     /// Args:
-    ///     out_path: Path to write the extracted stream to.
-    ///     overwrite: Replace ``out_path`` if it already exists. Defaults to ``False``.
-    ///     allow_unfinalized: Permit extraction from a bundle that was never finalized
-    ///         (recovering a partial stream). Defaults to ``False``.
+    ///     out_path (StrPath): Path to write the extracted stream to (``str`` or
+    ///         ``os.PathLike``).
+    ///     overwrite (bool, optional): Replace ``out_path`` if it already exists. Default is
+    ///         ``False``.
+    ///     allow_unfinalized (bool, optional): Permit extraction from a bundle that was never
+    ///         finalized (recovering a partial stream). Default is ``False``.
     ///
     /// Raises:
     ///     OSError: If ``out_path`` exists and ``overwrite`` is ``False``, or the copy fails.

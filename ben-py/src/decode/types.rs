@@ -48,7 +48,7 @@ impl DecoderMode {
 
 /// Where the iterable assignment stream lives.
 ///
-/// A plain `.ben`/`.xben` file is read from the start; a `.bendl` bundle is read through a second
+/// A plain `.ben`/`.xben` file is read from the start; a `.bendl` file is read through a second
 /// file handle bounded to the embedded stream region. Carrying the region offsets (rather than a
 /// live [`binary_ensemble::io::bundle::BendlReader`]) keeps the iteration core free of the bundle
 /// inspection surface, so [`super::cursor::SampleCursor`] is shared verbatim between the stream and

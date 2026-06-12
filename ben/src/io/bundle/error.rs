@@ -1,4 +1,4 @@
-//! Read-side error types for `.bendl` bundles.
+//! Read-side error types for `.bendl` files.
 //!
 //! [`BendlReadError`] is the canonical error type for high-level BENDL convenience APIs (anything
 //! that returns an owned value: `asset_bytes`, reader constructors that consume internally, etc.).

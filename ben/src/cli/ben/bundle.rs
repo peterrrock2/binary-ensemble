@@ -34,7 +34,7 @@ pub(super) fn append_graph_asset(out_path: &str, graph_path: &Path) -> Result<()
     Ok(())
 }
 
-/// Encode `input_path` (JSONL) to BEN inside a fresh `.bendl` bundle at `out_path` and then append
+/// Encode `input_path` (JSONL) to BEN inside a fresh `.bendl` file at `out_path` and then append
 /// the graph as a post-stream asset.
 pub(super) fn run_encode_bundle_with_graph(
     input_path: &Path,
@@ -67,7 +67,7 @@ pub(super) fn run_encode_bundle_with_graph(
     append_graph_asset(out_path, graph_path)
 }
 
-/// Encode `input_path` (JSONL or `.ben`) to XBEN inside a fresh `.bendl` bundle at `out_path` and
+/// Encode `input_path` (JSONL or `.ben`) to XBEN inside a fresh `.bendl` file at `out_path` and
 /// then append the graph as a post-stream asset.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn run_xencode_bundle_with_graph(

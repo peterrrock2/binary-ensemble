@@ -247,9 +247,7 @@ def _write_jsonl(samples: List[List[int]], path: Path) -> None:
             f.write("\n")
 
 
-def _ben_bytes_for(
-    samples: List[List[int]], tmp: Path, variant: str = "standard"
-) -> bytes:
+def _ben_bytes_for(samples: List[List[int]], tmp: Path, variant: str = "standard") -> bytes:
     ben_path = tmp / "inner.ben"
     with BenEncoder(ben_path, overwrite=True, variant=variant) as enc:
         for a in samples:
@@ -257,9 +255,7 @@ def _ben_bytes_for(
     return ben_path.read_bytes()
 
 
-def _xben_bytes_for(
-    samples: List[List[int]], tmp: Path, variant: str = "standard"
-) -> bytes:
+def _xben_bytes_for(samples: List[List[int]], tmp: Path, variant: str = "standard") -> bytes:
     src = tmp / "src.jsonl"
     _write_jsonl(samples, src)
     out = tmp / "inner.xben"
@@ -281,9 +277,7 @@ def _write_bundle(path: Path, bundle_bytes: bytes) -> Path:
 
 def test_bundle_round_trip_ben_with_assets(tmp_path: Path) -> None:
     rng = random.Random(4242)
-    samples = [
-        [rng.randint(1, 10) for _ in range(rng.randint(1, 50))] for _ in range(40)
-    ]
+    samples = [[rng.randint(1, 10) for _ in range(rng.randint(1, 50))] for _ in range(40)]
     # NetworkX adjacency format (what read_graph rebuilds into a live graph).
     graph_json = (
         b'{"directed":false,"multigraph":false,"graph":{},'
@@ -379,9 +373,7 @@ def test_canonical_helpers_return_none_when_absent(tmp_path: Path) -> None:
     bundle = build_bundle(
         stream_bytes=_ben_bytes_for([[1, 2, 3]], tmp_path),
         sample_count=1,
-        assets=[
-            _Asset(asset_type=ASSET_TYPE_CUSTOM, name="only_custom.bin", payload=b"x")
-        ],
+        assets=[_Asset(asset_type=ASSET_TYPE_CUSTOM, name="only_custom.bin", payload=b"x")],
     )
     path = _write_bundle(tmp_path / "sparse.bendl", bundle)
     dec = BendlDecoder(path)
@@ -436,11 +428,7 @@ def test_read_json_asset_rejects_non_utf8(tmp_path: Path) -> None:
     bundle = build_bundle(
         stream_bytes=_ben_bytes_for([[1, 2]], tmp_path),
         sample_count=1,
-        assets=[
-            _Asset(
-                asset_type=ASSET_TYPE_CUSTOM, name="binary.bin", payload=b"\xff\xfe\xfd"
-            )
-        ],
+        assets=[_Asset(asset_type=ASSET_TYPE_CUSTOM, name="binary.bin", payload=b"\xff\xfe\xfd")],
     )
     path = _write_bundle(tmp_path / "bin.bendl", bundle)
     dec = BendlDecoder(path)
@@ -484,10 +472,7 @@ def test_unicode_asset_name_round_trips(tmp_path: Path) -> None:
 
 def test_many_assets_preserve_directory_order(tmp_path: Path) -> None:
     payloads = {f"asset_{i:04d}.bin": bytes([i & 0xFF] * (i + 1)) for i in range(200)}
-    assets = [
-        _Asset(asset_type=ASSET_TYPE_CUSTOM, name=n, payload=p)
-        for n, p in payloads.items()
-    ]
+    assets = [_Asset(asset_type=ASSET_TYPE_CUSTOM, name=n, payload=p) for n, p in payloads.items()]
     bundle = build_bundle(
         stream_bytes=_ben_bytes_for([[1, 2, 3]], tmp_path),
         sample_count=1,
@@ -566,9 +551,7 @@ def test_zero_length_custom_payload(tmp_path: Path) -> None:
 
 
 def test_extract_stream_refuses_existing_file_without_overwrite(tmp_path: Path) -> None:
-    bundle = build_bundle(
-        stream_bytes=_ben_bytes_for([[1, 2]], tmp_path), sample_count=1
-    )
+    bundle = build_bundle(stream_bytes=_ben_bytes_for([[1, 2]], tmp_path), sample_count=1)
     path = _write_bundle(tmp_path / "a.bendl", bundle)
     dec = BendlDecoder(path)
     target = tmp_path / "already.ben"
@@ -579,9 +562,7 @@ def test_extract_stream_refuses_existing_file_without_overwrite(tmp_path: Path) 
 
 
 def test_extract_stream_into_missing_parent_dir_raises(tmp_path: Path) -> None:
-    bundle = build_bundle(
-        stream_bytes=_ben_bytes_for([[1, 2]], tmp_path), sample_count=1
-    )
+    bundle = build_bundle(stream_bytes=_ben_bytes_for([[1, 2]], tmp_path), sample_count=1)
     path = _write_bundle(tmp_path / "mini.bendl", bundle)
     dec = BendlDecoder(path)
     with pytest.raises(OSError):
@@ -602,7 +583,7 @@ def test_open_rejects_plain_stream(tmp_path: Path) -> None:
     plain = tmp_path / "plain.ben"
     with BenEncoder(plain, overwrite=True, variant="standard") as enc:
         enc.write([1, 2, 3])
-    with pytest.raises(Exception, match="not a .bendl bundle"):
+    with pytest.raises(Exception, match="not a .bendl file"):
         BendlDecoder(plain)
 
 
@@ -790,9 +771,7 @@ def test_finalized_bundle_with_inflated_stream_len_survives_open(
 ) -> None:
     samples = [[1, 2, 3], [4, 5, 6]]
     bundle = bytearray(
-        build_bundle(
-            stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples)
-        )
+        build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
     )
     old_stream_len = struct.unpack_from("<Q", bundle, 48)[0]
     struct.pack_into("<Q", bundle, 48, old_stream_len + 10_000)
@@ -889,9 +868,7 @@ def test_read_asset_bytes_idempotent(tmp_path: Path) -> None:
 
 def test_iteration_can_restart(tmp_path: Path) -> None:
     samples = [[1, 2], [3, 4], [5, 6]]
-    bundle = build_bundle(
-        stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples)
-    )
+    bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
     path = _write_bundle(tmp_path / "twice.bendl", bundle)
     dec = BendlDecoder(path)
     assert list(dec) == samples
@@ -900,9 +877,7 @@ def test_iteration_can_restart(tmp_path: Path) -> None:
 
 def test_partial_iteration_then_restart(tmp_path: Path) -> None:
     samples = [[1, 2], [3, 4], [5, 6], [7, 8]]
-    bundle = build_bundle(
-        stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples)
-    )
+    bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
     path = _write_bundle(tmp_path / "partial.bendl", bundle)
     dec = BendlDecoder(path)
     it = iter(dec)
@@ -913,9 +888,7 @@ def test_partial_iteration_then_restart(tmp_path: Path) -> None:
 
 def test_subsample_modes(tmp_path: Path) -> None:
     samples = [[i] for i in range(1, 11)]
-    bundle = build_bundle(
-        stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples)
-    )
+    bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
     path = _write_bundle(tmp_path / "sub.bendl", bundle)
 
     dec = BendlDecoder(path).subsample_range(3, 6)
@@ -931,9 +904,7 @@ def test_subsample_modes(tmp_path: Path) -> None:
 
 def test_subsample_count_preserves_filtered_len(tmp_path: Path) -> None:
     samples = [[i] for i in range(1, 9)]
-    bundle = build_bundle(
-        stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples)
-    )
+    bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
     path = _write_bundle(tmp_path / "cnt.bendl", bundle)
     dec = BendlDecoder(path).subsample_range(2, 5)
     assert len(dec) == 4
@@ -944,9 +915,7 @@ def test_subsample_count_preserves_filtered_len(tmp_path: Path) -> None:
 
 def test_subsample_out_of_bounds(tmp_path: Path) -> None:
     samples = [[1, 2], [3, 4], [5, 6]]
-    bundle = build_bundle(
-        stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples)
-    )
+    bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
     path = _write_bundle(tmp_path / "oob.bendl", bundle)
     with pytest.raises(Exception, match="end must be <= number of samples"):
         BendlDecoder(path).subsample_range(1, 99)
@@ -959,9 +928,7 @@ def test_subsample_out_of_bounds(tmp_path: Path) -> None:
 
 def test_len_uses_header_fast_path(tmp_path: Path) -> None:
     samples = [[i] for i in range(1, 6)]
-    bundle = build_bundle(
-        stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples)
-    )
+    bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
     path = _write_bundle(tmp_path / "fast.bendl", bundle)
     dec = BendlDecoder(path)
     assert len(dec) == len(samples)
@@ -987,10 +954,7 @@ def test_seeded_fuzz_random_bundles_round_trip(tmp_path: Path) -> None:
             )
             truth.append((f"t{trial}-a{i}.bin", payload))
         n_samples = rng.randint(1, 25)
-        samples = [
-            [rng.randint(1, 8) for _ in range(rng.randint(1, 40))]
-            for _ in range(n_samples)
-        ]
+        samples = [[rng.randint(1, 8) for _ in range(rng.randint(1, 40))] for _ in range(n_samples)]
         bundle = build_bundle(
             stream_bytes=_ben_bytes_for(samples, tmp_path),
             sample_count=n_samples,
@@ -1016,7 +980,7 @@ def _checksummed_bundle(path: Path) -> None:
     """A small finalized bundle written by the real encoder (checksums populated)."""
     with BendlEncoder(path, overwrite=True) as enc:
         enc.add_asset("notes.txt", "integrity matters", content_type="text")
-        with enc.stream("ben", variant="standard") as s:
+        with enc.stream(variant="standard") as s:
             for a in ([1, 1, 2, 2], [2, 2, 1, 1]):
                 s.write(a)
 
@@ -1064,7 +1028,7 @@ def test_verify_rejects_unfinalized_bundle(tmp_path: Path) -> None:
     path = tmp_path / "unfinalized.bendl"
     with pytest.raises(RuntimeError, match="boom"):
         with BendlEncoder(path, overwrite=True) as enc:
-            with enc.stream("ben") as s:
+            with enc.stream() as s:
                 s.write([1, 2, 3])
                 raise RuntimeError("boom")
 

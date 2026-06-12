@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/binary-ensemble.svg)](https://pypi.org/project/binary-ensemble/)
 [![Python versions](https://img.shields.io/pypi/pyversions/binary-ensemble.svg)](https://pypi.org/project/binary-ensemble/)
 [![Documentation](https://img.shields.io/readthedocs/binary-ensemble.svg)](https://binary-ensemble.readthedocs.io/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/peterrrock2/binary-ensemble/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/peterrrock2/binary-ensemble/blob/main/LICENSE.md)
 
 **Compress, store, and stream massive ensembles of districting plans.**
 
@@ -27,11 +27,12 @@ the whole thing.
 pip install binary-ensemble
 ```
 
-Requires Python 3.11+. Pre-built wheels are available for Linux, macOS, and Windows.
+Requires Python 3.11+. Pre-built wheels are available for Linux, macOS, and Windows. The
+only runtime dependency is NetworkX, and the API is fully type-annotated (`py.typed`).
 
 ## Quick example
 
-Write an ensemble into one self-describing `.bendl` bundle, then read it back:
+Write an ensemble into one self-describing `.bendl` file, then read it back:
 
 ```python
 from binary_ensemble import BendlEncoder, BendlDecoder
@@ -41,7 +42,7 @@ plans = [[1, 1, 2, 2], [1, 2, 2, 2], [1, 1, 1, 2]]
 # The stream context finalizes the bundle when it closes.
 encoder = BendlEncoder("ensemble.bendl", overwrite=True)
 encoder.add_metadata({"sampler": "demo", "seed": 1234})
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     for assignment in plans:
         stream.write(assignment)
 
@@ -50,14 +51,61 @@ for assignment in BendlDecoder("ensemble.bendl"):
     print(assignment)
 ```
 
-Already have JSONL files? Convert whole files in one call:
+## The graph travels with the data
+
+An assignment is just integers — it only means something in a dual graph's node order. A
+`.bendl` file embeds the graph, so a collaborator can open one file and reconstruct plans
+with no risk of pairing the wrong graph:
 
 ```python
-from binary_ensemble import encode_jsonl_to_ben, encode_ben_to_xben
+import networkx as nx
+from binary_ensemble import BendlEncoder, BendlDecoder
 
-encode_jsonl_to_ben("plans.jsonl", "plans.ben")   # fast working format
-encode_ben_to_xben("plans.ben", "plans.xben")     # smallest, for storage
+dual_graph = nx.convert_node_labels_to_integers(nx.grid_2d_graph(4, 4))
+
+encoder = BendlEncoder("run.bendl", overwrite=True)
+ordered = encoder.add_graph(nx.adjacency_data(dual_graph))  # reordered for compression
+with encoder.stream() as stream:
+    for step in range(1000):
+        stream.write([(node + step) % 4 + 1 for node in range(16)])
+
+decoder = BendlDecoder("run.bendl")
+graph = decoder.read_graph()        # back as a live networkx.Graph, in assignment order
+print(len(decoder))                 # 1000 — read from the header, no scan
+
+for assignment in decoder.subsample_every(100):
+    ...                             # every 100th plan, without decoding the rest
 ```
+
+## More than the basics
+
+- **Whole-file converters** for existing JSONL ensembles:
+
+  ```python
+  from binary_ensemble import encode_jsonl_to_ben, encode_ben_to_xben
+
+  encode_jsonl_to_ben("plans.jsonl", "plans.ben")   # fast working format
+  encode_ben_to_xben("plans.ben", "plans.xben")     # smallest, for storage
+  ```
+
+- **Shrink for sharing** — reorder a finished file and recompress its stream to XBEN,
+  keeping every asset:
+
+  ```python
+  from binary_ensemble import relabel_bundle, compress_stream
+
+  relabel_bundle("run.bendl", out_file="run-sorted.bendl", sort="mlc")
+  compress_stream("run-sorted.bendl", out_file="run-archive.bendl")
+  ```
+
+- **Subsampling** by stride, range, or explicit indices on both bundles and plain
+  `.ben`/`.xben` streams — skipped samples are never materialized.
+- **Custom assets**: attach scores, notes, run manifests, or arbitrary binary blobs (a
+  zipped shapefile, a GeoPackage) alongside the stream. Every asset is checksummed
+  (CRC32C), large payloads are xz-compressed transparently, and
+  `BendlDecoder.verify()` validates a whole file in one call.
+- **Sampler-agnostic**: encoders take plain `list[int]` assignments, so the same API works
+  for GerryChain, ForestReCom, SMC, or your own code.
 
 ## Documentation
 
@@ -65,8 +113,9 @@ Full docs are at **[binary-ensemble.readthedocs.io](https://binary-ensemble.read
 
 - [Quickstart](https://binary-ensemble.readthedocs.io/getting-started/quickstart/) — your first ensemble in a few lines.
 - [Concepts](https://binary-ensemble.readthedocs.io/concepts/overview/) — dual graphs, the BEN/XBEN/BENDL formats, encoding variants, and the compression levers.
-- [How-to guides](https://binary-ensemble.readthedocs.io/how-to/) — compress a GerryChain run, subsample, convert formats, shrink a bundle for sharing.
+- [How-to guides](https://binary-ensemble.readthedocs.io/how-to/) — compress a GerryChain run, analyze with NumPy/pandas, subsample, convert formats, shrink a file for sharing, recover a crashed run.
 - [API reference](https://binary-ensemble.readthedocs.io/api/) — every public class and function.
+- [Tutorial notebooks](https://binary-ensemble.readthedocs.io/user/using_bendl/) — executed end to end in CI against the live API, as is every code snippet in the docs.
 
 ## Command-line tools
 
@@ -78,4 +127,4 @@ cargo install binary-ensemble
 
 ## License
 
-MIT — see [LICENSE](https://github.com/peterrrock2/binary-ensemble/blob/main/LICENSE).
+MIT — see [LICENSE](https://github.com/peterrrock2/binary-ensemble/blob/main/LICENSE.md).

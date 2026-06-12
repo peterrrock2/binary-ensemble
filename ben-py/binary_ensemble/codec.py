@@ -1,9 +1,8 @@
 """Whole-file stream/JSONL transforms.
 
-These helpers convert entire files in one call, without an iterator: JSONL ↔
-BEN ↔ XBEN. For streaming sample-by-sample access use
-:class:`binary_ensemble.stream.BenDecoder`; for the single-file bundle format
-use :mod:`binary_ensemble.bundle`.
+These helpers convert entire files in one call, without an iterator: JSONL ↔ BEN ↔ XBEN. For
+streaming sample-by-sample access use :class:`binary_ensemble.stream.BenDecoder`; for the
+single-file bundle format use :mod:`binary_ensemble.bundle`.
 """
 
 from __future__ import annotations

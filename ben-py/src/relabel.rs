@@ -1,4 +1,4 @@
-//! Binding for relabeling a `.bendl` bundle: reorder its dual graph and rewrite the embedded BEN
+//! Binding for relabeling a `.bendl` file: reorder its dual graph and rewrite the embedded BEN
 //! assignment stream into the new node order, producing a fresh bundle.
 //!
 //! This is the bundle-level form of the CLI's `reben` ordering flow. The reordered `graph.json` and
@@ -81,6 +81,26 @@ fn new_to_old_from_map_bytes(map_bytes: &[u8]) -> PyResult<HashMap<usize, usize>
 
 /// Relabel the bundle at `in_file` by reordering its graph (via `sort` / `key`), writing a fresh
 /// BEN bundle at `out_file`.
+///
+/// This is the raw core binding; prefer the :func:`binary_ensemble.bundle.relabel_bundle`
+/// facade, which adds the ``in_place`` atomic-swap mode.
+///
+/// Args:
+///     in_file (StrPath): Path to the source ``.bendl`` bundle (``str`` or ``os.PathLike``).
+///         Must hold a BEN (not XBEN) stream and a ``graph.json``.
+///     out_file (StrPath): Destination path for the relabeled bundle (``str`` or
+///         ``os.PathLike``).
+///     sort (SortMethod, optional): The ordering — ``"mlc"``, ``"rcm"``, or ``"key"``.
+///         Default is ``"mlc"``.
+///     key (str | None, optional): Node attribute to sort by; required with — and only valid
+///         with — ``sort="key"``. Default is ``None``.
+///     overwrite (bool, optional): Replace ``out_file`` if it already exists. Default is
+///         ``False``.
+///
+/// Raises:
+///     ValueError: If ``sort`` / ``key`` is invalid.
+///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``.
+///     Exception: If the bundle is unfinalized, has no graph, or holds a non-BEN stream.
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, sort = Some("mlc".to_string()), key = None, overwrite = false))]
 #[pyo3(text_signature = "(in_file, out_file, sort='mlc', key=None, overwrite=False)")]

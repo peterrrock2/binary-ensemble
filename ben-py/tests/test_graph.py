@@ -103,3 +103,12 @@ def test_reorder_accepts_bytes_and_path() -> None:
 def test_reorder_rejects_unparseable_graph() -> None:
     with pytest.raises(Exception, match="Failed to reorder graph"):
         g.reorder(b"not valid json at all", "rcm")
+
+
+def test_reorder_accepts_live_networkx_graph() -> None:
+    import networkx as nx
+
+    live = nx.readwrite.json_graph.adjacency_graph(_graph())
+    reordered, pmap = g.reorder(live, "rcm")
+    _check_consistent(reordered, pmap, live.number_of_nodes())
+    assert pmap["ordering_method"] == "reverse-cuthill-mckee"

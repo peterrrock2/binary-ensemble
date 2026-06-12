@@ -20,10 +20,12 @@ use std::path::PathBuf;
 /// :class:`~binary_ensemble.bundle.BendlEncoder` instead.
 ///
 /// Args:
-///     file_path: Output path. Must not exist unless ``overwrite=True``.
-///     overwrite: Replace an existing file at ``file_path``. Defaults to ``False``.
-///     variant: BEN encoding variant for the stream — ``"standard"``, ``"mkv_chain"``,
-///         or ``"twodelta"``. ``None`` (the default) means ``"twodelta"``.
+///     file_path (StrPath): Output path (``str`` or ``os.PathLike``). Must not exist unless
+///         ``overwrite=True``.
+///     overwrite (bool, optional): Replace an existing file at ``file_path``. Default is
+///         ``False``.
+///     variant (Variant, optional): BEN encoding variant for the stream — ``"standard"``,
+///         ``"mkv_chain"``, or ``"twodelta"``. Default is ``"twodelta"``.
 ///
 /// Raises:
 ///     OSError: If ``file_path`` exists and ``overwrite`` is ``False``, or it cannot be
@@ -45,20 +47,22 @@ impl PyBenEncoder {
     /// Open a new encoder that writes a plain ``.ben`` stream.
     ///
     /// Args:
-    ///     file_path: Output path. Must not exist unless ``overwrite=True``.
-    ///     overwrite: Replace an existing file at ``file_path``. Defaults to ``False``.
-    ///     variant: BEN encoding variant for the stream — ``"standard"``, ``"mkv_chain"``,
-    ///         or ``"twodelta"``. Defaults to ``"twodelta"`` when ``None``.
+    ///     file_path (StrPath): Output path (``str`` or ``os.PathLike``). Must not exist
+    ///         unless ``overwrite=True``.
+    ///     overwrite (bool, optional): Replace an existing file at ``file_path``. Default is
+    ///         ``False``.
+    ///     variant (Variant, optional): BEN encoding variant for the stream — ``"standard"``,
+    ///         ``"mkv_chain"``, or ``"twodelta"``. Default is ``"twodelta"``.
     ///
     /// Raises:
     ///     OSError: If ``file_path`` exists and ``overwrite`` is ``False``, or it cannot be
     ///         created.
     ///     ValueError: If ``variant`` is not a recognized variant name.
     #[new]
-    #[pyo3(signature = (file_path, overwrite = false, variant = None))]
-    #[pyo3(text_signature = "(file_path, overwrite=False, variant=None)")]
-    fn new(file_path: PathBuf, overwrite: bool, variant: Option<String>) -> PyResult<Self> {
-        let ben_var = parse_variant(variant.as_deref())?;
+    #[pyo3(signature = (file_path, overwrite = false, variant = "twodelta"))]
+    #[pyo3(text_signature = "(file_path, overwrite=False, variant='twodelta')")]
+    fn new(file_path: PathBuf, overwrite: bool, variant: &str) -> PyResult<Self> {
+        let ben_var = parse_variant(Some(variant))?;
         let buf = open_output(&file_path, overwrite)?;
         let writer = BenStreamWriter::for_ben(buf, ben_var).map_err(Self::map_io_err)?;
         Ok(Self {
@@ -69,8 +73,8 @@ impl PyBenEncoder {
     /// Encode a single assignment and append it to the output stream.
     ///
     /// Args:
-    ///     assignment: The plan as a ``list[int]`` of district ids, one per node in
-    ///         dual-graph node order.
+    ///     assignment (Sequence[int]): The plan as a sequence of district ids (e.g. ``list[int]``),
+    /// one per node in         dual-graph node order.
     ///
     /// Raises:
     ///     OSError: If the encoder has already been closed, or the write fails.

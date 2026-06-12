@@ -12,7 +12,7 @@ use std::path::Path;
 pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
     tracing::trace!("Running in encode mode");
 
-    // --graph path: produce a .bendl bundle with the BEN stream plus a post-stream graph asset.
+    // --graph path: produce a .bendl file with the BEN stream plus a post-stream graph asset.
     if let Some(graph_path) = args.graph.as_ref() {
         let in_file = args.input_file.as_ref().ok_or_else(|| {
             CliError::other("--graph requires an input file (stdin not supported).")

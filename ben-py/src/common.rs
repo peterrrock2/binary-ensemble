@@ -1,7 +1,7 @@
 use binary_ensemble::BenVariant;
 use pyo3::exceptions::{PyException, PyIOError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyList};
+use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
@@ -58,16 +58,22 @@ pub fn open_output(out_file: &PathBuf, overwrite: bool) -> PyResult<BufWriter<Fi
     Ok(BufWriter::new(outfile))
 }
 
-/// Normalize a user-supplied graph argument into raw UTF-8 JSON bytes.
+/// Normalize a user-supplied JSON payload argument into raw UTF-8 JSON bytes.
 ///
-/// Accepted forms:
+/// `what` names the argument in error messages; `accepted` describes the accepted forms in the
+/// final unsupported-type error. Accepted forms:
 ///
 /// - `dict` / `list`: serialized via `json.dumps`.
 /// - `bytes` / `bytearray`: used verbatim.
 /// - any object with a `.read()` method (e.g. `io.BytesIO`, open files): `.read()` is called and
 ///   the result is coerced to bytes.
 /// - `pathlib.Path` or `str`: treated as a filesystem path to read.
-pub fn parse_graph_input(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<Vec<u8>> {
+pub fn parse_json_input(
+    py: Python<'_>,
+    obj: &Bound<'_, PyAny>,
+    what: &str,
+    accepted: &str,
+) -> PyResult<Vec<u8>> {
     // Dict / list → json.dumps.
     if obj.is_instance_of::<PyDict>() || obj.is_instance_of::<PyList>() {
         let json_mod = py.import("json")?;
@@ -76,12 +82,14 @@ pub fn parse_graph_input(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<Vec
         return Ok(s.into_bytes());
     }
 
-    // Raw bytes / bytearray.
+    // Raw bytes / bytearray. Deliberately strict downcasts: a generic Vec<u8> extraction would
+    // also accept any sequence of small ints (e.g. iterating a NetworkX graph's node ids) and
+    // silently store garbage.
     if let Ok(b) = obj.downcast::<PyBytes>() {
         return Ok(b.as_bytes().to_vec());
     }
-    if let Ok(b) = obj.extract::<Vec<u8>>() {
-        return Ok(b);
+    if let Ok(b) = obj.downcast::<PyByteArray>() {
+        return Ok(b.to_vec());
     }
 
     // File-like: must have .read(). Check before str/path, since a plain `str` / `Path` has no
@@ -97,20 +105,68 @@ pub fn parse_graph_input(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<Vec
         if let Ok(s) = data.extract::<String>() {
             return Ok(s.into_bytes());
         }
-        return Err(PyException::new_err(
-            "graph .read() must return bytes or str",
-        ));
+        return Err(PyException::new_err(format!(
+            "{what} .read() must return bytes or str"
+        )));
     }
 
     // Path / str → read the file at that path.
-    let path: PathBuf = obj.extract().map_err(|_| {
-        PyValueError::new_err(
-            "graph must be a dict/list, bytes, a file-like with .read(), or a path",
-        )
-    })?;
+    let path: PathBuf = obj
+        .extract()
+        .map_err(|_| PyValueError::new_err(format!("{what} must be {accepted}")))?;
     std::fs::read(&path).map_err(|e| {
-        PyIOError::new_err(format!("Failed to read graph file {}: {e}", path.display()))
+        PyIOError::new_err(format!(
+            "Failed to read {what} file {}: {e}",
+            path.display()
+        ))
     })
+}
+
+/// Normalize a user-supplied metadata argument into raw UTF-8 JSON bytes.
+pub fn parse_metadata_input(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<Vec<u8>> {
+    parse_json_input(
+        py,
+        obj,
+        "metadata",
+        "a dict/list, bytes, a file-like with .read(), or a path",
+    )
+}
+
+/// Convert a live NetworkX graph into adjacency-format JSON bytes, or return `None` if `obj` is
+/// not a NetworkX graph (subclasses such as `gerrychain.Graph` count).
+fn networkx_graph_to_json_bytes(
+    py: Python<'_>,
+    obj: &Bound<'_, PyAny>,
+) -> PyResult<Option<Vec<u8>>> {
+    let networkx = py.import("networkx")?;
+    let graph_cls = networkx.getattr("Graph")?;
+    if !obj.is_instance(&graph_cls)? {
+        return Ok(None);
+    }
+    // adjacency_data preserves the graph's node iteration order, so a raw (sort=None) embed
+    // stores exactly the order the caller's graph already has.
+    let json_graph = py.import("networkx.readwrite.json_graph")?;
+    let data = json_graph.call_method1("adjacency_data", (obj,))?;
+    let json_mod = py.import("json")?;
+    let dumped = json_mod.call_method1("dumps", (&data,))?;
+    let s: String = dumped.extract()?;
+    Ok(Some(s.into_bytes()))
+}
+
+/// Normalize a user-supplied graph argument into raw adjacency-format UTF-8 JSON bytes.
+///
+/// Accepts everything [`parse_json_input`] does, plus a live NetworkX graph (serialized via
+/// `networkx.readwrite.json_graph.adjacency_data`, preserving its node order).
+pub fn parse_graph_input(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<Vec<u8>> {
+    if let Some(bytes) = networkx_graph_to_json_bytes(py, obj)? {
+        return Ok(bytes);
+    }
+    parse_json_input(
+        py,
+        obj,
+        "graph",
+        "a networkx.Graph, dict/list, bytes, a file-like with .read(), or a path",
+    )
 }
 
 /// Build a live NetworkX graph from an already-parsed adjacency-format JSON object.

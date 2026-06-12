@@ -17,9 +17,11 @@
 //!    was opened.
 
 use binary_ensemble::io::bundle::format::{
-    AssignmentFormat, BendlDirectoryEntry, ASSET_TYPE_CUSTOM,
+    AssignmentFormat, BendlDirectoryEntry, KnownAssetKind, ASSET_TYPE_CUSTOM,
 };
-use binary_ensemble::io::bundle::writer::{AddAssetOptions, BendlAppender, BendlWriter};
+use binary_ensemble::io::bundle::writer::{
+    AddAssetOptions, BendlAppender, BendlWriteError, BendlWriter,
+};
 use binary_ensemble::io::bundle::BendlReader;
 use proptest::prelude::*;
 use std::io::{Cursor, Read, Seek, SeekFrom};
@@ -391,4 +393,276 @@ proptest! {
     ) {
         run_sequence(&ops);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic asset-removal tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn remove_asset_drops_entry_and_preserves_everything_else() {
+    let bytes = build_seed_bundle();
+    let mut appender = BendlAppender::open(Cursor::new(bytes)).unwrap();
+    appender
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "extra.bin",
+            b"keep me",
+            AddAssetOptions::defaults().raw(),
+        )
+        .unwrap();
+    let bytes = appender.commit().unwrap().into_inner();
+
+    let mut appender = BendlAppender::open(Cursor::new(bytes)).unwrap();
+    appender.remove_asset("seed.bin").unwrap();
+    let bytes = appender.commit().unwrap().into_inner();
+
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let names: Vec<_> = reader.assets().iter().map(|e| e.name.clone()).collect();
+    assert_eq!(names, vec!["extra.bin".to_string()]);
+    // The survivor still reads back, and the stream + every remaining checksum still verify
+    // (the removed payload's bytes are dead space readers never touch).
+    let entry = reader.assets()[0].clone();
+    assert_eq!(reader.asset_bytes(&entry).unwrap(), b"keep me");
+    reader.verify_all_asset_checksums().unwrap();
+    reader.verify_stream_checksum().unwrap();
+}
+
+#[test]
+fn remove_then_add_same_name_replaces_payload_in_one_session() {
+    let bytes = build_seed_bundle();
+    let mut appender = BendlAppender::open(Cursor::new(bytes)).unwrap();
+    appender.remove_asset("seed.bin").unwrap();
+    appender
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "seed.bin",
+            b"new payload",
+            AddAssetOptions::defaults().raw(),
+        )
+        .unwrap();
+    let bytes = appender.commit().unwrap().into_inner();
+
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = find_entry(reader.assets(), "seed.bin").clone();
+    assert_eq!(reader.asset_bytes(&entry).unwrap(), b"new payload");
+    reader.verify_all_asset_checksums().unwrap();
+}
+
+#[test]
+fn remove_singleton_frees_its_type_for_re_add() {
+    // metadata.json is a singleton: a second add is refused until the first is removed.
+    let bytes = build_seed_bundle();
+    let mut appender = BendlAppender::open(Cursor::new(bytes)).unwrap();
+    appender
+        .add_known_asset(
+            KnownAssetKind::Metadata,
+            b"{\"v\":1}",
+            AddAssetOptions::defaults().json(),
+        )
+        .unwrap();
+    let bytes = appender.commit().unwrap().into_inner();
+
+    let mut appender = BendlAppender::open(Cursor::new(bytes)).unwrap();
+    assert!(matches!(
+        appender.add_known_asset(
+            KnownAssetKind::Metadata,
+            b"{\"v\":2}",
+            AddAssetOptions::defaults().json(),
+        ),
+        Err(BendlWriteError::DuplicateSingletonType(_))
+    ));
+    appender.remove_asset("metadata.json").unwrap();
+    appender
+        .add_known_asset(
+            KnownAssetKind::Metadata,
+            b"{\"v\":2}",
+            AddAssetOptions::defaults().json(),
+        )
+        .unwrap();
+    let bytes = appender.commit().unwrap().into_inner();
+
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    let entry = find_entry(reader.assets(), "metadata.json").clone();
+    assert_eq!(reader.asset_bytes(&entry).unwrap(), b"{\"v\":2}");
+}
+
+#[test]
+fn compact_drops_dead_space_and_preserves_semantics() {
+    use binary_ensemble::io::bundle::compact::compact_bundle;
+
+    // Manufacture dead space: append a 64 KiB incompressible blob (stored raw), then remove it
+    // with the directory-only appender removal.
+    let bytes = build_seed_bundle();
+    let blob: Vec<u8> = (0u32..65536)
+        .map(|i| (i.wrapping_mul(2654435761) >> 13) as u8)
+        .collect();
+    let mut appender = BendlAppender::open(Cursor::new(bytes)).unwrap();
+    appender
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "bloat.bin",
+            &blob,
+            AddAssetOptions::defaults().raw(),
+        )
+        .unwrap();
+    let bytes = appender.commit().unwrap().into_inner();
+    let mut appender = BendlAppender::open(Cursor::new(bytes)).unwrap();
+    appender.remove_asset("bloat.bin").unwrap();
+    let bloated = appender.commit().unwrap().into_inner();
+
+    let mut reader = BendlReader::open(Cursor::new(bloated.clone())).unwrap();
+    let compacted = compact_bundle(&mut reader, Cursor::new(Vec::new()))
+        .unwrap()
+        .into_inner();
+    assert!(compacted.len() + 60_000 < bloated.len());
+
+    // Semantically identical: same assets, verbatim stream bytes, and every checksum holds.
+    let mut reader = BendlReader::open(Cursor::new(compacted)).unwrap();
+    let names: Vec<_> = reader.assets().iter().map(|e| e.name.clone()).collect();
+    assert_eq!(names, vec!["seed.bin".to_string()]);
+    let entry = reader.assets()[0].clone();
+    assert_eq!(reader.asset_bytes(&entry).unwrap(), b"seed payload bytes");
+    let mut stream = Vec::new();
+    reader
+        .assignment_stream_reader()
+        .unwrap()
+        .read_to_end(&mut stream)
+        .unwrap();
+    assert_eq!(stream, b"STANDARD BEN FILE\x00\x01\x02");
+    reader.verify_all_asset_checksums().unwrap();
+    reader.verify_stream_checksum().unwrap();
+}
+
+#[test]
+fn compact_rejects_unfinalized_bundle() {
+    use binary_ensemble::io::bundle::compact::compact_bundle;
+
+    // Clear the header's `finalized` flag (byte 12 per the spec's fixed-header layout) so the
+    // bundle reads as incomplete.
+    let mut bytes = build_seed_bundle();
+    assert_eq!(bytes[12], 1);
+    bytes[12] = 0;
+
+    let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
+    assert!(matches!(
+        compact_bundle(&mut reader, Cursor::new(Vec::new())),
+        Err(BendlWriteError::BundleIncomplete)
+    ));
+}
+
+/// Write `bytes` to a unique file under the cargo test tmpdir and return its path.
+fn write_tmp_bundle(name: &str, bytes: &[u8]) -> std::path::PathBuf {
+    let path = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    std::fs::write(&path, bytes).unwrap();
+    path
+}
+
+#[test]
+fn in_place_compaction_picks_tail_rewrite_and_never_touches_the_stream() {
+    use binary_ensemble::io::bundle::compact::{compact_bundle_in_place, Compaction};
+
+    // Append two assets, then remove the first via the directory-only appender removal: the
+    // dead space (its payload + superseded directories) is entirely post-stream.
+    let bytes = build_seed_bundle();
+    let mut appender = BendlAppender::open(Cursor::new(bytes)).unwrap();
+    appender
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "dead.bin",
+            &[0xAAu8; 4096],
+            AddAssetOptions::defaults().raw(),
+        )
+        .unwrap();
+    appender
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "survivor.bin",
+            b"survivor payload",
+            AddAssetOptions::defaults().raw(),
+        )
+        .unwrap();
+    let bytes = appender.commit().unwrap().into_inner();
+    let mut appender = BendlAppender::open(Cursor::new(bytes)).unwrap();
+    appender.remove_asset("dead.bin").unwrap();
+    let bloated = appender.commit().unwrap().into_inner();
+
+    // Stream end = the prefix that the tail rewrite must leave byte-identical.
+    let stream_end = {
+        let reader = BendlReader::open(Cursor::new(bloated.clone())).unwrap();
+        reader.header().stream_offset + reader.header().stream_len
+    };
+    let path = write_tmp_bundle("tail-compact.bendl", &bloated);
+
+    assert_eq!(
+        compact_bundle_in_place(&path).unwrap(),
+        Compaction::TailRewrite
+    );
+    let compacted = std::fs::read(&path).unwrap();
+    assert!(compacted.len() + 4096 <= bloated.len());
+    // Everything between the (re-patched) header and the stream end is byte-identical: the
+    // pre-stream assets and the stream itself were never read or moved.
+    let header_len = 64;
+    assert_eq!(
+        &compacted[header_len..stream_end as usize],
+        &bloated[header_len..stream_end as usize]
+    );
+
+    // Survivor and seed assets intact (raw storage form preserved), every checksum holds.
+    let mut reader = BendlReader::open(Cursor::new(compacted)).unwrap();
+    let names: Vec<_> = reader.assets().iter().map(|e| e.name.clone()).collect();
+    assert_eq!(
+        names,
+        vec!["seed.bin".to_string(), "survivor.bin".to_string()]
+    );
+    let survivor = find_entry(reader.assets(), "survivor.bin").clone();
+    assert_eq!(reader.asset_bytes(&survivor).unwrap(), b"survivor payload");
+    reader.verify_all_asset_checksums().unwrap();
+    reader.verify_stream_checksum().unwrap();
+
+    // A second compaction finds nothing to do and leaves the file byte-identical.
+    let before = std::fs::read(&path).unwrap();
+    assert_eq!(compact_bundle_in_place(&path).unwrap(), Compaction::None);
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn in_place_compaction_falls_back_to_full_rewrite_for_pre_stream_dead_space() {
+    use binary_ensemble::io::bundle::compact::{compact_bundle_in_place, Compaction};
+
+    // seed.bin is a pre-stream asset: removing it leaves dead bytes before the stream, which
+    // only the full rewrite can reclaim.
+    let bytes = build_seed_bundle();
+    let mut appender = BendlAppender::open(Cursor::new(bytes)).unwrap();
+    appender.remove_asset("seed.bin").unwrap();
+    let bloated = appender.commit().unwrap().into_inner();
+    let path = write_tmp_bundle("full-compact.bendl", &bloated);
+
+    assert_eq!(
+        compact_bundle_in_place(&path).unwrap(),
+        Compaction::FullRewrite
+    );
+    let mut reader = BendlReader::open(Cursor::new(std::fs::read(&path).unwrap())).unwrap();
+    assert!(reader.assets().is_empty());
+    let mut stream = Vec::new();
+    reader
+        .assignment_stream_reader()
+        .unwrap()
+        .read_to_end(&mut stream)
+        .unwrap();
+    assert_eq!(stream, b"STANDARD BEN FILE\x00\x01\x02");
+    reader.verify_stream_checksum().unwrap();
+}
+
+#[test]
+fn remove_unknown_asset_errors_and_commit_stays_a_no_op() {
+    let original = build_seed_bundle();
+    let mut appender = BendlAppender::open(Cursor::new(original.clone())).unwrap();
+    assert!(matches!(
+        appender.remove_asset("missing.bin"),
+        Err(BendlWriteError::UnknownAssetName(_))
+    ));
+    // The failed removal queued nothing, so commit must leave the file byte-identical.
+    let bytes = appender.commit().unwrap().into_inner();
+    assert_eq!(bytes, original);
 }

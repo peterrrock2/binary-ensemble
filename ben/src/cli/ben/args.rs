@@ -54,7 +54,7 @@ pub(super) enum Mode {
 )]
 /// Defines the command line arguments accepted by the program.
 pub(super) struct Args {
-    /// Mode to run the program in (encode, decode, or read).
+    /// Mode to run the program in (e.g. encode, decode, or lookup).
     #[arg(short, long, value_enum)]
     pub mode: Mode,
     /// Input file to read from.

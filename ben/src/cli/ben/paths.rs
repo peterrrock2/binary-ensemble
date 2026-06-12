@@ -15,7 +15,7 @@ pub(super) type DynWriter = Box<dyn Write>;
 /// * `input_file_name` - The input file path supplied by the user.
 /// * `output_file_name` - An optional explicit output path.
 /// * `overwrite` - Whether to skip overwrite prompting.
-/// * `with_graph` - When true, the output is a `.bendl` bundle instead of a bare `.ben`/`.xben`
+/// * `with_graph` - When true, the output is a `.bendl` file instead of a bare `.ben`/`.xben`
 ///   stream, so the derived extension is `.bendl` regardless of `mode`.
 ///
 /// # Returns

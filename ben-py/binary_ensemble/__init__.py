@@ -3,21 +3,20 @@
 The public surface mirrors the CLI's ``ben`` vs ``bendl`` split:
 
 - :mod:`binary_ensemble.bundle` — the recommended single-file ``.bendl`` format:
-  :class:`~binary_ensemble.bundle.BendlEncoder`,
-  :class:`~binary_ensemble.bundle.BendlDecoder`, and
-  :func:`~binary_ensemble.bundle.compress_stream`.
+  :class:`~binary_ensemble.bundle.BendlEncoder`, :class:`~binary_ensemble.bundle.BendlDecoder`,
+  and :func:`~binary_ensemble.bundle.compress_stream`.
 - :mod:`binary_ensemble.stream` — plain BEN/XBEN streams:
-  :class:`~binary_ensemble.stream.BenEncoder`,
-  :class:`~binary_ensemble.stream.BenDecoder`.
+  :class:`~binary_ensemble.stream.BenEncoder`, :class:`~binary_ensemble.stream.BenDecoder`.
 - :mod:`binary_ensemble.codec` — whole-file JSONL ↔ BEN ↔ XBEN transforms.
 - :mod:`binary_ensemble.graph` — graph reordering utilities.
+- :mod:`binary_ensemble.types` — shared type aliases for annotating user code.
 
 All public symbols are re-exported here for convenience.
 """
 
 from importlib import metadata as _metadata
 
-from binary_ensemble import bundle, codec, graph, stream
+from binary_ensemble import bundle, codec, graph, stream, types
 from binary_ensemble.bundle import (
     BendlDecoder,
     BendlEncoder,
@@ -36,7 +35,7 @@ from binary_ensemble.stream import BenDecoder, BenEncoder
 
 try:
     __version__ = _metadata.version("binary-ensemble")
-except _metadata.PackageNotFoundError:  # source tree imported without an installed dist
+except _metadata.PackageNotFoundError:  # source tree imported without an installed distribution
     __version__ = "0.0.0+unknown"
 
 __all__ = [
@@ -45,6 +44,7 @@ __all__ = [
     "bundle",
     "codec",
     "graph",
+    "types",
     # Bundle (recommended)
     "BendlEncoder",
     "BendlDecoder",

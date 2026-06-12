@@ -1,7 +1,20 @@
-from typing import Any, Optional
+from types import TracebackType
+from typing import Literal, overload
+
+import networkx as nx
 
 from binary_ensemble._core import BendlDecoder as BendlDecoder
 from binary_ensemble._core import BendlStreamSession as BendlStreamSession
+from binary_ensemble.types import (
+    BinaryAssetPayload,
+    GraphInput,
+    JsonAssetPayload,
+    MetadataInput,
+    SortMethod,
+    StrPath,
+    TextAssetPayload,
+    Variant,
+)
 
 __all__ = [
     "BendlEncoder",
@@ -12,35 +25,54 @@ __all__ = [
 ]
 
 class BendlEncoder:
-    def __init__(self, file_path, overwrite: bool = False) -> None: ...
+    def __init__(self, file_path: StrPath, overwrite: bool = False) -> None: ...
     @classmethod
-    def append(cls, file_path) -> "BendlEncoder": ...
+    def append(cls, file_path: StrPath) -> "BendlEncoder": ...
     def add_graph(
-        self, graph: Any, sort: Optional[str] = "mlc", key: Optional[str] = None
-    ) -> Any: ...
-    def add_metadata(self, metadata: Any) -> None: ...
-    def add_asset(
         self,
-        name: str,
-        payload: Any,
-        content_type: str,
+        graph: GraphInput,
+        sort: SortMethod | None = "mlc",
+        key: str | None = None,
+    ) -> nx.Graph: ...
+    def add_metadata(self, metadata: MetadataInput) -> None: ...
+    @overload
+    def add_asset(
+        self, name: str, payload: JsonAssetPayload, content_type: Literal["json"]
     ) -> None: ...
-    def stream(
-        self, format: str = "ben", variant: Optional[str] = None
-    ) -> BendlStreamSession: ...
+    @overload
+    def add_asset(
+        self, name: str, payload: TextAssetPayload, content_type: Literal["text"]
+    ) -> None: ...
+    @overload
+    def add_asset(
+        self, name: str, payload: BinaryAssetPayload, content_type: Literal["binary"]
+    ) -> None: ...
+    @overload
+    def add_asset(self, name: str, payload: StrPath, content_type: Literal["file"]) -> None: ...
+    # Drops the directory entry and compacts the bundle in place, so the payload bytes are
+    # actually reclaimed; frees the name for re-add. KeyError if absent. (The raw
+    # _core.BendlEncoder.remove_asset is the cheap, directory-only form.)
+    def remove_asset(self, name: str) -> None: ...
+    def stream(self, *, variant: Variant = "twodelta") -> BendlStreamSession: ...
     def close(self) -> None: ...
     def __enter__(self) -> "BendlEncoder": ...
-    def __exit__(self, exc_type, exc, tb) -> bool: ...
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool: ...
 
+# out_file=None means in place: the result is atomically swapped over `path`.
 def compress_stream(
-    path,
-    out_file=None,
-    in_place: bool = False,
+    path: StrPath,
+    out_file: StrPath | None = None,
+    overwrite: bool = False,
 ) -> None: ...
 def relabel_bundle(
-    path,
-    out_file=None,
-    sort: str = "mlc",
-    key: Optional[str] = None,
-    in_place: bool = False,
+    path: StrPath,
+    out_file: StrPath | None = None,
+    sort: SortMethod = "mlc",
+    key: str | None = None,
+    overwrite: bool = False,
 ) -> None: ...

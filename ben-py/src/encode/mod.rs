@@ -1,4 +1,4 @@
-//! Python bindings for BEN/XBEN encoding and `.bendl` bundle authoring.
+//! Python bindings for BEN/XBEN encoding and `.bendl` file authoring.
 
 mod bundle_encoder;
 mod encoder;

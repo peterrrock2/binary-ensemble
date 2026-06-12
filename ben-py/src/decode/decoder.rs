@@ -18,9 +18,11 @@ use std::path::PathBuf;
 /// ``bendl`` split of the command-line tools.
 ///
 /// Args:
-///     file_path: Path to the input ``.ben`` or ``.xben`` file.
-///     mode: Which reader to use — ``"ben"`` or ``"xben"``. Defaults to ``"ben"``.
+///     file_path (StrPath): Path to the input ``.ben`` or ``.xben`` file (``str`` or
+///         ``os.PathLike``).
+///     mode (AssignmentFormat, optional): Which reader to use — ``"ben"`` or ``"xben"``.
 ///         Opening an XBEN stream warns about a one-time decompression startup cost.
+///         Default is ``"ben"``.
 ///
 /// Raises:
 ///     Exception: If ``file_path`` is a ``.bendl`` bundle (use
@@ -46,8 +48,10 @@ impl PyBenDecoder {
     /// decompression startup cost.
     ///
     /// Args:
-    ///     file_path: Path to the input ``.ben`` or ``.xben`` file.
-    ///     mode: Either ``"ben"`` or ``"xben"``. Defaults to ``"ben"``.
+    ///     file_path (StrPath): Path to the input ``.ben`` or ``.xben`` file (``str`` or
+    ///         ``os.PathLike``).
+    ///     mode (AssignmentFormat, optional): Either ``"ben"`` or ``"xben"``. Default is
+    ///         ``"ben"``.
     ///
     /// Raises:
     ///     Exception: If ``file_path`` is a ``.bendl`` bundle (use
@@ -66,7 +70,7 @@ impl PyBenDecoder {
 
         if is_bundle {
             return Err(PyException::new_err(format!(
-                "{} is a .bendl bundle, not a plain BEN/XBEN stream. Open it with \
+                "{} is a .bendl file, not a plain BEN/XBEN stream. Open it with \
                  binary_ensemble.bundle.BendlDecoder instead.",
                 file_path.display()
             )));
@@ -123,15 +127,15 @@ impl PyBenDecoder {
     /// being unpacked, so this stays fast on large ensembles.
     ///
     /// Args:
-    ///     indices: The 1-indexed sample numbers to keep. An unsorted or duplicated list
-    ///         is sorted and deduplicated, with a ``UserWarning``.
+    ///     indices (Sequence[int]): The 1-indexed sample numbers to keep. Duplicates are dropped;
+    /// an         unsorted list is sorted, with a ``UserWarning``.
     ///
     /// Returns:
     ///     BenDecoder: ``self``, so the call can be chained directly into a ``for`` loop.
     ///
     /// Raises:
-    ///     Exception: If any index is ``0`` (indices are 1-based) or greater than the
-    ///         number of samples in the stream.
+    ///     Exception: If ``indices`` is empty, contains ``0`` (indices are 1-based), or
+    ///         contains an index greater than the number of samples in the stream.
     ///
     /// Example:
     ///     >>> for plan in BenDecoder("plans.ben").subsample_indices([1, 500, 9999]):
@@ -149,8 +153,8 @@ impl PyBenDecoder {
     /// Restrict iteration to a contiguous, 1-indexed inclusive range of samples.
     ///
     /// Args:
-    ///     start: First sample number to keep (1-indexed, inclusive).
-    ///     end: Last sample number to keep (1-indexed, inclusive).
+    ///     start (int): First sample number to keep (1-indexed, inclusive).
+    ///     end (int): Last sample number to keep (1-indexed, inclusive).
     ///
     /// Returns:
     ///     BenDecoder: ``self``, for chaining into a ``for`` loop.
@@ -176,8 +180,8 @@ impl PyBenDecoder {
     /// Restrict iteration to every ``step``-th sample.
     ///
     /// Args:
-    ///     step: Stride between kept samples (e.g. ``10`` keeps every tenth sample).
-    ///     offset: 1-indexed position of the first kept sample. Defaults to ``1``.
+    ///     step (int): Stride between kept samples (e.g. ``10`` keeps every tenth sample).
+    ///     offset (int, optional): 1-indexed position of the first kept sample. Default is ``1``.
     ///
     /// Returns:
     ///     BenDecoder: ``self``, for chaining into a ``for`` loop.

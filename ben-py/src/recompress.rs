@@ -1,4 +1,4 @@
-//! Binding for recompressing a `.bendl` bundle's embedded BEN stream to XBEN.
+//! Binding for recompressing a `.bendl` file's embedded BEN stream to XBEN.
 //!
 //! This repackages a bundle: it reads back every asset's decoded payload and the BEN assignment
 //! stream, re-encodes the stream as XBEN, and writes a fresh `Xben`-format bundle with the same
@@ -59,6 +59,20 @@ fn add_preserved<W: Write + std::io::Seek>(
 
 /// Recompress the BEN stream of the bundle at `in_file` to XBEN, writing a new bundle at
 /// `out_file`.
+///
+/// This is the raw core binding; prefer the :func:`binary_ensemble.bundle.compress_stream`
+/// facade, which adds the ``in_place`` atomic-swap mode.
+///
+/// Args:
+///     in_file (StrPath): Path to the source ``.bendl`` bundle (``str`` or ``os.PathLike``).
+///     out_file (StrPath): Destination path for the recompressed bundle (``str`` or
+///         ``os.PathLike``).
+///     overwrite (bool, optional): Replace ``out_file`` if it already exists. Default is
+///         ``False``.
+///
+/// Raises:
+///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``.
+///     Exception: If the bundle is unfinalized or already holds an XBEN stream.
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite = false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]

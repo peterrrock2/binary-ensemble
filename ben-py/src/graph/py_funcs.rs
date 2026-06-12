@@ -13,13 +13,27 @@ fn json_loads(py: Python<'_>, bytes: &[u8]) -> PyResult<Py<PyAny>> {
 
 /// Reorder a NetworkX adjacency-format graph and return `(reordered_graph, node_permutation_map)`.
 ///
-/// `reordered_graph` is a live NetworkX graph (matching `BendlEncoder.add_graph` /
-/// `BendlDecoder.read_graph`); `node_permutation_map` is the parsed map JSON.
+/// Args:
+///     graph (GraphInput): The graph: a live ``networkx.Graph`` (subclasses such as
+///         ``gerrychain.Graph`` count), or NetworkX adjacency JSON as a ``dict``/``list``, raw
+///         JSON ``bytes``, a file-like object with ``.read()``, or a ``str``/``os.PathLike``
+///         path to a JSON file (a plain ``str`` is a *path* here).
+///     sort (SortMethod, optional): The ordering — ``"mlc"`` (multi-level clustering),
+///         ``"rcm"`` (reverse Cuthill-McKee), or ``"key"`` (sort by the node attribute named
+///         in ``key``). Default is ``"mlc"``.
+///     key (str | None, optional): Node attribute to sort by (e.g. ``key="GEOID"``, or the
+///         special ``key="id"`` for the NetworkX node id); required with — and only valid
+///         with — ``sort="key"``. Default is ``None``.
 ///
-/// `sort` selects the ordering: `"mlc"` (multi-level clustering), `"rcm"` (reverse Cuthill-McKee),
-/// or `"key"` to sort by a node attribute named via `key` (e.g. `key="GEOID"`, or the special
-/// `key="id"` for the NetworkX node id). The permutation map matches the on-disk
-/// `node_permutation_map.json` convention (a `node_permutation_old_to_new` object).
+/// Returns:
+///     tuple[networkx.Graph, NodePermutationMap]: The reordered graph (a live NetworkX graph,
+///     matching ``BendlEncoder.add_graph`` / ``BendlDecoder.read_graph``) and the parsed
+///     permutation map, whose required ``node_permutation_old_to_new`` field maps original
+///     zero-based node positions to their new positions (the on-disk
+///     ``node_permutation_map.json`` convention).
+///
+/// Raises:
+///     ValueError: If ``sort`` / ``key`` is invalid.
 #[pyfunction]
 #[pyo3(signature = (graph, sort = Some("mlc".to_string()), key = None))]
 #[pyo3(text_signature = "(graph, sort='mlc', key=None)")]
