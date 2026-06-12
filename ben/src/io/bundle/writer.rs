@@ -24,10 +24,37 @@
 //! offset, directory length, and `finalized` flag.
 
 use std::collections::HashSet;
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::fs::File;
+use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
 
 use thiserror::Error;
 use xz2::write::XzEncoder;
+
+/// A write sink that can order its writes durably: everything written before a
+/// [`sync_data`](SyncData::sync_data) call must reach stable storage before anything written
+/// after it takes effect. Backing files map this to [`File::sync_data`]; in-memory sinks are
+/// trivially ordered and no-op.
+///
+/// [`BendlAppender::commit`] requires this because it mutates an existing good bundle in place:
+/// without a barrier between writing the new directory and patching the header, OS writeback may
+/// persist the patched header first, and a power loss would leave it pointing at unwritten bytes
+/// with the old directory pointer already gone.
+pub trait SyncData {
+    /// Flush buffers and force every earlier write to stable storage.
+    fn sync_data(&mut self) -> io::Result<()>;
+}
+
+impl SyncData for File {
+    fn sync_data(&mut self) -> io::Result<()> {
+        File::sync_data(self)
+    }
+}
+
+impl<T> SyncData for Cursor<T> {
+    fn sync_data(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 use super::format::{
     default_compresses, encode_directory, read_directory, standardized_name_for, AssignmentFormat,
@@ -775,8 +802,15 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
     /// file mutation in one append-only burst: seek to old EOF, write new payloads, write a new
     /// directory, and patch the header.
     ///
-    /// If compression fails, the file is left unchanged.
-    pub fn commit(mut self) -> Result<W, BendlWriteError> {
+    /// If compression fails, the file is left unchanged. The mutation is ordered durably: the new
+    /// payloads and directory are synced to stable storage before the header is patched to point
+    /// at them, and the patched header is synced before `commit` returns — so a crash or power
+    /// loss at any point leaves either the previous bundle (with at most trailing orphaned bytes)
+    /// or the fully appended one.
+    pub fn commit(mut self) -> Result<W, BendlWriteError>
+    where
+        W: SyncData,
+    {
         // If nothing was enqueued or removed, commit is a no-op — return the file untouched.
         if self.pending.is_empty() && !self.removed_any {
             return Ok(self.inner);
@@ -787,8 +821,7 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
         let encoded = self.prepare_pending_assets()?;
 
         // Phase 2: append-only file mutation. Until the final header patch, the old header still
-        // points at the old directory, which remains intact. A crash before the patch leaves the
-        // previous bundle readable with trailing orphaned bytes.
+        // points at the old directory, which remains intact.
         let old_directory_end = self
             .header
             .directory_offset
@@ -827,12 +860,19 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
         self.inner.write_all(&directory_bytes)?;
         let new_directory_len = directory_bytes.len() as u64;
 
-        // Patch the header.
+        // The new tail must be durable before the header can reference it: OS writeback is free
+        // to reorder, and a power loss that persisted the patched header before the directory
+        // bytes would leave it pointing at garbage with the old directory pointer already gone.
+        self.inner.flush()?;
+        self.inner.sync_data()?;
+
+        // Patch the header, and sync so a returned commit is durable.
         self.header.directory_offset = new_directory_offset;
         self.header.directory_len = new_directory_len;
         self.inner.seek(SeekFrom::Start(0))?;
         self.header.write_to(&mut self.inner)?;
         self.inner.flush()?;
+        self.inner.sync_data()?;
 
         Ok(self.inner)
     }

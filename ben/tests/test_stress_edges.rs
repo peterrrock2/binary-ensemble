@@ -117,6 +117,13 @@ impl Read for HeaderPatchCrashCursor {
     }
 }
 
+impl binary_ensemble::io::bundle::SyncData for HeaderPatchCrashCursor {
+    fn sync_data(&mut self) -> std::io::Result<()> {
+        // In-memory test double: writes are trivially ordered.
+        Ok(())
+    }
+}
+
 impl Write for HeaderPatchCrashCursor {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let mut state = self.state.borrow_mut();

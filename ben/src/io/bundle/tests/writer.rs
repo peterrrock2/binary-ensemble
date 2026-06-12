@@ -2113,3 +2113,91 @@ fn appender_duplicate_name_after_singleton_check_leaves_appender_usable() {
         )
         .unwrap();
 }
+
+/// Records the order of writes (by starting offset) and sync barriers, for asserting the
+/// durability ordering of in-place mutations.
+#[derive(Debug)]
+enum LoggedOp {
+    Write { pos: u64 },
+    Sync,
+}
+
+struct SyncLog {
+    inner: Cursor<Vec<u8>>,
+    ops: Vec<LoggedOp>,
+}
+
+impl Read for SyncLog {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl Seek for SyncLog {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.inner.seek(pos)
+    }
+}
+
+impl Write for SyncLog {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.ops.push(LoggedOp::Write {
+            pos: self.inner.position(),
+        });
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl crate::io::bundle::writer::SyncData for SyncLog {
+    fn sync_data(&mut self) -> std::io::Result<()> {
+        self.ops.push(LoggedOp::Sync);
+        Ok(())
+    }
+}
+
+#[test]
+fn append_commit_syncs_directory_before_the_header_patch_and_header_after() {
+    // The appender mutates an existing good bundle in place. OS writeback may persist writes in
+    // any order, so the new tail (payloads + directory) must hit a sync barrier before the
+    // header is patched to reference it, and the patched header must be synced before commit
+    // reports success. Without the first barrier, power loss could leave the header pointing at
+    // unwritten directory bytes — the previous bundle unrecoverable.
+    let (bundle, _) = build_base_bundle();
+    let log = SyncLog {
+        inner: Cursor::new(bundle),
+        ops: Vec::new(),
+    };
+    let mut appender = BendlAppender::open(log).unwrap();
+    appender
+        .add_custom_asset("x.bin", &[1u8; 64], AddAssetOptions::defaults().raw())
+        .unwrap();
+    let log = appender.commit().unwrap();
+
+    let header_write = log
+        .ops
+        .iter()
+        .position(|op| matches!(op, LoggedOp::Write { pos: 0 }))
+        .expect("commit must patch the header at offset 0");
+    let last_tail_write = log.ops[..header_write]
+        .iter()
+        .rposition(|op| matches!(op, LoggedOp::Write { .. }))
+        .expect("commit must write the tail before the header");
+    assert!(
+        log.ops[last_tail_write..header_write]
+            .iter()
+            .any(|op| matches!(op, LoggedOp::Sync)),
+        "the new tail must be synced before the header patch: {:?}",
+        log.ops
+    );
+    assert!(
+        log.ops[header_write..]
+            .iter()
+            .any(|op| matches!(op, LoggedOp::Sync)),
+        "the patched header must be synced before commit returns: {:?}",
+        log.ops
+    );
+}
