@@ -5,13 +5,16 @@
 //! compound, multi-byte corruptions that enumeration cannot reach. The contract is the same:
 //! arbitrary bytes may error anywhere, but must never panic, hang, or exhaust memory.
 
+//! Full-drain entry points (`decode_ben_to_jsonl`, `relabel_ben_file`) are deliberately absent:
+//! their parse coverage is identical to the bounded iterators below, but a frame's expanded
+//! output is `assignment length × count`, so the fuzzer inevitably discovers tiny inputs that
+//! legally demand minutes of serialization work (the format's documented decompression-bomb
+//! characteristic), drowning exploration in slow units.
+
 #![no_main]
 
-use binary_ensemble::codec::decode::decode_ben_to_jsonl;
 use binary_ensemble::io::reader::{BenStreamFrameReader, BenStreamReader};
 use binary_ensemble::ops::extract::extract_assignment_ben;
-use binary_ensemble::ops::relabel::{relabel_ben_file, RelabelOptions};
-use binary_ensemble::BenVariant;
 use libfuzzer_sys::fuzz_target;
 
 /// Bound on records pulled from iterator-style entry points: corrupt streams may yield errors
@@ -19,8 +22,6 @@ use libfuzzer_sys::fuzz_target;
 const MAX_PULLS: usize = 64;
 
 fuzz_target!(|data: &[u8]| {
-    let _ = decode_ben_to_jsonl(data, std::io::sink());
-
     if let Ok(reader) = BenStreamReader::from_ben(data) {
         for record in reader.silent(true).take(MAX_PULLS) {
             let _ = record;
@@ -35,16 +36,14 @@ fuzz_target!(|data: &[u8]| {
         }
     }
     if let Ok(reader) = BenStreamReader::from_ben(data) {
-        for record in reader.silent(true).into_subsample_by_range(1, 3).take(MAX_PULLS) {
+        for record in reader
+            .silent(true)
+            .into_subsample_by_range(1, 3)
+            .take(MAX_PULLS)
+        {
             let _ = record;
         }
     }
 
-    let _ = relabel_ben_file(data, std::io::sink(), RelabelOptions::first_seen());
-    let _ = relabel_ben_file(
-        data,
-        std::io::sink(),
-        RelabelOptions::convert_to(BenVariant::TwoDelta),
-    );
     let _ = extract_assignment_ben(data, 2);
 });
