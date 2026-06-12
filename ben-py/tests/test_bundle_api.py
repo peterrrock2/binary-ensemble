@@ -155,7 +155,7 @@ def test_exception_in_stream_leaves_bundle_unfinalized(tmp_path: Path) -> None:
 
 def test_add_asset_content_type_validation(tmp_path: Path) -> None:
     enc = BendlEncoder(tmp_path / "v.bendl", overwrite=True)
-    with pytest.raises(ValueError, match="must be 'json', 'text', or 'binary'"):
+    with pytest.raises(ValueError, match="must be 'json', 'text', 'binary', or 'file'"):
         enc.add_asset("x", b"data", content_type="parquet")
     with pytest.raises(ValueError, match="valid UTF-8 JSON"):
         enc.add_asset("bad.json", "not json", content_type="json")
@@ -172,6 +172,63 @@ def test_add_asset_content_type_validation(tmp_path: Path) -> None:
     assert "json" in flags["ok.json"]
     assert "json" not in flags["ok.txt"]
     assert "json" not in flags["ok.bin"]
+
+
+def test_add_asset_accepts_dict_and_list_payloads(tmp_path: Path) -> None:
+    enc = BendlEncoder(tmp_path / "d.bendl", overwrite=True)
+    enc.add_asset("scores.json", {"cut_edges": [10, 12]}, content_type="json")
+    enc.add_asset("steps.json", [1, 2, 3], content_type="json")
+    # dict/list payloads are JSON by definition; other content types are a caller mistake.
+    with pytest.raises(ValueError, match="require content_type='json'"):
+        enc.add_asset("bad.bin", {"a": 1}, content_type="binary")
+    enc.close()
+
+    dec = BendlDecoder(tmp_path / "d.bendl")
+    assert dec.read_json_asset("scores.json") == {"cut_edges": [10, 12]}
+    assert dec.read_json_asset("steps.json") == [1, 2, 3]
+
+
+def test_add_asset_accepts_paths_and_file_likes(tmp_path: Path) -> None:
+    import io
+
+    blob = bytes(range(256))
+    src = tmp_path / "geometry.gpkg"
+    src.write_bytes(blob)
+
+    enc = BendlEncoder(tmp_path / "f.bendl", overwrite=True)
+    # pathlib.Path payload: the file at that path is read. (A plain str would be stored as
+    # UTF-8 *content*, never treated as a path.)
+    enc.add_asset("from_path.gpkg", src, content_type="binary")
+    # File-like payloads are read; binary and text handles both work.
+    enc.add_asset("from_filelike.gpkg", io.BytesIO(blob), content_type="binary")
+    enc.add_asset("from_text_handle.txt", io.StringIO("hello"), content_type="text")
+    enc.close()
+
+    dec = BendlDecoder(tmp_path / "f.bendl")
+    assert dec.read_asset_bytes("from_path.gpkg") == blob
+    assert dec.read_asset_bytes("from_filelike.gpkg") == blob
+    assert dec.read_asset_bytes("from_text_handle.txt") == b"hello"
+
+
+def test_add_asset_file_content_type_reads_paths(tmp_path: Path) -> None:
+    blob = bytes(range(256))
+    src = tmp_path / "geometry.gpkg"
+    src.write_bytes(blob)
+
+    enc = BendlEncoder(tmp_path / "p.bendl", overwrite=True)
+    # Under content_type="file", a plain str payload *is* a path — the explicit opt-in that
+    # resolves the str-is-content default of every other content type.
+    enc.add_asset("from_str_path.gpkg", str(src), content_type="file")
+    enc.add_asset("from_pathlib.gpkg", src, content_type="file")
+    with pytest.raises(TypeError, match="requires a str or os.PathLike"):
+        enc.add_asset("bad", b"raw bytes are not a path", content_type="file")
+    with pytest.raises(FileNotFoundError):
+        enc.add_asset("missing", tmp_path / "nope.gpkg", content_type="file")
+    enc.close()
+
+    dec = BendlDecoder(tmp_path / "p.bendl")
+    assert dec.read_asset_bytes("from_str_path.gpkg") == blob
+    assert dec.read_asset_bytes("from_pathlib.gpkg") == blob
 
 
 def test_binary_asset_round_trips_arbitrary_bytes(tmp_path: Path) -> None:

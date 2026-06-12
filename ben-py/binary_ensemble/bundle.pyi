@@ -1,4 +1,4 @@
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 from binary_ensemble._core import BendlDecoder as BendlDecoder
 from binary_ensemble._core import BendlStreamSession as BendlStreamSession
@@ -22,7 +22,7 @@ class BendlEncoder:
     def add_asset(
         self,
         name: str,
-        payload: Union[bytes, bytearray, memoryview, str],
+        payload: Any,
         content_type: str,
     ) -> None: ...
     def stream(

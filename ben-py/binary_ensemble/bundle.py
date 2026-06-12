@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 from binary_ensemble._core import BendlDecoder, BendlStreamSession
 from binary_ensemble._core import BendlEncoder as _CoreBendlEncoder
@@ -69,13 +69,48 @@ def _atomic_or_out(transform, path, out_file, in_place, suffix=".bendl"):
         transform(path, out_file, False)
 
 
-def _coerce_bytes(payload: Union[bytes, bytearray, memoryview, str]) -> bytes:
-    """Coerce an ``add_asset`` payload to bytes (``str`` is UTF-8 encoded)."""
+def _coerce_asset_payload(payload: Any, content_type: str) -> bytes:
+    """Coerce an ``add_asset`` payload to bytes.
+
+    Accepted forms:
+
+    - ``dict`` / ``list`` — serialized via ``json.dumps`` (requires
+      ``content_type="json"``).
+    - ``str`` — UTF-8 encoded **content** (not a path; pass a ``pathlib.Path``
+      to read a file — this deliberately differs from :meth:`BendlEncoder.add_metadata`,
+      whose payloads are never plain text, so there a ``str`` is a path).
+    - ``bytes`` / ``bytearray`` / ``memoryview`` — used verbatim.
+    - any object with a ``.read()`` method (open files, ``io.BytesIO``) — read,
+      with ``str`` results UTF-8 encoded.
+    - ``os.PathLike`` (e.g. ``pathlib.Path``) — the file at that path is read.
+    """
+    if isinstance(payload, (dict, list)):
+        if content_type != "json":
+            raise ValueError(
+                "dict/list payloads are serialized as JSON and require "
+                f"content_type='json', got {content_type!r}"
+            )
+        return json.dumps(payload).encode("utf-8")
     if isinstance(payload, str):
         return payload.encode("utf-8")
     if isinstance(payload, (bytes, bytearray, memoryview)):
         return bytes(payload)
-    raise TypeError(f"asset payload must be bytes or str, got {type(payload).__name__}")
+    if hasattr(payload, "read"):
+        data = payload.read()
+        if isinstance(data, str):
+            return data.encode("utf-8")
+        if isinstance(data, (bytes, bytearray, memoryview)):
+            return bytes(data)
+        raise TypeError(
+            f"asset payload .read() must return bytes or str, got {type(data).__name__}"
+        )
+    if isinstance(payload, os.PathLike):
+        with open(os.fspath(payload), "rb") as f:
+            return f.read()
+    raise TypeError(
+        "asset payload must be bytes, str, dict/list (JSON), a file-like with "
+        f".read(), or a path, got {type(payload).__name__}"
+    )
 
 
 class BendlEncoder:
@@ -156,19 +191,42 @@ class BendlEncoder:
     def add_asset(
         self,
         name: str,
-        payload: Union[bytes, bytearray, memoryview, str],
+        payload: Any,
         content_type: str,
     ) -> None:
         """Embed a custom asset under ``name``.
 
+        ``payload`` may be bytes-like or a ``str`` (stored as UTF-8 content), a
+        ``dict``/``list`` (serialized as JSON; requires ``content_type="json"``),
+        an open file or other object with ``.read()``, or a ``pathlib.Path``
+        whose file contents are read. A plain ``str`` is always *content*, never
+        a path — pass a ``Path`` to read from disk.
+
         ``content_type`` is ``"json"`` (payload must be valid UTF-8 JSON; the
         decoder will auto-parse it), ``"text"`` (payload must be valid UTF-8),
-        or ``"binary"`` (arbitrary bytes, stored verbatim — e.g. a zipped
-        shapefile or a GeoPackage). Every asset carries a CRC32C integrity
-        checksum, and payloads of 1 KiB or more are xz-compressed on disk by
-        default (transparent on read).
+        ``"binary"`` (arbitrary bytes, stored verbatim — e.g. a zipped
+        shapefile or a GeoPackage), or ``"file"`` (the payload is a ``str`` or
+        ``pathlib.Path`` naming a file whose contents are read and stored as
+        binary). Every asset carries a CRC32C integrity checksum, and payloads
+        of 1 KiB or more are xz-compressed on disk by default (transparent on
+        read).
+
+        ``"file"`` is the one content type under which a plain ``str`` payload
+        is a *path*; to store a typed file (e.g. JSON the decoder should
+        auto-parse), pass a ``pathlib.Path`` with ``content_type="json"``
+        instead.
         """
-        data = _coerce_bytes(payload)
+        if content_type == "file":
+            if not isinstance(payload, (str, os.PathLike)):
+                raise TypeError(
+                    "content_type='file' requires a str or os.PathLike payload, "
+                    f"got {type(payload).__name__}"
+                )
+            with open(os.fspath(payload), "rb") as f:
+                data = f.read()
+            self._enc.add_asset(name, data, "binary")
+            return
+        data = _coerce_asset_payload(payload, content_type)
         if content_type == "json":
             try:
                 json.loads(data.decode("utf-8"))
@@ -185,7 +243,8 @@ class BendlEncoder:
                 ) from exc
         elif content_type != "binary":
             raise ValueError(
-                f"content_type must be 'json', 'text', or 'binary', got {content_type!r}"
+                f"content_type must be 'json', 'text', 'binary', or 'file', "
+                f"got {content_type!r}"
             )
         self._enc.add_asset(name, data, content_type)
 

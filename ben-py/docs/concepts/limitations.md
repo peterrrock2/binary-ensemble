@@ -80,13 +80,16 @@ custom binary assets. The payload is stored verbatim with a CRC32C integrity che
 (xz-compressed on disk when it is 1 KiB or larger, transparently decompressed on read):
 
 ```python
+from pathlib import Path
+
 from binary_ensemble import BendlDecoder, BendlEncoder
 
-# Stand-in for real geometry bytes, e.g. open("tracts.gpkg", "rb").read().
+# Stand-in for a real geometry file, e.g. one produced by geopandas.
 gpkg_bytes = b"GPKG\x00\x01" + bytes(range(256))
+Path("tracts.gpkg").write_bytes(gpkg_bytes)
 
 encoder = BendlEncoder("with_geometry.bendl", overwrite=True)
-encoder.add_asset("tracts.gpkg", gpkg_bytes, content_type="binary")
+encoder.add_asset("tracts.gpkg", Path("tracts.gpkg"), content_type="file")
 encoder.close()
 
 decoder = BendlDecoder("with_geometry.bendl")
