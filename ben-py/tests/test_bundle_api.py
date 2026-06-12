@@ -9,6 +9,7 @@ recovery path.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -607,3 +608,42 @@ def test_remove_asset_guards(tmp_path: Path) -> None:
         enc.remove_asset("missing.txt")
     enc.remove_asset("a.txt")
     assert BendlDecoder(path).asset_names() == []
+
+
+@pytest.mark.skipif(os.name != "posix", reason="needs RLIMIT_FSIZE / SIGXFSZ")
+def test_failed_stream_finalize_poisons_the_encoder(tmp_path: Path) -> None:
+    """A finalize that fails (EFBIG from RLIMIT_FSIZE while flushing the stream tail and
+    directory) must poison the encoder. The failure used to leave the state machine stuck in
+    'streaming': a retried close() silently returned success on an unfinalized bundle, and
+    add_asset advised 'close it before adding assets' — advice that did nothing."""
+    import resource
+    import signal
+
+    path = tmp_path / "limited.bendl"
+    enc = BendlEncoder(path, overwrite=True)
+    s = enc.stream(variant="standard")
+    for _ in range(64):
+        s.write([1, 2, 3, 4] * 64)
+
+    old_limit = resource.getrlimit(resource.RLIMIT_FSIZE)
+    old_handler = signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+    try:
+        # Cap the file just above its current size: the buffered stream tail and the directory
+        # that close() flushes cannot fit, so the finalize fails mid-write.
+        resource.setrlimit(resource.RLIMIT_FSIZE, (path.stat().st_size + 1, old_limit[1]))
+        with pytest.raises(OSError):
+            s.close()
+    finally:
+        resource.setrlimit(resource.RLIMIT_FSIZE, old_limit)
+        signal.signal(signal.SIGXFSZ, old_handler)
+
+    # A retried close keeps reporting the failure instead of claiming success.
+    with pytest.raises(Exception, match="previous stream failed"):
+        s.close()
+    # Encoder-level calls explain the failure accurately.
+    with pytest.raises(Exception, match="previous stream failed"):
+        enc.add_asset("notes.txt", "x", content_type="text")
+    with pytest.raises(Exception, match="previous stream failed"):
+        enc.stream()
+    # And the bundle on disk is, truthfully, unfinalized.
+    assert not BendlDecoder(path).is_complete()

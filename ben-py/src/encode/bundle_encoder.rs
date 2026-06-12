@@ -605,18 +605,40 @@ impl PyBendlStreamSession {
         Ok(())
     }
 
-    /// Finalize the bundle and close the stream. Idempotent.
+    /// Finalize the bundle and close the stream. Idempotent after a clean close.
     ///
     /// You usually do not call this directly; leaving the stream ``with`` block cleanly calls it.
+    /// If the finalize fails (e.g. the disk fills while the directory is written), the encoder is
+    /// poisoned: this and every later call keeps reporting the failure instead of claiming
+    /// success, and the bundle on disk stays unfinalized.
     fn close(&mut self, py: Python<'_>) -> PyResult<()> {
         let Some(writer) = self.writer.take() else {
+            // After a clean close this is an idempotent no-op; after a failed one, keep
+            // reporting the failure rather than letting a retry look like success.
+            if matches!(self.encoder.borrow(py).state, BundleState::Failed) {
+                return Err(state_error(&BundleState::Failed, "close"));
+            }
             return Ok(());
         };
-        let session = writer.finish_into_inner().map_err(map_io_err)?;
-        let bundle = session.finish_into_writer(self.sample_count);
-        bundle.finish().map_err(map_bundle_err)?;
-        self.encoder.borrow_mut(py).mark_finalized();
-        Ok(())
+        let result = (|| -> PyResult<()> {
+            let session = writer.finish_into_inner().map_err(map_io_err)?;
+            let bundle = session.finish_into_writer(self.sample_count);
+            bundle.finish().map_err(map_bundle_err)?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                self.encoder.borrow_mut(py).mark_finalized();
+                Ok(())
+            }
+            Err(e) => {
+                // The writer chain is consumed and the on-disk bundle is unfinalized; poison the
+                // encoder so follow-up calls explain that instead of pretending the stream is
+                // still open.
+                self.encoder.borrow_mut(py).mark_failed();
+                Err(e)
+            }
+        }
     }
 
     fn __enter__(slf: PyRefMut<Self>) -> PyRefMut<Self> {
