@@ -57,10 +57,10 @@ impl<T> SyncData for Cursor<T> {
 }
 
 use super::format::{
-    default_compresses, encode_directory, read_directory, standardized_name_for, AssignmentFormat,
-    BendlDirectoryEntry, BendlFormatError, BendlHeader, KnownAssetKind, ASSET_FLAG_CHECKSUM,
-    ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, DEFAULT_XZ_PRESET, FINALIZED_YES,
-    HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
+    asset_type_for_standardized_name, default_compresses, encode_directory, read_directory,
+    standardized_name_for, AssignmentFormat, BendlDirectoryEntry, BendlFormatError, BendlHeader,
+    KnownAssetKind, ASSET_FLAG_CHECKSUM, ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM,
+    DEFAULT_XZ_PRESET, FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
 };
 
 /// Options passed alongside each [`BendlWriter::add_asset`] call.
@@ -178,7 +178,9 @@ impl AssetNameRegistry {
     }
 
     /// Validate the canonical-name and uniqueness rules for a candidate asset **without** mutating
-    /// state. A known singleton type must use its standardized name and may appear only once; every
+    /// state. A known singleton type must use its standardized name and may appear only once; a
+    /// standardized name may only be claimed by its owning type (so a custom asset can never
+    /// shadow `metadata.json` and silently vanish from the type-keyed canonical getters); every
     /// asset name must be unique.
     fn check(&self, asset_type: u16, name: &str) -> Result<(), BendlWriteError> {
         if let Some(canonical) = standardized_name_for(asset_type) {
@@ -192,6 +194,11 @@ impl AssetNameRegistry {
             if self.singleton_types.contains(&asset_type) {
                 return Err(BendlWriteError::DuplicateSingletonType(asset_type));
             }
+        } else if let Some(reserved_type) = asset_type_for_standardized_name(name) {
+            return Err(BendlWriteError::ReservedAssetName {
+                name: name.to_string(),
+                reserved_type,
+            });
         }
         if self.names.contains(name) {
             return Err(BendlWriteError::DuplicateName(name.to_string()));
@@ -539,6 +546,20 @@ pub enum BendlWriteError {
     #[error("duplicate asset name: {0:?}")]
     DuplicateName(String),
 
+    /// A custom asset tried to claim a standardized singleton name. Readers look canonical
+    /// assets up by type, so a custom asset under a standardized name would be invisible to
+    /// them while still occupying the name.
+    #[error(
+        "asset name {name:?} is reserved for asset type {reserved_type}; write it with the \
+         typed add (add_metadata / add_graph / the known-asset writer API) instead"
+    )]
+    ReservedAssetName {
+        /// The standardized name that was claimed.
+        name: String,
+        /// The singleton asset type that owns the name.
+        reserved_type: u16,
+    },
+
     /// A removal named an asset that does not exist in the bundle's directory.
     #[error("no asset named {0:?} in bundle")]
     UnknownAssetName(String),
@@ -690,7 +711,8 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
     /// dead space until the next whole-bundle rewrite (e.g. a recompression) compacts them.
     /// Readers navigate solely via directory offsets, so the gap is invisible to them. The name
     /// (and any singleton-type claim) becomes reusable by a subsequent add in the same session,
-    /// which makes remove-then-add the way to replace an asset's payload.
+    /// which makes remove-then-add the way to replace an asset's payload (for canonical assets,
+    /// re-add through the typed APIs — a custom asset under a standardized name is refused).
     ///
     /// Removal targets *committed* entries only; it does not touch assets enqueued with
     /// [`Self::add_asset`] but not yet committed.

@@ -111,6 +111,17 @@ pub fn standardized_name_for(asset_type: u16) -> Option<&'static str> {
     }
 }
 
+/// Return the singleton asset type that owns `name`, or `None` if `name` is not one of the
+/// standardized names. The inverse of [`standardized_name_for`].
+pub fn asset_type_for_standardized_name(name: &str) -> Option<u16> {
+    match name {
+        STANDARDIZED_NAME_METADATA => Some(ASSET_TYPE_METADATA),
+        STANDARDIZED_NAME_GRAPH => Some(ASSET_TYPE_GRAPH),
+        STANDARDIZED_NAME_NODE_PERMUTATION_MAP => Some(ASSET_TYPE_NODE_PERMUTATION_MAP),
+        _ => None,
+    }
+}
+
 /// One of the known singleton asset types reserved by the bundle format.
 ///
 /// Each variant carries a fixed `asset_type` integer and a fixed standardized name. Custom assets

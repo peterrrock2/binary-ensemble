@@ -211,7 +211,8 @@ impl PyBendlEncoder {
     /// :func:`binary_ensemble.bundle.compress_stream` or
     /// :func:`binary_ensemble.bundle.relabel_bundle`) compacts them. The name (and any
     /// singleton-type claim, e.g. ``metadata.json``) becomes free again, so remove-then-add is
-    /// the way to replace an asset's payload.
+    /// the way to replace an asset's payload (for canonical assets, re-add through the typed
+    /// methods — a custom asset under a standardized name is refused).
     ///
     /// Args:
     ///     name (str): The asset's name, as listed by

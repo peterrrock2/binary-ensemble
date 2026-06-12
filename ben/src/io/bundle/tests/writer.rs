@@ -887,23 +887,27 @@ fn append_does_not_disturb_front_loaded_asset_bytes() {
 }
 
 #[test]
-fn writer_accepts_custom_asset_with_canonical_name_but_non_canonical_type() {
-    // A custom asset named "graph.json" is not a singleton because the singleton uniqueness check
-    // keys off asset_type, not name. Adding a real GRAPH singleton after it must then fail on
-    // DuplicateName.
+fn writer_rejects_custom_asset_claiming_canonical_name() {
+    // Readers look canonical assets up by type, so a custom asset stored under a standardized
+    // name would be invisible to read_graph()/read_metadata() while still occupying the name —
+    // the silent failure mode of the remove-then-add replace flow. The writer refuses instead,
+    // and the refusal reserves nothing: the real typed asset can still be added.
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    writer
+    let err = writer
         .add_asset(
             ASSET_TYPE_CUSTOM,
             "graph.json",
             b"custom graph-ish bytes",
             AddAssetOptions::defaults(),
         )
-        .unwrap();
-    let err = writer
-        .add_json_asset(ASSET_TYPE_GRAPH, "graph.json", b"{}")
         .unwrap_err();
-    assert!(matches!(err, BendlWriteError::DuplicateName(ref n) if n == "graph.json"));
+    assert!(
+        matches!(err, BendlWriteError::ReservedAssetName { ref name, .. } if name == "graph.json"),
+        "expected ReservedAssetName, got {err:?}"
+    );
+    writer
+        .add_json_asset(ASSET_TYPE_GRAPH, "graph.json", b"{}")
+        .unwrap();
 }
 
 #[test]
@@ -2037,32 +2041,31 @@ fn writer_failed_asset_write_does_not_poison_registry() {
 }
 
 #[test]
-fn writer_duplicate_name_after_singleton_check_leaves_writer_usable() {
-    // A custom asset can claim the standardized name of a known singleton type. A later attempt to
-    // add the actual singleton must fail cleanly during validation, without reserving any
-    // singleton state or making the writer unusable for unrelated additions.
+fn writer_reserved_name_rejection_leaves_writer_usable() {
+    // A failed reserved-name claim must reserve nothing — neither the name nor any singleton
+    // state — so the writer remains usable for the real typed asset and unrelated additions.
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    writer
+    let err = writer
         .add_asset(
             ASSET_TYPE_CUSTOM,
             "graph.json",
             b"squatting on the canonical name",
             AddAssetOptions::defaults().raw(),
         )
-        .unwrap();
-    let err = writer
+        .unwrap_err();
+    assert!(
+        matches!(err, BendlWriteError::ReservedAssetName { ref name, .. } if name == "graph.json"),
+        "expected ReservedAssetName, got {err:?}"
+    );
+
+    writer
         .add_asset(
             ASSET_TYPE_GRAPH,
             "graph.json",
             b"the real graph",
             AddAssetOptions::defaults().json().compress(),
         )
-        .unwrap_err();
-    assert!(
-        matches!(err, BendlWriteError::DuplicateName(ref n) if n == "graph.json"),
-        "expected DuplicateName, got {err:?}"
-    );
-
+        .unwrap();
     writer
         .add_asset(
             ASSET_TYPE_METADATA,
@@ -2074,21 +2077,29 @@ fn writer_duplicate_name_after_singleton_check_leaves_writer_usable() {
 }
 
 #[test]
-fn appender_duplicate_name_after_singleton_check_leaves_appender_usable() {
-    // Same validation contract for BendlAppender: a singleton-name collision must fail without
-    // reserving pending singleton state, so the appender remains usable for unrelated additions.
+fn appender_rejections_leave_appender_usable_even_on_foreign_squatter_bundles() {
+    // Our writer refuses custom assets under standardized names, but a *foreign* bundle carrying
+    // one is spec-legal and must still open. Hand-craft one by renaming an equal-length custom
+    // asset in the directory bytes. Adding the real typed GRAPH then collides on the occupied
+    // name; a fresh custom claim of another reserved name is refused outright; and neither
+    // failed validation reserves state, so the appender remains usable.
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     writer
         .add_asset(
             ASSET_TYPE_CUSTOM,
-            "graph.json",
+            "graph.zson",
             b"squatter",
             AddAssetOptions::defaults().raw(),
         )
         .unwrap();
     let session = writer.into_stream_session().unwrap();
     let writer = session.finish_into_writer(0);
-    let bundle = writer.finish().unwrap().into_inner();
+    let mut bundle = writer.finish().unwrap().into_inner();
+    let pos = bundle
+        .windows(b"graph.zson".len())
+        .rposition(|w| w == b"graph.zson")
+        .expect("directory holds the asset name");
+    bundle[pos..pos + b"graph.json".len()].copy_from_slice(b"graph.json");
 
     let mut appender = BendlAppender::open(Cursor::new(bundle)).unwrap();
     let err = appender
@@ -2102,6 +2113,19 @@ fn appender_duplicate_name_after_singleton_check_leaves_appender_usable() {
     assert!(
         matches!(err, BendlWriteError::DuplicateName(ref n) if n == "graph.json"),
         "expected DuplicateName, got {err:?}"
+    );
+    let err = appender
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "node_permutation_map.json",
+            b"not a real map",
+            AddAssetOptions::defaults().raw(),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(err, BendlWriteError::ReservedAssetName { ref name, .. }
+            if name == "node_permutation_map.json"),
+        "expected ReservedAssetName, got {err:?}"
     );
 
     appender

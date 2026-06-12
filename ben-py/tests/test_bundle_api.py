@@ -703,3 +703,28 @@ def test_decoder_refuses_after_append(tmp_path: Path) -> None:
     with pytest.raises(Exception, match="changed on disk"):
         list(dec)
     assert BendlDecoder(path).read_asset_bytes("b.txt") == b"beta"
+
+
+def test_generic_add_asset_refuses_canonical_names(tmp_path: Path) -> None:
+    """A custom asset stored under a standardized name would be invisible to the type-keyed
+    readers (read_metadata() returned None while asset_names() listed 'metadata.json' and
+    verify() passed) — the silent failure mode of doing the replace flow through the generic
+    add_asset. The writer now refuses with guidance, and the typed re-add works."""
+    path = tmp_path / "reserved.bendl"
+    with BendlEncoder(path, overwrite=True) as enc:
+        enc.add_metadata({"seed": 1})
+
+    appender = BendlEncoder.append(path)
+    appender.remove_asset("metadata.json")
+    # The footgun: generic add under the canonical name is refused, pointing at the typed add.
+    with pytest.raises(Exception, match="reserved.*add_metadata"):
+        appender.add_asset("metadata.json", {"seed": 2}, content_type="json")
+    # The refusal reserved nothing; the typed replace works and the reader finds it by type.
+    appender.add_metadata({"seed": 2})
+    assert BendlDecoder(path).read_metadata() == {"seed": 2}
+
+    # Same protection on the create path, for all three canonical names.
+    enc = BendlEncoder(tmp_path / "fresh.bendl", overwrite=True)
+    for name in ("metadata.json", "graph.json", "node_permutation_map.json"):
+        with pytest.raises(Exception, match="reserved"):
+            enc.add_asset(name, b"{}", content_type="json")

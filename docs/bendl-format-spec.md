@@ -178,7 +178,11 @@ Defined asset types:
 - `4 = custom user asset`
 
 Types `1`–`3` are singleton known assets: each may appear at most once and MUST use its standardized
-name. Type `4` is a custom asset with a writer-chosen name, and multiple are allowed.
+name. Type `4` is a custom asset with a writer-chosen name, and multiple are allowed — but writers
+MUST NOT store a custom asset under one of the standardized names: readers locate canonical assets
+by type, so a custom asset squatting on `metadata.json` (or `graph.json`,
+`node_permutation_map.json`) would be invisible to the canonical getters while still occupying the
+name. Readers MAY still accept foreign bundles that violate this.
 
 ### Asset Flags
 

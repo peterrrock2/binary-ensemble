@@ -321,7 +321,10 @@ class BendlEncoder:
         operation, so the asset's payload bytes are actually gone from the file — not just
         unreferenced — and on any error the bundle is left untouched, the asset still present
         for a retry. The name (and any singleton-type claim, e.g. ``metadata.json``) becomes
-        free again, so remove-then-add is the way to replace an asset's payload.
+        free again, so remove-then-add is the way to replace an asset's payload. For the
+        canonical assets, re-add through the typed methods (:meth:`add_metadata`,
+        :meth:`add_graph`) — a generic :meth:`add_asset` under a standardized name is refused,
+        because the result would be invisible to the type-keyed readers.
 
         Removing appended (post-stream) assets is cheap at any scale: the compaction rebuilds
         only the small post-stream tail and never touches the assignment stream, even when the
