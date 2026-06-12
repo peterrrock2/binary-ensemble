@@ -9,7 +9,9 @@ use crate::io::bundle::format::{
     BENDL_MINOR_VERSION, FINALIZED_NO, FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
     MAX_DIRECTORY_ENTRIES,
 };
-use crate::io::bundle::reader::{validate_directory_entries, BendlReader, BundleValidationError};
+use crate::io::bundle::reader::{
+    validate_directory_entries, validate_entry_extents, BendlReader, BundleValidationError,
+};
 
 /// Stamp a valid CRC32C and `ASSET_FLAG_CHECKSUM` onto a hand-built directory entry whose on-disk
 /// payload bytes are `payload`. Use this in test fixtures so the entry round-trips through the
@@ -426,7 +428,9 @@ fn asset_bytes_errors_with_unexpected_eof_when_payload_len_runs_past_eof() {
     // Strict-EOF contract: a directory entry whose payload_len claims more bytes than the backing
     // file provides must surface as BendlReadError::Io wrapping io::ErrorKind::UnexpectedEof.
     // Returning a short successful read on a corrupt bundle is exactly the silent-corruption
-    // failure mode this contract exists to prevent.
+    // failure mode this contract exists to prevent. (Open itself stays lenient so a truncated
+    // bundle remains inspectable; paths that trust the lengths — append, in-place compaction —
+    // reject via validate_entry_extents instead.)
     let mut bytes = build_basic_finalized_bundle();
     let directory_offset = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
     let entry_start = directory_offset + 4;
@@ -440,6 +444,32 @@ fn asset_bytes_errors_with_unexpected_eof_when_payload_len_runs_past_eof() {
         BendlReadError::Io(io_err) => assert_eq!(io_err.kind(), io::ErrorKind::UnexpectedEof),
         other => panic!("expected BendlReadError::Io(UnexpectedEof), got {other:?}"),
     }
+}
+
+#[test]
+fn validate_entry_extents_accepts_eof_boundary_and_rejects_past_it() {
+    let entry = |offset: u64, len: u64| BendlDirectoryEntry {
+        asset_type: ASSET_TYPE_CUSTOM,
+        asset_flags: 0,
+        name: "a.bin".to_string(),
+        payload_offset: offset,
+        payload_len: len,
+        checksum: None,
+    };
+    // A range ending exactly at EOF is in bounds.
+    validate_entry_extents(&[entry(64, 36)], 100).expect("range ending at EOF is in bounds");
+    // One byte past EOF is rejected.
+    let err = validate_entry_extents(&[entry(64, 37)], 100).unwrap_err();
+    assert!(matches!(
+        err,
+        BundleValidationError::PayloadOutOfBounds { .. }
+    ));
+    // offset + len overflowing u64 is rejected, not wrapped.
+    let err = validate_entry_extents(&[entry(u64::MAX, 2)], 100).unwrap_err();
+    assert!(matches!(
+        err,
+        BundleValidationError::PayloadOutOfBounds { .. }
+    ));
 }
 
 #[test]

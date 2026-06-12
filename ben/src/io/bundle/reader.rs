@@ -517,6 +517,35 @@ fn classify_read_error(err: io::Error, entry: &BendlDirectoryEntry) -> BendlRead
     }
 }
 
+/// Validate that every entry's payload range lies within the backing file.
+///
+/// Read paths stay lenient at open — a truncated bundle remains inspectable, and every byte
+/// access surfaces a strict-EOF error at touch — but paths that *trust* the declared lengths
+/// (the appender, which carries entries into a rewritten directory, and in-place compaction,
+/// which sizes allocations and the new layout from them) must reject out-of-range extents up
+/// front, so a corrupt or adversarial length surfaces as an error instead of an oversized
+/// reservation or a garbage layout.
+pub(crate) fn validate_entry_extents(
+    directory: &[BendlDirectoryEntry],
+    file_len: u64,
+) -> Result<(), BundleValidationError> {
+    for entry in directory {
+        let in_bounds = entry
+            .payload_offset
+            .checked_add(entry.payload_len)
+            .is_some_and(|end| end <= file_len);
+        if !in_bounds {
+            return Err(BundleValidationError::PayloadOutOfBounds {
+                name: entry.name.clone(),
+                payload_offset: entry.payload_offset,
+                payload_len: entry.payload_len,
+                file_len,
+            });
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_directory_entries(
     directory: &[BendlDirectoryEntry],
 ) -> Result<(), BundleValidationError> {
@@ -555,5 +584,21 @@ pub enum BundleValidationError {
         expected: String,
         /// The name that was actually written.
         found: String,
+    },
+
+    /// An entry's payload range extends beyond the end of the file.
+    #[error(
+        "asset {name:?} declares payload bytes {payload_offset}..{payload_offset}+{payload_len} \
+         beyond the file end ({file_len} bytes)"
+    )]
+    PayloadOutOfBounds {
+        /// The asset whose payload range is out of bounds.
+        name: String,
+        /// The payload offset declared in the directory.
+        payload_offset: u64,
+        /// The payload length declared in the directory.
+        payload_len: u64,
+        /// The actual length of the backing file.
+        file_len: u64,
     },
 }

@@ -30,7 +30,7 @@ use super::format::{
     ASSET_FLAG_JSON, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA, ASSET_TYPE_NODE_PERMUTATION_MAP,
     HEADER_SIZE,
 };
-use super::reader::BendlReader;
+use super::reader::{validate_entry_extents, BendlReader};
 use super::writer::{AddAssetOptions, BendlWriteError, BendlWriter};
 
 /// Which compaction strategy [`compact_bundle_in_place`] ended up using.
@@ -186,7 +186,8 @@ fn plan_tail(
         return Ok(None);
     }
 
-    // Read survivors' raw on-disk bytes and lay them out from the stream end.
+    // Read survivors' raw on-disk bytes and lay them out from the stream end. The allocation is
+    // bounded: open-time extent validation guarantees every payload range lies within the file.
     post.sort_by_key(|e| e.payload_offset);
     let mut block = Vec::new();
     let mut new_entries: Vec<BendlDirectoryEntry> = pre.iter().map(|e| (*e).clone()).collect();
@@ -199,7 +200,9 @@ fn plan_tail(
         let mut moved = (*entry).clone();
         moved.payload_offset = offset;
         new_entries.push(moved);
-        offset += entry.payload_len;
+        offset = offset
+            .checked_add(entry.payload_len)
+            .ok_or_else(|| io::Error::other("payload range overflowed"))?;
     }
     let directory_offset = offset;
     let directory_bytes = encode_directory(&new_entries)?;
@@ -210,7 +213,9 @@ fn plan_tail(
         block,
         directory_offset,
         directory_len,
-        file_len: directory_offset + directory_len,
+        file_len: directory_offset
+            .checked_add(directory_len)
+            .ok_or_else(|| io::Error::other("directory range overflowed"))?,
     }))
 }
 
@@ -274,10 +279,19 @@ fn execute_tail(
 pub fn compact_bundle_in_place(path: &Path) -> Result<Compaction, BendlWriteError> {
     // Parse and validate through the reader so malformed bundles are rejected up front.
     let file = File::open(path)?;
+    let file_len = file.metadata()?.len();
     let reader = BendlReader::open(BufReader::new(file)).map_err(BendlWriteError::Format)?;
     if !reader.is_finalized() {
         return Err(BendlWriteError::BundleIncomplete);
     }
+    // Compaction trusts the directory's lengths to size allocations and the rewritten layout
+    // (reader opens stay lenient so truncated bundles remain inspectable), so out-of-range
+    // extents must be rejected before any planning.
+    validate_entry_extents(reader.assets(), file_len).map_err(|e| {
+        BendlWriteError::Format(super::format::BendlFormatError::MalformedDirectory(
+            e.to_string(),
+        ))
+    })?;
     let mut header = *reader.header();
     let entries: Vec<BendlDirectoryEntry> = reader.assets().to_vec();
     drop(reader);

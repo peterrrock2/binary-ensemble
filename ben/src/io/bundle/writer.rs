@@ -619,6 +619,7 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
     /// Returns [`BendlWriteError::BundleIncomplete`] if the header's `finalized` flag is not set —
     /// append is unsafe on unfinalized bundles because the stream region has no authoritative end.
     pub fn open(mut inner: W) -> Result<Self, BendlWriteError> {
+        let file_len = inner.seek(SeekFrom::End(0))?;
         inner.seek(SeekFrom::Start(0))?;
         let header = BendlHeader::read_from(&mut inner).map_err(BendlWriteError::Format)?;
         if !header.is_finalized() {
@@ -638,6 +639,9 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
             ));
         }
         super::reader::validate_directory_entries(&existing_entries).map_err(|e| {
+            BendlWriteError::Format(BendlFormatError::MalformedDirectory(e.to_string()))
+        })?;
+        super::reader::validate_entry_extents(&existing_entries, file_len).map_err(|e| {
             BendlWriteError::Format(BendlFormatError::MalformedDirectory(e.to_string()))
         })?;
 

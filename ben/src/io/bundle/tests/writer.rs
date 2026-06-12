@@ -215,7 +215,7 @@ fn finalized_directory_lives_at_eof() {
 
 /// Build a finalized bundle with a single `metadata.json` asset and a short fake stream, then
 /// return both the bytes and the byte range (offset, len) occupied by the stream region.
-fn build_base_bundle() -> (Vec<u8>, (u64, u64)) {
+pub(super) fn build_base_bundle() -> (Vec<u8>, (u64, u64)) {
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     writer
         .add_json_asset(ASSET_TYPE_METADATA, "metadata.json", b"{\"version\":1}")
@@ -227,6 +227,24 @@ fn build_base_bundle() -> (Vec<u8>, (u64, u64)) {
     let reader = BendlReader::open(Cursor::new(buf.clone())).unwrap();
     let range = (reader.header().stream_offset, reader.header().stream_len);
     (buf, range)
+}
+
+#[test]
+fn appender_open_rejects_entry_with_payload_len_past_eof() {
+    // The appender clones existing entries into the directory it rewrites, so an out-of-bounds
+    // payload range must be rejected at open rather than propagated into a new directory.
+    let (mut bytes, _) = build_base_bundle();
+    let directory_offset = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
+    let payload_len_offset = directory_offset + 4 + 16;
+    bytes[payload_len_offset..payload_len_offset + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+
+    let Err(err) = BendlAppender::open(Cursor::new(bytes)) else {
+        panic!("appender open accepted an out-of-bounds payload range");
+    };
+    assert!(
+        err.to_string().contains("beyond the file end"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
