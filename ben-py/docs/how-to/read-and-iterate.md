@@ -1,6 +1,6 @@
 # Read and iterate an ensemble
 
-Open a `.bendl` bundle with `BendlDecoder` and you get the assignment stream *and* everything
+Open a `.bendl` file with `BendlDecoder` and you get the assignment stream *and* everything
 the bundle carries alongside it.
 
 ## Inspect before you iterate

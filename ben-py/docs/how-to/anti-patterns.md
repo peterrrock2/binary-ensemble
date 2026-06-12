@@ -36,7 +36,7 @@ relabel_bundle("ensemble.bendl", out_file="ensemble-sorted.bendl", sort="mlc")
 ## Using XBEN as the working format
 
 XBEN is for archive and transfer. It is small, but compression is expensive and repeated
-inspection pays decompression startup costs. Work in BEN or a BEN-backed `.bendl` bundle,
+inspection pays decompression startup costs. Work in BEN or a BEN-backed `.bendl` file,
 then recompress once.
 
 ## Shipping a plain stream without its graph
@@ -61,7 +61,7 @@ Plain streams should still use `.ben` and `.xben`.
 
 ## Appending samples to a finalized bundle
 
-Append mode is for assets only. A `.bendl` bundle has one assignment stream. To add more
+Append mode is for assets only. A `.bendl` file has one assignment stream. To add more
 samples, write a new bundle.
 
 ```python

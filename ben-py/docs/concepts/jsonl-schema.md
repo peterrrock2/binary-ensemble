@@ -33,7 +33,7 @@ The codec ignores every field except `assignment`. Fields like `sample`, `score`
 `cut_edges`, or sampler metadata may be useful in the source file, but they are not stored in
 plain `.ben` or `.xben` streams.
 
-If those fields need to travel with the compressed ensemble, use a `.bendl` bundle and store
+If those fields need to travel with the compressed ensemble, use a `.bendl` file and store
 them as metadata or custom assets.
 
 ```python
@@ -41,7 +41,7 @@ from binary_ensemble import BendlEncoder
 
 encoder = BendlEncoder("jsonl-contract.bendl", overwrite=True)
 encoder.add_metadata({"source": "plans.jsonl", "assignment_field": "assignment"})
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
 ```
 
@@ -66,8 +66,8 @@ with open("plans.jsonl") as handle:
         if len(assignment) != expected_length:
             raise ValueError(f"line {line_number}: assignment length changed")
 
-        if not all(isinstance(value, int) and value > 0 for value in assignment):
-            raise ValueError(f"line {line_number}: assignment values must be positive integers")
+        if not all(isinstance(value, int) and 0 <= value <= 65535 for value in assignment):
+            raise ValueError(f"line {line_number}: assignment values must be 16-bit district ids")
 ```
 
 That check does not prove the assignments match the intended graph order. It only verifies

@@ -52,7 +52,7 @@ Use context managers around stream writes so finalization happens at the right t
 from binary_ensemble import BendlEncoder
 
 encoder = BendlEncoder("new.bendl", overwrite=True)
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
 ```
 
@@ -95,7 +95,7 @@ while True:
 
 # Re-encode the salvaged samples into a fresh, finalized bundle.
 encoder = BendlEncoder("recovered.bendl", overwrite=True)
-with encoder.stream("ben") as out:
+with encoder.stream() as out:
     for assignment in recovered:
         out.write(assignment)
 ```
@@ -137,7 +137,7 @@ run.
 ## `read_graph()` returns `None`
 
 The bundle does not contain `graph.json`. Plain `.ben` and `.xben` streams never contain a
-graph, and a `.bendl` bundle only contains one if the writer called `add_graph()`.
+graph, and a `.bendl` file only contains one if the writer called `add_graph()`.
 
 ```python
 from binary_ensemble import BendlDecoder
@@ -157,7 +157,7 @@ graph = nx.convert_node_labels_to_integers(nx.path_graph(4))
 
 encoder = BendlEncoder("with-graph.bendl", overwrite=True)
 encoder.add_graph(nx.adjacency_data(graph), sort=None)
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
 ```
 
@@ -177,12 +177,13 @@ or:
 ```python
 from binary_ensemble import compress_stream, relabel_bundle
 
-relabel_bundle("ensemble.bendl", in_place=True, sort="mlc")
-compress_stream("ensemble.bendl", in_place=True)
+relabel_bundle("ensemble.bendl", sort="mlc")
+compress_stream("ensemble.bendl")
 ```
 
-Passing both `out_file` and `in_place=True`, or passing neither, raises `ValueError`. Relabel
-before recompressing to XBEN; relabeling needs a BEN stream and an embedded graph.
+With no `out_file`, both transforms work in place (a temp file is atomically swapped over the
+original). Relabel before recompressing to XBEN; relabeling needs a BEN stream and an embedded
+graph.
 
 ## XBEN compression is slow
 
@@ -194,7 +195,7 @@ the bundle is ready to share.
 from binary_ensemble import BendlEncoder, compress_stream
 
 encoder = BendlEncoder("to-archive.bendl", overwrite=True)
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
 
 compress_stream("to-archive.bendl", out_file="archive-copy.bendl")

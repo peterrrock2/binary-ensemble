@@ -9,7 +9,7 @@ links from each example.
 from binary_ensemble import BendlEncoder, BendlDecoder
 
 encoder = BendlEncoder("gallery-minimal.bendl", overwrite=True)
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
     stream.write([1, 2, 2, 2])
 
@@ -32,7 +32,7 @@ encoder.add_graph(nx.adjacency_data(graph), sort=None)
 encoder.add_metadata({"seed": 2026, "sampler": "demo"})
 encoder.add_asset("notes.txt", "Toy gallery bundle.", content_type="text")
 
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
 
 decoder = BendlDecoder("gallery-rich.bendl")

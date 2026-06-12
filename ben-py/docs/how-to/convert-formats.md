@@ -70,5 +70,5 @@ replace it. You never specify a variant when decoding — it's detected from the
 ## Working with bundles instead?
 
 These helpers operate on plain streams and JSONL. To recompress the stream *inside* a
-`.bendl` bundle (keeping its graph and metadata), use
+`.bendl` file (keeping its graph and metadata), use
 [`compress_stream`](shrink-for-sharing.md) instead.

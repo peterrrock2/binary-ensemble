@@ -24,7 +24,7 @@ The expected JSONL shape is:
 ```
 
 Only the `assignment` values are encoded into the stream. Store graph data, sampler
-settings, scores, and provenance in a `.bendl` bundle if they need to travel with the file.
+settings, scores, and provenance in a `.bendl` file if they need to travel with the file.
 
 ```{eval-rst}
 .. automodule:: binary_ensemble.codec

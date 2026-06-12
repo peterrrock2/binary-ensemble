@@ -14,7 +14,7 @@ was written against.
 |---|---|
 | Create a new bundle | `BendlEncoder(path, overwrite=True)` |
 | Attach a dual graph | `encoder.add_graph(graph, sort=...)` |
-| Stream assignments while sampling | `with encoder.stream("ben") as stream: ...` |
+| Stream assignments while sampling | `with encoder.stream() as stream: ...` |
 | Read assignments and assets | `BendlDecoder(path)` |
 | Reorder/relabel an existing bundle | `relabel_bundle(...)` |
 | Recompress a bundle to XBEN | `compress_stream(...)` |
@@ -50,7 +50,7 @@ from binary_ensemble import BendlEncoder
 encoder = BendlEncoder("api-demo.bendl", overwrite=True)
 encoder.add_metadata({"sampler": "demo"})
 
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
     stream.write([1, 2, 2, 2])
 ```
@@ -80,7 +80,7 @@ for node in graph.nodes:
 encoder = BendlEncoder("api-graph.bendl", overwrite=True)
 ordered_graph = encoder.add_graph(nx.adjacency_data(graph), sort="key", key="GEOID20")
 
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
 
 assert ordered_graph.number_of_nodes() == 4
@@ -100,7 +100,7 @@ assignments, then close. A bundle can have only one assignment stream.
 from binary_ensemble import BendlEncoder
 
 encoder = BendlEncoder("api-session.bendl", overwrite=True)
-with encoder.stream("ben", variant="twodelta") as stream:
+with encoder.stream(variant="twodelta") as stream:
     for assignment in [[1, 1, 2, 2], [1, 2, 2, 2]]:
         stream.write(assignment)
 ```
@@ -120,6 +120,7 @@ with encoder.stream("ben", variant="twodelta") as stream:
 | `assignment_format()` | `"ben"` or `"xben"` for the embedded stream |
 | `version()` / `is_complete()` | Bundle header inspection |
 | `asset_names()` / `list_assets()` | Asset directory inspection |
+| `verify()` | Check every asset and stream checksum; raises on corruption |
 | `read_graph()` | `networkx.Graph` rebuilt from `graph.json`, or `None` |
 | `read_metadata()` | Parsed `metadata.json`, or `None` |
 | `read_node_permutation_map()` | Parsed permutation map, or `None` |
@@ -159,8 +160,8 @@ relabel_bundle("ensemble.bendl", out_file="api-sorted.bendl", sort="mlc")
 compress_stream("api-sorted.bendl", out_file="api-archive.bendl")
 ```
 
-Both transforms require exactly one output mode: pass `out_file=...` to create a new file or
-`in_place=True` to atomically replace the input.
+Both transforms take an optional `out_file`: pass one to create a new file (`overwrite=True`
+replaces an existing one), or leave it off to atomically replace the input in place.
 
 ```{eval-rst}
 .. autofunction:: binary_ensemble.bundle.compress_stream

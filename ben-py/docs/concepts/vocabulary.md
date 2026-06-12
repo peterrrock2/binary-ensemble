@@ -39,8 +39,8 @@ silent nonsense. This is why bundles embed the graph — so the order travels wi
 
 ## District id
 
-The integer values inside an assignment. The maximum supported district id is **65535**
-(it must fit in 16 bits), which is far beyond any real statewide map.
+The integer values inside an assignment. A district id is any integer from **0** to
+**65535** (it must fit in 16 bits) — far beyond any real statewide map.
 
 ## Sample
 
@@ -78,7 +78,7 @@ Use these terms consistently in docs, examples, and user-facing messages.
 
 | Prefer | Avoid | Reason |
 |---|---|---|
-| `.bendl` bundle | `xben bundle`, `BEN-DL file` | The container is BENDL; the embedded stream may be BEN or XBEN. |
+| `.bendl` file | `xben bundle`, `BEN-DL file` | The container is BENDL; the embedded stream may be BEN or XBEN. |
 | assignment stream | plan stream, map stream | The bytes store assignment vectors, not geometries or rendered maps. |
 | assignment | encoded plan, vector plan | An assignment is the concrete `list[int]` representation of a plan. |
 | sample | step, row | A sample is one decoded assignment in an ensemble. |

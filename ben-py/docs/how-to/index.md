@@ -38,7 +38,7 @@ plans = [[(node + step) % 4 + 1 for node in range(n_nodes)] for step in range(12
 encoder = BendlEncoder("ensemble.bendl", overwrite=True)
 encoder.add_graph(adjacency, sort=None)
 encoder.add_metadata({"sampler": "demo", "seed": 0})
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     for plan in plans:
         stream.write(plan)
 
@@ -61,7 +61,7 @@ encode_ben_to_xben("chain.ben", "chain.xben", overwrite=True)
 :link: end-to-end-workflow
 :link-type: doc
 
-Build a working `.bendl` bundle, inspect it, attach provenance, and archive it with XBEN.
+Build a working `.bendl` file, inspect it, attach provenance, and archive it with XBEN.
 :::
 
 :::{grid-item-card} API cookbook
@@ -89,7 +89,7 @@ Avoid node-order mistakes, repeated bundle extensions, wrong working formats, an
 :link: compress-gerrychain-run
 :link-type: doc
 
-Stream a ReCom chain straight into a self-describing `.bendl` bundle.
+Stream a ReCom chain straight into a self-describing `.bendl` file.
 :::
 
 :::{grid-item-card} Read and iterate an ensemble

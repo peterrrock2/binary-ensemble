@@ -125,7 +125,7 @@ equivalent plans encode identically and compress better. Run it before encoding 
 
 The recommended pipeline for a small, shareable archive is:
 
-1. Build a `.bendl` bundle with a BEN stream while sampling (ideally on an already-reordered graph).
+1. Build a `.bendl` file with a BEN stream while sampling (ideally on an already-reordered graph).
 2. **Relabel and reorder** the bundle to maximize run length and cross-plan repetition.
 3. **Recompress** the bundle's stream to XBEN.
 

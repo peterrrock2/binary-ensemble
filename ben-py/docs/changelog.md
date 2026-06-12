@@ -8,11 +8,15 @@ stability promises for the BEN/XBEN/BENDL formats themselves are covered separat
 
 First stable release of the rewritten Python API.
 
-- **`.bendl` bundles** — `BendlEncoder` / `BendlDecoder` read and write the single-file
+- **`.bendl` files** — `BendlEncoder` / `BendlDecoder` read and write the single-file
   bundle format: an assignment stream plus the dual graph, node permutation map, metadata,
   and custom assets. `compress_stream` recompresses a bundle's stream to XBEN and
   `relabel_bundle` reorders a bundle's graph and rewrites its stream to match, both
   preserving every asset.
+- **Custom assets** — `add_asset` accepts JSON, text, and arbitrary binary payloads (plus a
+  `"file"` content type that reads a path), with CRC32C checksums on every asset,
+  transparent xz compression for payloads of 1 KiB or more, and `BendlDecoder.verify()` to
+  validate a whole bundle's checksums in one call.
 - **Plain streams** — `BenEncoder` / `BenDecoder` write and iterate plain `.ben`/`.xben`
   streams, with frame-skipping subsampling (`subsample_indices`, `subsample_range`,
   `subsample_every`) shared with the bundle decoder.

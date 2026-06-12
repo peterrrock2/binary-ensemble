@@ -25,7 +25,7 @@ encode_jsonl_to_ben("plans.jsonl", "error-reference.ben", overwrite=True)
 ## Wrong reader for the file type
 
 **Symptom:** opening a file raises an `Exception` whose message names the decoder to use —
-for example *"…is a .bendl bundle, not a plain BEN/XBEN stream. Open it with
+for example *"…is a .bendl file, not a plain BEN/XBEN stream. Open it with
 binary_ensemble.bundle.BendlDecoder instead."*
 
 **Cause:** `.bendl`, `.ben`, and `.xben` are different containers. (A missing or unreadable
@@ -75,7 +75,7 @@ graph = nx.convert_node_labels_to_integers(nx.path_graph(4))
 
 encoder = BendlEncoder("error-with-graph.bendl", overwrite=True)
 encoder.add_graph(nx.adjacency_data(graph), sort=None)
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
 ```
 
@@ -84,7 +84,7 @@ with encoder.stream("ben") as stream:
 **Symptom:** `ValueError: relabel_bundle only supports BEN bundles; relabel before
 compressing to XBEN`.
 
-**Cause:** `relabel_bundle()` works on `.bendl` bundles with embedded BEN streams. XBEN is the
+**Cause:** `relabel_bundle()` works on `.bendl` files with embedded BEN streams. XBEN is the
 final archive step.
 
 **Fix:** relabel first, then recompress.
@@ -96,24 +96,26 @@ relabel_bundle("ensemble.bendl", out_file="error-sorted.bendl", sort="mlc")
 compress_stream("error-sorted.bendl", out_file="error-archive.bendl")
 ```
 
-## `content_type` is rejected
+## `content_type` or asset payload is rejected
 
-**Symptom:** `ValueError: content_type must be 'json' or 'text'`, or a `ValueError` about
-invalid UTF-8 / invalid JSON.
+**Symptom:** `ValueError: content_type must be 'json', 'text', 'binary', or 'file'`, a
+`ValueError` about invalid UTF-8 / invalid JSON, or a `TypeError` about the payload type.
 
-**Cause:** `add_asset()` accepts only `content_type="json"` or `content_type="text"` from the
-Python wrapper. JSON payloads must be valid UTF-8 JSON; text payloads must be valid UTF-8.
+**Cause:** `add_asset()` accepts `content_type="json"` (valid UTF-8 JSON; a `dict`/`list`
+payload is serialized for you), `"text"` (valid UTF-8), `"binary"` (arbitrary bytes), or
+`"file"` (a `str`/`Path` naming a file to read in, which requires a path-like payload).
 
-**Fix:** choose the right content type and validate payloads before writing.
+**Fix:** choose the content type that matches the payload.
 
 ```python
 from binary_ensemble import BendlEncoder
 
 encoder = BendlEncoder("error-assets.bendl", overwrite=True)
-encoder.add_asset("valid.json", '{"ok": true}', content_type="json")
+encoder.add_asset("valid.json", {"ok": True}, content_type="json")
 encoder.add_asset("valid.txt", "plain text", content_type="text")
+encoder.add_asset("valid.bin", b"\x00\x01\x02", content_type="binary")
 
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
 ```
 
@@ -152,8 +154,8 @@ of samples in base data`, `range must be 1-based and end >= start`, or `step and
 must be >= 1`.
 
 **Cause:** sample positions are 1-based everywhere, and out-of-range positions raise
-rather than being silently dropped. (An unsorted or duplicated index list does not raise —
-it is sorted and deduplicated with a `UserWarning`.)
+rather than being silently dropped. (Duplicate indices do not raise — they are dropped; an
+*unsorted* list is sorted with a `UserWarning`. An empty index list raises.)
 
 **Fix:** clamp the request to `len(decoder)` first.
 

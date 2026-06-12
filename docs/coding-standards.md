@@ -238,6 +238,20 @@ ______________________________________________________________________
 - **Ship typing metadata:** the package includes `py.typed` and a `_core.pyi` stub; keep the stub in
   sync with the exported surface. Python users import re-exported names from the `binary_ensemble`
   package, not from `_core` directly.
+- **Type the surface precisely, with shared aliases.** Public payload shapes live in
+  `binary_ensemble.types` (`GraphInput`, `StrPath`, `Variant`, `SortMethod`, the asset-payload
+  unions, and the `NodePermutationMap` / `AssetEntry` TypedDicts) and are used by the facades and
+  every `.pyi` stub — no `Any` where the accepted shapes are known. Use modern hints (`X | None`,
+  builtin generics, `collections.abc`); the floor is Python 3.11. Type checking is two-stage —
+  `ty` then `pyright` (`task typecheck-python`, part of `task lint`) — and
+  `tests/typing_assertions.py` pins the surface from the consumer side: `assert_type` for
+  positives, bare `# type: ignore` for calls that must NOT type-check (kept honest by pyright's
+  `reportUnnecessaryTypeIgnoreComment`).
+- **Python-visible docstrings document every argument** (facade `.py` files and the Rust `///`
+  docs alike, Google style): each `Args:` entry carries its type in parentheses — the shared alias
+  name where one exists, e.g. ``graph (GraphInput):`` — with custom-type shapes spelled out in the
+  description. Defaulted parameters are marked ``(<type>, optional)`` and state the default as
+  "Default is ``X``." — or, when ``None`` is meaningful, "Default is ``None`` which ⟨meaning⟩."
 
 ______________________________________________________________________
 

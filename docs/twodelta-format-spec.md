@@ -13,7 +13,7 @@ specification and are only summarized here. TwoDelta differs in that most frames
 against the previous sample rather than independent snapshots, which gives it a different frame
 layout and a different `.xben` body.
 
-The `.bendl` bundle container embeds a BEN/XBEN stream as an opaque payload and is unaffected by the
+The `.bendl` file container embeds a BEN/XBEN stream as an opaque payload and is unaffected by the
 variant; see the BENDL format specification.
 
 ## Design Goals
@@ -277,5 +277,5 @@ existing fixtures are never regenerated in place. See the format-stability polic
 ## Out of Scope
 
 - The Standard and MkvChain variants (independent snapshot frames; BEN32 `.xben` body).
-- The `.bendl` bundle container that embeds a BEN/XBEN stream as an opaque payload.
+- The `.bendl` file container that embeds a BEN/XBEN stream as an opaque payload.
 - LZMA2 framing details; XBEN treats LZMA2 as an opaque outer wrapper around the columnar body.

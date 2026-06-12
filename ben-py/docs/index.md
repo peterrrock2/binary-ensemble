@@ -45,7 +45,7 @@ pip install binary-ensemble
 
 ## A first taste
 
-Write an ensemble into one self-describing `.bendl` bundle, then read it back:
+Write an ensemble into one self-describing `.bendl` file, then read it back:
 
 ```python
 from binary_ensemble import BendlEncoder, BendlDecoder
@@ -54,7 +54,7 @@ plans = [[1, 1, 2, 2], [1, 2, 2, 2], [1, 1, 1, 2]]
 
 # The stream context finalizes the bundle when it closes.
 encoder = BendlEncoder("ensemble.bendl", overwrite=True)
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     for assignment in plans:
         stream.write(assignment)
 
@@ -159,8 +159,8 @@ how-to/error-reference
 :hidden:
 :caption: Tutorials
 
-user/using_ben_py
 user/using_bendl
+user/using_ben_py
 ```
 
 ```{toctree}

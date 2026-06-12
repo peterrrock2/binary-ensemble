@@ -97,6 +97,6 @@ encoder.add_metadata(
         "binary_ensemble": binary_ensemble.__version__,
     }
 )
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
 ```

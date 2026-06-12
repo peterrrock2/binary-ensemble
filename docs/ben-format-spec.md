@@ -11,7 +11,7 @@ The **TwoDelta** variant is a delta encoding with a different frame shape and a 
 layout. It is out of scope here and specified separately.
 
 This specification covers the `.ben` container and the BEN32 body carried inside a `.xben`
-container. It does not cover the `.bendl` bundle container, which embeds a BEN/XBEN stream as an
+container. It does not cover the `.bendl` file container, which embeds a BEN/XBEN stream as an
 opaque payload; see the BENDL format specification for that.
 
 ## Design Goals

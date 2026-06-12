@@ -38,7 +38,7 @@ The resulting plans are wrong, not unreadable.
 
 ## One stream per bundle
 
-A `.bendl` bundle carries one assignment stream. You can append assets after finalization, but
+A `.bendl` file carries one assignment stream. You can append assets after finalization, but
 you cannot append more samples or add a second stream.
 
 ```python
@@ -57,7 +57,7 @@ subsampling; recompress to XBEN once the file is ready to share.
 
 ## Relabel before XBEN
 
-`relabel_bundle()` expects a `.bendl` bundle with an embedded BEN stream and graph. Run it
+`relabel_bundle()` expects a `.bendl` file with an embedded BEN stream and graph. Run it
 before `compress_stream()`.
 
 ```python
@@ -69,9 +69,9 @@ compress_stream("limited-sorted.bendl", out_file="limited-archive.bendl")
 
 ## District ids are integers
 
-Assignments store integer district ids. The practical limit is 16-bit positive district ids,
-which is far above normal statewide redistricting use. Non-integer labels should be mapped to
-integers before encoding.
+Assignments store integer district ids in the range 0–65535 (16-bit), which is far above
+normal statewide redistricting use. Non-integer labels should be mapped to integers before
+encoding; values outside the 16-bit range raise an `OverflowError` at write time.
 
 ## Geospatial data travels as opaque blobs
 

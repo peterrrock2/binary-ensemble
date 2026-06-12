@@ -17,6 +17,8 @@ the CLI split so workflows can move between notebooks, scripts, and shell pipeli
 | Inspect a BENDL bundle | `BendlDecoder(...).list_assets()` | Also exposes graph and metadata helpers |
 | Extract a bundle stream | `BendlDecoder(...).extract_stream(...)` | Copies embedded BEN/XBEN stream bytes |
 | Append bundle assets | `BendlEncoder.append(...)` | Asset appends only; no stream appends |
+| Remove bundle assets | `BendlEncoder.remove_asset(...)` | Compacts automatically, like `bendl remove` |
+| Compact a bundle | automatic | Every Python write path keeps bundles compact; `bendl compact` exists for files from other tools |
 | Relabel/reorder a bundle | `relabel_bundle(...)` | Requires BEN stream plus graph |
 | Recompress bundle stream | `compress_stream(...)` | Embedded BEN stream to embedded XBEN stream |
 | Reorder a graph | `binary_ensemble.graph.reorder(...)` | Same orderings as bundle relabeling |

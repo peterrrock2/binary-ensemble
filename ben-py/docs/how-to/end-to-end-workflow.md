@@ -3,7 +3,7 @@
 This tutorial follows the recommended lifecycle:
 
 1. prepare a graph,
-2. write a `.bendl` bundle with a BEN stream while producing assignments,
+2. write a `.bendl` file with a BEN stream while producing assignments,
 3. inspect and analyze the bundle,
 4. add provenance,
 5. relabel and recompress for sharing.
@@ -41,7 +41,7 @@ encoder.add_metadata({"sampler": "toy-grid", "seed": 2026, "node_order": "GEOID2
 
 node_count = ordered_graph.number_of_nodes()
 
-with encoder.stream("ben", variant="twodelta") as stream:
+with encoder.stream(variant="twodelta") as stream:
     for step in range(20):
         assignment = [(node + step) % 4 + 1 for node in range(node_count)]
         stream.write(assignment)
@@ -106,7 +106,7 @@ graph stored in the bundle.
 ```python
 write_order = list(ordered_graph.nodes)
 
-with encoder.stream("ben", variant="twodelta") as stream:
+with encoder.stream(variant="twodelta") as stream:
     for partition in chain:
         series = partition.assignment.to_series()
         stream.write(series.loc[write_order].astype(int).tolist())

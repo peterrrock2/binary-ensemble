@@ -110,7 +110,7 @@ access is the dominant workload.
 For serious runs:
 
 1. Reorder the graph before or during bundle creation.
-2. Write a `.bendl` bundle with a BEN stream while sampling.
+2. Write a `.bendl` file with a BEN stream while sampling.
 3. Attach metadata, graph, and provenance assets.
 4. Use BEN for quality checks and analysis.
 5. Relabel/reorder the final bundle if needed.

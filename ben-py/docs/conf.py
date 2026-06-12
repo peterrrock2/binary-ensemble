@@ -510,12 +510,8 @@ def _pygments_theme_css():
     from pygments.formatters import HtmlFormatter
 
     menu = [s for group in CODE_THEMES.values() for s in group]
-    dark_defaults = [
-        p["dark_pygments"] for p in PALETTES.values() if p.get("dark_pygments")
-    ]
-    light_defaults = [
-        p["light_pygments"] for p in PALETTES.values() if p.get("light_pygments")
-    ]
+    dark_defaults = [p["dark_pygments"] for p in PALETTES.values() if p.get("dark_pygments")]
+    light_defaults = [p["light_pygments"] for p in PALETTES.values() if p.get("light_pygments")]
 
     # A style name may resolve to a builtin (the string) or a registered custom class.
     def make_formatter(style):
@@ -535,9 +531,7 @@ def _pygments_theme_css():
     # Explicit picks (and any palette default, so it resolves even if absent from the
     # menu) apply in any mode via the order-independent `html body` prefix.
     for style in dict.fromkeys(menu + dark_defaults + light_defaults):
-        blocks.append(
-            rules(make_formatter(style), f'html body[data-code-theme="{style}"]')
-        )
+        blocks.append(rules(make_formatter(style), f'html body[data-code-theme="{style}"]'))
     # "Auto" applies a palette's dark/light default, each scoped to its own mode so the
     # other mode keeps the global Pygments style. The auto-mode (`prefers-color-scheme`)
     # variants mirror Furo's `:not([data-theme=…])` selectors for system readers.
@@ -548,12 +542,8 @@ def _pygments_theme_css():
         blocks.append("@media (prefers-color-scheme: dark){\n" + auto + "\n}")
     for style in dict.fromkeys(light_defaults):
         fmt = make_formatter(style)
-        blocks.append(
-            rules(fmt, f'body[data-theme="light"][data-code-auto-light="{style}"]')
-        )
-        auto = rules(
-            fmt, f'body:not([data-theme="dark"])[data-code-auto-light="{style}"]'
-        )
+        blocks.append(rules(fmt, f'body[data-theme="light"][data-code-auto-light="{style}"]'))
+        auto = rules(fmt, f'body:not([data-theme="dark"])[data-code-auto-light="{style}"]')
         blocks.append("@media (prefers-color-scheme: light){\n" + auto + "\n}")
     return "\n".join(blocks)
 

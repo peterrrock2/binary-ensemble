@@ -6,7 +6,7 @@ listed here is also re-exported from the top-level `binary_ensemble` namespace, 
 `from binary_ensemble.bundle import BendlEncoder` are equivalent.
 
 ```{tip}
-New here? Reach for **{mod}`binary_ensemble.bundle`** first. A `.bendl` bundle keeps the
+New here? Reach for **{mod}`binary_ensemble.bundle`** first. A `.bendl` file keeps the
 assignment stream and its dual graph together in one self-describing file, which is what you
 want the vast majority of the time. The other modules are for plain streams, whole-file
 conversions, and graph preprocessing.

@@ -11,7 +11,7 @@ from binary_ensemble import BendlEncoder
 plans = [[1, 1, 2, 2], [1, 2, 2, 2]]
 
 encoder = BendlEncoder("cookbook-minimal.bendl", overwrite=True)
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     for plan in plans:
         stream.write(plan)
 ```
@@ -24,7 +24,7 @@ from binary_ensemble import BendlEncoder
 encoder = BendlEncoder("cookbook-metadata.bendl", overwrite=True)
 encoder.add_metadata({"sampler": "demo", "seed": 1234})
 
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
 ```
 
@@ -40,7 +40,7 @@ graph = nx.convert_node_labels_to_integers(nx.path_graph(4))
 encoder = BendlEncoder("cookbook-graph.bendl", overwrite=True)
 ordered_graph = encoder.add_graph(nx.adjacency_data(graph), sort="rcm")
 
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
 
 assert ordered_graph.number_of_nodes() == 4
@@ -92,7 +92,7 @@ encoder = BendlEncoder("cookbook-assets.bendl", overwrite=True)
 encoder.add_asset("scores.json", '{"cut_edges": [10, 11]}', content_type="json")
 encoder.add_asset("notes.txt", "Created for cookbook example.", content_type="text")
 
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
 ```
 

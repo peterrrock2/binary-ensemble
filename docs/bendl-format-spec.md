@@ -205,6 +205,14 @@ Each asset payload is raw bytes referenced by the directory table. The bundle do
 per-asset wrapper headers in the payload region because offsets and lengths are already described by
 the directory entries.
 
+The directory is the sole authority on which payloads exist. A bundle MAY contain byte ranges that
+no directory entry (and no header field) references — for example, the payload left behind when a
+writer removes an asset by rewriting the directory without its entry, or a superseded directory
+left behind by an append. Readers MUST locate payloads solely via directory offsets and MUST NOT
+assume payloads are contiguous. Whole-bundle rewrites (a compaction or a recompression) reclaim
+unreferenced ranges; the user-facing removal paths (the `bendl remove` CLI command and the Python
+facade) compact automatically after removing.
+
 Examples of assets:
 
 - graph file

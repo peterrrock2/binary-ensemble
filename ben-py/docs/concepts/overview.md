@@ -57,7 +57,7 @@ BEN comes as three on-disk **containers**, each suited to a different job:
 
 The Python package mirrors the project's CLI tools:
 
-- **{mod}`binary_ensemble.bundle`** — read and write `.bendl` bundles (start here).
+- **{mod}`binary_ensemble.bundle`** — read and write `.bendl` files (start here).
 - **{mod}`binary_ensemble.stream`** — read and write plain `.ben`/`.xben` streams.
 - **{mod}`binary_ensemble.codec`** — convert whole files between JSONL, BEN, and XBEN.
 - **{mod}`binary_ensemble.graph`** — reorder a dual graph before encoding.

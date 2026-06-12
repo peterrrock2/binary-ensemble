@@ -1,6 +1,6 @@
 # Shrink a bundle for sharing
 
-A `.bendl` bundle you build while sampling usually has an embedded BEN stream in the graph's
+A `.bendl` file you build while sampling usually has an embedded BEN stream in the graph's
 original node order — convenient, but not as small as it could be. Before handing it to a
 collaborator or archiving it, two steps get it to its smallest form:
 
@@ -41,16 +41,17 @@ self-describing, since the graph and permutation map travel inside it.
 
 ## In place vs. a new file
 
-Both transforms take **either** `out_file` (write a new bundle) **or** `in_place=True`
-(atomically replace the original). Passing both, or neither, raises:
+Both transforms take an optional `out_file`. Pass one to write a new bundle and leave the
+original untouched (`overwrite=True` replaces an existing `out_file`); leave it off to
+transform the bundle in place:
 
 ```python
-relabel_bundle("ensemble.bendl", in_place=True, sort="key", key="GEOID20")
-compress_stream("ensemble.bendl", in_place=True)
+relabel_bundle("ensemble.bendl", sort="key", key="GEOID20")
+compress_stream("ensemble.bendl")
 ```
 
-`in_place=True` writes to a temporary file and swaps it over the original only on success, so
-an interrupted run won't corrupt your bundle.
+The in-place mode writes to a temporary file and swaps it over the original only on success,
+so an interrupted run won't corrupt your bundle.
 
 ```{tip}
 Reorder *before* compressing. Relabeling and node reordering are what create the long runs and

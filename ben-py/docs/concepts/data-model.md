@@ -19,7 +19,7 @@ node.
 | Rule | Why it matters |
 |---|---|
 | Every assignment in one stream must have the same length. | A stream represents one ensemble over one fixed dual graph. |
-| Values must be positive district ids that fit in 16 bits. | The binary format stores district ids compactly. |
+| Values must be district ids in `0..=65535` (16-bit). | The binary format stores district ids compactly. |
 | The order must match the graph order you intend to use when reading. | BEN cannot infer geographic meaning from the values alone. |
 | Missing nodes are not represented. | Use one entry per graph node, even for islands or zero-population units. |
 
@@ -67,7 +67,7 @@ ordered_graph = encoder.add_graph(adjacency, sort="rcm")
 write_order = list(ordered_graph.nodes)
 assert len(write_order) == 4
 
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
 ```
 
@@ -88,7 +88,7 @@ The whole-file codec helpers expect JSON Lines with one JSON object per line and
 
 Extra fields such as `sample`, scores, or metadata can be present in the input JSONL, but
 only the assignment stream is encoded into `.ben` or `.xben`. If you need graph metadata,
-sampler settings, or scores to travel with the file, put the stream in a `.bendl` bundle and
+sampler settings, or scores to travel with the file, put the stream in a `.bendl` file and
 attach those payloads as assets.
 
 ```python
@@ -99,14 +99,14 @@ encode_jsonl_to_ben("plans.jsonl", "plans.ben", overwrite=True)
 
 ## Bundle assets
 
-A `.bendl` bundle can carry well-known assets and custom assets:
+A `.bendl` file can carry well-known assets and custom assets:
 
 | Asset | Reader helper | Typical payload |
 |---|---|---|
 | `graph.json` | `read_graph()` or `read_json_asset("graph.json")` | NetworkX adjacency JSON |
 | `metadata.json` | `read_metadata()` | Sampler name, seed, date, chain settings |
 | `node_permutation_map.json` | `read_node_permutation_map()` | Reversible old-to-new node order map |
-| Custom JSON/text asset | `read_json_asset()` or `read_asset_bytes()` | Scores, notes, provenance, run manifests |
+| Custom JSON/text/binary asset | `read_json_asset()` or `read_asset_bytes()` | Scores, notes, provenance, run manifests, geometry blobs |
 
 ```python
 from binary_ensemble import BendlDecoder

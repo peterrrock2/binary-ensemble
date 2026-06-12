@@ -7,8 +7,8 @@ frames without unpacking them.
 
 All three methods are available on both `BendlDecoder` (for bundles) and `BenDecoder` (for
 plain streams). Each returns a decoder you iterate. Indices are **1-based**; out-of-range
-indices raise rather than being silently dropped, and an unsorted or duplicated index list
-is sorted and deduplicated (with a warning).
+indices raise rather than being silently dropped, duplicate indices are dropped, and an
+unsorted index list is sorted (with a `UserWarning`).
 
 ```{note}
 How cheap skipping is depends on the stream's [encoding variant](../concepts/variants.md).

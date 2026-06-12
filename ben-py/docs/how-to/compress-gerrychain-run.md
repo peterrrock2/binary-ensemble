@@ -1,7 +1,7 @@
 # Compress a GerryChain run
 
 The most common workflow: run a [GerryChain](https://gerrychain.readthedocs.io) ReCom chain
-and stream every plan straight into a single self-describing `.bendl` bundle, so you never
+and stream every plan straight into a single self-describing `.bendl` file, so you never
 materialize a giant JSONL file.
 
 ```{note}
@@ -71,7 +71,7 @@ encoder.add_metadata(
     }
 )
 
-with encoder.stream("ben", variant="twodelta") as stream:  # twodelta suits ReCom chains
+with encoder.stream(variant="twodelta") as stream:  # twodelta suits ReCom chains
     for partition in chain:
         series = partition.assignment.to_series()
         assignment = series.loc[node_order].astype(int).tolist()
@@ -84,7 +84,7 @@ file. To read it back, see [Read and iterate an ensemble](read-and-iterate.md).
 
 ## Why this is better than reordering later
 
-You *can* write a raw-order `.bendl` bundle with a BEN stream and later call
+You *can* write a raw-order `.bendl` file with a BEN stream and later call
 `relabel_bundle()` to reorder the graph and rewrite the stream. But when you control the
 sampling code, it is cleaner to reorder first:
 

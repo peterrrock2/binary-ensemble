@@ -59,7 +59,7 @@ encoder = BendlEncoder("ordering.bendl", overwrite=True)
 ordered_graph = encoder.add_graph(adjacency, sort="rcm")
 write_order = list(ordered_graph.nodes)
 
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     stream.write([1, 1, 2, 2])
 
 assert len(write_order) == 4
@@ -67,7 +67,7 @@ assert len(write_order) == 4
 
 ## Use an ordering after a bundle already exists
 
-If you already have a `.bendl` bundle with a BEN stream and a graph, use `relabel_bundle()`.
+If you already have a `.bendl` file with a BEN stream and a graph, use `relabel_bundle()`.
 It reorders the graph, rewrites every assignment into that new order, and stores a fresh
 permutation map.
 

@@ -41,7 +41,7 @@ plans — no separate graph file to track down, no chance of pairing the wrong o
 the bundle is the recommended default.
 
 A bundle can wrap *either* a BEN stream (the working form) or an XBEN stream (the compressed
-form). You typically build a `.bendl` bundle with a BEN stream while sampling, then
+form). You typically build a `.bendl` file with a BEN stream while sampling, then
 [recompress it to XBEN](../how-to/shrink-for-sharing.md) for distribution.
 
 ## Choosing a format
@@ -54,7 +54,7 @@ form). You typically build a `.bendl` bundle with a BEN stream while sampling, t
 | Interoperate with the JSONL world | convert with the [codec helpers](../how-to/convert-formats.md) |
 
 ```{tip}
-When in doubt, use a `.bendl` bundle. You only need the plain `.ben`/`.xben` stream classes
+When in doubt, use a `.bendl` file. You only need the plain `.ben`/`.xben` stream classes
 when you specifically don't want the bundle packaging — for example, feeding a raw stream to
 another tool that expects it.
 ```
@@ -121,7 +121,9 @@ the embedded assignment stream, then a directory table at the end:
   CRC32C checksum over the stream bytes.
 - The **directory table** indexes every asset — the dual graph, the node permutation map, the
   metadata, and any custom assets — by offset and length, each with its own CRC32C. A reader can
-  pull out just the graph without scanning the file, and verify it before trusting it.
+  pull out just the graph without scanning the file, and verify it before trusting it
+  (`BendlDecoder.verify()` checks every asset and the stream in one call). Large asset payloads
+  are xz-compressed on disk by the writer and decompressed transparently on read.
 - The **assignment stream** is stored opaquely: the bundle never parses BEN/XBEN internals, it just
   carries the bytes and notes the format. That's what lets you replace the embedded BEN stream
   with an embedded XBEN stream by recompressing only the inner stream.
