@@ -4,9 +4,10 @@ Compaction must be *semantically invisible*: same stream bytes, same decoded ass
 same metadata, same wire format — just no unreferenced byte ranges (left behind by
 directory-only removals and superseded directories). These tests pin both halves: the space
 actually comes back, and nothing else changes. The public facade has no standalone compact —
-every public write path (``remove_asset``, ``compress_stream``, ``relabel_bundle``) keeps
-bundles compact automatically — so the machinery is exercised through ``_core``, which also
-reports which strategy ran (``"none"`` / ``"tail"`` / ``"full"``).
+the facade transforms (``remove_asset``, ``compress_stream``, ``relabel_bundle``) emit
+compact bundles themselves, while appends leave a small superseded directory behind — so the
+machinery is exercised through ``_core``, which also reports which strategy ran
+(``"none"`` / ``"tail"`` / ``"full"``).
 """
 
 from __future__ import annotations
@@ -248,3 +249,38 @@ def test_compact_refuses_corrupt_asset(tmp_path: Path) -> None:
     _core.compact_bundle_in_place(path)
     with pytest.raises(Exception):
         BendlDecoder(path).verify()
+
+
+def test_public_append_leaves_a_superseded_directory(tmp_path: Path) -> None:
+    """Pins the dead-space story the docs tell: an immediate-commit ``add_asset`` supersedes
+    the previous directory (a few dead bytes, reported as ``"tail"``-reclaimable), while the
+    facade transforms emit compact bundles themselves."""
+    path = tmp_path / "appended.bendl"
+    enc = BendlEncoder(path, overwrite=True)
+    with enc.stream() as s:
+        s.write([1, 2, 3])
+    enc.add_asset("notes.txt", "hello", content_type="text")  # commits immediately
+
+    assert _core.compact_bundle_in_place(path) == "tail"
+    assert _core.compact_bundle_in_place(path) == "none"
+
+    dec = BendlDecoder(path)
+    assert dec.read_asset_bytes("notes.txt") == b"hello"
+    assert list(dec) == [[1, 2, 3]]
+    dec.verify()
+
+
+def test_facade_remove_asset_leaves_bundle_fully_compact(tmp_path: Path) -> None:
+    """The facade's remove_asset compacts in place: a follow-up compaction finds nothing."""
+    path = tmp_path / "removed.bendl"
+    enc = BendlEncoder(path, overwrite=True)
+    with enc.stream() as s:
+        s.write([1, 2, 3])
+    enc.add_asset("a.txt", "a", content_type="text")
+    enc.add_asset("b.txt", "b", content_type="text")
+    enc.remove_asset("a.txt")
+
+    assert _core.compact_bundle_in_place(path) == "none"
+    dec = BendlDecoder(path)
+    assert dec.asset_names() == ["b.txt"]
+    dec.verify()

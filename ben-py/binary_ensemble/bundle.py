@@ -336,9 +336,11 @@ class BendlEncoder:
         Removing appended (post-stream) assets is cheap at any scale: the compaction rebuilds
         only the small post-stream tail and never touches the assignment stream, even when the
         stream is tens of gigabytes. Removing a *pre-stream* asset (the graph, or metadata
-        added before streaming) costs one whole-file rewrite instead. For the rare bundle that
-        arrives with dead space from elsewhere (every public write path here leaves bundles
-        compact), the raw ``_core.compact_bundle_in_place`` reclaims it directly, and the raw
+        added before streaming) costs one whole-file rewrite instead. Note that each
+        immediate-commit ``add_asset`` (append mode, or create mode after the stream) leaves
+        the superseded directory behind as a few dead bytes; the compaction here reclaims
+        those too. For a bundle that arrives with dead space from other tooling, the raw
+        ``_core.compact_bundle_in_place`` reclaims it directly, and the raw
         ``_core.BendlEncoder.remove_asset`` drops only the directory entry if you specifically
         need that form.
 

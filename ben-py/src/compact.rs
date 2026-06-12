@@ -27,9 +27,11 @@ fn map_bundle_err(err: BendlWriteError) -> PyErr {
 /// Rewrite the bundle at `in_file` without unreferenced byte ranges, writing the result to
 /// `out_file`.
 ///
-/// Raw surface for the rare bundle that arrives with dead space from other tooling — every
-/// facade write path (``remove_asset``, ``compress_stream``, ``relabel_bundle``) keeps bundles
-/// compact automatically. See also :func:`compact_bundle_in_place`.
+/// Raw surface for a bundle carrying dead space: one that arrives from other tooling, or one
+/// grown by appends (each immediate-commit add supersedes the previous directory, leaving a
+/// few dead bytes). The facade transforms (``remove_asset``, ``compress_stream``,
+/// ``relabel_bundle``) emit compact bundles themselves. See also
+/// :func:`compact_bundle_in_place`.
 ///
 /// Args:
 ///     in_file (StrPath): Path to the source ``.bendl`` bundle (``str`` or ``os.PathLike``).
@@ -73,9 +75,10 @@ pub fn compact_bundle(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> P
 /// rewritten wholesale through a temp file (stream checksum-verified during the copy) and
 /// atomically swapped over `path`.
 ///
-/// Raw surface, also used by :meth:`binary_ensemble.bundle.BendlEncoder.remove_asset` — every
-/// facade write path keeps bundles compact automatically, so this is only needed for bundles
-/// that arrive with dead space from other tooling.
+/// Raw surface, also used by :meth:`binary_ensemble.bundle.BendlEncoder.remove_asset`. The
+/// facade transforms emit compact bundles themselves, so calling this directly is only needed
+/// for a bundle that arrived with dead space from other tooling or accumulated superseded
+/// directories from appends.
 ///
 /// Args:
 ///     path (StrPath): Path to the ``.bendl`` bundle to compact (``str`` or ``os.PathLike``).
