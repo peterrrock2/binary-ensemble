@@ -17,6 +17,17 @@ use std::path::PathBuf;
 /// inspection surface (assets, embedded graph, metadata). This mirrors the ``ben`` vs
 /// ``bendl`` split of the command-line tools.
 ///
+/// Args:
+///     file_path: Path to the input ``.ben`` or ``.xben`` file.
+///     mode: Which reader to use — ``"ben"`` or ``"xben"``. Defaults to ``"ben"``.
+///         Opening an XBEN stream warns about a one-time decompression startup cost.
+///
+/// Raises:
+///     Exception: If ``file_path`` is a ``.bendl`` bundle (use
+///         :class:`~binary_ensemble.bundle.BendlDecoder` instead), or ``mode`` does not
+///         match the file's actual format.
+///     OSError: If the file cannot be opened or its banner is malformed.
+///
 /// Example:
 ///     >>> from binary_ensemble import BenDecoder
 ///     >>> for assignment in BenDecoder("plans.ben"):
@@ -95,8 +106,8 @@ impl PyBenDecoder {
     /// Count the samples in the stream.
     ///
     /// The result is the *expanded* sample count: a frame that repeats five identical
-    /// samples contributes five. The count is computed lazily and cached, so repeated calls
-    /// (and ``len()``) are cheap.
+    /// samples contributes five. The first call walks the stream to count; the result is
+    /// cached, so repeated calls (and ``len()``) are cheap afterwards.
     ///
     /// Returns:
     ///     int: The number of samples in the stream.
@@ -107,14 +118,20 @@ impl PyBenDecoder {
 
     /// Restrict iteration to the samples at the given 1-indexed positions.
     ///
-    /// Selected samples are reached by skipping frames rather than decoding the whole
-    /// stream, so this stays fast on large ensembles.
+    /// Skipped samples are never materialized as Python lists, and where the encoding
+    /// variant allows it (``standard``, ``mkv_chain``) whole frames are skipped without
+    /// being unpacked, so this stays fast on large ensembles.
     ///
     /// Args:
-    ///     indices: The 1-indexed sample numbers to keep.
+    ///     indices: The 1-indexed sample numbers to keep. An unsorted or duplicated list
+    ///         is sorted and deduplicated, with a ``UserWarning``.
     ///
     /// Returns:
     ///     BenDecoder: ``self``, so the call can be chained directly into a ``for`` loop.
+    ///
+    /// Raises:
+    ///     Exception: If any index is ``0`` (indices are 1-based) or greater than the
+    ///         number of samples in the stream.
     ///
     /// Example:
     ///     >>> for plan in BenDecoder("plans.ben").subsample_indices([1, 500, 9999]):
@@ -138,6 +155,10 @@ impl PyBenDecoder {
     /// Returns:
     ///     BenDecoder: ``self``, for chaining into a ``for`` loop.
     ///
+    /// Raises:
+    ///     Exception: If ``start`` is ``0``, ``end`` is less than ``start``, or ``end``
+    ///         is greater than the number of samples in the stream.
+    ///
     /// Example:
     ///     >>> list(BenDecoder("plans.ben").subsample_range(10, 15))
     ///     # samples 10, 11, 12, 13, 14, and 15
@@ -160,6 +181,9 @@ impl PyBenDecoder {
     ///
     /// Returns:
     ///     BenDecoder: ``self``, for chaining into a ``for`` loop.
+    ///
+    /// Raises:
+    ///     Exception: If ``step`` or ``offset`` is ``0`` (both are 1-based).
     ///
     /// Example:
     ///     >>> for plan in BenDecoder("plans.ben").subsample_every(1000):

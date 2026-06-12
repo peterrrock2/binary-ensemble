@@ -155,8 +155,8 @@ def test_exception_in_stream_leaves_bundle_unfinalized(tmp_path: Path) -> None:
 
 def test_add_asset_content_type_validation(tmp_path: Path) -> None:
     enc = BendlEncoder(tmp_path / "v.bendl", overwrite=True)
-    with pytest.raises(ValueError, match="must be 'json' or 'text'"):
-        enc.add_asset("x", b"data", content_type="binary")
+    with pytest.raises(ValueError, match="must be 'json', 'text', or 'binary'"):
+        enc.add_asset("x", b"data", content_type="parquet")
     with pytest.raises(ValueError, match="valid UTF-8 JSON"):
         enc.add_asset("bad.json", "not json", content_type="json")
     with pytest.raises(ValueError, match="valid UTF-8"):
@@ -164,12 +164,39 @@ def test_add_asset_content_type_validation(tmp_path: Path) -> None:
     # Valid forms succeed.
     enc.add_asset("ok.json", '{"a":1}', content_type="json")
     enc.add_asset("ok.txt", "fine", content_type="text")
+    enc.add_asset("ok.bin", b"\xff\xfe\x00\x01", content_type="binary")
     enc.close()
     dec = BendlDecoder(tmp_path / "v.bendl")
     assert dec.read_json_asset("ok.json") == {"a": 1}
     flags = {a["name"]: a["flags"] for a in dec.list_assets()}
     assert "json" in flags["ok.json"]
     assert "json" not in flags["ok.txt"]
+    assert "json" not in flags["ok.bin"]
+
+
+def test_binary_asset_round_trips_arbitrary_bytes(tmp_path: Path) -> None:
+    # A blob that is deliberately not valid UTF-8 and not JSON — the shape of a zipped
+    # shapefile or GeoPackage — must round-trip byte-exactly under CRC protection.
+    blob = bytes(range(256)) * 5
+    enc = BendlEncoder(tmp_path / "blob.bendl", overwrite=True)
+    enc.add_asset("tracts.gpkg", blob, content_type="binary")
+    enc.close()
+
+    dec = BendlDecoder(tmp_path / "blob.bendl")
+    assert dec.read_asset_bytes("tracts.gpkg") == blob
+
+
+def test_large_assets_compress_transparently(tmp_path: Path) -> None:
+    # Payloads at or above the writer's 1 KiB threshold are xz-compressed on disk by default;
+    # the read side decompresses transparently, so round-trips are unaffected.
+    big_json = json.dumps({"scores": list(range(2000))})
+    assert len(big_json) >= 1024
+    enc = BendlEncoder(tmp_path / "big.bendl", overwrite=True)
+    enc.add_asset("scores.json", big_json, content_type="json")
+    enc.close()
+
+    dec = BendlDecoder(tmp_path / "big.bendl")
+    assert dec.read_json_asset("scores.json") == {"scores": list(range(2000))}
 
 
 # ---------------------------------------------------------------------------

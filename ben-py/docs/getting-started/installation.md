@@ -29,6 +29,7 @@ pre-existing JSONL files.
 ```python
 import binary_ensemble
 
+print(binary_ensemble.__version__)
 print(binary_ensemble.__all__)
 ```
 
@@ -51,10 +52,11 @@ maturin develop --release      # builds the extension and installs it editable
 ## Command-line tools
 
 This Python package wraps the same engine as the project's CLI tools (`ben`, `reben`,
-`bendl`, `pcben`). From a checkout, build or install those tools with Cargo:
+`bendl`, `pcben`). Install them with Cargo, either from crates.io or from a checkout:
 
 ```bash
-cargo install --path ben
+cargo install binary-ensemble    # from crates.io
+cargo install --path ben         # from a repository checkout
 ```
 
 The Python API mirrors the CLI's structure — see [The API map](../concepts/api-map.md).

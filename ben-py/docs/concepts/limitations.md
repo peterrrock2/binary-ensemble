@@ -73,8 +73,29 @@ Assignments store integer district ids. The practical limit is 16-bit positive d
 which is far above normal statewide redistricting use. Non-integer labels should be mapped to
 integers before encoding.
 
-## No geospatial geometry
+## Geospatial data travels as opaque blobs
 
-Bundles can store graph JSON and custom text or JSON assets, but they do not embed arbitrary
-geospatial file trees by default. Store geometry paths, hashes, and provenance in metadata, or
-ship the geometry separately when readers need it.
+Bundles can carry geospatial data — a zipped shapefile, a GeoPackage, a GeoJSON file — as
+custom binary assets. The payload is stored verbatim with a CRC32C integrity checksum
+(xz-compressed on disk when it is 1 KiB or larger, transparently decompressed on read):
+
+```python
+from binary_ensemble import BendlDecoder, BendlEncoder
+
+# Stand-in for real geometry bytes, e.g. open("tracts.gpkg", "rb").read().
+gpkg_bytes = b"GPKG\x00\x01" + bytes(range(256))
+
+encoder = BendlEncoder("with_geometry.bendl", overwrite=True)
+encoder.add_asset("tracts.gpkg", gpkg_bytes, content_type="binary")
+encoder.close()
+
+decoder = BendlDecoder("with_geometry.bendl")
+assert decoder.read_asset_bytes("tracts.gpkg") == gpkg_bytes
+```
+
+What the bundle does **not** do is interpret the geometry: there is no spatial indexing, no
+geometry validation, and — most importantly — no enforcement that the geometry's feature order
+matches the dual graph's node order. That correspondence is the caller's responsibility, exactly
+as it is for the graph itself. For large geometry collections that several bundles share, storing
+paths, hashes, and provenance in metadata and shipping the geometry separately is still often the
+better layout — embedding is a convenience for self-contained archives, not a requirement.

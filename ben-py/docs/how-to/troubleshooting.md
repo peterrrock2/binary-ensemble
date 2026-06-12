@@ -65,6 +65,52 @@ with BendlEncoder("assets-only.bendl", overwrite=True) as encoder:
     encoder.add_metadata({"kind": "asset index"})
 ```
 
+### Recovering samples from a crashed run
+
+An unfinalized bundle is not a write-off. The stream bytes that reached disk before the
+crash are still there; only the last frame may be cut off mid-write, and the asset
+directory (written at finalization) is lost. `extract_stream(allow_unfinalized=True)`
+copies the partial stream out, and a salvage loop keeps every sample up to the truncated
+tail:
+
+```python
+from binary_ensemble import BendlDecoder, BenDecoder, BendlEncoder
+
+# allow_unfinalized=True permits extraction even though the stream checksum
+# was never written. (On a finalized bundle the flag is harmless.)
+BendlDecoder("ensemble.bendl").extract_stream(
+    "recovered.ben", overwrite=True, allow_unfinalized=True
+)
+
+# Keep every intact sample; stop at the truncated tail frame, if any.
+recovered = []
+stream = iter(BenDecoder("recovered.ben"))
+while True:
+    try:
+        recovered.append(next(stream))
+    except StopIteration:
+        break          # clean end of stream
+    except Exception:
+        break          # truncated tail frame from the crash
+
+# Re-encode the salvaged samples into a fresh, finalized bundle.
+encoder = BendlEncoder("recovered.bendl", overwrite=True)
+with encoder.stream("ben") as out:
+    for assignment in recovered:
+        out.write(assignment)
+```
+
+Two things to know about what survives a crash:
+
+- **Assets do not.** The bundle's directory is committed at finalization, so
+  `asset_names()` on a crashed bundle is empty even if you called `add_graph()` or
+  `add_metadata()` before streaming. Re-attach the graph and metadata to the recovered
+  bundle from their original sources.
+- **`len()` and iteration on the crashed bundle itself raise** (the truncated tail frame
+  breaks the sample count), which is why the recipe extracts first and salvages from the
+  plain stream. For ensembles too large to buffer in a list, open the output stream first
+  and write each salvaged sample as it is decoded.
+
 ## The assignments decode, but the maps look wrong
 
 This is almost always a node-order problem. Decoding can only recover the integer vectors

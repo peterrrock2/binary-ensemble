@@ -25,10 +25,26 @@ fn standardized_name_lookup() {
 
 #[test]
 fn default_compression_policy() {
-    assert!(default_compresses_by_type(ASSET_TYPE_GRAPH));
-    assert!(!default_compresses_by_type(ASSET_TYPE_METADATA));
-    assert!(!default_compresses_by_type(ASSET_TYPE_NODE_PERMUTATION_MAP));
-    assert!(!default_compresses_by_type(ASSET_TYPE_CUSTOM));
+    // Graphs always compress, regardless of size.
+    assert!(default_compresses(ASSET_TYPE_GRAPH, 0));
+    assert!(default_compresses(ASSET_TYPE_GRAPH, 10));
+
+    // Everything else is size-gated: below the threshold the xz container overhead can exceed
+    // the savings, so small payloads stay raw.
+    for asset_type in [
+        ASSET_TYPE_METADATA,
+        ASSET_TYPE_NODE_PERMUTATION_MAP,
+        ASSET_TYPE_CUSTOM,
+    ] {
+        assert!(!default_compresses(
+            asset_type,
+            DEFAULT_ASSET_COMPRESSION_THRESHOLD - 1
+        ));
+        assert!(default_compresses(
+            asset_type,
+            DEFAULT_ASSET_COMPRESSION_THRESHOLD
+        ));
+    }
 }
 
 #[test]

@@ -4,14 +4,14 @@ This page describes the promises users should rely on at release boundaries.
 
 ## Python package versions
 
-The Python package version is the normal package version installed by `pip`. Use it to record
-which Python bindings wrote or read a bundle.
+The Python package version is the normal package version installed by `pip`, exposed as
+`binary_ensemble.__version__`. Use it to record which Python bindings wrote or read a
+bundle.
 
 ```python
-from importlib import metadata
+import binary_ensemble
 
-version = metadata.version("binary-ensemble")
-print(version)
+print(binary_ensemble.__version__)
 ```
 
 For reproducible runs, store that value in bundle metadata alongside sampler settings, graph

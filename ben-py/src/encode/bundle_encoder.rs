@@ -38,9 +38,11 @@ fn map_io_err(err: io::Error) -> PyErr {
 fn opts_for(content_type: &str) -> PyResult<AddAssetOptions> {
     match content_type {
         "json" => Ok(AddAssetOptions::defaults().json()),
-        "text" => Ok(AddAssetOptions::defaults()),
+        // "text" and "binary" carry the same wire options (raw bytes, default compression
+        // policy); the two names exist so call sites document their payloads honestly.
+        "text" | "binary" => Ok(AddAssetOptions::defaults()),
         other => Err(PyValueError::new_err(format!(
-            "content_type must be 'json' or 'text', got {other:?}"
+            "content_type must be 'json', 'text', or 'binary', got {other:?}"
         ))),
     }
 }
@@ -157,18 +159,25 @@ impl PyBendlEncoder {
 
     /// Add a custom asset (asset type ``CUSTOM``).
     ///
+    /// Payloads are stored verbatim with a CRC32C integrity checksum, so any bytes round-trip —
+    /// including binary blobs such as zipped shapefiles or GeoPackages. Payloads at or above 1
+    /// KiB are xz-compressed on disk by default (transparent on read); already-compressed blobs
+    /// gain little from this but are not harmed by it.
+    ///
     /// Args:
     ///     name: Asset name stored in the bundle directory.
-    ///     payload: UTF-8 text or JSON bytes to store.
-    ///     content_type: Either ``"json"`` or ``"text"``. JSON assets are marked so
-    ///         :meth:`binary_ensemble.bundle.BendlDecoder.read_json_asset` can parse them.
+    ///     payload: The bytes to store.
+    ///     content_type: ``"json"``, ``"text"``, or ``"binary"``. JSON assets are marked so
+    ///         :meth:`binary_ensemble.bundle.BendlDecoder.read_json_asset` can parse them;
+    ///         ``"text"`` and ``"binary"`` store the bytes unmarked.
     ///
     /// Raises:
-    ///     ValueError: If ``content_type`` is not ``"json"`` or ``"text"``.
+    ///     ValueError: If ``content_type`` is not ``"json"``, ``"text"``, or ``"binary"``.
     ///     Exception: If the encoder is closed, failed, or currently streaming.
     ///
     /// Example:
     ///     >>> encoder.add_asset("scores.json", '{"cut_edges": [10]}', content_type="json")
+    ///     >>> encoder.add_asset("tracts.gpkg", gpkg_bytes, content_type="binary")
     #[pyo3(signature = (name, payload, content_type))]
     #[pyo3(text_signature = "(self, name, payload, content_type)")]
     fn add_asset(&mut self, name: &str, payload: Vec<u8>, content_type: &str) -> PyResult<()> {

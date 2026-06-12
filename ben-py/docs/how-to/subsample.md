@@ -1,11 +1,24 @@
 # Subsample a large ensemble
 
 When an ensemble has millions of plans, you often want only a slice — every 1000th plan, a
-contiguous range, or a handful of specific indices. The decoders support this directly, and
-they do it by **skipping** frames rather than decoding everything, so it stays fast.
+contiguous range, or a handful of specific indices. The decoders support this directly: they
+never materialize the samples you skip, and where the stream allows it they skip whole
+frames without unpacking them.
 
 All three methods are available on both `BendlDecoder` (for bundles) and `BenDecoder` (for
-plain streams). Each returns a decoder you iterate.
+plain streams). Each returns a decoder you iterate. Indices are **1-based**; out-of-range
+indices raise rather than being silently dropped, and an unsorted or duplicated index list
+is sorted and deduplicated (with a warning).
+
+```{note}
+How cheap skipping is depends on the stream's [encoding variant](../concepts/variants.md).
+`standard` and `mkv_chain` frames state their byte length up front, so the reader hops
+straight over unwanted samples. `twodelta` — the default — stores most samples as deltas, so
+the reader still has to replay the deltas between snapshots to reconstruct the samples you
+keep; skipped samples are cheaper (they're never built into Python lists) but not free. If
+heavy random access or repeated subsampling is your primary workload, encode with
+`variant="standard"` or `variant="mkv_chain"`.
+```
 
 ## By specific indices
 
@@ -52,8 +65,8 @@ for assignment in BenDecoder("chain.xben", mode="xben").subsample_range(10, 15):
 ```
 
 ```{tip}
-Subsampling a BEN stream is fastest because frames can be skipped without decompressing. An
-XBEN stream pays a one-time startup cost to begin reading, after which skipping is cheap
-again. If you'll subsample an XBEN file repeatedly, extract it to BEN first with
-[`decode_xben_to_ben`](convert-formats.md).
+A BEN stream is the cheapest container to subsample. An XBEN stream pays a one-time
+decompression startup cost to begin reading, after which skipping costs the same as in the
+equivalent BEN stream. If you'll subsample an XBEN file repeatedly, extract it to BEN first
+with [`decode_xben_to_ben`](convert-formats.md).
 ```

@@ -85,6 +85,7 @@ context around the stream. For serious runs, store at least:
 - creation date and operator notes.
 
 ```python
+import binary_ensemble
 from binary_ensemble import BendlEncoder
 
 encoder = BendlEncoder("compatibility.bendl", overwrite=True)
@@ -93,7 +94,7 @@ encoder.add_metadata(
         "sampler": "ReCom",
         "seed": 1234,
         "node_order": "GEOID20",
-        "binary_ensemble": "record the package version here",
+        "binary_ensemble": binary_ensemble.__version__,
     }
 )
 with encoder.stream("ben") as stream:

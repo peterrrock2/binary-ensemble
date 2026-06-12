@@ -106,7 +106,7 @@ with encoder.stream("ben", variant="twodelta") as stream:
 ```
 
 ```{eval-rst}
-.. autoclass:: binary_ensemble._core.BendlStreamSession
+.. autoclass:: binary_ensemble.bundle.BendlStreamSession
    :members:
 ```
 

@@ -724,6 +724,68 @@ fn stress_many_custom_assets_round_trip() {
 }
 
 #[test]
+fn default_compression_is_size_gated_end_to_end() {
+    use crate::io::bundle::format::DEFAULT_ASSET_COMPRESSION_THRESHOLD;
+
+    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+
+    // Small custom asset: stays raw by default (compressing it would grow it).
+    let small = vec![7u8; 16];
+    writer
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "small.bin",
+            &small,
+            AddAssetOptions::defaults(),
+        )
+        .unwrap();
+
+    // Threshold-sized custom asset: compresses by default. Highly repetitive payload so the
+    // on-disk size visibly shrinks.
+    let large = vec![7u8; DEFAULT_ASSET_COMPRESSION_THRESHOLD];
+    writer
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "large.bin",
+            &large,
+            AddAssetOptions::defaults(),
+        )
+        .unwrap();
+
+    // Explicit raw() on a large payload overrides the default.
+    writer
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "large_raw.bin",
+            &large,
+            AddAssetOptions::defaults().raw(),
+        )
+        .unwrap();
+
+    let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
+    let buf = writer.finish().unwrap().into_inner();
+
+    let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+
+    let small_entry = reader.find_asset_by_name("small.bin").cloned().unwrap();
+    assert_eq!(small_entry.asset_flags & ASSET_FLAG_XZ, 0);
+    assert_eq!(reader.asset_bytes(&small_entry).unwrap(), small);
+
+    let large_entry = reader.find_asset_by_name("large.bin").cloned().unwrap();
+    assert_ne!(large_entry.asset_flags & ASSET_FLAG_XZ, 0);
+    assert!(
+        (large_entry.payload_len as usize) < DEFAULT_ASSET_COMPRESSION_THRESHOLD,
+        "compressed on-disk payload should be smaller than the raw payload"
+    );
+    assert_eq!(reader.asset_bytes(&large_entry).unwrap(), large);
+
+    let raw_entry = reader.find_asset_by_name("large_raw.bin").cloned().unwrap();
+    assert_eq!(raw_entry.asset_flags & ASSET_FLAG_XZ, 0);
+    assert_eq!(raw_entry.payload_len as usize, large.len());
+    assert_eq!(reader.asset_bytes(&raw_entry).unwrap(), large);
+}
+
+#[test]
 fn append_empty_commit_is_noop() {
     let (bundle, _) = build_base_bundle();
     let bundle_before = bundle.clone();

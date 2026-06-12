@@ -30,10 +30,10 @@ use thiserror::Error;
 use xz2::write::XzEncoder;
 
 use super::format::{
-    default_compresses_by_type, encode_directory, read_directory, standardized_name_for,
-    AssignmentFormat, BendlDirectoryEntry, BendlFormatError, BendlHeader, KnownAssetKind,
-    ASSET_FLAG_CHECKSUM, ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, DEFAULT_XZ_PRESET,
-    FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
+    default_compresses, encode_directory, read_directory, standardized_name_for, AssignmentFormat,
+    BendlDirectoryEntry, BendlFormatError, BendlHeader, KnownAssetKind, ASSET_FLAG_CHECKSUM,
+    ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, DEFAULT_XZ_PRESET, FINALIZED_YES,
+    HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
 };
 
 /// Options passed alongside each [`BendlWriter::add_asset`] call.
@@ -253,7 +253,7 @@ impl<W: Write + Seek> BendlWriter<W> {
 
         let compress = options
             .compress
-            .unwrap_or_else(|| default_compresses_by_type(asset_type));
+            .unwrap_or_else(|| default_compresses(asset_type, payload.len()));
         let encoded = encode_asset_payload(payload.to_vec(), compress, options.is_json)?;
 
         // Write at current file position.
@@ -655,7 +655,7 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
 
         let compress = options
             .compress
-            .unwrap_or_else(|| default_compresses_by_type(asset_type));
+            .unwrap_or_else(|| default_compresses(asset_type, payload.len()));
 
         self.pending.push(PendingAsset {
             asset_type,

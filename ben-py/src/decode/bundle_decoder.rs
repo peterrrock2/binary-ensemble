@@ -27,6 +27,17 @@ use std::path::PathBuf;
 /// points the caller at :class:`~binary_ensemble.stream.BenDecoder`. A finalized assets-only
 /// bundle (one written with no assignment stream) iterates to nothing with ``len() == 0``.
 ///
+/// Args:
+///     file_path: Path to the input ``.bendl`` file. Whether the embedded stream is BEN or
+///         XBEN is read from the bundle header; an XBEN stream warns about a one-time
+///         decompression startup cost.
+///
+/// Raises:
+///     Exception: If ``file_path`` is not a bundle (use
+///         :class:`~binary_ensemble.stream.BenDecoder` for plain streams), or its header
+///         cannot be parsed.
+///     OSError: If the file cannot be opened.
+///
 /// Example:
 ///     >>> from binary_ensemble import BendlDecoder
 ///     >>> dec = BendlDecoder("ensemble.bendl")
@@ -133,8 +144,9 @@ impl PyBendlDecoder {
     /// Count the samples in the embedded stream.
     ///
     /// The result is the *expanded* sample count (a frame repeating five identical samples
-    /// contributes five). It is computed lazily and cached, so repeated calls and ``len()``
-    /// are cheap.
+    /// contributes five). On a finalized bundle the count is read from the bundle header,
+    /// so it never requires scanning the stream; it is cached either way, so repeated
+    /// calls and ``len()`` are cheap.
     ///
     /// Returns:
     ///     int: The number of samples in the bundle's stream.
@@ -145,13 +157,20 @@ impl PyBendlDecoder {
 
     /// Restrict iteration to the samples at the given 1-indexed positions.
     ///
-    /// Selected samples are reached by skipping frames rather than decoding the whole stream.
+    /// Skipped samples are never materialized as Python lists, and where the encoding
+    /// variant allows it (``standard``, ``mkv_chain``) whole frames are skipped without
+    /// being unpacked.
     ///
     /// Args:
-    ///     indices: The 1-indexed sample numbers to keep.
+    ///     indices: The 1-indexed sample numbers to keep. An unsorted or duplicated list
+    ///         is sorted and deduplicated, with a ``UserWarning``.
     ///
     /// Returns:
     ///     BendlDecoder: ``self``, so the call can be chained into a ``for`` loop.
+    ///
+    /// Raises:
+    ///     Exception: If any index is ``0`` (indices are 1-based) or greater than the
+    ///         number of samples in the stream.
     #[pyo3(text_signature = "(self, indices, /)")]
     fn subsample_indices<'py>(
         mut slf: PyRefMut<'py, Self>,
@@ -170,6 +189,10 @@ impl PyBendlDecoder {
     ///
     /// Returns:
     ///     BendlDecoder: ``self``, for chaining into a ``for`` loop.
+    ///
+    /// Raises:
+    ///     Exception: If ``start`` is ``0``, ``end`` is less than ``start``, or ``end``
+    ///         is greater than the number of samples in the stream.
     ///
     /// Example:
     ///     >>> list(BendlDecoder("ensemble.bendl").subsample_range(10, 15))
@@ -193,6 +216,9 @@ impl PyBendlDecoder {
     ///
     /// Returns:
     ///     BendlDecoder: ``self``, for chaining into a ``for`` loop.
+    ///
+    /// Raises:
+    ///     Exception: If ``step`` or ``offset`` is ``0`` (both are 1-based).
     #[pyo3(signature = (step, offset=1))]
     #[pyo3(text_signature = "(self, step, offset=1)")]
     fn subsample_every<'py>(
@@ -326,7 +352,9 @@ impl PyBendlDecoder {
     /// The stored adjacency-format JSON is rebuilt into a live graph via
     /// `networkx.readwrite.json_graph.adjacency_graph`, so its node order matches the order
     /// assignments were written in and it can be handed straight to consumers like GerryChain's
-    /// `Partition`. The raw JSON is still available through `read_json_asset("graph.json")`.
+    /// `Partition`. The result is a :class:`networkx.Graph` — or a
+    /// :class:`networkx.MultiGraph` if the stored adjacency declares itself a multigraph.
+    /// The raw JSON is still available through `read_json_asset("graph.json")`.
     #[pyo3(text_signature = "(self)")]
     fn read_graph<'py>(&mut self, py: Python<'py>) -> PyResult<Option<Py<PyAny>>> {
         let Some(data) = self.read_known_json(py, ASSET_TYPE_GRAPH, "graph.json")? else {

@@ -29,12 +29,18 @@ import os
 import tempfile
 from typing import Any, Optional, Union
 
-from binary_ensemble._core import BendlDecoder
+from binary_ensemble._core import BendlDecoder, BendlStreamSession
 from binary_ensemble._core import BendlEncoder as _CoreBendlEncoder
 from binary_ensemble._core import recompress_bundle as _recompress_bundle
 from binary_ensemble._core import relabel_bundle as _relabel_bundle
 
-__all__ = ["BendlEncoder", "BendlDecoder", "compress_stream", "relabel_bundle"]
+__all__ = [
+    "BendlEncoder",
+    "BendlDecoder",
+    "BendlStreamSession",
+    "compress_stream",
+    "relabel_bundle",
+]
 
 
 def _atomic_or_out(transform, path, out_file, in_place, suffix=".bendl"):
@@ -92,6 +98,15 @@ class BendlEncoder:
     ``stream()``): either ``with BendlEncoder(...) as enc: ...`` or an explicit
     :meth:`close`. In append mode (:meth:`append`), an existing finalized bundle
     is grown with new assets and ``stream()`` is unavailable.
+
+    Args:
+        file_path: Output path for the new bundle. Must not exist unless
+            ``overwrite=True``.
+        overwrite: Replace an existing file at ``file_path``. Defaults to ``False``.
+
+    Raises:
+        OSError: If ``file_path`` exists and ``overwrite`` is ``False``, or it
+            cannot be created.
     """
 
     def __init__(self, file_path, overwrite: bool = False) -> None:
@@ -147,7 +162,11 @@ class BendlEncoder:
         """Embed a custom asset under ``name``.
 
         ``content_type`` is ``"json"`` (payload must be valid UTF-8 JSON; the
-        decoder will auto-parse it) or ``"text"`` (payload must be valid UTF-8).
+        decoder will auto-parse it), ``"text"`` (payload must be valid UTF-8),
+        or ``"binary"`` (arbitrary bytes, stored verbatim — e.g. a zipped
+        shapefile or a GeoPackage). Every asset carries a CRC32C integrity
+        checksum, and payloads of 1 KiB or more are xz-compressed on disk by
+        default (transparent on read).
         """
         data = _coerce_bytes(payload)
         if content_type == "json":
@@ -164,9 +183,9 @@ class BendlEncoder:
                 raise ValueError(
                     f"content_type='text' requires valid UTF-8: {exc}"
                 ) from exc
-        else:
+        elif content_type != "binary":
             raise ValueError(
-                f"content_type must be 'json' or 'text', got {content_type!r}"
+                f"content_type must be 'json', 'text', or 'binary', got {content_type!r}"
             )
         self._enc.add_asset(name, data, content_type)
 

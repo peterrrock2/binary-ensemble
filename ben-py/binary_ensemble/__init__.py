@@ -15,6 +15,8 @@ The public surface mirrors the CLI's ``ben`` vs ``bendl`` split:
 All public symbols are re-exported here for convenience.
 """
 
+from importlib import metadata as _metadata
+
 from binary_ensemble import bundle, codec, graph, stream
 from binary_ensemble.bundle import (
     BendlDecoder,
@@ -31,6 +33,11 @@ from binary_ensemble.codec import (
     encode_jsonl_to_xben,
 )
 from binary_ensemble.stream import BenDecoder, BenEncoder
+
+try:
+    __version__ = _metadata.version("binary-ensemble")
+except _metadata.PackageNotFoundError:  # source tree imported without an installed dist
+    __version__ = "0.0.0+unknown"
 
 __all__ = [
     # Submodules

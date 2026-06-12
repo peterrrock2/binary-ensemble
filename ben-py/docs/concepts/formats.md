@@ -129,7 +129,9 @@ the embedded assignment stream, then a directory table at the end:
 The writer lays the file down in order — a provisional header marked *unfinalized*, then assets,
 then the stream, then the directory — and **patches the header last** to flip it to finalized and
 fill in the final lengths, checksum, and sample count. So if the process dies mid-write, the
-partial file is still recoverable (assignments read to end-of-file) and clearly flagged incomplete;
+partial file is clearly flagged incomplete and the stream bytes that reached disk are still
+salvageable — see
+[Recovering samples from a crashed run](../how-to/troubleshooting.md#recovering-samples-from-a-crashed-run);
 that final header patch is the single commit point.
 
 ## Going deeper

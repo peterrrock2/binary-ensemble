@@ -146,6 +146,7 @@ how-to/examples-gallery
 how-to/anti-patterns
 how-to/compress-gerrychain-run
 how-to/read-and-iterate
+how-to/analyze-with-numpy-pandas
 how-to/subsample
 how-to/convert-formats
 how-to/shrink-for-sharing
@@ -173,6 +174,7 @@ api/index
 :hidden:
 :caption: Project
 
+changelog
 format stability <https://github.com/peterrrock2/binary-ensemble/blob/1.0.0/docs/format-stability.md>
 Rust crate source <https://github.com/peterrrock2/binary-ensemble/tree/1.0.0/ben>
 GitHub <https://github.com/peterrrock2/binary-ensemble>

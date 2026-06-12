@@ -1,9 +1,15 @@
 from typing import Any, Optional, Union
 
 from binary_ensemble._core import BendlDecoder as BendlDecoder
-from binary_ensemble._core import BendlStreamSession
+from binary_ensemble._core import BendlStreamSession as BendlStreamSession
 
-__all__ = ["BendlEncoder", "BendlDecoder", "compress_stream", "relabel_bundle"]
+__all__ = [
+    "BendlEncoder",
+    "BendlDecoder",
+    "BendlStreamSession",
+    "compress_stream",
+    "relabel_bundle",
+]
 
 class BendlEncoder:
     def __init__(self, file_path, overwrite: bool = False) -> None: ...

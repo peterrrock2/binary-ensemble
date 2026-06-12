@@ -99,6 +99,13 @@ Stream a ReCom chain straight into a self-describing `.bendl` bundle.
 Open a bundle, recover its graph and metadata, and walk its assignments.
 :::
 
+:::{grid-item-card} Analyze with NumPy and pandas
+:link: analyze-with-numpy-pandas
+:link-type: doc
+
+Stack an ensemble into an array or DataFrame and score every plan vectorized.
+:::
+
 :::{grid-item-card} Subsample a large ensemble
 :link: subsample
 :link-type: doc

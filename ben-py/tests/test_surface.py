@@ -60,10 +60,12 @@ def test_bundle_module_exports() -> None:
     assert set(bundle.__all__) == {
         "BendlEncoder",
         "BendlDecoder",
+        "BendlStreamSession",
         "compress_stream",
         "relabel_bundle",
     }
     assert bundle.BendlDecoder is _core.BendlDecoder
+    assert bundle.BendlStreamSession is _core.BendlStreamSession
 
 
 def test_codec_module_exports() -> None:

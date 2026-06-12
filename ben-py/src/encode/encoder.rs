@@ -18,6 +18,17 @@ use std::path::PathBuf;
 /// This produces a plain BEN stream with no bundle framing. To produce a self-describing
 /// ``.bendl`` bundle (with an embedded graph, metadata, or other assets) use
 /// :class:`~binary_ensemble.bundle.BendlEncoder` instead.
+///
+/// Args:
+///     file_path: Output path. Must not exist unless ``overwrite=True``.
+///     overwrite: Replace an existing file at ``file_path``. Defaults to ``False``.
+///     variant: BEN encoding variant for the stream — ``"standard"``, ``"mkv_chain"``,
+///         or ``"twodelta"``. ``None`` (the default) means ``"twodelta"``.
+///
+/// Raises:
+///     OSError: If ``file_path`` exists and ``overwrite`` is ``False``, or it cannot be
+///         created.
+///     ValueError: If ``variant`` is not a recognized variant name.
 #[pyclass(module = "binary_ensemble", name = "BenEncoder", unsendable)]
 pub struct PyBenEncoder {
     writer: Option<BenStreamWriter<BufWriter<File>>>,

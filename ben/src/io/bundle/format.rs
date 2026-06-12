@@ -142,10 +142,24 @@ impl KnownAssetKind {
     }
 }
 
-/// Return whether a given asset type should default to xz compression when the writer is not given
-/// an explicit compression option.
-pub fn default_compresses_by_type(asset_type: u16) -> bool {
-    matches!(asset_type, ASSET_TYPE_GRAPH)
+/// Payload size at and above which the writer compresses an asset by default.
+///
+/// Below this, the xz container overhead (~60–90 bytes) can exceed the savings — a ~100-byte
+/// `metadata.json` would *grow* under compression — so small payloads stay raw. At or above it,
+/// the JSON/text payloads bundles typically carry (per-plan scores, node maps, provenance)
+/// compress well for negligible CPU. An explicit [`AddAssetOptions::raw`] or
+/// [`AddAssetOptions::compress`] always overrides the default.
+///
+/// [`AddAssetOptions::raw`]: super::writer::AddAssetOptions::raw
+/// [`AddAssetOptions::compress`]: super::writer::AddAssetOptions::compress
+pub const DEFAULT_ASSET_COMPRESSION_THRESHOLD: usize = 1024;
+
+/// Return whether an asset should default to xz compression when the writer is not given an
+/// explicit compression option: graphs always compress (they are the bundle's bulkiest JSON and
+/// compress extremely well), and any other asset compresses once its payload reaches
+/// [`DEFAULT_ASSET_COMPRESSION_THRESHOLD`].
+pub fn default_compresses(asset_type: u16, payload_len: usize) -> bool {
+    asset_type == ASSET_TYPE_GRAPH || payload_len >= DEFAULT_ASSET_COMPRESSION_THRESHOLD
 }
 
 /// Asset flag bit: the decoded payload is UTF-8 JSON.

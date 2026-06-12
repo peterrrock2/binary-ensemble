@@ -99,6 +99,12 @@ for assignment in BendlDecoder("ensemble.bendl").subsample_every(25):
 BEN streams are cheapest to subsample. XBEN streams pay a decompression startup cost, then
 can still skip through the decoded stream efficiently.
 
+How much work a skipped sample costs depends on the [encoding variant](variants.md):
+`standard` and `mkv_chain` frames are skipped wholesale without unpacking, while `twodelta`
+(the default) replays the deltas between snapshots, so skipped samples are cheaper but not
+free. Choose `variant="standard"` or `variant="mkv_chain"` at encode time if repeated random
+access is the dominant workload.
+
 ## Practical workflow
 
 For serious runs:
