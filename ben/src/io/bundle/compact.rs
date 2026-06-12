@@ -131,9 +131,13 @@ where
 
 /// The post-stream tail to rebuild: surviving appended assets (raw on-disk bytes, so their
 /// storage form and checksums carry over unchanged) followed by the new directory.
-struct PlannedTail {
-    /// Concatenated raw bytes to write at the stream end: survivor payloads then directory.
-    block: Vec<u8>,
+pub(super) struct PlannedTail {
+    /// Concatenated raw survivor payload bytes, in final layout order.
+    payloads: Vec<u8>,
+    /// All surviving entries (pre-stream entries unchanged, survivors at their final offsets).
+    final_entries: Vec<BendlDirectoryEntry>,
+    /// The encoded form of `final_entries`.
+    final_directory_bytes: Vec<u8>,
     /// Final directory offset (stream end + survivor payload bytes).
     directory_offset: u64,
     /// Final directory length.
@@ -147,7 +151,7 @@ struct PlannedTail {
 /// Applicable iff the prefix `[0, stream_end)` is fully live: the pre-stream assets tile
 /// `[HEADER_SIZE, stream_offset)` exactly and every other live payload sits at or beyond the
 /// stream end. Returns `None` when dead bytes exist before the stream end (full rewrite needed).
-fn plan_tail(
+pub(super) fn plan_tail(
     file: &mut File,
     header: &BendlHeader,
     entries: &[BendlDirectoryEntry],
@@ -187,30 +191,32 @@ fn plan_tail(
     }
 
     // Read survivors' raw on-disk bytes and lay them out from the stream end. The allocation is
-    // bounded: open-time extent validation guarantees every payload range lies within the file.
+    // bounded: extent validation before planning guarantees every payload range lies within the
+    // file.
     post.sort_by_key(|e| e.payload_offset);
-    let mut block = Vec::new();
-    let mut new_entries: Vec<BendlDirectoryEntry> = pre.iter().map(|e| (*e).clone()).collect();
+    let mut payloads = Vec::new();
+    let mut final_entries: Vec<BendlDirectoryEntry> = pre.iter().map(|e| (*e).clone()).collect();
     let mut offset = stream_end;
     for entry in &post {
         let mut payload = vec![0u8; entry.payload_len as usize];
         file.seek(SeekFrom::Start(entry.payload_offset))?;
         file.read_exact(&mut payload)?;
-        block.extend_from_slice(&payload);
+        payloads.extend_from_slice(&payload);
         let mut moved = (*entry).clone();
         moved.payload_offset = offset;
-        new_entries.push(moved);
+        final_entries.push(moved);
         offset = offset
             .checked_add(entry.payload_len)
             .ok_or_else(|| io::Error::other("payload range overflowed"))?;
     }
     let directory_offset = offset;
-    let directory_bytes = encode_directory(&new_entries)?;
-    let directory_len = directory_bytes.len() as u64;
-    block.extend_from_slice(&directory_bytes);
+    let final_directory_bytes = encode_directory(&final_entries)?;
+    let directory_len = final_directory_bytes.len() as u64;
 
     Ok(Some(PlannedTail {
-        block,
+        payloads,
+        final_entries,
+        final_directory_bytes,
         directory_offset,
         directory_len,
         file_len: directory_offset
@@ -233,36 +239,83 @@ fn patch_header(
     file.sync_data()
 }
 
-/// Execute a planned tail rewrite crash-safely.
+/// Execute a planned tail rewrite crash-safely: stage at EOF, adopt, rewrite at the final home,
+/// adopt, truncate.
 ///
-/// Phase 1 appends the new tail block (survivor payloads + directory) at the current EOF and
-/// patches the header to the appended directory — pure append, so a crash anywhere leaves either
-/// the old or the appended directory authoritative over intact bytes. Phase 2 writes the same
-/// block at the stream end and patches the header again; every byte it touches is dead under the
-/// phase-1 state (the block is never larger than the dead region, which contains the survivors'
-/// old payloads plus at least one superseded directory of equal entry count). The trailing
-/// truncate runs last.
+/// The invariant both phases preserve is that the authoritative directory only ever references
+/// bytes that have already been written and synced. Re-running compaction from any intermediate
+/// state converges losslessly, because each state's directory points at intact payload copies.
 fn execute_tail(
     file: &mut File,
     header: &mut BendlHeader,
     plan: &PlannedTail,
 ) -> Result<(), BendlWriteError> {
-    let block_start = plan.directory_offset - (plan.block.len() as u64 - plan.directory_len);
+    stage_tail(file, header, plan)?;
+    finalize_tail(file, header, plan)
+}
 
-    // Phase 1: relocate the tail to the end of the file (append-only), then adopt it.
+/// Phase 1: append the survivor payloads and a *staged* directory — one whose entries point at
+/// those appended copies — at the current EOF, then patch the header to adopt it.
+///
+/// Every write is append-only and the staged directory references only bytes that already exist
+/// (the live prefix plus the appended copies), so a crash anywhere up to and including the header
+/// patch leaves an intact bundle: either the old directory or the fully self-consistent staged
+/// one is authoritative.
+pub(super) fn stage_tail(
+    file: &mut File,
+    header: &mut BendlHeader,
+    plan: &PlannedTail,
+) -> Result<(), BendlWriteError> {
+    let payloads_len = plan.payloads.len() as u64;
+    let block_start = plan.directory_offset - payloads_len;
+
     let eof = file.seek(SeekFrom::End(0))?;
     debug_assert!(
         plan.file_len <= eof,
         "tail block must fit in the dead region"
     );
-    file.write_all(&plan.block)?;
-    file.sync_data()?;
-    let staged_dir_offset = eof + (plan.directory_offset - block_start);
-    patch_header(file, header, staged_dir_offset, plan.directory_len)?;
+    let staged_entries: Vec<BendlDirectoryEntry> = plan
+        .final_entries
+        .iter()
+        .map(|entry| {
+            let mut staged = entry.clone();
+            if staged.payload_offset >= block_start {
+                staged.payload_offset = eof + (staged.payload_offset - block_start);
+            }
+            staged
+        })
+        .collect();
+    let staged_directory_bytes = encode_directory(&staged_entries)?;
+    debug_assert_eq!(
+        staged_directory_bytes.len() as u64,
+        plan.directory_len,
+        "staged and final directories must encode to the same length"
+    );
 
-    // Phase 2: write the block at its final home (every touched byte is dead), adopt, truncate.
+    file.write_all(&plan.payloads)?;
+    file.write_all(&staged_directory_bytes)?;
+    file.sync_data()?;
+    patch_header(file, header, eof + payloads_len, plan.directory_len)
+        .map_err(BendlWriteError::Io)
+}
+
+/// Phase 2: write the payloads and the final directory at the stream end, patch the header to
+/// the final directory, and truncate the staged tail away.
+///
+/// Every byte this touches is dead under the staged state: the staged directory references only
+/// the live prefix (which ends at the stream end) and the staged copies at or beyond the old EOF,
+/// and the final tail never extends past the old EOF. The truncate runs only after the final
+/// header patch is synced.
+fn finalize_tail(
+    file: &mut File,
+    header: &mut BendlHeader,
+    plan: &PlannedTail,
+) -> Result<(), BendlWriteError> {
+    let block_start = plan.directory_offset - plan.payloads.len() as u64;
+
     file.seek(SeekFrom::Start(block_start))?;
-    file.write_all(&plan.block)?;
+    file.write_all(&plan.payloads)?;
+    file.write_all(&plan.final_directory_bytes)?;
     file.sync_data()?;
     patch_header(file, header, plan.directory_offset, plan.directory_len)?;
     file.set_len(plan.file_len)?;
