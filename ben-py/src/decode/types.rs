@@ -60,6 +60,8 @@ pub(super) enum StreamSource {
     },
     Bundle {
         path: PathBuf,
+        /// Identity of the file the decoder opened; reopens by path refuse if it changed.
+        identity: super::helpers::FileIdentity,
         stream_offset: u64,
         stream_len: u64,
         /// Authoritative sample count from a finalized bundle header, or `None` when the bundle is

@@ -12,6 +12,62 @@ use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 
+/// On-disk identity of a bundle file, captured when a decoder opens it.
+///
+/// In-place transforms (`remove_asset`, `compress_stream`, `relabel_bundle`) swap a rewritten
+/// file over the path, and appends rewrite the directory in place. A decoder built before
+/// either would silently serve a mix of old bytes (through its held handle) and new bytes
+/// (through path reopens for iteration) — so every IO entry point compares the file's current
+/// identity against this snapshot and refuses with a clear error when they diverge.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct FileIdentity {
+    len: u64,
+    modified: Option<std::time::SystemTime>,
+    #[cfg(unix)]
+    dev: u64,
+    #[cfg(unix)]
+    ino: u64,
+}
+
+impl FileIdentity {
+    fn from_metadata(meta: &std::fs::Metadata) -> Self {
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt;
+        FileIdentity {
+            len: meta.len(),
+            modified: meta.modified().ok(),
+            #[cfg(unix)]
+            dev: meta.dev(),
+            #[cfg(unix)]
+            ino: meta.ino(),
+        }
+    }
+
+    /// Capture the identity of an already-open handle (the exact inode the decoder reads).
+    pub(crate) fn of_file(file: &File) -> io::Result<Self> {
+        Ok(Self::from_metadata(&file.metadata()?))
+    }
+
+    /// Error unless the file currently at `path` is still the captured one, unmodified.
+    pub(crate) fn ensure_unchanged(&self, path: &Path, op: &str) -> PyResult<()> {
+        let meta = std::fs::metadata(path).map_err(|e| {
+            PyIOError::new_err(format!(
+                "cannot {op}: failed to stat {}: {e}",
+                path.display()
+            ))
+        })?;
+        if Self::from_metadata(&meta) != *self {
+            return Err(PyException::new_err(format!(
+                "cannot {op}: the bundle at {} changed on disk after this decoder opened it \
+                 (in-place transforms swap in a rewritten file; appends rewrite the directory). \
+                 Open a fresh BendlDecoder to read the current file.",
+                path.display()
+            )));
+        }
+        Ok(())
+    }
+}
+
 pub(super) fn warn_xben_startup(py: Python<'_>) -> PyResult<()> {
     let warnings = py.import("warnings")?;
     let kwargs = PyDict::new(py);
@@ -58,11 +114,16 @@ where
 }
 
 /// Create a `Read`-only handle bounded to a bundle's assignment stream region.
+///
+/// The cached `stream_offset`/`stream_len` are only meaningful for the file the decoder
+/// originally opened, so the reopen refuses when the file at `path` has changed identity.
 fn open_bundle_stream_reader(
     path: &Path,
+    identity: &FileIdentity,
     stream_offset: u64,
     stream_len: u64,
 ) -> PyResult<io::Take<BufReader<File>>> {
+    identity.ensure_unchanged(path, "iterate the bundle stream")?;
     let file = File::open(path)
         .map_err(|e| PyIOError::new_err(format!("Failed to open {}: {e}", path.display())))?;
     let mut buf = BufReader::new(file);
@@ -84,11 +145,12 @@ pub(super) fn build_iter(source: &StreamSource, mode: DecoderMode) -> PyResult<D
         StreamSource::Bundle { empty: true, .. } => Ok(Box::new(std::iter::empty())),
         StreamSource::Bundle {
             path,
+            identity,
             stream_offset,
             stream_len,
             ..
         } => {
-            let reader = open_bundle_stream_reader(path, *stream_offset, *stream_len)?;
+            let reader = open_bundle_stream_reader(path, identity, *stream_offset, *stream_len)?;
             open_stream_reader(reader, mode.wire_format())
         }
     }
@@ -111,11 +173,12 @@ pub(super) fn build_frames_for_subsample(
         }
         StreamSource::Bundle {
             path,
+            identity,
             stream_offset,
             stream_len,
             ..
         } => {
-            let reader = open_bundle_stream_reader(path, *stream_offset, *stream_len)?;
+            let reader = open_bundle_stream_reader(path, identity, *stream_offset, *stream_len)?;
             build_frame_iter_from_reader(reader, format).map_err(|e| {
                 PyException::new_err(format!(
                     "Failed to create frame iterator from bundle {}: {e}",
@@ -146,11 +209,12 @@ pub(super) fn scan_samples(
         }
         StreamSource::Bundle {
             path,
+            identity,
             stream_offset,
             stream_len,
             ..
         } => {
-            let reader = open_bundle_stream_reader(path, *stream_offset, *stream_len)?;
+            let reader = open_bundle_stream_reader(path, identity, *stream_offset, *stream_len)?;
             let iter = build_frame_iter_from_reader(reader, mode.wire_format()).map_err(|e| {
                 PyException::new_err(format!(
                     "Failed to open bundle stream for sample count: {e}"

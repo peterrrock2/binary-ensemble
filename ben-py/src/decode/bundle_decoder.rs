@@ -1,5 +1,5 @@
 use super::cursor::SampleCursor;
-use super::helpers::{detect_is_bundle, warn_xben_startup};
+use super::helpers::{detect_is_bundle, warn_xben_startup, FileIdentity};
 use super::types::{DecoderMode, StreamSource};
 use binary_ensemble::io::bundle::format::{
     ASSET_FLAG_CHECKSUM, ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA,
@@ -22,6 +22,11 @@ use std::path::PathBuf;
 /// :meth:`read_metadata`, :meth:`read_node_permutation_map`) and the generic
 /// :meth:`read_asset_bytes` / :meth:`read_json_asset`. Inspect the directory with
 /// :meth:`asset_names`, :meth:`list_assets`, :meth:`version`, and :meth:`is_complete`.
+///
+/// A decoder is a snapshot of the file it opened: if the bundle changes on disk afterwards
+/// (an in-place transform swaps in a rewritten file, or an append rewrites the directory),
+/// every data-reading call refuses with a clear error rather than mixing old and new bytes —
+/// open a fresh decoder to read the current file.
 ///
 /// This decoder is bundle-only: opening it on a plain ``.ben``/``.xben`` stream raises and
 /// points the caller at :class:`~binary_ensemble.stream.BenDecoder`. A finalized assets-only
@@ -47,6 +52,8 @@ use std::path::PathBuf;
 #[pyclass(module = "binary_ensemble", name = "BendlDecoder", unsendable)]
 pub struct PyBendlDecoder {
     path: PathBuf,
+    /// Identity of the file at open time; every IO entry point refuses if it changed.
+    identity: FileIdentity,
     reader: BendlReader<BufReader<File>>,
     cursor: SampleCursor,
 }
@@ -85,6 +92,9 @@ impl PyBendlDecoder {
         let file = File::open(&file_path).map_err(|e| {
             PyIOError::new_err(format!("Failed to open {}: {e}", file_path.display()))
         })?;
+        let identity = FileIdentity::of_file(&file).map_err(|e| {
+            PyIOError::new_err(format!("Failed to stat {}: {e}", file_path.display()))
+        })?;
         let mut reader = BendlReader::open(BufReader::new(file)).map_err(|e| {
             PyException::new_err(format!(
                 "Failed to parse bundle header in {}: {e}",
@@ -111,6 +121,7 @@ impl PyBendlDecoder {
         let empty = reader.is_finalized() && stream_len == 0;
         let source = StreamSource::Bundle {
             path: file_path.clone(),
+            identity,
             stream_offset,
             stream_len,
             header_sample_count,
@@ -119,6 +130,7 @@ impl PyBendlDecoder {
 
         Ok(Self {
             path: file_path,
+            identity,
             reader,
             cursor: SampleCursor::new(source, mode),
         })
@@ -371,6 +383,7 @@ impl PyBendlDecoder {
     ///     >>> dec.verify()  # raises on any corruption
     #[pyo3(text_signature = "(self)")]
     fn verify(&mut self) -> PyResult<()> {
+        self.identity.ensure_unchanged(&self.path, "verify the bundle")?;
         self.reader
             .verify_all_asset_checksums()
             .map_err(|e| PyException::new_err(format!("Bundle asset verification failed: {e}")))?;
@@ -392,6 +405,7 @@ impl PyBendlDecoder {
     ///     KeyError: If no asset with that name exists in the bundle.
     #[pyo3(text_signature = "(self, name, /)")]
     fn read_asset_bytes(&mut self, name: &str) -> PyResult<Vec<u8>> {
+        self.identity.ensure_unchanged(&self.path, "read an asset")?;
         let entry = self
             .reader
             .find_asset_by_name(name)
@@ -477,6 +491,7 @@ impl PyBendlDecoder {
         overwrite: bool,
         allow_unfinalized: bool,
     ) -> PyResult<()> {
+        self.identity.ensure_unchanged(&self.path, "extract the stream")?;
         if out_path.exists() && !overwrite {
             return Err(PyIOError::new_err(format!(
                 "Output file {} already exists (use overwrite=True to replace).",

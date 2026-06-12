@@ -73,6 +73,10 @@ class BendlDecoder:
     :class:`BenDecoder`. Iteration walks the embedded assignment stream; the bundle directory and
     asset payloads are exposed through the inspection methods. A finalized assets-only bundle
     (empty stream) iterates to nothing with ``len == 0``.
+
+    A decoder is a snapshot of the file it opened: if the bundle changes on disk afterwards
+    (an in-place transform swaps in a rewritten file, or an append rewrites the directory),
+    data-reading calls refuse with a clear error — open a fresh decoder for the current file.
     """
 
     def __init__(self, file_path: StrPath) -> None: ...

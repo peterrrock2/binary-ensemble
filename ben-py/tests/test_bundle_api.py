@@ -647,3 +647,59 @@ def test_failed_stream_finalize_poisons_the_encoder(tmp_path: Path) -> None:
         enc.stream()
     # And the bundle on disk is, truthfully, unfinalized.
     assert not BendlDecoder(path).is_complete()
+
+
+def test_decoder_refuses_file_replaced_under_it(tmp_path: Path) -> None:
+    """A decoder is a snapshot: after an in-place transform swaps a rewritten file over the
+    path, every data read must refuse. The old behavior was split-brain — asset reads and
+    verify() served the OLD file through the held handle (verify passed, read_graph returned
+    the just-replaced graph) while iteration reopened the NEW file at stale offsets — which
+    could silently pair the old graph with relabeled assignments."""
+    from binary_ensemble.bundle import relabel_bundle
+
+    path = tmp_path / "replaced.bendl"
+    enc = BendlEncoder(path, overwrite=True)
+    enc.add_graph(_graph(), sort=None)
+    with enc.stream() as s:
+        s.write([1] * _n())
+        s.write([2] * _n())
+
+    dec = BendlDecoder(path)
+    assert dec.read_graph() is not None  # the snapshot works while the file is unchanged
+    relabel_bundle(path)  # in place: a rewritten file is swapped over the path
+
+    with pytest.raises(Exception, match="changed on disk"):
+        dec.read_graph()
+    with pytest.raises(Exception, match="changed on disk"):
+        dec.verify()
+    with pytest.raises(Exception, match="changed on disk"):
+        list(dec)
+    with pytest.raises(Exception, match="changed on disk"):
+        dec.extract_stream(tmp_path / "out.ben")
+
+    # A fresh decoder reads the current file fine.
+    fresh = BendlDecoder(path)
+    fresh.verify()
+    assert len(list(fresh)) == 2
+
+
+def test_decoder_refuses_after_append(tmp_path: Path) -> None:
+    """Appends rewrite the directory in place; a decoder opened before one holds a stale
+    directory (it would not even list the new asset), so its data reads refuse too."""
+    path = tmp_path / "appended.bendl"
+    enc = BendlEncoder(path, overwrite=True)
+    with enc.stream() as s:
+        s.write([1, 2, 3])
+    enc.add_asset("a.txt", "alpha", content_type="text")
+
+    dec = BendlDecoder(path)
+    assert dec.read_asset_bytes("a.txt") == b"alpha"
+
+    appender = BendlEncoder.append(path)
+    appender.add_asset("b.txt", "beta", content_type="text")
+
+    with pytest.raises(Exception, match="changed on disk"):
+        dec.read_asset_bytes("a.txt")
+    with pytest.raises(Exception, match="changed on disk"):
+        list(dec)
+    assert BendlDecoder(path).read_asset_bytes("b.txt") == b"beta"
