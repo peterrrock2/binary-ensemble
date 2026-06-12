@@ -144,6 +144,9 @@ class BendlEncoder:
     # Drops the directory entry only (payload bytes become dead space until the next
     # whole-bundle rewrite compacts them); frees the name for re-add. KeyError if absent.
     def remove_asset(self, name: str) -> None: ...
+    # Drops the entry and reclaims its bytes as one operation; on error the bundle is left
+    # untouched with the asset still present. The facade's remove_asset calls this.
+    def remove_asset_compacting(self, name: str) -> None: ...
     def add_metadata(self, metadata: MetadataInput) -> None: ...
     # Returns the (possibly reordered) graph as a NetworkX graph, matching
     # BendlDecoder.read_graph. sort defaults to "mlc"; sort="key" sorts by `key`; sort=None

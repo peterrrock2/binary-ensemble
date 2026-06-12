@@ -284,3 +284,41 @@ def test_facade_remove_asset_leaves_bundle_fully_compact(tmp_path: Path) -> None
     dec = BendlDecoder(path)
     assert dec.asset_names() == ["b.txt"]
     dec.verify()
+
+
+def test_facade_remove_asset_failure_leaves_bundle_untouched(tmp_path: Path) -> None:
+    """Removal and compaction commit together: when the rewrite fails mid-way (a corrupt
+    surviving asset caught by verify-on-touch), the bundle is left byte-identical — the asset
+    is still present and a retry still sees it. The removal used to commit its directory drop
+    first, so a failed compaction left the asset already unreachable and a retry raised
+    KeyError."""
+    path = tmp_path / "atomic.bendl"
+    enc = BendlEncoder(path, overwrite=True)
+    enc.add_graph(_graph(), sort=None)
+    with enc.stream() as s:
+        s.write([1] * _n())
+    enc.add_asset("notes.txt", "keep me", content_type="text")
+    _flip_byte_at(path, b"keep me")  # corrupt the surviving post-stream asset
+
+    before = path.read_bytes()
+    # Removing the pre-stream graph forces the full rewrite, which reads every survivor.
+    with pytest.raises(Exception, match="checksum"):
+        enc.remove_asset("graph.json")
+    assert path.read_bytes() == before
+    assert "graph.json" in BendlDecoder(path).asset_names()
+
+
+def test_facade_remove_asset_can_remove_a_corrupt_asset(tmp_path: Path) -> None:
+    """The asset being removed is never read, so removal is the way out of a corrupt-asset
+    situation, not blocked by it."""
+    path = tmp_path / "corrupt-removal.bendl"
+    enc = BendlEncoder(path, overwrite=True)
+    with enc.stream() as s:
+        s.write([1, 2, 3])
+    enc.add_asset("bad.txt", "doomed bytes", content_type="text")
+    _flip_byte_at(path, b"doomed bytes")
+
+    enc.remove_asset("bad.txt")
+    dec = BendlDecoder(path)
+    assert dec.asset_names() == []
+    dec.verify()

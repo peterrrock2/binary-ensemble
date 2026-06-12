@@ -31,7 +31,6 @@ from typing import TYPE_CHECKING, Literal, cast, overload
 
 from binary_ensemble._core import BendlDecoder, BendlStreamSession
 from binary_ensemble._core import BendlEncoder as _CoreBendlEncoder
-from binary_ensemble._core import compact_bundle_in_place as _compact_bundle_in_place
 from binary_ensemble._core import recompress_bundle as _recompress_bundle
 from binary_ensemble._core import relabel_bundle as _relabel_bundle
 from binary_ensemble.types import (
@@ -328,10 +327,11 @@ class BendlEncoder:
         """Remove a named asset from a finalized bundle, reclaiming its bytes.
 
         Available wherever :meth:`add_asset` commits immediately: append mode, or create mode
-        after the stream has closed. The directory entry is dropped and the bundle is then
-        compacted in place, so the asset's payload bytes are actually gone from the file — not
-        just unreferenced. The name (and any singleton-type claim, e.g. ``metadata.json``)
-        becomes free again, so remove-then-add is the way to replace an asset's payload.
+        after the stream has closed. The directory drop and the compaction commit as one
+        operation, so the asset's payload bytes are actually gone from the file — not just
+        unreferenced — and on any error the bundle is left untouched, the asset still present
+        for a retry. The name (and any singleton-type claim, e.g. ``metadata.json``) becomes
+        free again, so remove-then-add is the way to replace an asset's payload.
 
         Removing appended (post-stream) assets is cheap at any scale: the compaction rebuilds
         only the small post-stream tail and never touches the assignment stream, even when the
@@ -353,8 +353,7 @@ class BendlEncoder:
             Exception: If the encoder is in create mode before the stream (just don't add the
                 asset), is currently streaming, or is closed.
         """
-        self._enc.remove_asset(name)
-        _compact_bundle_in_place(self._path)
+        self._enc.remove_asset_compacting(name)
 
     def stream(self, *, variant: Variant = "twodelta") -> BendlStreamSession:
         """Open the single-use assignment stream context manager.

@@ -11,6 +11,7 @@ use crate::common::{
     parse_metadata_input, parse_variant,
 };
 use crate::graph::helpers::{reorder_graph_to_bytes, resolve_reorder};
+use binary_ensemble::io::bundle::compact::remove_assets_in_place;
 use binary_ensemble::io::bundle::format::{AssignmentFormat, KnownAssetKind};
 use binary_ensemble::io::bundle::writer::BendlAppender;
 use binary_ensemble::io::bundle::{
@@ -231,6 +232,34 @@ impl PyBendlEncoder {
             return self.append_commit(|a| a.remove_asset(name));
         }
         Err(state_error(&self.state, "remove_asset"))
+    }
+
+    /// Remove a named asset and reclaim its bytes, as one operation.
+    ///
+    /// Available wherever ``add_asset`` commits immediately: append mode, or create mode after
+    /// the stream has closed. The directory drop and the compaction commit together, so there is
+    /// never a published state in which the asset is unreferenced but its bytes remain — and on
+    /// any error the bundle is left untouched, the asset still present. This is what
+    /// :meth:`binary_ensemble.bundle.BendlEncoder.remove_asset` calls; ``remove_asset`` here is
+    /// the raw directory-only form.
+    ///
+    /// Args:
+    ///     name (str): The asset's name, as listed by
+    ///         :meth:`binary_ensemble.bundle.BendlDecoder.asset_names`.
+    ///
+    /// Raises:
+    ///     KeyError: If no asset with that name exists in the bundle.
+    ///     Exception: If the encoder is in create mode before the stream (just don't add the
+    ///         asset), is currently streaming, or is closed.
+    #[pyo3(signature = (name))]
+    #[pyo3(text_signature = "(self, name)")]
+    fn remove_asset_compacting(&mut self, name: &str) -> PyResult<()> {
+        if matches!(self.state, BundleState::Appendable) {
+            return remove_assets_in_place(&self.path, &[name])
+                .map(|_| ())
+                .map_err(map_bundle_err);
+        }
+        Err(state_error(&self.state, "remove_asset_compacting"))
     }
 
     /// Add the canonical ``metadata.json`` known asset.

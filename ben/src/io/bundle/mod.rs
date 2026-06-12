@@ -23,7 +23,7 @@ pub mod writer;
 #[cfg(test)]
 mod tests;
 
-pub use compact::{compact_bundle, compact_bundle_in_place, Compaction};
+pub use compact::{compact_bundle, compact_bundle_in_place, remove_assets_in_place, Compaction};
 pub use error::{BendlReadError, ChecksumError, ChecksumTarget};
 pub use reader::{BendlReader, BendlVerifiedStreamReader, BundleValidationError};
 pub use writer::{AddAssetOptions, BendlStreamSession, BendlWriteError, BendlWriter};

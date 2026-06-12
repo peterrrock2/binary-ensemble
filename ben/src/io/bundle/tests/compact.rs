@@ -3,7 +3,9 @@ use std::io::BufReader;
 use std::path::PathBuf;
 
 use super::writer::build_base_bundle;
-use crate::io::bundle::compact::{compact_bundle_in_place, plan_tail, stage_tail, Compaction};
+use crate::io::bundle::compact::{
+    compact_bundle_in_place, plan_tail, remove_assets_in_place, stage_tail, Compaction,
+};
 use crate::io::bundle::reader::BendlReader;
 use crate::io::bundle::writer::{AddAssetOptions, BendlAppender};
 
@@ -126,4 +128,148 @@ fn crash_after_stage_leaves_consistent_bundle_and_recompaction_recovers() {
     assert_eq!(reader.asset_bytes(&entry).unwrap(), survivor_payload);
     assert!(reader.find_asset_by_name("metadata.json").is_some());
     assert_eq!(compact_bundle_in_place(&path).unwrap(), Compaction::None);
+}
+
+#[test]
+fn remove_assets_in_place_drops_post_stream_assets_via_tail_path() {
+    let (bytes, _) = build_base_bundle();
+    let tmp = temp_bundle(&bytes, "remove-tail");
+    let path = tmp.0.clone();
+
+    let open_rw = || {
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap()
+    };
+    let mut appender = BendlAppender::open(open_rw()).unwrap();
+    appender
+        .add_custom_asset("a.bin", &[1u8; 300], AddAssetOptions::defaults().raw())
+        .unwrap();
+    appender
+        .add_custom_asset("b.bin", &[2u8; 300], AddAssetOptions::defaults().raw())
+        .unwrap();
+    appender.commit().unwrap();
+
+    // One call removes both: drop + reclaim commit together, tail-only.
+    assert_eq!(
+        remove_assets_in_place(&path, &["a.bin", "b.bin"]).unwrap(),
+        Compaction::TailRewrite
+    );
+
+    let mut reader = BendlReader::open(BufReader::new(File::open(&path).unwrap())).unwrap();
+    assert!(reader.find_asset_by_name("a.bin").is_none());
+    assert!(reader.find_asset_by_name("b.bin").is_none());
+    assert!(reader.find_asset_by_name("metadata.json").is_some());
+    reader.verify_all_asset_checksums().unwrap();
+    drop(reader);
+    assert_eq!(compact_bundle_in_place(&path).unwrap(), Compaction::None);
+}
+
+#[test]
+fn remove_assets_in_place_rejects_unknown_name_without_touching_the_file() {
+    // Unknown names fail the whole batch up front — including any valid names beside them — so
+    // a caller never has to guess which removals landed.
+    let (bytes, _) = build_base_bundle();
+    let tmp = temp_bundle(&bytes, "remove-unknown");
+    let before = fs::read(&tmp.0).unwrap();
+
+    let err = remove_assets_in_place(&tmp.0, &["metadata.json", "missing.bin"]).unwrap_err();
+    assert!(
+        err.to_string().contains("no asset named"),
+        "unexpected error: {err}"
+    );
+    assert_eq!(fs::read(&tmp.0).unwrap(), before);
+    let reader = BendlReader::open(BufReader::new(File::open(&tmp.0).unwrap())).unwrap();
+    assert!(reader.find_asset_by_name("metadata.json").is_some());
+}
+
+#[test]
+fn remove_assets_in_place_failure_mid_rewrite_leaves_asset_present() {
+    // The non-atomicity regression: removal used to commit its directory drop *before* the
+    // compaction ran, so a failed compaction left the asset unreachable (a retry raised
+    // "no asset named") with its dead bytes still in the file. Fused, a mid-rewrite failure —
+    // here a corrupt surviving asset detected by verify-on-touch — leaves the file
+    // byte-identical and the asset still present for a retry.
+    let (bytes, _) = build_base_bundle();
+    let tmp = temp_bundle(&bytes, "remove-atomic");
+    let path = tmp.0.clone();
+
+    let open_rw = || {
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap()
+    };
+    let mut appender = BendlAppender::open(open_rw()).unwrap();
+    appender
+        .add_custom_asset("extra.bin", &[7u8; 300], AddAssetOptions::defaults().raw())
+        .unwrap();
+    appender.commit().unwrap();
+
+    // Corrupt the survivor's payload on disk (its stored checksum now mismatches).
+    {
+        use std::io::{Seek, SeekFrom, Write};
+        let reader = BendlReader::open(BufReader::new(File::open(&path).unwrap())).unwrap();
+        let offset = reader
+            .find_asset_by_name("extra.bin")
+            .unwrap()
+            .payload_offset;
+        drop(reader);
+        let mut f = open_rw();
+        f.seek(SeekFrom::Start(offset)).unwrap();
+        f.write_all(&[0xFF]).unwrap();
+    }
+
+    let before = fs::read(&path).unwrap();
+    // Removing the pre-stream metadata forces the full rewrite, which reads every survivor.
+    let err = remove_assets_in_place(&path, &["metadata.json"]).unwrap_err();
+    assert!(
+        err.to_string().to_lowercase().contains("checksum"),
+        "unexpected error: {err}"
+    );
+    assert_eq!(fs::read(&path).unwrap(), before, "file must be untouched");
+    let reader = BendlReader::open(BufReader::new(File::open(&path).unwrap())).unwrap();
+    assert!(
+        reader.find_asset_by_name("metadata.json").is_some(),
+        "a failed removal must leave the asset present"
+    );
+}
+
+#[test]
+fn remove_assets_in_place_can_remove_a_corrupt_asset() {
+    // The asset being removed is never read, so removal is the way *out* of a corrupt-asset
+    // situation, not blocked by it.
+    let (bytes, _) = build_base_bundle();
+    let tmp = temp_bundle(&bytes, "remove-corrupt");
+    let path = tmp.0.clone();
+
+    let open_rw = || {
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap()
+    };
+    let mut appender = BendlAppender::open(open_rw()).unwrap();
+    appender
+        .add_custom_asset("bad.bin", &[9u8; 300], AddAssetOptions::defaults().raw())
+        .unwrap();
+    appender.commit().unwrap();
+    {
+        use std::io::{Seek, SeekFrom, Write};
+        let reader = BendlReader::open(BufReader::new(File::open(&path).unwrap())).unwrap();
+        let offset = reader.find_asset_by_name("bad.bin").unwrap().payload_offset;
+        drop(reader);
+        let mut f = open_rw();
+        f.seek(SeekFrom::Start(offset)).unwrap();
+        f.write_all(&[0xFF]).unwrap();
+    }
+
+    remove_assets_in_place(&path, &["bad.bin"]).unwrap();
+    let mut reader = BendlReader::open(BufReader::new(File::open(&path).unwrap())).unwrap();
+    assert!(reader.find_asset_by_name("bad.bin").is_none());
+    reader.verify_all_asset_checksums().unwrap();
 }

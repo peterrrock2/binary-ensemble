@@ -21,6 +21,7 @@
 //!
 //! Both strategies preserve the stream's wire format (BEN or XBEN) as-is.
 
+use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -88,6 +89,22 @@ where
     R: Read + Seek,
     W: Write + Seek,
 {
+    compact_bundle_excluding(reader, out, &HashSet::new())
+}
+
+/// [`compact_bundle`], skipping every asset whose name is in `exclude`.
+///
+/// Excluded assets are never read, so a removal also succeeds when the asset being removed is
+/// itself corrupt.
+fn compact_bundle_excluding<R, W>(
+    reader: &mut BendlReader<R>,
+    out: W,
+    exclude: &HashSet<&str>,
+) -> Result<W, BendlWriteError>
+where
+    R: Read + Seek,
+    W: Write + Seek,
+{
     if !reader.is_finalized() {
         return Err(BendlWriteError::BundleIncomplete);
     }
@@ -98,10 +115,14 @@ where
         .assignment_format_typed()
         .unwrap_or(AssignmentFormat::Ben);
 
-    // Read every asset's decoded payload up front (each read borrows the reader exclusively).
+    // Read every surviving asset's decoded payload up front (each read borrows the reader
+    // exclusively).
     let entries: Vec<_> = reader.assets().to_vec();
     let mut assets = Vec::with_capacity(entries.len());
     for entry in &entries {
+        if exclude.contains(entry.name.as_str()) {
+            continue;
+        }
         let payload = reader.asset_bytes(entry).map_err(io::Error::other)?;
         assets.push(PreservedAsset {
             asset_type: entry.asset_type,
@@ -330,6 +351,31 @@ fn finalize_tail(
 /// streams the whole bundle through verified readers into a temp file and atomically swaps it
 /// over `path`. On any error the original file is left untouched.
 pub fn compact_bundle_in_place(path: &Path) -> Result<Compaction, BendlWriteError> {
+    compact_in_place_excluding(path, &[])
+}
+
+/// Remove the named assets from the bundle at `path` and compact it, as one operation.
+///
+/// The removal and the compaction commit together: the directory that drops the names is the
+/// same one the rewrite publishes, so no intermediate state ever exists in which an asset is
+/// unreferenced but its bytes remain — and on any error the original file is left untouched,
+/// with every asset still present for a retry. Unknown names are rejected up front, before any
+/// byte of the file changes. The assets being removed are never read, so removal also succeeds
+/// when the asset being removed is itself corrupt.
+///
+/// `names` may repeat (duplicates collapse). An empty `names` is plain
+/// [`compact_bundle_in_place`].
+pub fn remove_assets_in_place(
+    path: &Path,
+    names: &[&str],
+) -> Result<Compaction, BendlWriteError> {
+    compact_in_place_excluding(path, names)
+}
+
+fn compact_in_place_excluding(
+    path: &Path,
+    remove: &[&str],
+) -> Result<Compaction, BendlWriteError> {
     // Parse and validate through the reader so malformed bundles are rejected up front.
     let file = File::open(path)?;
     let file_len = file.metadata()?.len();
@@ -345,14 +391,26 @@ pub fn compact_bundle_in_place(path: &Path) -> Result<Compaction, BendlWriteErro
             e.to_string(),
         ))
     })?;
+    let remove: HashSet<&str> = remove.iter().copied().collect();
+    for name in &remove {
+        if reader.find_asset_by_name(name).is_none() {
+            return Err(BendlWriteError::UnknownAssetName((*name).to_string()));
+        }
+    }
     let mut header = *reader.header();
-    let entries: Vec<BendlDirectoryEntry> = reader.assets().to_vec();
+    let entries: Vec<BendlDirectoryEntry> = reader
+        .assets()
+        .iter()
+        .filter(|e| !remove.contains(e.name.as_str()))
+        .cloned()
+        .collect();
     drop(reader);
 
     let mut file = OpenOptions::new().read(true).write(true).open(path)?;
     if let Some(plan) = plan_tail(&mut file, &header, &entries)? {
         // Already compact? Then the directory sits right at its planned offset and the file ends
-        // right after it — nothing to do.
+        // right after it — nothing to do. (Unreachable with removals: dropping an entry always
+        // shrinks the directory, so the planned layout cannot match the current one.)
         let eof = file.seek(SeekFrom::End(0))?;
         if header.directory_offset == plan.directory_offset && eof == plan.file_len {
             return Ok(Compaction::None);
@@ -362,7 +420,7 @@ pub fn compact_bundle_in_place(path: &Path) -> Result<Compaction, BendlWriteErro
     }
     drop(file);
 
-    // Dead space before the stream: full rewrite through a temp file.
+    // Dead space before the stream end: full rewrite through a temp file.
     let file = File::open(path)?;
     let mut reader = BendlReader::open(BufReader::new(file)).map_err(BendlWriteError::Format)?;
 
@@ -372,7 +430,7 @@ pub fn compact_bundle_in_place(path: &Path) -> Result<Compaction, BendlWriteErro
 
     let result: Result<(), BendlWriteError> = (|| {
         let out = BufWriter::new(File::create(&tmp)?);
-        let out = compact_bundle(&mut reader, out)?;
+        let out = compact_bundle_excluding(&mut reader, out, &remove)?;
         out.into_inner()
             .map_err(|e| io::Error::other(e.to_string()))?
             .sync_all()?;
