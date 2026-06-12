@@ -99,10 +99,10 @@ fn crash_after_stage_leaves_consistent_bundle_and_recompaction_recovers() {
         let mut header = *reader.header();
         let entries = reader.assets().to_vec();
         drop(reader);
-        let mut file = open_rw();
-        let plan = plan_tail(&mut file, &header, &entries)
+        let plan = plan_tail(&header, &entries)
             .unwrap()
             .expect("post-stream dead space must be tail-compactable");
+        let mut file = open_rw();
         stage_tail(&mut file, &mut header, &plan).unwrap();
     }
 
@@ -272,4 +272,24 @@ fn remove_assets_in_place_can_remove_a_corrupt_asset() {
     let mut reader = BendlReader::open(BufReader::new(File::open(&path).unwrap())).unwrap();
     assert!(reader.find_asset_by_name("bad.bin").is_none());
     reader.verify_all_asset_checksums().unwrap();
+}
+
+#[test]
+fn already_compact_bundle_is_recognized_without_write_access() {
+    // The already-compact decision is pure directory arithmetic: no payload byte is read and
+    // the file is never opened for writing, so even a read-only bundle reports
+    // Compaction::None instead of failing at a read-write open.
+    let (bytes, _) = build_base_bundle();
+    let tmp = temp_bundle(&bytes, "readonly-none");
+    let mut perms = fs::metadata(&tmp.0).unwrap().permissions();
+    perms.set_readonly(true);
+    fs::set_permissions(&tmp.0, perms).unwrap();
+
+    assert_eq!(compact_bundle_in_place(&tmp.0).unwrap(), Compaction::None);
+
+    // Restore writability so the drop cleanup can remove the file on every platform.
+    let mut perms = fs::metadata(&tmp.0).unwrap().permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
+    perms.set_readonly(false);
+    fs::set_permissions(&tmp.0, perms).unwrap();
 }

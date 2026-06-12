@@ -150,11 +150,25 @@ where
     }
 }
 
-/// The post-stream tail to rebuild: surviving appended assets (raw on-disk bytes, so their
-/// storage form and checksums carry over unchanged) followed by the new directory.
+/// One survivor payload's source range, to be copied (raw on-disk bytes, so storage form and
+/// checksums carry over unchanged) into the rebuilt tail.
+struct PayloadMove {
+    /// Byte offset of the payload in the current file.
+    src: u64,
+    /// Payload length in bytes.
+    len: u64,
+}
+
+/// The post-stream tail to rebuild: surviving appended assets followed by the new directory.
+///
+/// Planning is pure arithmetic over the directory — no payload byte is read until a rewrite
+/// actually executes, and the rewrite itself copies file-to-file through a fixed-size buffer,
+/// so tail compaction needs no payload-sized memory.
 pub(super) struct PlannedTail {
-    /// Concatenated raw survivor payload bytes, in final layout order.
-    payloads: Vec<u8>,
+    /// Survivor payload source ranges, in final layout order.
+    moves: Vec<PayloadMove>,
+    /// Total survivor payload bytes (the moves' lengths summed).
+    payloads_len: u64,
     /// All surviving entries (pre-stream entries unchanged, survivors at their final offsets).
     final_entries: Vec<BendlDirectoryEntry>,
     /// The encoded form of `final_entries`.
@@ -173,7 +187,6 @@ pub(super) struct PlannedTail {
 /// `[HEADER_SIZE, stream_offset)` exactly and every other live payload sits at or beyond the
 /// stream end. Returns `None` when dead bytes exist before the stream end (full rewrite needed).
 pub(super) fn plan_tail(
-    file: &mut File,
     header: &BendlHeader,
     entries: &[BendlDirectoryEntry],
 ) -> Result<Option<PlannedTail>, BendlWriteError> {
@@ -211,18 +224,17 @@ pub(super) fn plan_tail(
         return Ok(None);
     }
 
-    // Read survivors' raw on-disk bytes and lay them out from the stream end. The allocation is
-    // bounded: extent validation before planning guarantees every payload range lies within the
-    // file.
+    // Lay the survivors out from the stream end — arithmetic only, no payload reads. Extent
+    // validation before planning guarantees every source range lies within the file.
     post.sort_by_key(|e| e.payload_offset);
-    let mut payloads = Vec::new();
+    let mut moves = Vec::with_capacity(post.len());
     let mut final_entries: Vec<BendlDirectoryEntry> = pre.iter().map(|e| (*e).clone()).collect();
     let mut offset = stream_end;
     for entry in &post {
-        let mut payload = vec![0u8; entry.payload_len as usize];
-        file.seek(SeekFrom::Start(entry.payload_offset))?;
-        file.read_exact(&mut payload)?;
-        payloads.extend_from_slice(&payload);
+        moves.push(PayloadMove {
+            src: entry.payload_offset,
+            len: entry.payload_len,
+        });
         let mut moved = (*entry).clone();
         moved.payload_offset = offset;
         final_entries.push(moved);
@@ -230,12 +242,14 @@ pub(super) fn plan_tail(
             .checked_add(entry.payload_len)
             .ok_or_else(|| io::Error::other("payload range overflowed"))?;
     }
+    let payloads_len = offset - stream_end;
     let directory_offset = offset;
     let final_directory_bytes = encode_directory(&final_entries)?;
     let directory_len = final_directory_bytes.len() as u64;
 
     Ok(Some(PlannedTail {
-        payloads,
+        moves,
+        payloads_len,
         final_entries,
         final_directory_bytes,
         directory_offset,
@@ -244,6 +258,24 @@ pub(super) fn plan_tail(
             .checked_add(directory_len)
             .ok_or_else(|| io::Error::other("directory range overflowed"))?,
     }))
+}
+
+/// Copy `len` bytes within `file` from `src` to `dst` through a fixed-size buffer.
+///
+/// The caller is responsible for ensuring the ranges don't overlap in a way that would read
+/// already-overwritten bytes; both call sites here copy between disjoint regions.
+fn copy_within(file: &mut File, src: u64, dst: u64, len: u64) -> io::Result<()> {
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut done = 0u64;
+    while done < len {
+        let chunk = buf.len().min((len - done) as usize);
+        file.seek(SeekFrom::Start(src + done))?;
+        file.read_exact(&mut buf[..chunk])?;
+        file.seek(SeekFrom::Start(dst + done))?;
+        file.write_all(&buf[..chunk])?;
+        done += chunk as u64;
+    }
+    Ok(())
 }
 
 /// Write `header` (patched with the given directory location) at offset 0 and sync.
@@ -271,12 +303,13 @@ fn execute_tail(
     header: &mut BendlHeader,
     plan: &PlannedTail,
 ) -> Result<(), BendlWriteError> {
-    stage_tail(file, header, plan)?;
-    finalize_tail(file, header, plan)
+    let staged_base = stage_tail(file, header, plan)?;
+    finalize_tail(file, header, plan, staged_base)
 }
 
-/// Phase 1: append the survivor payloads and a *staged* directory — one whose entries point at
-/// those appended copies — at the current EOF, then patch the header to adopt it.
+/// Phase 1: copy the survivor payloads and write a *staged* directory — one whose entries point
+/// at those appended copies — at the current EOF, then patch the header to adopt it. Returns the
+/// EOF the staging started at (the staged payload base).
 ///
 /// Every write is append-only and the staged directory references only bytes that already exist
 /// (the live prefix plus the appended copies), so a crash anywhere up to and including the header
@@ -286,9 +319,8 @@ pub(super) fn stage_tail(
     file: &mut File,
     header: &mut BendlHeader,
     plan: &PlannedTail,
-) -> Result<(), BendlWriteError> {
-    let payloads_len = plan.payloads.len() as u64;
-    let block_start = plan.directory_offset - payloads_len;
+) -> Result<u64, BendlWriteError> {
+    let block_start = plan.directory_offset - plan.payloads_len;
 
     let eof = file.seek(SeekFrom::End(0))?;
     debug_assert!(
@@ -313,29 +345,35 @@ pub(super) fn stage_tail(
         "staged and final directories must encode to the same length"
     );
 
-    file.write_all(&plan.payloads)?;
+    let mut dst = eof;
+    for mv in &plan.moves {
+        copy_within(file, mv.src, dst, mv.len)?;
+        dst += mv.len;
+    }
+    file.seek(SeekFrom::Start(eof + plan.payloads_len))?;
     file.write_all(&staged_directory_bytes)?;
     file.sync_data()?;
-    patch_header(file, header, eof + payloads_len, plan.directory_len)
-        .map_err(BendlWriteError::Io)
+    patch_header(file, header, eof + plan.payloads_len, plan.directory_len)?;
+    Ok(eof)
 }
 
-/// Phase 2: write the payloads and the final directory at the stream end, patch the header to
-/// the final directory, and truncate the staged tail away.
+/// Phase 2: copy the payloads down from the staged region to the stream end, write the final
+/// directory, patch the header to it, and truncate the staged tail away.
 ///
 /// Every byte this touches is dead under the staged state: the staged directory references only
 /// the live prefix (which ends at the stream end) and the staged copies at or beyond the old EOF,
-/// and the final tail never extends past the old EOF. The truncate runs only after the final
-/// header patch is synced.
+/// and the final tail never extends past the old EOF — so the source and destination of the copy
+/// are disjoint. The truncate runs only after the final header patch is synced.
 fn finalize_tail(
     file: &mut File,
     header: &mut BendlHeader,
     plan: &PlannedTail,
+    staged_base: u64,
 ) -> Result<(), BendlWriteError> {
-    let block_start = plan.directory_offset - plan.payloads.len() as u64;
+    let block_start = plan.directory_offset - plan.payloads_len;
 
-    file.seek(SeekFrom::Start(block_start))?;
-    file.write_all(&plan.payloads)?;
+    copy_within(file, staged_base, block_start, plan.payloads_len)?;
+    file.seek(SeekFrom::Start(plan.directory_offset))?;
     file.write_all(&plan.final_directory_bytes)?;
     file.sync_data()?;
     patch_header(file, header, plan.directory_offset, plan.directory_len)?;
@@ -406,19 +444,19 @@ fn compact_in_place_excluding(
         .collect();
     drop(reader);
 
-    let mut file = OpenOptions::new().read(true).write(true).open(path)?;
-    if let Some(plan) = plan_tail(&mut file, &header, &entries)? {
+    // Planning is pure directory arithmetic, so the already-compact case is decided here —
+    // before the file is even opened for writing, and without reading a single payload byte.
+    if let Some(plan) = plan_tail(&header, &entries)? {
         // Already compact? Then the directory sits right at its planned offset and the file ends
         // right after it — nothing to do. (Unreachable with removals: dropping an entry always
         // shrinks the directory, so the planned layout cannot match the current one.)
-        let eof = file.seek(SeekFrom::End(0))?;
-        if header.directory_offset == plan.directory_offset && eof == plan.file_len {
+        if header.directory_offset == plan.directory_offset && file_len == plan.file_len {
             return Ok(Compaction::None);
         }
+        let mut file = OpenOptions::new().read(true).write(true).open(path)?;
         execute_tail(&mut file, &mut header, &plan)?;
         return Ok(Compaction::TailRewrite);
     }
-    drop(file);
 
     // Dead space before the stream end: full rewrite through a temp file.
     let file = File::open(path)?;
