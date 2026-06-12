@@ -238,6 +238,13 @@ places no limit on assignment length, but each run can demand up to 65535 elemen
 bound a small malicious frame could request an arbitrarily large allocation. The bound MUST sit
 well above any real dual graph (this implementation uses 2^27 ≈ 134 million elements).
 
+Consumers decoding untrusted streams should also be aware of the format's decompression-bomb
+characteristic: a frame's expanded output is `assignment length × count`, so a few dozen wire
+bytes can legally represent terabytes of expanded samples. Memory stays bounded in a streaming
+reader (one assignment is materialized at a time), but total output volume and CPU are
+proportional to the expanded size — callers writing expanded output (e.g. JSONL) from untrusted
+input should impose their own output or time budgets.
+
 Frame-level subsampling does not require unpacking payload bits: a reader can skip a frame by
 reading its 6-byte header, seeking past `n_bytes` (and, for MkvChain, the 2-byte count), and only
 unpacking the payloads of frames it keeps.
