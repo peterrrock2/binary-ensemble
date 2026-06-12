@@ -5,7 +5,7 @@
 //! assets (name, type, JSON flag, decoded bytes). Storage compression is normalized to the writer's
 //! default policy — the decoded payload bytes are preserved, not the byte-for-byte on-disk form.
 
-use crate::common::open_output;
+use crate::common::TempOutput;
 use binary_ensemble::codec::encode::encode_ben_to_xben;
 use binary_ensemble::io::bundle::format::{
     AssignmentFormat, KnownAssetKind, ASSET_FLAG_JSON, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA,
@@ -129,23 +129,24 @@ pub fn recompress_bundle(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -
     };
 
     // Build the new XBEN bundle.
-    let buf = open_output(&out_file, overwrite)?;
+    let (guard, buf) = TempOutput::create(&out_file, overwrite)?;
     let mut writer = BendlWriter::new(buf, AssignmentFormat::Xben)
         .map_err(|e| PyIOError::new_err(format!("Failed to initialize bundle writer: {e}")))?;
     for asset in &assets {
         add_preserved(&mut writer, asset).map_err(map_bundle_err)?;
     }
 
-    if empty {
-        writer.finish().map_err(map_bundle_err)?;
+    let out = if empty {
+        writer.finish().map_err(map_bundle_err)?
     } else {
         let mut session = writer.into_stream_session().map_err(map_bundle_err)?;
         session
             .write_all(&xben_bytes)
             .map_err(|e| PyIOError::new_err(format!("Failed to write XBEN stream: {e}")))?;
         let writer = session.finish_into_writer(sample_count);
-        writer.finish().map_err(map_bundle_err)?;
-    }
+        writer.finish().map_err(map_bundle_err)?
+    };
+    guard.commit_writer(out)?;
 
     Ok(())
 }

@@ -6,7 +6,7 @@
 //! every other asset (metadata, custom blobs) is carried over by decoded payload, name, type, and
 //! JSON flag.
 
-use crate::common::open_output;
+use crate::common::TempOutput;
 use crate::graph::helpers::{reorder_graph_to_bytes, require_reorder};
 use binary_ensemble::io::bundle::format::{
     AssignmentFormat, KnownAssetKind, ASSET_FLAG_JSON, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA,
@@ -188,7 +188,7 @@ pub fn relabel_bundle(
     .map_err(|e| PyException::new_err(format!("Failed to relabel BEN stream: {e}")))?;
 
     // Write the new bundle: reordered graph + permutation map (canonical), then the rest.
-    let buf = open_output(&out_file, overwrite)?;
+    let (guard, buf) = TempOutput::create(&out_file, overwrite)?;
     let mut writer = BendlWriter::new(buf, AssignmentFormat::Ben)
         .map_err(|e| PyIOError::new_err(format!("Failed to initialize bundle writer: {e}")))?;
     writer
@@ -214,7 +214,8 @@ pub fn relabel_bundle(
         .write_all(&relabeled)
         .map_err(|e| PyIOError::new_err(format!("Failed to write relabeled stream: {e}")))?;
     let writer = session.finish_into_writer(sample_count);
-    writer.finish().map_err(map_bundle_err)?;
+    let out = writer.finish().map_err(map_bundle_err)?;
+    guard.commit_writer(out)?;
 
     Ok(())
 }

@@ -293,3 +293,23 @@ fn already_compact_bundle_is_recognized_without_write_access() {
     perms.set_readonly(false);
     fs::set_permissions(&tmp.0, perms).unwrap();
 }
+
+#[cfg(unix)]
+#[test]
+fn full_rewrite_preserves_file_permissions() {
+    // The full rewrite swaps a temp file over the bundle; the temp must inherit the bundle's
+    // mode so the swap never widens (or narrows) access.
+    use std::os::unix::fs::PermissionsExt;
+    let (bytes, _) = build_base_bundle();
+    let tmp = temp_bundle(&bytes, "perm-full");
+    let path = tmp.0.clone();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+
+    // Pre-stream removal forces the temp-file full rewrite.
+    assert_eq!(
+        remove_assets_in_place(&path, &["metadata.json"]).unwrap(),
+        Compaction::FullRewrite
+    );
+    let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o7777;
+    assert_eq!(mode, 0o640);
+}

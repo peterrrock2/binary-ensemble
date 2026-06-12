@@ -25,6 +25,7 @@ use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::format::{
     encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlHeader, KnownAssetKind,
@@ -458,21 +459,44 @@ fn compact_in_place_excluding(
         return Ok(Compaction::TailRewrite);
     }
 
-    // Dead space before the stream end: full rewrite through a temp file.
+    // Dead space before the stream end: full rewrite through a uniquely named temp file that
+    // inherits the bundle's permissions, synced and atomically renamed over `path`. The unique
+    // name keeps two concurrent compactions of the same bundle from interleaving writes into a
+    // shared temp inode.
     let file = File::open(path)?;
     let mut reader = BendlReader::open(BufReader::new(file)).map_err(BendlWriteError::Format)?;
 
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".compact-tmp");
-    let tmp = Path::new(&tmp).to_path_buf();
+    static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let tmp = path.with_file_name(format!(
+        ".{file_name}.compact-{}-{}.tmp",
+        std::process::id(),
+        TMP_COUNTER.fetch_add(1, Ordering::Relaxed),
+    ));
 
     let result: Result<(), BendlWriteError> = (|| {
-        let out = BufWriter::new(File::create(&tmp)?);
+        let out = File::options().write(true).create_new(true).open(&tmp)?;
+        // The rewrite holds the same bytes the bundle holds; never let the copy sit with wider
+        // permissions than the original, and never let the swap change the bundle's mode.
+        if let Ok(meta) = fs::metadata(path) {
+            let _ = fs::set_permissions(&tmp, meta.permissions());
+        }
+        let out = BufWriter::new(out);
         let out = compact_bundle_excluding(&mut reader, out, &remove)?;
         out.into_inner()
             .map_err(|e| io::Error::other(e.to_string()))?
             .sync_all()?;
         fs::rename(&tmp, path)?;
+        // Make the rename itself durable where the platform allows it; the data already is.
+        #[cfg(unix)]
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            if let Ok(dir) = File::open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
         Ok(())
     })();
 

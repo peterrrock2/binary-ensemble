@@ -1,4 +1,4 @@
-use crate::common::{open_input, open_output, parse_variant, validate_input_output_paths};
+use crate::common::{open_input, parse_variant, validate_input_output_paths, TempOutput};
 use binary_ensemble::codec::encode::{
     cpus_from_signed, encode_ben_to_xben as core_encode_ben_to_xben,
     encode_jsonl_to_ben as core_encode_jsonl_to_ben,
@@ -43,7 +43,7 @@ pub fn encode_ben_to_xben(
 ) -> PyResult<()> {
     validate_input_output_paths(&in_file, &out_file)?;
     let reader = open_input(&in_file)?;
-    let writer = open_output(&out_file, overwrite)?;
+    let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
 
     core_encode_ben_to_xben(
         reader,
@@ -60,6 +60,7 @@ pub fn encode_ben_to_xben(
             out_file.display()
         ))
     })?;
+    guard.commit()?;
 
     Ok(())
 }
@@ -92,7 +93,7 @@ pub fn encode_jsonl_to_ben(
     let ben_var = parse_variant(Some(variant))?;
     validate_input_output_paths(&in_file, &out_file)?;
     let reader = open_input(&in_file)?;
-    let writer = open_output(&out_file, overwrite)?;
+    let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
 
     core_encode_jsonl_to_ben(reader, writer, ben_var).map_err(|e| {
         PyIOError::new_err(format!(
@@ -101,6 +102,8 @@ pub fn encode_jsonl_to_ben(
             out_file.display()
         ))
     })?;
+    guard.commit()?;
+
     Ok(())
 }
 
@@ -144,7 +147,7 @@ pub fn encode_jsonl_to_xben(
     let ben_var = parse_variant(Some(variant))?;
     validate_input_output_paths(&in_file, &out_file)?;
     let reader = open_input(&in_file)?;
-    let writer = open_output(&out_file, overwrite)?;
+    let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
 
     core_encode_jsonl_to_xben(
         reader,
@@ -162,5 +165,7 @@ pub fn encode_jsonl_to_xben(
             out_file.display()
         ))
     })?;
+    guard.commit()?;
+
     Ok(())
 }

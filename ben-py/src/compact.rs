@@ -5,7 +5,7 @@
 //! verified reader, and the wire format (BEN or XBEN) is preserved. The `bendl` CLI's `remove`
 //! and `compact` subcommands share the same core implementation.
 
-use crate::common::open_output;
+use crate::common::TempOutput;
 use binary_ensemble::io::bundle::compact::{
     compact_bundle as core_compact_bundle, compact_bundle_in_place as core_compact_in_place,
     Compaction,
@@ -62,8 +62,9 @@ pub fn compact_bundle(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> P
         ));
     }
 
-    let buf = open_output(&out_file, overwrite)?;
-    core_compact_bundle(&mut reader, buf).map_err(map_bundle_err)?;
+    let (guard, buf) = TempOutput::create(&out_file, overwrite)?;
+    let out = core_compact_bundle(&mut reader, buf).map_err(map_bundle_err)?;
+    guard.commit_writer(out)?;
     Ok(())
 }
 

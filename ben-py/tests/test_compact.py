@@ -13,7 +13,9 @@ machinery is exercised through ``_core``, which also reports which strategy ran
 from __future__ import annotations
 
 import json
+import os
 import random
+import stat
 from pathlib import Path
 
 import pytest
@@ -226,6 +228,8 @@ def test_full_compact_refuses_corrupt_stream(tmp_path: Path) -> None:
     with pytest.raises(Exception):
         _core.compact_bundle(path, out, overwrite=True)
     assert path.read_bytes() == corrupted  # source untouched
+    assert not out.exists()  # no partial destination left behind
+    assert list(tmp_path.glob("*.tmp")) == []  # and no stray temp files either
 
     # The in-place form takes the tail-rewrite fast path here (all dead space is post-stream),
     # which by design never reads the stream — so it succeeds, the corruption travels along
@@ -322,3 +326,40 @@ def test_facade_remove_asset_can_remove_a_corrupt_asset(tmp_path: Path) -> None:
     dec = BendlDecoder(path)
     assert dec.asset_names() == []
     dec.verify()
+
+
+def test_failed_out_file_write_preserves_existing_destination(tmp_path: Path) -> None:
+    """With overwrite=True, the destination used to be truncated up front, so a mid-write
+    failure destroyed a previously good file. The temp-then-rename guard must leave it
+    byte-identical."""
+    src = tmp_path / "src.bendl"
+    _build_bundle_with_dead_space(src)
+    _flip_byte_at(src, b"keep me")  # corrupt a post-stream asset: the full rewrite refuses
+
+    dest = tmp_path / "dest.bendl"
+    _build_bundle_with_dead_space(dest)  # a valid bundle that must survive the failure
+    dest_bytes = dest.read_bytes()
+
+    with pytest.raises(Exception):
+        _core.compact_bundle(src, dest, overwrite=True)
+    assert dest.read_bytes() == dest_bytes
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes")
+def test_in_place_transforms_preserve_file_mode(tmp_path: Path) -> None:
+    """In-place transforms swap a temp file over the bundle; the swap must inherit the
+    bundle's permissions (a 0o640 group-shared file must not silently become 0o600 or
+    umask-default, and a private one must not go world-readable)."""
+    path = tmp_path / "modes.bendl"
+    _build_bundle_with_dead_space(path)
+    os.chmod(path, 0o640)
+
+    # Facade in-place recompression (BEN -> XBEN) goes through the temp-output guard.
+    compress_stream(path)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+
+    # A pre-stream removal forces the core full rewrite's own temp-file swap.
+    enc = BendlEncoder.append(path)
+    enc.remove_asset("graph.json")
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640

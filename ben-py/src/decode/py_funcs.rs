@@ -1,4 +1,4 @@
-use crate::common::{open_input, open_output, validate_input_output_paths};
+use crate::common::{open_input, validate_input_output_paths, TempOutput};
 use binary_ensemble::codec::decode::{
     decode_ben_to_jsonl as core_decode_ben_to_jsonl, decode_xben_to_ben as core_decode_xben_to_ben,
     decode_xben_to_jsonl as core_decode_xben_to_jsonl,
@@ -25,7 +25,7 @@ use std::path::PathBuf;
 pub fn decode_xben_to_ben(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> PyResult<()> {
     validate_input_output_paths(&in_file, &out_file)?;
     let reader = open_input(&in_file)?;
-    let writer = open_output(&out_file, overwrite)?;
+    let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
 
     core_decode_xben_to_ben(reader, writer).map_err(|e| {
         PyIOError::new_err(format!(
@@ -34,6 +34,7 @@ pub fn decode_xben_to_ben(in_file: PathBuf, out_file: PathBuf, overwrite: bool) 
             out_file.display()
         ))
     })?;
+    guard.commit()?;
 
     Ok(())
 }
@@ -56,7 +57,7 @@ pub fn decode_xben_to_ben(in_file: PathBuf, out_file: PathBuf, overwrite: bool) 
 pub fn decode_xben_to_jsonl(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> PyResult<()> {
     validate_input_output_paths(&in_file, &out_file)?;
     let reader = open_input(&in_file)?;
-    let writer = open_output(&out_file, overwrite)?;
+    let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
 
     core_decode_xben_to_jsonl(reader, writer).map_err(|e| {
         PyIOError::new_err(format!(
@@ -65,6 +66,7 @@ pub fn decode_xben_to_jsonl(in_file: PathBuf, out_file: PathBuf, overwrite: bool
             out_file.display()
         ))
     })?;
+    guard.commit()?;
 
     Ok(())
 }
@@ -87,7 +89,7 @@ pub fn decode_xben_to_jsonl(in_file: PathBuf, out_file: PathBuf, overwrite: bool
 pub fn decode_ben_to_jsonl(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> PyResult<()> {
     validate_input_output_paths(&in_file, &out_file)?;
     let reader = open_input(&in_file)?;
-    let writer = open_output(&out_file, overwrite)?;
+    let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
 
     core_decode_ben_to_jsonl(reader, writer).map_err(|e| {
         PyIOError::new_err(format!(
@@ -96,6 +98,7 @@ pub fn decode_ben_to_jsonl(in_file: PathBuf, out_file: PathBuf, overwrite: bool)
             out_file.display()
         ))
     })?;
+    guard.commit()?;
 
     Ok(())
 }

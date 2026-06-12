@@ -2,9 +2,10 @@ use binary_ensemble::BenVariant;
 use pyo3::exceptions::{PyException, PyIOError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList};
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{BufReader, BufWriter};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub fn parse_variant(variant: Option<&str>) -> PyResult<BenVariant> {
     match variant {
@@ -56,6 +57,121 @@ pub fn open_output(out_file: &PathBuf, overwrite: bool) -> PyResult<BufWriter<Fi
     let outfile = out_open
         .map_err(|e| PyIOError::new_err(format!("Failed to create {}: {e}", out_file.display())))?;
     Ok(BufWriter::new(outfile))
+}
+
+/// A one-shot output destination written via temp-file-then-rename.
+///
+/// The destination is never visible half-written: bytes go to a uniquely named hidden temp file
+/// in the destination's directory, and only an explicit commit — after an fsync — renames it
+/// into place. If the guard drops uncommitted (any error path), the temp file is removed and an
+/// existing destination is left exactly as it was, even with `overwrite = true`. When the
+/// destination already exists (including the in-place case where it is also the source), the
+/// temp file inherits its permissions so the swap never changes the file's mode.
+///
+/// [`open_output`] remains the right call for *long-lived* outputs (the encoders), whose file
+/// must live at its real path while it is being written.
+pub struct TempOutput {
+    tmp: PathBuf,
+    dest: PathBuf,
+    committed: bool,
+}
+
+static TEMP_OUTPUT_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+impl TempOutput {
+    /// Refuse an existing, unoverwritable destination, then create the temp file beside it.
+    pub fn create(dest: &Path, overwrite: bool) -> PyResult<(Self, BufWriter<File>)> {
+        if dest.exists() && !overwrite {
+            return Err(PyIOError::new_err(format!(
+                "Output file {} already exists (use overwrite=True to replace).",
+                dest.display()
+            )));
+        }
+        let file_name = dest
+            .file_name()
+            .ok_or_else(|| {
+                PyIOError::new_err(format!("Output path {} has no file name", dest.display()))
+            })?
+            .to_string_lossy()
+            .into_owned();
+        let tmp = dest.with_file_name(format!(
+            ".{file_name}.{}-{}.tmp",
+            std::process::id(),
+            TEMP_OUTPUT_COUNTER.fetch_add(1, Ordering::Relaxed),
+        ));
+        let file = File::options()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+            .map_err(|e| {
+                PyIOError::new_err(format!("Failed to create {}: {e}", tmp.display()))
+            })?;
+        // Inherit an existing destination's permissions before any byte is written, so the swap
+        // never changes the file's mode (and a private file's contents never sit world-readable).
+        if let Ok(meta) = fs::metadata(dest) {
+            let _ = fs::set_permissions(&tmp, meta.permissions());
+        }
+        Ok((
+            TempOutput {
+                tmp,
+                dest: dest.to_path_buf(),
+                committed: false,
+            },
+            BufWriter::new(file),
+        ))
+    }
+
+    /// Flush and sync the finished writer, then rename the temp file over the destination.
+    pub fn commit_writer(self, writer: BufWriter<File>) -> PyResult<()> {
+        let file = writer.into_inner().map_err(|e| {
+            PyIOError::new_err(format!("Failed to flush {}: {e}", self.tmp.display()))
+        })?;
+        file.sync_all().map_err(|e| {
+            PyIOError::new_err(format!("Failed to sync {}: {e}", self.tmp.display()))
+        })?;
+        drop(file);
+        self.rename_into_place()
+    }
+
+    /// Sync the (already fully written and flushed) temp file by reopening it, then rename it
+    /// over the destination. For call sites whose writer was consumed by the core routine.
+    pub fn commit(self) -> PyResult<()> {
+        let file = File::options().write(true).open(&self.tmp).map_err(|e| {
+            PyIOError::new_err(format!("Failed to reopen {}: {e}", self.tmp.display()))
+        })?;
+        file.sync_all().map_err(|e| {
+            PyIOError::new_err(format!("Failed to sync {}: {e}", self.tmp.display()))
+        })?;
+        drop(file);
+        self.rename_into_place()
+    }
+
+    fn rename_into_place(mut self) -> PyResult<()> {
+        fs::rename(&self.tmp, &self.dest).map_err(|e| {
+            PyIOError::new_err(format!(
+                "Failed to move {} into place at {}: {e}",
+                self.tmp.display(),
+                self.dest.display()
+            ))
+        })?;
+        self.committed = true;
+        // Make the rename itself durable where the platform allows it; the data already is.
+        #[cfg(unix)]
+        if let Some(parent) = self.dest.parent().filter(|p| !p.as_os_str().is_empty()) {
+            if let Ok(dir) = File::open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Drop for TempOutput {
+    fn drop(&mut self) {
+        if !self.committed {
+            let _ = fs::remove_file(&self.tmp);
+        }
+    }
 }
 
 /// Normalize a user-supplied JSON payload argument into raw UTF-8 JSON bytes.

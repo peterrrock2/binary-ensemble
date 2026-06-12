@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Literal, cast, overload
 
@@ -63,28 +62,19 @@ def _atomic_or_out(
     path: StrPath,
     out_file: StrPath | None,
     overwrite: bool,
-    suffix: str = ".bendl",
 ) -> None:
-    """Shared in-place-swap / out_file dispatch for whole-bundle transforms.
+    """Shared in-place / out_file dispatch for whole-bundle transforms.
 
-    ``transform(src, dst, overwrite)`` writes the result. ``out_file=None`` means in place: the
-    result is written to a temp file and atomically swapped over ``path``. ``overwrite`` governs
-    an existing ``out_file`` (the in-place swap always replaces ``path``).
+    ``transform(src, dst, overwrite)`` writes the result. The ``_core`` bindings own the swap
+    discipline: the destination is written via a uniquely named temp file that inherits an
+    existing destination's permissions, fsynced, and atomically renamed into place — so a
+    destination is never visible half-written and an error leaves it exactly as it was.
+    ``out_file=None`` means in place: the transform's destination is ``path`` itself.
     """
     if out_file is not None:
         transform(path, out_file, overwrite)
         return
-
-    directory = os.path.dirname(os.path.abspath(os.fspath(path)))
-    fd, tmp = tempfile.mkstemp(suffix=suffix, dir=directory)
-    os.close(fd)
-    try:
-        transform(path, tmp, True)
-        os.replace(tmp, path)
-    except BaseException:
-        if os.path.exists(tmp):
-            os.remove(tmp)
-        raise
+    transform(path, path, True)
 
 
 def _coerce_asset_payload(payload: object, content_type: str) -> bytes:
