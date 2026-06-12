@@ -308,6 +308,33 @@ impl PyBendlDecoder {
         Ok(out)
     }
 
+    /// Verify the bundle's integrity checksums without decoding anything.
+    ///
+    /// Scans the raw on-disk bytes of every asset and of the assignment stream and compares
+    /// them against the CRC32C checksums recorded when the bundle was written. Iterating or
+    /// subsampling a decoder reads the stream *without* checking these checksums (partial
+    /// reads cannot prove a whole-stream checksum), so call this when integrity matters —
+    /// e.g. after downloading a bundle or before an important run.
+    ///
+    /// Raises:
+    ///     Exception: If any asset checksum or the stream checksum does not match the on-disk
+    ///         bytes, or if the bundle is unfinalized (an unfinalized bundle's stream checksum
+    ///         is not authoritative).
+    ///
+    /// Example:
+    ///     >>> dec = BendlDecoder("ensemble.bendl")
+    ///     >>> dec.verify()  # raises on any corruption
+    #[pyo3(text_signature = "(self)")]
+    fn verify(&mut self) -> PyResult<()> {
+        self.reader
+            .verify_all_asset_checksums()
+            .map_err(|e| PyException::new_err(format!("Bundle asset verification failed: {e}")))?;
+        self.reader
+            .verify_stream_checksum()
+            .map_err(|e| PyException::new_err(format!("Bundle stream verification failed: {e}")))?;
+        Ok(())
+    }
+
     /// Read the (decoded) bytes of a named asset as a Python ``bytes`` object.
     ///
     /// Args:

@@ -22,7 +22,7 @@ from typing import Iterable, List, Optional, Tuple
 import pytest
 
 from binary_ensemble import BenDecoder, BenEncoder, encode_jsonl_to_xben
-from binary_ensemble.bundle import BendlDecoder
+from binary_ensemble.bundle import BendlDecoder, BendlEncoder
 
 # ---------------------------------------------------------------------------
 # Format constants (mirror ben/src/io/bundle/format.rs)
@@ -1005,3 +1005,69 @@ def test_seeded_fuzz_random_bundles_round_trip(tmp_path: Path) -> None:
         extracted = tmp_path / f"fuzz-{trial}.ben"
         dec.extract_stream(extracted)
         assert list(BenDecoder(extracted, mode="ben")) == samples
+
+
+# ---------------------------------------------------------------------------
+# verify(): explicit integrity checking
+# ---------------------------------------------------------------------------
+
+
+def _checksummed_bundle(path: Path) -> None:
+    """A small finalized bundle written by the real encoder (checksums populated)."""
+    with BendlEncoder(path, overwrite=True) as enc:
+        enc.add_asset("notes.txt", "integrity matters", content_type="text")
+        with enc.stream("ben", variant="standard") as s:
+            for a in ([1, 1, 2, 2], [2, 2, 1, 1]):
+                s.write(a)
+
+
+def _flip_byte_at_marker(path: Path, marker: bytes) -> None:
+    """XOR one byte at the first occurrence of ``marker`` in the file."""
+    data = bytearray(path.read_bytes())
+    idx = data.index(marker)
+    data[idx] ^= 0xFF
+    path.write_bytes(bytes(data))
+
+
+def test_verify_passes_on_pristine_bundle(tmp_path: Path) -> None:
+    path = tmp_path / "ok.bendl"
+    _checksummed_bundle(path)
+    BendlDecoder(path).verify()  # must not raise
+
+
+def test_verify_catches_stream_corruption(tmp_path: Path) -> None:
+    # Iteration and subsampling read the stream without checksum verification (partial reads
+    # cannot prove a whole-stream CRC); verify() is the explicit integrity gate and must catch
+    # any byte flip in the stream region.
+    path = tmp_path / "stream-corrupt.bendl"
+    _checksummed_bundle(path)
+    _flip_byte_at_marker(path, b"STANDARD BEN FILE")
+
+    dec = BendlDecoder(path)  # directory is intact, so the bundle still opens
+    with pytest.raises(Exception, match="stream verification failed"):
+        dec.verify()
+
+
+def test_verify_catches_asset_corruption(tmp_path: Path) -> None:
+    path = tmp_path / "asset-corrupt.bendl"
+    _checksummed_bundle(path)
+    _flip_byte_at_marker(path, b"integrity matters")
+
+    dec = BendlDecoder(path)
+    with pytest.raises(Exception, match="asset verification failed"):
+        dec.verify()
+
+
+def test_verify_rejects_unfinalized_bundle(tmp_path: Path) -> None:
+    # An unfinalized bundle's stream checksum is not authoritative, so verify() must refuse
+    # rather than report a meaningless pass/fail.
+    path = tmp_path / "unfinalized.bendl"
+    with pytest.raises(RuntimeError, match="boom"):
+        with BendlEncoder(path, overwrite=True) as enc:
+            with enc.stream("ben") as s:
+                s.write([1, 2, 3])
+                raise RuntimeError("boom")
+
+    dec = BendlDecoder(path)
+    with pytest.raises(Exception, match="stream verification failed"):
+        dec.verify()

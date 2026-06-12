@@ -458,3 +458,25 @@ def test_decode_helpers_error_paths(tmp_path: Path) -> None:
     out.write_text("exists\n", encoding="utf-8")
     with pytest.raises(OSError, match="already exists"):
         decode_ben_to_jsonl(ben, out, overwrite=False)
+
+
+def test_decoder_surfaces_truncated_streams_as_clean_exceptions(tmp_path: Path) -> None:
+    # The Rust core guarantees corrupt input errors rather than panics; this pins the Python
+    # half of that contract — a truncated stream raises an ordinary exception from iteration.
+    samples = [[1, 1, 2, 2], [2, 2, 1, 1], [1, 2, 1, 2]]
+
+    ben = tmp_path / "trunc.ben"
+    with BenEncoder(ben, overwrite=True, variant="standard") as enc:
+        for a in samples:
+            enc.write(a)
+    ben.write_bytes(ben.read_bytes()[:-3])
+    with pytest.raises(Exception, match="."):
+        list(BenDecoder(ben, mode="ben"))
+
+    xben = tmp_path / "trunc.xben"
+    src = tmp_path / "src.jsonl"
+    write_jsonl(samples, src)
+    encode_jsonl_to_xben(src, xben, overwrite=True, variant="standard")
+    xben.write_bytes(xben.read_bytes()[:-3])
+    with pytest.raises(Exception, match="."):
+        list(BenDecoder(xben, mode="xben"))

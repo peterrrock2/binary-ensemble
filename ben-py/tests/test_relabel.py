@@ -136,3 +136,34 @@ def test_relabel_rejects_xben_bundle(tmp_path: Path) -> None:
     compress_stream(src, out_file=xben)
     with pytest.raises(ValueError, match="only supports BEN"):
         relabel_bundle(xben, out_file=tmp_path / "o.bendl")
+
+
+def test_relabel_rejects_unfinalized_bundle(tmp_path: Path) -> None:
+    src = tmp_path / "unfinalized.bendl"
+    with pytest.raises(RuntimeError, match="boom"):
+        with BendlEncoder(src, overwrite=True) as enc:
+            enc.add_graph(_graph(), sort=None)
+            with enc.stream("ben") as s:
+                s.write([1] * _n())
+                raise RuntimeError("boom")
+
+    with pytest.raises(Exception, match="finalized"):
+        relabel_bundle(src, out_file=tmp_path / "out.bendl")
+
+
+def test_relabel_rejects_empty_stream_bundle(tmp_path: Path) -> None:
+    src = tmp_path / "assets-only.bendl"
+    with BendlEncoder(src, overwrite=True) as enc:
+        enc.add_graph(_graph(), sort=None)
+
+    with pytest.raises(Exception, match="non-empty assignment stream"):
+        relabel_bundle(src, out_file=tmp_path / "out.bendl")
+
+
+def test_relabel_out_file_refuses_existing(tmp_path: Path) -> None:
+    src = tmp_path / "in.bendl"
+    _build_ben_bundle(src)
+    out = tmp_path / "exists.bendl"
+    out.write_bytes(b"existing")
+    with pytest.raises(OSError, match="already exists"):
+        relabel_bundle(src, out_file=out)
