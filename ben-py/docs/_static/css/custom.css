@@ -1,5 +1,15 @@
 /* Project-specific tweaks layered on top of the Furo theme. */
 
+/* Visited-link color in light mode. Furo's default (#872ee0) is a bright lavender that
+   reads as washed-out on the white canvas; deepen it to a richer purple. Scoped to plain
+   `body`, which only wins in light mode: Furo's dark defaults live on higher-specificity
+   selectors (body[data-theme="dark"] and the prefers-color-scheme:dark auto rule), so they
+   keep their lighter purple. The palette switcher never paints --color-brand-visited, so
+   this survives a live palette change. */
+body {
+  --color-brand-visited: #6b21a8;
+}
+
 /* Call-to-action button used on the landing page (e.g. "Get started"). */
 .download-badge {
   display: inline-block;
