@@ -22,7 +22,7 @@ Compress, store, and stream massive ensembles of districting plans.
 
 Redistricting samplers like [GerryChain](https://gerrychain.readthedocs.io)'s ReCom,
 ForestReCom, and Sequential Monte Carlo routinely emit **millions of plans**. Stored as
-JSONL, a single ensemble can run to *tens of gigabytes* — most of it redundant, because
+JSONL, a single ensemble can run to _tens of gigabytes_ — most of it redundant, because
 consecutive plans barely differ. **BEN** (Binary-Ensemble) is a compression format and
 toolkit built for exactly this data: it turns those JSONL mountains into compact binary
 files you can store, share, and stream sample-by-sample without unpacking the whole thing.
@@ -84,7 +84,7 @@ the mental model, data contract, performance model, and compatibility story behi
 :::
 
 :::{grid-item-card} {octicon}`tools` How-to guides
-:link: how-to/index
+:link: quick-help/index
 :link-type: doc
 
 Task-focused recipes: compress a GerryChain run, subsample, convert formats,
@@ -117,50 +117,37 @@ getting-started/quickstart
 
 ```{toctree}
 :hidden:
-:caption: Concepts
-
-concepts/overview
-concepts/vocabulary
-concepts/data-model
-concepts/jsonl-schema
-concepts/formats
-concepts/variants
-concepts/compression
-concepts/ordering-deep-dive
-concepts/performance
-concepts/api-map
-concepts/cli-parity
-concepts/limitations
-concepts/compatibility
-concepts/release-versioning
-```
-
-```{toctree}
-:hidden:
-:caption: How-to guides
-
-how-to/index
-how-to/end-to-end-workflow
-how-to/api-cookbook
-how-to/examples-gallery
-how-to/anti-patterns
-how-to/compress-gerrychain-run
-how-to/read-and-iterate
-how-to/analyze-with-numpy-pandas
-how-to/subsample
-how-to/convert-formats
-how-to/shrink-for-sharing
-how-to/custom-assets-and-append
-how-to/troubleshooting
-how-to/error-reference
-```
-
-```{toctree}
-:hidden:
 :caption: Tutorials
 
 user/using_bendl
 user/using_ben_py
+```
+
+```{toctree}
+:hidden:
+:caption: Quick Help
+
+quick-help/index
+quick-help/end-to-end-workflow
+quick-help/api-cookbook
+quick-help/examples-gallery
+quick-help/anti-patterns
+quick-help/compress-gerrychain-run
+quick-help/read-and-iterate
+quick-help/analyze-with-numpy-pandas
+quick-help/subsample
+quick-help/convert-formats
+quick-help/shrink-for-sharing
+quick-help/custom-assets-and-append
+quick-help/troubleshooting
+quick-help/error-reference
+```
+
+```{toctree}
+:hidden:
+:caption: Concepts
+
+concepts/overview
 ```
 
 ```{toctree}

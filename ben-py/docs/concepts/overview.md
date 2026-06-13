@@ -72,3 +72,21 @@ JSONL shape, and bundle assets — see [The data contract](data-model.md).
 For operational guidance after the basics, see [Performance guide](performance.md),
 [Graph ordering deep dive](ordering-deep-dive.md), [Limitations and invariants](limitations.md),
 and [Compatibility and stability](compatibility.md).
+
+```{toctree}
+:hidden:
+
+vocabulary
+data-model
+jsonl-schema
+formats
+variants
+compression
+ordering-deep-dive
+performance
+api-map
+cli-parity
+limitations
+compatibility
+release-versioning
+```

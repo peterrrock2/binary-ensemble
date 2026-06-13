@@ -1,4 +1,4 @@
-# API reference
+# Overview
 
 The public API is split into four modules that mirror the project's CLI tools. Everything
 listed here is also re-exported from the top-level `binary_ensemble` namespace, so

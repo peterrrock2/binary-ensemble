@@ -506,8 +506,11 @@ tasks:
       # save. Editing conf.py (palettes, Pygments styles) triggers a full rebuild. The
       # generated pygments-themes.css lives under docs/_generated, which conf.py rewrites
       # each build — ignore it (and the build/cache dirs) so the watcher doesn't loop.
+      # `-a` rewrites every output page on each rebuild so the baked-in sidebar/toctree
+      # stays fresh after a nav edit; without it, unchanged pages (e.g. the notebooks)
+      # keep a stale sidebar in a different order than the page you just edited.
       - >-
-        uv run --extra docs sphinx-autobuild -b dirhtml docs docs/_build
+        uv run --extra docs sphinx-autobuild -a -b dirhtml docs docs/_build
         --ignore "*/_generated/*" --ignore "*/_build/*" --ignore "*/.jupyter_cache/*"
         --port 8000 --open-browser
 
