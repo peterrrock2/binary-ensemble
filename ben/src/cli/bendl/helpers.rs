@@ -16,6 +16,14 @@ pub(super) fn format_from_path(path: &Path) -> Result<AssignmentFormat, String> 
     }
 }
 
+/// Validate that JSON-flagged bytes really parse as JSON (no value tree is built), so a write
+/// can never stamp the JSON flag onto a file the decoder will later fail to parse.
+fn validate_json_payload(bytes: &[u8], name: &str, path: &Path) -> Result<(), String> {
+    serde_json::from_slice::<serde::de::IgnoredAny>(bytes)
+        .map_err(|e| format!("file {path:?} for asset {name:?} is not valid JSON: {e}"))?;
+    Ok(())
+}
+
 pub(super) fn add_known_file_asset<W: Write + Seek>(
     writer: &mut BendlWriter<W>,
     kind: KnownAssetKind,
@@ -24,6 +32,9 @@ pub(super) fn add_known_file_asset<W: Write + Seek>(
 ) -> Result<(), String> {
     let bytes = std::fs::read(path).map_err(|e| format!("failed to read {path:?}: {e}"))?;
     let name = kind.standardized_name();
+    if options.is_json {
+        validate_json_payload(&bytes, name, path)?;
+    }
     writer
         .add_known_asset(kind, &bytes, options)
         .map_err(|e: BendlWriteError| format!("failed to add asset {name:?}: {e}"))
@@ -49,6 +60,9 @@ pub(super) fn append_known_file_asset<W: Read + Write + Seek>(
 ) -> Result<(), String> {
     let bytes = std::fs::read(path).map_err(|e| format!("failed to read {path:?}: {e}"))?;
     let name = kind.standardized_name();
+    if options.is_json {
+        validate_json_payload(&bytes, name, path)?;
+    }
     appender
         .add_known_asset(kind, &bytes, options)
         .map_err(|e: BendlWriteError| format!("failed to add asset {name:?}: {e}"))

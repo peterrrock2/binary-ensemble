@@ -101,7 +101,9 @@ def test_reorder_accepts_bytes_and_path() -> None:
 
 
 def test_reorder_rejects_unparseable_graph() -> None:
-    with pytest.raises(Exception, match="Failed to reorder graph"):
+    # Garbage bytes are refused up front by the input validation (before the reorder ever
+    # runs), with a message naming the actual problem.
+    with pytest.raises(ValueError, match="not valid JSON"):
         g.reorder(b"not valid json at all", "rcm")
 
 

@@ -632,3 +632,46 @@ fn run_inspect_displays_asset_with_no_flags_as_dash() {
     run_inspect(args).unwrap();
     let _ = std::fs::remove_file(&bendl);
 }
+
+#[test]
+fn run_create_rejects_non_json_metadata_file() {
+    // --metadata stamps the JSON flag onto the file's bytes; a plain-text file used to be
+    // accepted silently and only blow up weeks later in the consumer's read_metadata(). The
+    // write must refuse instead.
+    let ben = {
+        let p = std::env::temp_dir().join(format!(
+            "bendl-badjson-{}.ben",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut b = Vec::new();
+        encode_jsonl_to_ben(
+            Cursor::new(b"{\"assignment\":[1],\"sample\":1}\n"),
+            &mut b,
+            crate::BenVariant::Standard,
+        )
+        .unwrap();
+        std::fs::write(&p, &b).unwrap();
+        p
+    };
+    let notes = unique_path("notes.txt");
+    std::fs::write(&notes, b"these are plain-text notes, not JSON").unwrap();
+    let out = unique_path("badjson.bendl");
+    let args = CreateArgs {
+        input: ben.clone(),
+        output: out.clone(),
+        graph: None,
+        metadata: Some(notes.clone()),
+        node_permutation_map: None,
+        assets: vec![],
+        overwrite: false,
+        graph_raw: false,
+    };
+    let err = run_create(args).unwrap_err();
+    assert!(err.contains("not valid JSON"), "unexpected error: {err}");
+    let _ = std::fs::remove_file(&ben);
+    let _ = std::fs::remove_file(&notes);
+    let _ = std::fs::remove_file(&out);
+}

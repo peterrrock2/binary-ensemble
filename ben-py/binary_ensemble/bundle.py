@@ -93,7 +93,7 @@ def _coerce_asset_payload(payload: object, content_type: str) -> bytes:
     """
     if isinstance(payload, (dict, list)):
         if content_type != "json":
-            raise ValueError(
+            raise TypeError(
                 "dict/list payloads are serialized as JSON and require "
                 f"content_type='json', got {content_type!r}"
             )
@@ -294,8 +294,15 @@ class BendlEncoder:
                 data = f.read()
             self._enc.add_asset(name, data, "binary")
             return
+        if content_type not in ("json", "text", "binary"):
+            # Validate before coercion: a bad content_type must not consume a file-like
+            # payload or read a path from disk on its way to the error.
+            raise ValueError(
+                f"content_type must be 'json', 'text', 'binary', or 'file', got {content_type!r}"
+            )
         data = _coerce_asset_payload(payload, content_type)
-        if content_type == "json":
+        if content_type == "json" and not isinstance(payload, (dict, list)):
+            # dict/list payloads were serialized by json.dumps just above — already valid.
             try:
                 json.loads(data.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -305,11 +312,7 @@ class BendlEncoder:
                 data.decode("utf-8")
             except UnicodeDecodeError as exc:
                 raise ValueError(f"content_type='text' requires valid UTF-8: {exc}") from exc
-        elif content_type != "binary":
-            raise ValueError(
-                f"content_type must be 'json', 'text', 'binary', or 'file', got {content_type!r}"
-            )
-        # The branches above leave only the core-supported literals.
+        # The guard above leaves only the core-supported literals.
         core_type = cast('Literal["json", "text", "binary"]', content_type)
         self._enc.add_asset(name, data, core_type)
 

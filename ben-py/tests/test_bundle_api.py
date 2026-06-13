@@ -177,8 +177,9 @@ def test_add_asset_accepts_dict_and_list_payloads(tmp_path: Path) -> None:
     enc = BendlEncoder(tmp_path / "d.bendl", overwrite=True)
     enc.add_asset("scores.json", {"cut_edges": [10, 12]}, content_type="json")
     enc.add_asset("steps.json", [1, 2, 3], content_type="json")
-    # dict/list payloads are JSON by definition; other content types are a caller mistake.
-    with pytest.raises(ValueError, match="require content_type='json'"):
+    # dict/list payloads are JSON by definition; other content types are a payload-shape
+    # mistake (TypeError, per the documented taxonomy).
+    with pytest.raises(TypeError, match="require content_type='json'"):
         enc.add_asset("bad.bin", {"a": 1}, content_type="binary")
     enc.close()
 
@@ -728,3 +729,41 @@ def test_generic_add_asset_refuses_canonical_names(tmp_path: Path) -> None:
     for name in ("metadata.json", "graph.json", "node_permutation_map.json"):
         with pytest.raises(Exception, match="reserved"):
             enc.add_asset(name, b"{}", content_type="json")
+
+
+def test_invalid_content_type_does_not_consume_the_payload(tmp_path: Path) -> None:
+    """The content_type is validated before the payload is coerced, so a typo'd content_type
+    cannot drain a file-like payload (or read a path from disk) on its way to the error — a
+    caller that catches and retries with the right content_type still has its data."""
+    import io
+
+    enc = BendlEncoder(tmp_path / "ct.bendl", overwrite=True)
+    fh = io.BytesIO(b"precious bytes")
+    with pytest.raises(ValueError, match="content_type must be"):
+        enc.add_asset("x.bin", fh, content_type="csv")
+    assert fh.read() == b"precious bytes"  # not drained
+
+    fh.seek(0)
+    enc.add_asset("x.bin", fh, content_type="binary")  # the retry stores the real bytes
+    enc.close()
+    assert BendlDecoder(tmp_path / "ct.bendl").read_asset_bytes("x.bin") == b"precious bytes"
+
+
+def test_add_metadata_and_raw_graph_reject_invalid_json(tmp_path: Path) -> None:
+    """The JSON flag is a write-time guarantee on every write path, not just add_asset:
+    metadata/graph payloads from bytes, file-likes, and paths are validated before they are
+    stored, so the decoder's auto-parse can never fail on a bundle that passed its writes."""
+    enc = BendlEncoder(tmp_path / "meta.bendl", overwrite=True)
+    with pytest.raises(ValueError, match="not valid JSON"):
+        enc.add_metadata(b"these bytes are not json")
+
+    notes = tmp_path / "notes.txt"
+    notes.write_text("plain text, not json")
+    with pytest.raises(ValueError, match="not valid JSON"):
+        enc.add_metadata(notes)
+    with pytest.raises(ValueError, match="not valid JSON"):
+        enc.add_graph(notes, sort=None)
+
+    enc.add_metadata({"seed": 1})  # the valid forms still work
+    enc.close()
+    assert BendlDecoder(tmp_path / "meta.bendl").read_metadata() == {"seed": 1}

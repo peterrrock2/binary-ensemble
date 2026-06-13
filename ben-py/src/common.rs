@@ -172,7 +172,17 @@ impl Drop for TempOutput {
     }
 }
 
-/// Normalize a user-supplied JSON payload argument into raw UTF-8 JSON bytes.
+/// Validate that `bytes` parse as JSON without building a value tree (cheap even for large
+/// graphs), so a payload stored with the JSON flag can never be silently invalid.
+fn validated_json(bytes: Vec<u8>, what: &str) -> PyResult<Vec<u8>> {
+    serde_json::from_slice::<serde::de::IgnoredAny>(&bytes)
+        .map_err(|e| PyValueError::new_err(format!("{what} is not valid JSON: {e}")))?;
+    Ok(bytes)
+}
+
+/// Normalize a user-supplied JSON payload argument into raw UTF-8 JSON bytes, validating that
+/// the result really is JSON (dict/list inputs are serialized via `json.dumps` and need no
+/// re-validation; every other form is checked).
 ///
 /// `what` names the argument in error messages; `accepted` describes the accepted forms in the
 /// final unsupported-type error. Accepted forms:
@@ -200,10 +210,10 @@ pub fn parse_json_input(
     // also accept any sequence of small ints (e.g. iterating a NetworkX graph's node ids) and
     // silently store garbage.
     if let Ok(b) = obj.downcast::<PyBytes>() {
-        return Ok(b.as_bytes().to_vec());
+        return validated_json(b.as_bytes().to_vec(), what);
     }
     if let Ok(b) = obj.downcast::<PyByteArray>() {
-        return Ok(b.to_vec());
+        return validated_json(b.to_vec(), what);
     }
 
     // File-like: must have .read(). Check before str/path, since a plain `str` / `Path` has no
@@ -211,13 +221,13 @@ pub fn parse_json_input(
     if obj.hasattr("read")? {
         let data = obj.call_method0("read")?;
         if let Ok(b) = data.downcast::<PyBytes>() {
-            return Ok(b.as_bytes().to_vec());
+            return validated_json(b.as_bytes().to_vec(), what);
         }
         if let Ok(b) = data.extract::<Vec<u8>>() {
-            return Ok(b);
+            return validated_json(b, what);
         }
         if let Ok(s) = data.extract::<String>() {
-            return Ok(s.into_bytes());
+            return validated_json(s.into_bytes(), what);
         }
         return Err(PyException::new_err(format!(
             "{what} .read() must return bytes or str"
@@ -228,12 +238,13 @@ pub fn parse_json_input(
     let path: PathBuf = obj
         .extract()
         .map_err(|_| PyValueError::new_err(format!("{what} must be {accepted}")))?;
-    std::fs::read(&path).map_err(|e| {
+    let bytes = std::fs::read(&path).map_err(|e| {
         PyIOError::new_err(format!(
             "Failed to read {what} file {}: {e}",
             path.display()
         ))
-    })
+    })?;
+    validated_json(bytes, what)
 }
 
 /// Normalize a user-supplied metadata argument into raw UTF-8 JSON bytes.
