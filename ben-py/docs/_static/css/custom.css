@@ -10,25 +10,6 @@ body {
   --color-brand-visited: #6b21a8;
 }
 
-/* Call-to-action button used on the landing page (e.g. "Get started"). */
-.download-badge {
-  display: inline-block;
-  padding: 8px 15px;
-  margin: 10px 10px 10px 0;
-  background-color: var(--color-brand-primary);
-  color: #ffffff !important;
-  text-decoration: none;
-  border-radius: 6px;
-  font-weight: 600;
-  border: none;
-  cursor: pointer;
-}
-.download-badge:hover,
-.download-badge:focus {
-  filter: brightness(1.1);
-  outline: none;
-}
-
 /* Navigation cards (sphinx-design grid-item-cards, e.g. the "Where to next" grid). Furo
    leaves them near-flat — a transparent background in light mode and a 5%-opacity shadow
    — so they blend into the page. Give them a real surface, a visible shadow, and a clear

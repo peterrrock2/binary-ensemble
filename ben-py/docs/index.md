@@ -12,12 +12,6 @@ binary-ensemble
 Compress, store, and stream massive ensembles of districting plans.
 ```
 
-```{div} sd-text-center
-[Get started](getting-started/quickstart.md){.download-badge}
-[Concepts](concepts/overview.md){.download-badge}
-[API reference](api/index.md){.download-badge}
-```
-
 ---
 
 Redistricting samplers like [GerryChain](https://gerrychain.readthedocs.io)'s ReCom,
