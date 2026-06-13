@@ -5,16 +5,21 @@
 //! compound, multi-byte corruptions that enumeration cannot reach. The contract is the same:
 //! arbitrary bytes may error anywhere, but must never panic, hang, or exhaust memory.
 
-//! Full-drain entry points (`decode_ben_to_jsonl`, `relabel_ben_file`) are deliberately absent:
-//! their parse coverage is identical to the bounded iterators below, but a frame's expanded
-//! output is `assignment length × count`, so the fuzzer inevitably discovers tiny inputs that
-//! legally demand minutes of serialization work (the format's documented decompression-bomb
-//! characteristic), drowning exploration in slow units.
+//! Full-drain entry points (`decode_ben_to_jsonl`) are deliberately absent: their parse
+//! coverage is identical to the bounded iterators below, but a frame's expanded output is
+//! `assignment length × count`, so the fuzzer inevitably discovers tiny inputs that legally
+//! demand minutes of serialization work (the format's documented decompression-bomb
+//! characteristic), drowning exploration in slow units. Relabeling runs in its bounded form
+//! (`with_max_samples`): its label-map building and BEN→TwoDelta re-encode consume untrusted
+//! decoded values that pure iteration never feeds into an encoder, so they need their own
+//! coverage.
 
 #![no_main]
 
 use binary_ensemble::io::reader::{BenStreamFrameReader, BenStreamReader};
 use binary_ensemble::ops::extract::extract_assignment_ben;
+use binary_ensemble::ops::relabel::{relabel_ben_file, RelabelOptions};
+use binary_ensemble::BenVariant;
 use libfuzzer_sys::fuzz_target;
 
 /// Bound on records pulled from iterator-style entry points: corrupt streams may yield errors
@@ -44,6 +49,17 @@ fuzz_target!(|data: &[u8]| {
             let _ = record;
         }
     }
+
+    let _ = relabel_ben_file(
+        data,
+        std::io::sink(),
+        RelabelOptions::first_seen().with_max_samples(MAX_PULLS),
+    );
+    let _ = relabel_ben_file(
+        data,
+        std::io::sink(),
+        RelabelOptions::convert_to(BenVariant::TwoDelta).with_max_samples(MAX_PULLS),
+    );
 
     let _ = extract_assignment_ben(data, 2);
 });
