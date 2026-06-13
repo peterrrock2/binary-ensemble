@@ -175,7 +175,7 @@ impl PyBendlEncoder {
     ///     Exception: If the encoder is closed, failed, or currently streaming.
     ///
     /// Example:
-    ///     >>> encoder.add_asset("scores.json", '{"cut_edges": [10]}', content_type="json")
+    ///     >>> encoder.add_asset("scores.json", b'{"cut_edges": [10]}', content_type="json")
     ///     >>> encoder.add_asset("tracts.gpkg", gpkg_bytes, content_type="binary")
     #[pyo3(signature = (name, payload, content_type))]
     #[pyo3(text_signature = "(self, name, payload, content_type)")]

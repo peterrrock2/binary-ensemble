@@ -50,7 +50,7 @@ fn new_to_old_from_map_bytes(map_bytes: &[u8]) -> PyResult<HashMap<usize, usize>
 /// BEN bundle at `out_file`.
 ///
 /// This is the raw core binding; prefer the :func:`binary_ensemble.bundle.relabel_bundle`
-/// facade, which adds the ``in_place`` atomic-swap mode.
+/// facade, which relabels in place when ``out_file`` is omitted.
 ///
 /// Args:
 ///     in_file (StrPath): Path to the source ``.bendl`` bundle (``str`` or ``os.PathLike``).

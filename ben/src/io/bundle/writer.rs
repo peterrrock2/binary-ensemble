@@ -627,8 +627,8 @@ pub enum BendlWriteError {
     #[error("cannot add assets after the stream region has been opened")]
     AssetsAfterStream,
 
-    /// Tried to append to a bundle that is not finalized.
-    #[error("cannot append to a bundle whose header does not have finalized == 1")]
+    /// The operation requires a finalized bundle (append, compact, remove).
+    #[error("bundle is not finalized (header finalized != 1)")]
     BundleIncomplete,
 
     /// The writer was asked to perform an operation in the wrong state.

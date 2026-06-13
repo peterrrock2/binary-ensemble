@@ -86,3 +86,22 @@ def test_markdown_snippets_execute(doc: Path, tmp_path, monkeypatch) -> None:
                 f"{doc.relative_to(DOCS_DIR)} python block #{index} failed: "
                 f"{type(exc).__name__}: {exc}\n\n--- snippet ---\n{code}\n"
             )
+
+
+README = Path(__file__).resolve().parents[2] / "README.md"
+
+
+def test_readme_python_snippets_execute(tmp_path, monkeypatch) -> None:
+    """The repo-root README's Python example is the first code a new user copies — run it with
+    the same machinery as the docs pages so it can't silently drift from the API."""
+    monkeypatch.chdir(tmp_path)
+    namespace: dict = {}
+    blocks = list(_blocks(README.read_text()))
+    assert blocks, "README.md has no python blocks — update this test if that is intentional"
+    for i, (directive, code) in enumerate(blocks, start=1):
+        if directive == "skip":
+            continue
+        try:
+            exec(compile(code, f"README.md:block{i}", "exec"), namespace)
+        except Exception as e:  # pragma: no cover - failure reporting
+            pytest.fail(f"README.md python block {i} failed: {e}\n---\n{code}")

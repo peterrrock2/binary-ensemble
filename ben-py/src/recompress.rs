@@ -19,7 +19,7 @@ use std::path::PathBuf;
 /// `out_file`.
 ///
 /// This is the raw core binding; prefer the :func:`binary_ensemble.bundle.compress_stream`
-/// facade, which adds the ``in_place`` atomic-swap mode.
+/// facade, which recompresses in place when ``out_file`` is omitted.
 ///
 /// Args:
 ///     in_file (StrPath): Path to the source ``.bendl`` bundle (``str`` or ``os.PathLike``).

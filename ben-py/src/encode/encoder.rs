@@ -73,8 +73,8 @@ impl PyBenEncoder {
     /// Encode a single assignment and append it to the output stream.
     ///
     /// Args:
-    ///     assignment (Sequence[int]): The plan as a sequence of district ids (e.g. ``list[int]``),
-    /// one per node in         dual-graph node order.
+    ///     assignment (Sequence[int]): The plan as a sequence of district ids (e.g.
+    ///         ``list[int]``), one per node in dual-graph node order.
     ///
     /// Raises:
     ///     OSError: If the encoder has already been closed, or the write fails.

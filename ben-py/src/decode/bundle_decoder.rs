@@ -33,9 +33,9 @@ use std::path::PathBuf;
 /// bundle (one written with no assignment stream) iterates to nothing with ``len() == 0``.
 ///
 /// Args:
-///     file_path (StrPath): Path to the input ``.bendl`` file (``str`` or ``os.PathLike``). Whether
-/// the embedded stream is BEN or         XBEN is read from the bundle header; an XBEN stream warns
-/// about a one-time         decompression startup cost.
+///     file_path (StrPath): Path to the input ``.bendl`` file (``str`` or ``os.PathLike``).
+///         Whether the embedded stream is BEN or XBEN is read from the bundle header; an XBEN
+///         stream warns about a one-time decompression startup cost.
 ///
 /// Raises:
 ///     Exception: If ``file_path`` is not a bundle (use
@@ -174,8 +174,8 @@ impl PyBendlDecoder {
     /// being unpacked.
     ///
     /// Args:
-    ///     indices (Sequence[int]): The 1-indexed sample numbers to keep. Duplicates are dropped;
-    /// an         unsorted list is sorted, with a ``UserWarning``.
+    ///     indices (Sequence[int]): The 1-indexed sample numbers to keep. Duplicates are
+    ///         dropped; an unsorted list is sorted, with a ``UserWarning``.
     ///
     /// Returns:
     ///     BendlDecoder: ``self``, so the call can be chained into a ``for`` loop.

@@ -127,8 +127,8 @@ impl PyBenDecoder {
     /// being unpacked, so this stays fast on large ensembles.
     ///
     /// Args:
-    ///     indices (Sequence[int]): The 1-indexed sample numbers to keep. Duplicates are dropped;
-    /// an         unsorted list is sorted, with a ``UserWarning``.
+    ///     indices (Sequence[int]): The 1-indexed sample numbers to keep. Duplicates are
+    ///         dropped; an unsorted list is sorted, with a ``UserWarning``.
     ///
     /// Returns:
     ///     BenDecoder: ``self``, so the call can be chained directly into a ``for`` loop.

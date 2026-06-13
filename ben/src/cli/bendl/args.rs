@@ -28,7 +28,7 @@ impl std::str::FromStr for NamedAsset {
 #[derive(Parser, Debug)]
 #[command(
     name = "bendl",
-    about = "Create, inspect, extract from, and append to .bendl file files.",
+    about = "Create, inspect, extract from, append to, remove assets from, and compact .bendl bundle files.",
     version
 )]
 pub(super) struct Args {
