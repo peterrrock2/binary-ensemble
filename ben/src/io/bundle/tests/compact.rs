@@ -76,7 +76,11 @@ fn crash_after_stage_leaves_consistent_bundle_and_recompaction_recovers() {
     let survivor_payload: Vec<u8> = (0..600u32).map(|i| (i * 7 % 251) as u8).collect();
     let mut appender = BendlAppender::open(open_rw()).unwrap();
     appender
-        .add_custom_asset("doomed.bin", &[0xAB; 700], AddAssetOptions::defaults().raw())
+        .add_custom_asset(
+            "doomed.bin",
+            &[0xAB; 700],
+            AddAssetOptions::defaults().raw(),
+        )
         .unwrap();
     appender.commit().unwrap();
     let mut appender = BendlAppender::open(open_rw()).unwrap();

@@ -15,17 +15,7 @@ from pathlib import Path
 import pytest
 
 from binary_ensemble.bundle import BendlDecoder, BendlEncoder
-
-EXAMPLE_GRAPH = Path(__file__).resolve().parent / "data" / "gerrymandria.json"
-
-
-def _graph():
-    return json.loads(EXAMPLE_GRAPH.read_text())
-
-
-def _n():
-    return len(_graph()["nodes"])
-
+from helpers import example_graph as _graph, example_node_count as _n
 
 # ---------------------------------------------------------------------------
 # Round trips
@@ -154,7 +144,7 @@ def test_exception_in_stream_leaves_bundle_unfinalized(tmp_path: Path) -> None:
 
 def test_add_asset_content_type_validation(tmp_path: Path) -> None:
     enc = BendlEncoder(tmp_path / "v.bendl", overwrite=True)
-    with pytest.raises(ValueError, match="must be 'json', 'text', 'binary', or 'file'"):
+    with pytest.raises(ValueError, match="must be one of 'json', 'text', 'binary', 'file'"):
         enc.add_asset("x", b"data", content_type="parquet")
     with pytest.raises(ValueError, match="valid UTF-8 JSON"):
         enc.add_asset("bad.json", "not json", content_type="json")

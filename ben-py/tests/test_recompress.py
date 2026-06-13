@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from binary_ensemble.bundle import BendlDecoder, BendlEncoder, compress_stream
-
-EXAMPLE_GRAPH = Path(__file__).resolve().parent / "data" / "gerrymandria.json"
-
-
-def _graph():
-    return json.loads(EXAMPLE_GRAPH.read_text())
+from helpers import example_graph as _graph
 
 
 def _build_ben_bundle(path: Path):

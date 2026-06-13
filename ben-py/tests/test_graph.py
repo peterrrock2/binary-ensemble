@@ -2,22 +2,11 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 
 import pytest
 
 from binary_ensemble import graph as g
-
-EXAMPLE_GRAPH = Path(__file__).resolve().parent / "data" / "gerrymandria.json"
-
-
-def _graph():
-    return json.loads(EXAMPLE_GRAPH.read_text())
-
-
-def _n():
-    return len(_graph()["nodes"])
+from helpers import EXAMPLE_GRAPH, example_graph as _graph, example_node_count as _n
 
 
 def _check_consistent(reordered, pmap, n):

@@ -12,7 +12,6 @@ machinery is exercised through ``_core``, which also reports which strategy ran
 
 from __future__ import annotations
 
-import json
 import os
 import random
 import stat
@@ -22,16 +21,11 @@ import pytest
 
 from binary_ensemble import _core
 from binary_ensemble.bundle import BendlDecoder, BendlEncoder, compress_stream
-
-EXAMPLE_GRAPH = Path(__file__).resolve().parent / "data" / "gerrymandria.json"
-
-
-def _graph():
-    return json.loads(EXAMPLE_GRAPH.read_text())
-
-
-def _n():
-    return len(_graph()["nodes"])
+from helpers import (
+    example_graph as _graph,
+    example_node_count as _n,
+    flip_byte_at as _flip_byte_at,
+)
 
 
 def _build_bundle_with_dead_space(path: Path) -> tuple[list[list[int]], int]:
@@ -204,15 +198,6 @@ def test_compact_rejects_unfinalized_bundle(tmp_path: Path) -> None:
                 raise RuntimeError("boom")
     with pytest.raises(Exception, match="finalized"):
         _core.compact_bundle_in_place(path)
-
-
-def _flip_byte_at(path: Path, marker: bytes) -> None:
-    """XOR the first byte of ``marker`` wherever it occurs in the file."""
-    data = bytearray(path.read_bytes())
-    pos = data.find(marker)
-    assert pos != -1, f"marker {marker!r} not found"
-    data[pos] ^= 0xFF
-    path.write_bytes(bytes(data))
 
 
 def test_full_compact_refuses_corrupt_stream(tmp_path: Path) -> None:

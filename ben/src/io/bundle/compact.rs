@@ -385,17 +385,11 @@ pub fn compact_bundle_in_place(path: &Path) -> Result<Compaction, BendlWriteErro
 ///
 /// `names` may repeat (duplicates collapse). An empty `names` is plain
 /// [`compact_bundle_in_place`].
-pub fn remove_assets_in_place(
-    path: &Path,
-    names: &[&str],
-) -> Result<Compaction, BendlWriteError> {
+pub fn remove_assets_in_place(path: &Path, names: &[&str]) -> Result<Compaction, BendlWriteError> {
     compact_in_place_excluding(path, names)
 }
 
-fn compact_in_place_excluding(
-    path: &Path,
-    remove: &[&str],
-) -> Result<Compaction, BendlWriteError> {
+fn compact_in_place_excluding(path: &Path, remove: &[&str]) -> Result<Compaction, BendlWriteError> {
     // Parse and validate through the reader so malformed bundles are rejected up front.
     let file = File::open(path)?;
     let file_len = file.metadata()?.len();

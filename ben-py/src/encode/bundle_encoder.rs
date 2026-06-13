@@ -7,7 +7,7 @@
 //! routes through the writer pre-stream and the appender afterwards.
 
 use crate::common::{
-    graph_node_count, networkx_graph_from_bytes, open_output, parse_graph_input,
+    graph_node_count, map_bundle_err, networkx_graph_from_bytes, open_output, parse_graph_input,
     parse_metadata_input, parse_variant,
 };
 use crate::graph::helpers::{reorder_graph_to_bytes, resolve_reorder};
@@ -18,22 +18,11 @@ use binary_ensemble::io::bundle::{
     AddAssetOptions, BendlStreamSession, BendlWriteError, BendlWriter,
 };
 use binary_ensemble::io::writer::BenStreamWriter;
-use pyo3::exceptions::{PyException, PyIOError, PyKeyError, PyValueError};
+use pyo3::exceptions::{PyException, PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter};
 use std::path::PathBuf;
-
-fn map_bundle_err(err: BendlWriteError) -> PyErr {
-    match err {
-        BendlWriteError::Io(e) => PyIOError::new_err(format!("{e}")),
-        // Matches the decoder's lookup errors (read_asset_bytes, asset_size).
-        BendlWriteError::UnknownAssetName(name) => {
-            PyKeyError::new_err(format!("no asset named {name:?} in bundle"))
-        }
-        other => PyException::new_err(format!("{other}")),
-    }
-}
 
 fn map_io_err(err: io::Error) -> PyErr {
     PyIOError::new_err(format!("{err}"))

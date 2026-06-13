@@ -1,11 +1,68 @@
+use binary_ensemble::io::bundle::format::{
+    KnownAssetKind, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA, ASSET_TYPE_NODE_PERMUTATION_MAP,
+};
+use binary_ensemble::io::bundle::{AddAssetOptions, BendlWriteError, BendlWriter};
 use binary_ensemble::BenVariant;
-use pyo3::exceptions::{PyException, PyIOError, PyValueError};
+use pyo3::exceptions::{PyException, PyIOError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList};
+use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyMemoryView};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter};
+use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Map a core bundle write error onto the Python exception taxonomy — identically at every
+/// entry point, so the same core failure never surfaces as different exception types depending
+/// on which transform raised it. Unknown names are ``KeyError`` (matching the decoder's lookup
+/// errors), reserved names are ``ValueError``, IO is ``OSError``, the rest a generic
+/// ``Exception``.
+pub fn map_bundle_err(err: BendlWriteError) -> PyErr {
+    match err {
+        BendlWriteError::Io(e) => PyIOError::new_err(format!("{e}")),
+        BendlWriteError::UnknownAssetName(name) => {
+            PyKeyError::new_err(format!("no asset named {name:?} in bundle"))
+        }
+        err @ BendlWriteError::ReservedAssetName { .. } => PyValueError::new_err(format!("{err}")),
+        other => PyException::new_err(format!("{other}")),
+    }
+}
+
+/// A single asset read back from a source bundle by decoded payload, ready to be re-added to a
+/// new one. The whole-bundle transforms that re-encode payloads (recompress, relabel) carry
+/// assets this way; verbatim stored-form preservation lives in the core compaction.
+pub struct PreservedAsset {
+    pub asset_type: u16,
+    pub name: String,
+    pub is_json: bool,
+    pub payload: Vec<u8>,
+}
+
+fn known_kind(asset_type: u16) -> Option<KnownAssetKind> {
+    match asset_type {
+        ASSET_TYPE_METADATA => Some(KnownAssetKind::Metadata),
+        ASSET_TYPE_GRAPH => Some(KnownAssetKind::Graph),
+        ASSET_TYPE_NODE_PERMUTATION_MAP => Some(KnownAssetKind::NodePermutationMap),
+        _ => None,
+    }
+}
+
+/// Re-add a preserved asset under its original kind: known singleton types stay canonical,
+/// everything else is re-added as a custom asset.
+pub fn add_preserved<W: Write + Seek>(
+    writer: &mut BendlWriter<W>,
+    asset: &PreservedAsset,
+) -> Result<(), BendlWriteError> {
+    let opts = if asset.is_json {
+        AddAssetOptions::defaults().json()
+    } else {
+        AddAssetOptions::defaults()
+    };
+    match known_kind(asset.asset_type) {
+        Some(kind) => writer.add_known_asset(kind, &asset.payload, opts),
+        None => writer.add_custom_asset(&asset.name, &asset.payload, opts),
+    }
+}
 
 pub fn parse_variant(variant: Option<&str>) -> PyResult<BenVariant> {
     match variant {
@@ -214,6 +271,11 @@ pub fn parse_json_input(
     }
     if let Ok(b) = obj.downcast::<PyByteArray>() {
         return validated_json(b.to_vec(), what);
+    }
+    if obj.downcast::<PyMemoryView>().is_ok() {
+        let data = obj.call_method0("tobytes")?;
+        let b = data.downcast::<PyBytes>().map_err(PyErr::from)?;
+        return validated_json(b.as_bytes().to_vec(), what);
     }
 
     // File-like: must have .read(). Check before str/path, since a plain `str` / `Path` has no

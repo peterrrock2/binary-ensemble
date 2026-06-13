@@ -6,13 +6,13 @@
 //! every other asset (metadata, custom blobs) is carried over by decoded payload, name, type, and
 //! JSON flag.
 
-use crate::common::TempOutput;
+use crate::common::{add_preserved, map_bundle_err, PreservedAsset, TempOutput};
 use crate::graph::helpers::{reorder_graph_to_bytes, require_reorder};
 use binary_ensemble::io::bundle::format::{
-    AssignmentFormat, KnownAssetKind, ASSET_FLAG_JSON, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA,
+    AssignmentFormat, KnownAssetKind, ASSET_FLAG_JSON, ASSET_TYPE_GRAPH,
     ASSET_TYPE_NODE_PERMUTATION_MAP,
 };
-use binary_ensemble::io::bundle::{AddAssetOptions, BendlReader, BendlWriteError, BendlWriter};
+use binary_ensemble::io::bundle::{AddAssetOptions, BendlReader, BendlWriter};
 use binary_ensemble::ops::relabel::{relabel_ben_file, RelabelOptions};
 use pyo3::exceptions::{PyException, PyIOError, PyValueError};
 use pyo3::prelude::*;
@@ -20,39 +20,6 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Write};
 use std::path::PathBuf;
-
-fn map_bundle_err(err: BendlWriteError) -> PyErr {
-    match err {
-        BendlWriteError::Io(e) => PyIOError::new_err(format!("{e}")),
-        other => PyException::new_err(format!("{other}")),
-    }
-}
-
-/// A metadata/custom asset carried over unchanged from the source bundle.
-struct PreservedAsset {
-    asset_type: u16,
-    name: String,
-    is_json: bool,
-    payload: Vec<u8>,
-}
-
-fn add_preserved<W: Write + std::io::Seek>(
-    writer: &mut BendlWriter<W>,
-    asset: &PreservedAsset,
-) -> Result<(), BendlWriteError> {
-    let opts = if asset.is_json {
-        AddAssetOptions::defaults().json()
-    } else {
-        AddAssetOptions::defaults()
-    };
-    // Keep canonical known assets (e.g. metadata.json) canonical; everything else is custom.
-    match asset.asset_type {
-        ASSET_TYPE_METADATA => {
-            writer.add_known_asset(KnownAssetKind::Metadata, &asset.payload, opts)
-        }
-        _ => writer.add_custom_asset(&asset.name, &asset.payload, opts),
-    }
-}
 
 /// Invert a stored `node_permutation_old_to_new` object into the dense `new -> old` map that
 /// `relabel_ben_file` consumes.

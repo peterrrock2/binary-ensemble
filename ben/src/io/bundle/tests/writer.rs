@@ -2256,7 +2256,10 @@ fn incompressible_payload_is_stored_raw_even_above_the_threshold() {
         *b = (x >> 24) as u8;
     }
 
-    for options in [AddAssetOptions::defaults(), AddAssetOptions::defaults().compress()] {
+    for options in [
+        AddAssetOptions::defaults(),
+        AddAssetOptions::defaults().compress(),
+    ] {
         let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
         writer
             .add_asset(ASSET_TYPE_CUSTOM, "noise.bin", &noise, options)

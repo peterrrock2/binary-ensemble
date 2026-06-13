@@ -5,57 +5,15 @@
 //! assets (name, type, JSON flag, decoded bytes). Storage compression is normalized to the writer's
 //! default policy — the decoded payload bytes are preserved, not the byte-for-byte on-disk form.
 
-use crate::common::TempOutput;
+use crate::common::{add_preserved, map_bundle_err, PreservedAsset, TempOutput};
 use binary_ensemble::codec::encode::encode_ben_to_xben;
-use binary_ensemble::io::bundle::format::{
-    AssignmentFormat, KnownAssetKind, ASSET_FLAG_JSON, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA,
-    ASSET_TYPE_NODE_PERMUTATION_MAP,
-};
-use binary_ensemble::io::bundle::{AddAssetOptions, BendlReader, BendlWriteError, BendlWriter};
+use binary_ensemble::io::bundle::format::{AssignmentFormat, ASSET_FLAG_JSON};
+use binary_ensemble::io::bundle::{BendlReader, BendlWriter};
 use pyo3::exceptions::{PyException, PyIOError};
 use pyo3::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Write};
 use std::path::PathBuf;
-
-fn map_bundle_err(err: BendlWriteError) -> PyErr {
-    match err {
-        BendlWriteError::Io(e) => PyIOError::new_err(format!("{e}")),
-        other => PyException::new_err(format!("{other}")),
-    }
-}
-
-/// A single asset read back from the source bundle, ready to be re-added to the new one.
-struct PreservedAsset {
-    asset_type: u16,
-    name: String,
-    is_json: bool,
-    payload: Vec<u8>,
-}
-
-fn known_kind(asset_type: u16) -> Option<KnownAssetKind> {
-    match asset_type {
-        ASSET_TYPE_METADATA => Some(KnownAssetKind::Metadata),
-        ASSET_TYPE_GRAPH => Some(KnownAssetKind::Graph),
-        ASSET_TYPE_NODE_PERMUTATION_MAP => Some(KnownAssetKind::NodePermutationMap),
-        _ => None,
-    }
-}
-
-fn add_preserved<W: Write + std::io::Seek>(
-    writer: &mut BendlWriter<W>,
-    asset: &PreservedAsset,
-) -> Result<(), BendlWriteError> {
-    let opts = if asset.is_json {
-        AddAssetOptions::defaults().json()
-    } else {
-        AddAssetOptions::defaults()
-    };
-    match known_kind(asset.asset_type) {
-        Some(kind) => writer.add_known_asset(kind, &asset.payload, opts),
-        None => writer.add_custom_asset(&asset.name, &asset.payload, opts),
-    }
-}
 
 /// Recompress the BEN stream of the bundle at `in_file` to XBEN, writing a new bundle at
 /// `out_file`.

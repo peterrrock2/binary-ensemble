@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
+
+from helpers import example_graph as _graph, example_node_count as _n
 
 from binary_ensemble.bundle import (
     BendlDecoder,
@@ -13,16 +14,6 @@ from binary_ensemble.bundle import (
     compress_stream,
     relabel_bundle,
 )
-
-EXAMPLE_GRAPH = Path(__file__).resolve().parent / "data" / "gerrymandria.json"
-
-
-def _graph():
-    return json.loads(EXAMPLE_GRAPH.read_text())
-
-
-def _n():
-    return len(_graph()["nodes"])
 
 
 def _build_ben_bundle(path: Path, with_graph: bool = True):

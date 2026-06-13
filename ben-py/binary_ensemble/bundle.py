@@ -26,13 +26,14 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Literal, cast, overload
+from typing import TYPE_CHECKING, Literal, cast, get_args, overload
 
 from binary_ensemble._core import BendlDecoder, BendlStreamSession
 from binary_ensemble._core import BendlEncoder as _CoreBendlEncoder
 from binary_ensemble._core import recompress_bundle as _recompress_bundle
 from binary_ensemble._core import relabel_bundle as _relabel_bundle
 from binary_ensemble.types import (
+    AssetContentType,
     BinaryAssetPayload,
     GraphInput,
     JsonAssetPayload,
@@ -75,6 +76,11 @@ def _atomic_or_out(
         transform(path, out_file, overwrite)
         return
     transform(path, path, True)
+
+
+# Runtime view of the accepted content types, derived from the type alias so the validation
+# and the type hints can never drift apart.
+_CONTENT_TYPES = get_args(AssetContentType)
 
 
 def _coerce_asset_payload(payload: object, content_type: str) -> bytes:
@@ -294,11 +300,12 @@ class BendlEncoder:
                 data = f.read()
             self._enc.add_asset(name, data, "binary")
             return
-        if content_type not in ("json", "text", "binary"):
+        if content_type not in _CONTENT_TYPES:
             # Validate before coercion: a bad content_type must not consume a file-like
             # payload or read a path from disk on its way to the error.
             raise ValueError(
-                f"content_type must be 'json', 'text', 'binary', or 'file', got {content_type!r}"
+                f"content_type must be one of {', '.join(map(repr, _CONTENT_TYPES))}, "
+                f"got {content_type!r}"
             )
         data = _coerce_asset_payload(payload, content_type)
         if content_type == "json" and not isinstance(payload, (dict, list)):

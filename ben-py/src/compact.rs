@@ -6,24 +6,17 @@
 //! reader, and the wire format (BEN or XBEN) is preserved. The `bendl` CLI's `remove`
 //! and `compact` subcommands share the same core implementation.
 
-use crate::common::TempOutput;
+use crate::common::{map_bundle_err, TempOutput};
 use binary_ensemble::io::bundle::compact::{
     compact_bundle as core_compact_bundle, compact_bundle_in_place as core_compact_in_place,
     Compaction,
 };
-use binary_ensemble::io::bundle::{BendlReader, BendlWriteError};
+use binary_ensemble::io::bundle::BendlReader;
 use pyo3::exceptions::{PyException, PyIOError};
 use pyo3::prelude::*;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
-
-fn map_bundle_err(err: BendlWriteError) -> PyErr {
-    match err {
-        BendlWriteError::Io(e) => PyIOError::new_err(format!("{e}")),
-        other => PyException::new_err(format!("{other}")),
-    }
-}
 
 /// Rewrite the bundle at `in_file` without unreferenced byte ranges, writing the result to
 /// `out_file`.

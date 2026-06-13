@@ -23,6 +23,7 @@ import pytest
 
 from binary_ensemble import BenDecoder, BenEncoder, encode_jsonl_to_xben
 from binary_ensemble.bundle import BendlDecoder, BendlEncoder
+from helpers import flip_byte_at
 
 # ---------------------------------------------------------------------------
 # Format constants (mirror ben/src/io/bundle/format.rs)
@@ -985,14 +986,6 @@ def _checksummed_bundle(path: Path) -> None:
                 s.write(a)
 
 
-def _flip_byte_at_marker(path: Path, marker: bytes) -> None:
-    """XOR one byte at the first occurrence of ``marker`` in the file."""
-    data = bytearray(path.read_bytes())
-    idx = data.index(marker)
-    data[idx] ^= 0xFF
-    path.write_bytes(bytes(data))
-
-
 def test_verify_passes_on_pristine_bundle(tmp_path: Path) -> None:
     path = tmp_path / "ok.bendl"
     _checksummed_bundle(path)
@@ -1005,7 +998,7 @@ def test_verify_catches_stream_corruption(tmp_path: Path) -> None:
     # any byte flip in the stream region.
     path = tmp_path / "stream-corrupt.bendl"
     _checksummed_bundle(path)
-    _flip_byte_at_marker(path, b"STANDARD BEN FILE")
+    flip_byte_at(path, b"STANDARD BEN FILE")
 
     dec = BendlDecoder(path)  # directory is intact, so the bundle still opens
     with pytest.raises(Exception, match="stream verification failed"):
@@ -1015,7 +1008,7 @@ def test_verify_catches_stream_corruption(tmp_path: Path) -> None:
 def test_verify_catches_asset_corruption(tmp_path: Path) -> None:
     path = tmp_path / "asset-corrupt.bendl"
     _checksummed_bundle(path)
-    _flip_byte_at_marker(path, b"integrity matters")
+    flip_byte_at(path, b"integrity matters")
 
     dec = BendlDecoder(path)
     with pytest.raises(Exception, match="asset verification failed"):
