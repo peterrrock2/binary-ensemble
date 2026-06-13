@@ -1,12 +1,14 @@
 # Anti-patterns
 
-These are valid-looking patterns that produce bad workflows, confusing files, or silently
-wrong analysis.
+Each of these looks reasonable and runs without complaint, yet quietly leads somewhere bad: a
+confusing file, a workflow that won't reproduce, or analysis that is wrong without ever raising
+an error. Here is what goes wrong, and what to reach for instead.
 
 ## Writing assignments in the wrong graph order
 
-An assignment vector has no geographic meaning by itself. It only means something with
-respect to the graph order.
+An assignment vector carries no geographic meaning on its own; it means something only against a
+specific graph node order. Line the two up wrong and every district id lands on the wrong unit,
+silently.
 
 ```python
 from binary_ensemble import BendlDecoder
@@ -19,13 +21,15 @@ assert graph is not None
 assert len(assignment) == graph.number_of_nodes()
 ```
 
-That length check is necessary but not sufficient. The sampler still must write assignments
-in `list(graph.nodes)` order.
+The length check above is necessary but not sufficient: the sampler must also emit each
+assignment in `list(graph.nodes)` order, or the plan and the graph disagree with no symptom to
+warn you.
 
 ## Reordering the graph after writing assignments
 
-Do not sort or relabel a graph file by hand after encoding a stream. If the graph order
-changes, every assignment position must be rewritten too. Use `relabel_bundle()` for that.
+Don't sort or relabel a graph file by hand once a stream has been encoded against it. Moving the
+nodes means every assignment position has to move with them, and editing the graph alone leaves
+the two out of sync. `relabel_bundle()` does both halves together:
 
 ```python
 from binary_ensemble import relabel_bundle

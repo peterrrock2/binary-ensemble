@@ -38,11 +38,13 @@ This document uses the workspace glossary. The terms that matter most here:
 
 The encoding stack is layered as in the glossary:
 
-| Layer | Name | What it is here | |---|---|---| | 0 | bit-packing | run values and run lengths
-crammed into bit-precise widths | | 1 | RLE | `(value, length)` pairs over an assignment | | 2 |
-frame | one sample's bytes: frame header + payload, plus a `u16` count for `MkvChain` | | 3 | stream
-| banner + concatenated frames; the contents of a `.ben` file | | 4 | container | the on-disk file:
-`.ben`, or `.xben` (the stream wrapped in LZMA2) |
+| Layer | Name | What it is here |
+|---|---|---|
+| 0 | bit-packing | run values and run lengths crammed into bit-precise widths |
+| 1 | RLE | `(value, length)` pairs over an assignment |
+| 2 | frame | one sample's bytes: frame header + payload, plus a `u16` count for `MkvChain` |
+| 3 | stream | banner + concatenated frames; the contents of a `.ben` file |
+| 4 | container | the on-disk file: `.ben`, or `.xben` (the stream wrapped in LZMA2) |
 
 ## Byte Order
 

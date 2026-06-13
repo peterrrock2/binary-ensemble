@@ -59,11 +59,13 @@ renames listed at the end.
 The five layers of the BEN-family encoding pipeline. Use the layer name unambiguously; never
 compress multiple layers into one word.
 
-| Layer | Name | What it is | |---|---|---| | 0 | bit-packing | cramming run values into bit-precise
-widths | | 1 | RLE | `(value, length)` pairs | | 2 | frame | one sample's encoded bytes: frame
-header + payload, plus a repetition count for `MkvChain` and `TwoDelta` | | 3 | stream | banner +
-concatenated frames; the contents of a `.ben` file or the LZMA2-decompressed body of a `.xben` file
-| | 4 | container | the on-disk file: `.ben`, `.xben`, or `.bendl` |
+| Layer | Name | What it is |
+|---|---|---|
+| 0 | bit-packing | cramming run values into bit-precise widths |
+| 1 | RLE | `(value, length)` pairs |
+| 2 | frame | one sample's encoded bytes: frame header + payload, plus a repetition count for `MkvChain` and `TwoDelta` |
+| 3 | stream | banner + concatenated frames; the contents of a `.ben` file or the LZMA2-decompressed body of a `.xben` file |
+| 4 | container | the on-disk file: `.ben`, `.xben`, or `.bendl` |
 
 - **Banner**
   - 17-byte ASCII identifier at the start of every BEN/XBEN stream. One per file.
