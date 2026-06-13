@@ -1,4 +1,4 @@
-name: Build & publish pyben wheels
+name: Build & publish ben-py wheels
 
 on:
   push:
@@ -14,7 +14,7 @@ on:
     #     options: [testpypi, pypi]
 
 env:
-  PKG_DIR: pyben
+  PKG_DIR: ben-py
   OUT_DIR: dist
 
 permissions:
@@ -42,6 +42,14 @@ jobs:
             --release
             --locked
             --out ${{ env.OUT_DIR }}
+      # Smoke-test the built wheel in a clean venv before it can be published. aarch64 wheels are
+      # cross-built and cannot execute on this runner, so only the native target is smoked.
+      - name: Smoke test wheel
+        if: matrix.target == 'x86_64'
+        run: |
+          python3 -m venv /tmp/wheel-smoke
+          /tmp/wheel-smoke/bin/pip install ${{ env.PKG_DIR }}/${{ env.OUT_DIR }}/*.whl
+          /tmp/wheel-smoke/bin/python .github/workflows/wheel_smoke.py
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-linux-${{ matrix.target }}
@@ -75,6 +83,12 @@ jobs:
             --target universal2-apple-darwin
             --out ${{ env.OUT_DIR }}
 
+      - name: Smoke test wheel
+        run: |
+          python3 -m venv /tmp/wheel-smoke
+          /tmp/wheel-smoke/bin/pip install ${{ env.PKG_DIR }}/${{ env.OUT_DIR }}/*.whl
+          /tmp/wheel-smoke/bin/python .github/workflows/wheel_smoke.py
+
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-macos-universal2
@@ -103,6 +117,13 @@ jobs:
             --release
             --locked
             --out ${{ env.OUT_DIR }}
+      - name: Smoke test wheel
+        shell: pwsh
+        run: |
+          python -m venv $env:TEMP\wheel-smoke
+          $wheel = Get-ChildItem "${{ env.PKG_DIR }}\${{ env.OUT_DIR }}\*.whl" | Select-Object -First 1
+          & "$env:TEMP\wheel-smoke\Scripts\pip" install $wheel.FullName
+          & "$env:TEMP\wheel-smoke\Scripts\python" .github\workflows\wheel_smoke.py
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-windows
@@ -112,7 +133,7 @@ jobs:
     name: windows (ARM64, abi3)
     runs-on: windows-11-arm
     env:
-      PKG_DIR: pyben
+      PKG_DIR: ben-py
       OUT_DIR: dist
     steps:
       - uses: actions/checkout@v4
@@ -131,6 +152,13 @@ jobs:
             --locked
             --out ${{ env.OUT_DIR }}
             --target aarch64-pc-windows-msvc
+      - name: Smoke test wheel
+        shell: pwsh
+        run: |
+          python -m venv $env:TEMP\wheel-smoke
+          $wheel = Get-ChildItem "${{ env.PKG_DIR }}\${{ env.OUT_DIR }}\*.whl" | Select-Object -First 1
+          & "$env:TEMP\wheel-smoke\Scripts\pip" install $wheel.FullName
+          & "$env:TEMP\wheel-smoke\Scripts\python" .github\workflows\wheel_smoke.py
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-windows-arm64

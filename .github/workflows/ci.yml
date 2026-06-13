@@ -1,0 +1,47 @@
+name: CI
+
+# Lightweight quality gates on every PR: formatting and lints for both languages. The heavier
+# gates (full test suite, big-endian emulation) live in full-tests.yml and run on demand — either
+# from the Actions tab or via a `/ci-full` / `/ci-endian` PR comment.
+#
+# These mirror `task format` / `task lint`; keep the two in sync.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+      - uses: astral-sh/setup-uv@v5
+      - name: ruff format
+        working-directory: ben-py
+        run: uvx ruff format --check .
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - uses: astral-sh/setup-uv@v5
+      - name: ruff check
+        working-directory: ben-py
+        run: uvx ruff check .

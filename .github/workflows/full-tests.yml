@@ -1,0 +1,167 @@
+name: Full tests (on demand)
+
+# The heavy gates, run only when asked:
+#
+#   - From the Actions tab via "Run workflow" (workflow_dispatch), picking any branch.
+#   - From a PR by commenting `/ci-full` (Rust + Python suites + big-endian), `/ci-endian`
+#     (big-endian only), or `/ci-fuzz` (time-boxed coverage-guided fuzzing). Comment triggers
+#     are restricted to the repo owner, members, and collaborators, because the jobs check out
+#     and execute the PR head.
+#
+# Note: GitHub only evaluates `issue_comment` triggers against the workflow file on the default
+# branch, so the comment commands start working once this file lands on main.
+
+on:
+  workflow_dispatch:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write # eyes-reaction acknowledgment on the triggering comment
+
+jobs:
+  decide:
+    name: decide what to run
+    runs-on: ubuntu-latest
+    outputs:
+      run_full: ${{ steps.flags.outputs.run_full }}
+      run_endian: ${{ steps.flags.outputs.run_endian }}
+      run_fuzz: ${{ steps.flags.outputs.run_fuzz }}
+      ref: ${{ steps.flags.outputs.ref }}
+    steps:
+      - name: compute trigger flags
+        id: flags
+        # The comment body is passed through env rather than interpolated into the script, so a
+        # hostile comment cannot inject shell.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IS_PR_COMMENT: ${{ github.event.issue.pull_request != null }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          AUTHOR_ASSOCIATION: ${{ github.event.comment.author_association }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          DISPATCH_REF: ${{ github.ref }}
+        run: |
+          run_full=false
+          run_endian=false
+          run_fuzz=false
+          ref="$DISPATCH_REF"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            run_full=true
+            run_endian=true
+            run_fuzz=true
+          elif [ "$IS_PR_COMMENT" = "true" ]; then
+            case "$AUTHOR_ASSOCIATION" in
+              OWNER|MEMBER|COLLABORATOR)
+                case "$COMMENT_BODY" in
+                  *"/ci-full"*) run_full=true; run_endian=true ;;
+                esac
+                case "$COMMENT_BODY" in
+                  *"/ci-endian"*) run_endian=true ;;
+                esac
+                case "$COMMENT_BODY" in
+                  *"/ci-fuzz"*) run_fuzz=true ;;
+                esac
+                ;;
+            esac
+            ref="refs/pull/$PR_NUMBER/head"
+          fi
+          {
+            echo "run_full=$run_full"
+            echo "run_endian=$run_endian"
+            echo "run_fuzz=$run_fuzz"
+            echo "ref=$ref"
+          } >> "$GITHUB_OUTPUT"
+      - name: acknowledge the triggering comment
+        if: github.event_name == 'issue_comment' && (steps.flags.outputs.run_full == 'true' || steps.flags.outputs.run_endian == 'true' || steps.flags.outputs.run_fuzz == 'true')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh api
+          repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions
+          -f content=eyes
+
+  rust-tests:
+    name: rust tests
+    needs: decide
+    if: needs.decide.outputs.run_full == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.decide.outputs.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: fast suite
+        run: cargo test
+      - name: ignored-gated stress suite
+        run: >-
+          cargo test -- --ignored
+          --skip generate_format_stability_fixtures
+          --skip regenerate_twodelta_fixtures
+          --skip generate_pcompress_interop_fixture
+
+  python-tests:
+    name: python tests
+    needs: decide
+    if: needs.decide.outputs.run_full == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.decide.outputs.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v5
+      - name: sync environment
+        working-directory: ben-py
+        run: uv sync --all-groups
+      - name: build extension
+        working-directory: ben-py
+        run: uv run maturin develop
+      - name: pytest
+        working-directory: ben-py
+        run: uv run pytest tests/
+
+  big-endian:
+    name: big-endian suite (s390x under QEMU)
+    needs: decide
+    if: needs.decide.outputs.run_endian == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.decide.outputs.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - name: cross test on s390x
+        run: cross test -p binary-ensemble --target s390x-unknown-linux-gnu
+
+  fuzz:
+    name: coverage-guided fuzzing (time-boxed)
+    needs: decide
+    if: needs.decide.outputs.run_fuzz == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.decide.outputs.ref }}
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - uses: arduino/setup-task@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: fuzz every read surface (120s per target)
+        run: task fuzz FUZZ_SECONDS=120
+      - name: upload crash artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/
