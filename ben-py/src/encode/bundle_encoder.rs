@@ -254,11 +254,15 @@ impl PyBendlEncoder {
     ///         asset), is currently streaming, or is closed.
     #[pyo3(signature = (name))]
     #[pyo3(text_signature = "(self, name)")]
-    fn remove_asset_compacting(&mut self, name: &str) -> PyResult<()> {
+    fn remove_asset_compacting(&mut self, py: Python<'_>, name: &str) -> PyResult<()> {
         if matches!(self.state, BundleState::Appendable) {
-            return remove_assets_in_place(&self.path, &[name])
-                .map(|_| ())
-                .map_err(map_bundle_err);
+            // Rust-only IO (possibly a whole-file rewrite); run detached.
+            let path = &self.path;
+            return py.detach(move || {
+                remove_assets_in_place(path, &[name])
+                    .map(|_| ())
+                    .map_err(map_bundle_err)
+            });
         }
         Err(state_error(&self.state, "remove_asset_compacting"))
     }

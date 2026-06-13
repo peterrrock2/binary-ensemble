@@ -103,9 +103,7 @@ impl TempOutput {
             .write(true)
             .create_new(true)
             .open(&tmp)
-            .map_err(|e| {
-                PyIOError::new_err(format!("Failed to create {}: {e}", tmp.display()))
-            })?;
+            .map_err(|e| PyIOError::new_err(format!("Failed to create {}: {e}", tmp.display())))?;
         // Inherit an existing destination's permissions before any byte is written, so the swap
         // never changes the file's mode (and a private file's contents never sit world-readable).
         if let Ok(meta) = fs::metadata(dest) {

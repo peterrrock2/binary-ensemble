@@ -34,6 +34,7 @@ use std::path::PathBuf;
     text_signature = "(in_file, out_file, overwrite=False, n_threads=None, compression_level=None, xz_block_size=None)"
 )]
 pub fn encode_ben_to_xben(
+    py: Python<'_>,
     in_file: PathBuf,
     out_file: PathBuf,
     overwrite: bool,
@@ -41,28 +42,32 @@ pub fn encode_ben_to_xben(
     compression_level: Option<u32>,
     xz_block_size: Option<u64>,
 ) -> PyResult<()> {
-    validate_input_output_paths(&in_file, &out_file)?;
-    let reader = open_input(&in_file)?;
-    let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
+    // Rust-only IO/CPU: run detached so other Python threads aren't blocked for the
+    // conversion's duration.
+    py.detach(move || {
+        validate_input_output_paths(&in_file, &out_file)?;
+        let reader = open_input(&in_file)?;
+        let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
 
-    core_encode_ben_to_xben(
-        reader,
-        writer,
-        n_threads.map(cpus_from_signed),
-        compression_level,
-        None,
-        xz_block_size,
-    )
-    .map_err(|e| {
-        PyIOError::new_err(format!(
-            "Failed to convert BEN to XBEN from {} to {}: {e}",
-            in_file.display(),
-            out_file.display()
-        ))
-    })?;
-    guard.commit()?;
+        core_encode_ben_to_xben(
+            reader,
+            writer,
+            n_threads.map(cpus_from_signed),
+            compression_level,
+            None,
+            xz_block_size,
+        )
+        .map_err(|e| {
+            PyIOError::new_err(format!(
+                "Failed to convert BEN to XBEN from {} to {}: {e}",
+                in_file.display(),
+                out_file.display()
+            ))
+        })?;
+        guard.commit()?;
 
-    Ok(())
+        Ok(())
+    })
 }
 
 /// Encode a canonicalized JSONL ensemble into a BEN stream.
@@ -85,26 +90,31 @@ pub fn encode_ben_to_xben(
 #[pyo3(signature = (in_file, out_file, overwrite=false, variant="twodelta"))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False, variant='twodelta')")]
 pub fn encode_jsonl_to_ben(
+    py: Python<'_>,
     in_file: PathBuf,
     out_file: PathBuf,
     overwrite: bool,
     variant: &str,
 ) -> PyResult<()> {
-    let ben_var = parse_variant(Some(variant))?;
-    validate_input_output_paths(&in_file, &out_file)?;
-    let reader = open_input(&in_file)?;
-    let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
+    // Rust-only IO/CPU: run detached so other Python threads aren't blocked for the
+    // conversion's duration.
+    py.detach(move || {
+        let ben_var = parse_variant(Some(variant))?;
+        validate_input_output_paths(&in_file, &out_file)?;
+        let reader = open_input(&in_file)?;
+        let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
 
-    core_encode_jsonl_to_ben(reader, writer, ben_var).map_err(|e| {
-        PyIOError::new_err(format!(
-            "Failed to convert JSONL to BEN from {} to {}: {e}",
-            in_file.display(),
-            out_file.display()
-        ))
-    })?;
-    guard.commit()?;
+        core_encode_jsonl_to_ben(reader, writer, ben_var).map_err(|e| {
+            PyIOError::new_err(format!(
+                "Failed to convert JSONL to BEN from {} to {}: {e}",
+                in_file.display(),
+                out_file.display()
+            ))
+        })?;
+        guard.commit()?;
 
-    Ok(())
+        Ok(())
+    })
 }
 
 /// Encode a canonicalized JSONL ensemble directly into an XBEN file.
@@ -135,7 +145,9 @@ pub fn encode_jsonl_to_ben(
 #[pyo3(
     text_signature = "(in_file, out_file, overwrite=False, variant='twodelta', n_threads=None, compression_level=None, xz_block_size=None)"
 )]
+#[allow(clippy::too_many_arguments)] // The py token pushed the Python-visible six over the lint.
 pub fn encode_jsonl_to_xben(
+    py: Python<'_>,
     in_file: PathBuf,
     out_file: PathBuf,
     overwrite: bool,
@@ -144,28 +156,32 @@ pub fn encode_jsonl_to_xben(
     compression_level: Option<u32>,
     xz_block_size: Option<u64>,
 ) -> PyResult<()> {
-    let ben_var = parse_variant(Some(variant))?;
-    validate_input_output_paths(&in_file, &out_file)?;
-    let reader = open_input(&in_file)?;
-    let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
+    // Rust-only IO/CPU: run detached so other Python threads aren't blocked for the
+    // conversion's duration.
+    py.detach(move || {
+        let ben_var = parse_variant(Some(variant))?;
+        validate_input_output_paths(&in_file, &out_file)?;
+        let reader = open_input(&in_file)?;
+        let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
 
-    core_encode_jsonl_to_xben(
-        reader,
-        writer,
-        ben_var,
-        n_threads.map(cpus_from_signed),
-        compression_level,
-        None,
-        xz_block_size,
-    )
-    .map_err(|e| {
-        PyIOError::new_err(format!(
-            "Failed to convert JSONL to XBEN from {} to {}: {e}",
-            in_file.display(),
-            out_file.display()
-        ))
-    })?;
-    guard.commit()?;
+        core_encode_jsonl_to_xben(
+            reader,
+            writer,
+            ben_var,
+            n_threads.map(cpus_from_signed),
+            compression_level,
+            None,
+            xz_block_size,
+        )
+        .map_err(|e| {
+            PyIOError::new_err(format!(
+                "Failed to convert JSONL to XBEN from {} to {}: {e}",
+                in_file.display(),
+                out_file.display()
+            ))
+        })?;
+        guard.commit()?;
 
-    Ok(())
+        Ok(())
+    })
 }

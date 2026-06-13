@@ -124,19 +124,27 @@ fn encode_asset_payload(
     compress: bool,
     is_json: bool,
 ) -> io::Result<EncodedAsset> {
-    let bytes = if compress {
+    // Keep the compressed form only when it actually wins: xz carries fixed container overhead,
+    // so small or already-compressed payloads can come out the same size or larger — and every
+    // future read of such an asset would pay a pointless decompression. The flag always
+    // describes the stored bytes truthfully.
+    let mut compressed = None;
+    if compress {
         let mut encoder = XzEncoder::new(Vec::new(), DEFAULT_XZ_PRESET);
         encoder.write_all(&payload)?;
-        encoder.finish()?
-    } else {
-        payload
-    };
+        let candidate = encoder.finish()?;
+        if candidate.len() < payload.len() {
+            compressed = Some(candidate);
+        }
+    }
+    let stored_compressed = compressed.is_some();
+    let bytes = compressed.unwrap_or(payload);
 
     let mut asset_flags: u16 = ASSET_FLAG_CHECKSUM;
     if is_json {
         asset_flags |= ASSET_FLAG_JSON;
     }
-    if compress {
+    if stored_compressed {
         asset_flags |= ASSET_FLAG_XZ;
     }
 
@@ -309,6 +317,42 @@ impl<W: Write + Seek> BendlWriter<W> {
             payload_offset,
             payload_len: encoded.bytes.len() as u64,
             checksum: Some(encoded.checksum),
+        });
+
+        Ok(())
+    }
+
+    /// Copy an already-encoded asset verbatim: `stored` is the on-disk payload form (compressed
+    /// or raw, exactly as another bundle stored it), and `asset_flags` / `checksum` carry over
+    /// unchanged so the bytes remain verifiable against their original CRC. The usual naming
+    /// rules still apply.
+    ///
+    /// This is how whole-bundle rewrites (compaction) preserve assets without decoding and
+    /// re-encoding them; new payloads belong in [`Self::add_asset`].
+    pub fn add_stored_asset(
+        &mut self,
+        asset_type: u16,
+        name: &str,
+        asset_flags: u16,
+        checksum: Option<Vec<u8>>,
+        stored: &[u8],
+    ) -> Result<(), BendlWriteError> {
+        if self.state != WriterState::Assets {
+            return Err(BendlWriteError::AssetsAfterStream);
+        }
+        self.registry.check(asset_type, name)?;
+
+        let payload_offset = self.inner.stream_position()?;
+        self.inner.write_all(stored)?;
+
+        self.registry.claim(asset_type, name)?;
+        self.entries.push(BendlDirectoryEntry {
+            asset_type,
+            asset_flags,
+            name: name.to_string(),
+            payload_offset,
+            payload_len: stored.len() as u64,
+            checksum,
         });
 
         Ok(())

@@ -1,8 +1,9 @@
 //! Binding for compacting a `.bendl` file: rewriting it without unreferenced byte ranges.
 //!
 //! Thin wrapper over [`binary_ensemble::io::bundle::compact`], which owns the semantics: assets
-//! are carried over by decoded payload, the assignment stream is copied verbatim through a
-//! verified reader, and the wire format (BEN or XBEN) is preserved. The `bendl` CLI's `remove`
+//! are carried over verbatim (stored bytes, flags, and checksums unchanged, verified against
+//! their stored CRC32C as they travel), the assignment stream is copied through a verified
+//! reader, and the wire format (BEN or XBEN) is preserved. The `bendl` CLI's `remove`
 //! and `compact` subcommands share the same core implementation.
 
 use crate::common::TempOutput;
@@ -46,7 +47,18 @@ fn map_bundle_err(err: BendlWriteError) -> PyErr {
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite = false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
-pub fn compact_bundle(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> PyResult<()> {
+pub fn compact_bundle(
+    py: Python<'_>,
+    in_file: PathBuf,
+    out_file: PathBuf,
+    overwrite: bool,
+) -> PyResult<()> {
+    // Rust-only IO/CPU: run detached so other Python threads (and KeyboardInterrupt delivery)
+    // aren't blocked for the rewrite's potentially multi-gigabyte duration.
+    py.detach(move || compact_bundle_impl(in_file, out_file, overwrite))
+}
+
+fn compact_bundle_impl(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> PyResult<()> {
     let file = File::open(&in_file)
         .map_err(|e| PyIOError::new_err(format!("Failed to open {}: {e}", in_file.display())))?;
     let mut reader = BendlReader::open(BufReader::new(file)).map_err(|e| {
@@ -94,7 +106,13 @@ pub fn compact_bundle(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> P
 #[pyfunction]
 #[pyo3(signature = (path))]
 #[pyo3(text_signature = "(path)")]
-pub fn compact_bundle_in_place(path: PathBuf) -> PyResult<&'static str> {
+pub fn compact_bundle_in_place(py: Python<'_>, path: PathBuf) -> PyResult<&'static str> {
+    // Rust-only IO/CPU: run detached so other Python threads (and KeyboardInterrupt delivery)
+    // aren't blocked for the rewrite's potentially multi-gigabyte duration.
+    py.detach(move || compact_bundle_in_place_impl(path))
+}
+
+fn compact_bundle_in_place_impl(path: PathBuf) -> PyResult<&'static str> {
     let kind = core_compact_in_place(&path).map_err(map_bundle_err)?;
     Ok(match kind {
         Compaction::None => "none",

@@ -16,8 +16,9 @@
 //!   milliseconds and needs no scratch space. The stream is never read, so this path performs no
 //!   stream checksum verification.
 //! - **Full rewrite.** When dead space exists before the stream (a removed pre-stream asset), the
-//!   bundle is rewritten wholesale: assets carried by decoded payload (verify-on-touch), stream
-//!   copied verbatim through the verified reader, temp file atomically swapped in.
+//!   bundle is rewritten wholesale: assets carried verbatim (stored bytes, flags, and checksums
+//!   unchanged, verified against their stored CRC32C as they travel), stream copied through the
+//!   verified reader, temp file atomically swapped in.
 //!
 //! Both strategies preserve the stream's wire format (BEN or XBEN) as-is.
 
@@ -28,12 +29,10 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::format::{
-    encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlHeader, KnownAssetKind,
-    ASSET_FLAG_JSON, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA, ASSET_TYPE_NODE_PERMUTATION_MAP,
-    HEADER_SIZE,
+    encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlHeader, HEADER_SIZE,
 };
 use super::reader::{validate_entry_extents, BendlReader};
-use super::writer::{AddAssetOptions, BendlWriteError, BendlWriter};
+use super::writer::{BendlWriteError, BendlWriter};
 
 /// Which compaction strategy [`compact_bundle_in_place`] ended up using.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,45 +45,14 @@ pub enum Compaction {
     FullRewrite,
 }
 
-/// A single asset read back from the source bundle, ready to be re-added to the new one.
-struct PreservedAsset {
-    asset_type: u16,
-    name: String,
-    is_json: bool,
-    payload: Vec<u8>,
-}
-
-fn known_kind(asset_type: u16) -> Option<KnownAssetKind> {
-    match asset_type {
-        ASSET_TYPE_METADATA => Some(KnownAssetKind::Metadata),
-        ASSET_TYPE_GRAPH => Some(KnownAssetKind::Graph),
-        ASSET_TYPE_NODE_PERMUTATION_MAP => Some(KnownAssetKind::NodePermutationMap),
-        _ => None,
-    }
-}
-
-fn add_preserved<W: Write + Seek>(
-    writer: &mut BendlWriter<W>,
-    asset: &PreservedAsset,
-) -> Result<(), BendlWriteError> {
-    let opts = if asset.is_json {
-        AddAssetOptions::defaults().json()
-    } else {
-        AddAssetOptions::defaults()
-    };
-    match known_kind(asset.asset_type) {
-        Some(kind) => writer.add_known_asset(kind, &asset.payload, opts),
-        None => writer.add_custom_asset(&asset.name, &asset.payload, opts),
-    }
-}
-
 /// Rewrite the finalized bundle behind `reader` into `out`, dropping unreferenced byte ranges.
 ///
-/// This is the full-rewrite strategy: assets are carried over by decoded payload (verify-on-touch
-/// applies), and the assignment stream is copied verbatim through the verified stream reader, so
-/// a checksum mismatch anywhere in the source surfaces as an error here instead of propagating.
-/// Asset storage compression is normalized to the writer's default policy. Returns the
-/// destination writer on success.
+/// This is the full-rewrite strategy: assets are carried over **verbatim** — stored bytes,
+/// flags, and checksum unchanged, verified against their stored CRC32C as they are copied — and
+/// the assignment stream is copied through the verified stream reader, so a checksum mismatch
+/// anywhere in the source surfaces as an error here instead of propagating. Memory is bounded by
+/// the largest single stored payload; an xz-stored asset is never decompressed just to travel.
+/// Returns the destination writer on success.
 pub fn compact_bundle<R, W>(reader: &mut BendlReader<R>, out: W) -> Result<W, BendlWriteError>
 where
     R: Read + Seek,
@@ -116,26 +84,39 @@ where
         .assignment_format_typed()
         .unwrap_or(AssignmentFormat::Ben);
 
-    // Read every surviving asset's decoded payload up front (each read borrows the reader
-    // exclusively).
+    // Carry every surviving asset verbatim — stored bytes, flags, and checksum unchanged — one
+    // asset at a time, so memory is bounded by the largest single stored payload and an
+    // xz-stored asset is never decompressed just to travel. Each payload is still verified
+    // against its stored CRC32C before being written (verify-on-touch); excluded assets are
+    // never read, so removal also works when the removed asset is corrupt.
     let entries: Vec<_> = reader.assets().to_vec();
-    let mut assets = Vec::with_capacity(entries.len());
+    let mut writer = BendlWriter::new(out, assignment_format)?;
     for entry in &entries {
         if exclude.contains(entry.name.as_str()) {
             continue;
         }
-        let payload = reader.asset_bytes(entry).map_err(io::Error::other)?;
-        assets.push(PreservedAsset {
-            asset_type: entry.asset_type,
-            name: entry.name.clone(),
-            is_json: entry.asset_flags & ASSET_FLAG_JSON != 0,
-            payload,
-        });
-    }
-
-    let mut writer = BendlWriter::new(out, assignment_format)?;
-    for asset in &assets {
-        add_preserved(&mut writer, asset)?;
+        let mut stored = Vec::new();
+        reader
+            .asset_payload_reader_unverified(entry)
+            .map_err(io::Error::other)?
+            .read_to_end(&mut stored)
+            .map_err(io::Error::other)?;
+        if let Some(expected) = &entry.checksum {
+            let actual = crc32c::crc32c(&stored).to_le_bytes();
+            if expected.as_slice() != actual {
+                return Err(BendlWriteError::Io(io::Error::other(format!(
+                    "checksum mismatch for asset {:?} while carrying it through the rewrite",
+                    entry.name
+                ))));
+            }
+        }
+        writer.add_stored_asset(
+            entry.asset_type,
+            &entry.name,
+            entry.asset_flags,
+            entry.checksum.clone(),
+            &stored,
+        )?;
     }
 
     if stream_len == 0 {

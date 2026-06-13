@@ -313,3 +313,84 @@ fn full_rewrite_preserves_file_permissions() {
     let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o7777;
     assert_eq!(mode, 0o640);
 }
+
+#[test]
+fn full_rewrite_carries_assets_verbatim() {
+    // The full rewrite copies each surviving asset's stored form — bytes, flags, and checksum —
+    // unchanged, rather than decoding and re-encoding it. Pin it with one xz-stored and one
+    // raw-stored survivor: under the old decode-and-re-add behavior the raw-stored noise blob
+    // came back xz-flagged (re-evaluated under the default policy), so its stored form changed.
+    use crate::io::bundle::format::ASSET_FLAG_XZ;
+    use std::io::Read;
+
+    /// One survivor's stored form: (name, flags, stored bytes, checksum).
+    type StoredForm = (String, u16, Vec<u8>, Option<Vec<u8>>);
+
+    let (bytes, _) = build_base_bundle();
+    let tmp = temp_bundle(&bytes, "verbatim-carry");
+    let path = tmp.0.clone();
+    let open_rw = || {
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap()
+    };
+
+    let compressible = b"all work and no play makes jack a dull boy ".repeat(40);
+    let mut noise = vec![0u8; 2048];
+    let mut x: u32 = 0x9E37_79B9;
+    for b in noise.iter_mut() {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        *b = (x >> 24) as u8;
+    }
+    let mut appender = BendlAppender::open(open_rw()).unwrap();
+    appender
+        .add_custom_asset("text.bin", &compressible, AddAssetOptions::defaults())
+        .unwrap();
+    appender
+        .add_custom_asset("noise.bin", &noise, AddAssetOptions::defaults())
+        .unwrap();
+    appender.commit().unwrap();
+
+    let snapshot = |path: &std::path::Path| -> Vec<StoredForm> {
+        let mut reader = BendlReader::open(BufReader::new(File::open(path).unwrap())).unwrap();
+        let entries = reader.assets().to_vec();
+        entries
+            .iter()
+            .filter(|e| e.name != "metadata.json")
+            .map(|e| {
+                let mut stored = Vec::new();
+                reader
+                    .asset_payload_reader_unverified(e)
+                    .unwrap()
+                    .read_to_end(&mut stored)
+                    .unwrap();
+                (e.name.clone(), e.asset_flags, stored, e.checksum.clone())
+            })
+            .collect()
+    };
+    let before = snapshot(&path);
+    assert!(before
+        .iter()
+        .any(|(n, f, ..)| n == "text.bin" && f & ASSET_FLAG_XZ != 0));
+    assert!(before
+        .iter()
+        .any(|(n, f, ..)| n == "noise.bin" && f & ASSET_FLAG_XZ == 0));
+
+    // A pre-stream removal forces the full rewrite.
+    assert_eq!(
+        remove_assets_in_place(&path, &["metadata.json"]).unwrap(),
+        Compaction::FullRewrite
+    );
+
+    assert_eq!(
+        snapshot(&path),
+        before,
+        "stored bytes, flags, and checksums must carry verbatim"
+    );
+    let mut reader = BendlReader::open(BufReader::new(File::open(&path).unwrap())).unwrap();
+    reader.verify_all_asset_checksums().unwrap();
+}

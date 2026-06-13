@@ -210,7 +210,7 @@ def graph_reorder(
 ) -> tuple[nx.Graph, NodePermutationMap]: ...
 
 # Rewrites the bundle without unreferenced byte ranges (dead space from remove_asset and
-# superseded directories). Assets carried by decoded payload; stream bytes copied verbatim
+# superseded directories). Assets carried verbatim (stored form unchanged); stream bytes copied
 # (checksum-verified); wire format preserved.
 def compact_bundle(in_file: StrPath, out_file: StrPath, overwrite: bool = False) -> None: ...
 

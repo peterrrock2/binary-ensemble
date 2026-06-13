@@ -105,6 +105,19 @@ fn new_to_old_from_map_bytes(map_bytes: &[u8]) -> PyResult<HashMap<usize, usize>
 #[pyo3(signature = (in_file, out_file, sort = Some("mlc".to_string()), key = None, overwrite = false))]
 #[pyo3(text_signature = "(in_file, out_file, sort='mlc', key=None, overwrite=False)")]
 pub fn relabel_bundle(
+    py: Python<'_>,
+    in_file: PathBuf,
+    out_file: PathBuf,
+    sort: Option<String>,
+    key: Option<String>,
+    overwrite: bool,
+) -> PyResult<()> {
+    // Rust-only IO/CPU (decode, reorder, re-encode): run detached so other Python threads
+    // aren't blocked for its duration.
+    py.detach(move || relabel_bundle_impl(in_file, out_file, sort, key, overwrite))
+}
+
+fn relabel_bundle_impl(
     in_file: PathBuf,
     out_file: PathBuf,
     sort: Option<String>,

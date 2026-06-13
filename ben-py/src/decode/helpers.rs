@@ -215,13 +215,17 @@ pub(super) fn scan_samples(
             ..
         } => {
             let reader = open_bundle_stream_reader(path, identity, *stream_offset, *stream_len)?;
-            let iter = build_frame_iter_from_reader(reader, mode.wire_format()).map_err(|e| {
-                PyException::new_err(format!(
-                    "Failed to open bundle stream for sample count: {e}"
-                ))
-            })?;
-            count_samples_from_frame_iter(iter).map_err(|e| {
-                PyException::new_err(format!("Failed to count samples in bundle: {e}"))
+            let format = mode.wire_format();
+            // Match the plain-file branch: the scan is Rust-only IO, so run it detached.
+            py.detach(move || {
+                let iter = build_frame_iter_from_reader(reader, format).map_err(|e| {
+                    PyException::new_err(format!(
+                        "Failed to open bundle stream for sample count: {e}"
+                    ))
+                })?;
+                count_samples_from_frame_iter(iter).map_err(|e| {
+                    PyException::new_err(format!("Failed to count samples in bundle: {e}"))
+                })
             })
         }
     }

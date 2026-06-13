@@ -382,15 +382,21 @@ impl PyBendlDecoder {
     ///     >>> dec = BendlDecoder("ensemble.bendl")
     ///     >>> dec.verify()  # raises on any corruption
     #[pyo3(text_signature = "(self)")]
-    fn verify(&mut self) -> PyResult<()> {
-        self.identity.ensure_unchanged(&self.path, "verify the bundle")?;
-        self.reader
-            .verify_all_asset_checksums()
-            .map_err(|e| PyException::new_err(format!("Bundle asset verification failed: {e}")))?;
-        self.reader
-            .verify_stream_checksum()
-            .map_err(|e| PyException::new_err(format!("Bundle stream verification failed: {e}")))?;
-        Ok(())
+    fn verify(&mut self, py: Python<'_>) -> PyResult<()> {
+        self.identity
+            .ensure_unchanged(&self.path, "verify the bundle")?;
+        // The CRC scan is Rust-only IO; run it detached so a whole-file verify doesn't block
+        // other Python threads (or KeyboardInterrupt delivery) for its duration.
+        let reader = &mut self.reader;
+        py.detach(move || {
+            reader.verify_all_asset_checksums().map_err(|e| {
+                PyException::new_err(format!("Bundle asset verification failed: {e}"))
+            })?;
+            reader.verify_stream_checksum().map_err(|e| {
+                PyException::new_err(format!("Bundle stream verification failed: {e}"))
+            })?;
+            Ok(())
+        })
     }
 
     /// Read the (decoded) bytes of a named asset as a Python ``bytes`` object.
@@ -405,7 +411,8 @@ impl PyBendlDecoder {
     ///     KeyError: If no asset with that name exists in the bundle.
     #[pyo3(text_signature = "(self, name, /)")]
     fn read_asset_bytes(&mut self, name: &str) -> PyResult<Vec<u8>> {
-        self.identity.ensure_unchanged(&self.path, "read an asset")?;
+        self.identity
+            .ensure_unchanged(&self.path, "read an asset")?;
         let entry = self
             .reader
             .find_asset_by_name(name)
@@ -487,47 +494,56 @@ impl PyBendlDecoder {
     #[pyo3(text_signature = "(self, out_path, overwrite=False, allow_unfinalized=False)")]
     fn extract_stream(
         &mut self,
+        py: Python<'_>,
         out_path: PathBuf,
         overwrite: bool,
         allow_unfinalized: bool,
     ) -> PyResult<()> {
-        self.identity.ensure_unchanged(&self.path, "extract the stream")?;
+        self.identity
+            .ensure_unchanged(&self.path, "extract the stream")?;
         if out_path.exists() && !overwrite {
             return Err(PyIOError::new_err(format!(
                 "Output file {} already exists (use overwrite=True to replace).",
                 out_path.display()
             )));
         }
-        let mut stream = if allow_unfinalized && !self.reader.is_finalized() {
-            self.reader
-                .assignment_stream_reader_unverified()
-                .map_err(|e| PyException::new_err(format!("Failed to open stream region: {e}")))?
-        } else {
-            self.reader
-                .assignment_stream_reader()
-                .map_err(|e| PyException::new_err(format!("Failed to open stream region: {e}")))?
-        };
+        // The copy is Rust-only IO; run it detached. The boxed stream reader is created inside
+        // the closure (locals need not be Send — only captures do).
+        let reader = &mut self.reader;
+        py.detach(move || {
+            let mut stream = if allow_unfinalized && !reader.is_finalized() {
+                reader.assignment_stream_reader_unverified().map_err(|e| {
+                    PyException::new_err(format!("Failed to open stream region: {e}"))
+                })?
+            } else {
+                reader.assignment_stream_reader().map_err(|e| {
+                    PyException::new_err(format!("Failed to open stream region: {e}"))
+                })?
+            };
 
-        let out = if overwrite {
-            OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(&out_path)
-        } else {
-            OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&out_path)
-        }
-        .map_err(|e| PyIOError::new_err(format!("Failed to create {}: {e}", out_path.display())))?;
-        let mut out = BufWriter::new(out);
+            let out = if overwrite {
+                OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .open(&out_path)
+            } else {
+                OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&out_path)
+            }
+            .map_err(|e| {
+                PyIOError::new_err(format!("Failed to create {}: {e}", out_path.display()))
+            })?;
+            let mut out = BufWriter::new(out);
 
-        io::copy(&mut stream, &mut out)
-            .map_err(|e| PyIOError::new_err(format!("Failed to copy stream bytes: {e}")))?;
-        out.flush()
-            .map_err(|e| PyIOError::new_err(format!("Failed to flush output: {e}")))?;
-        Ok(())
+            io::copy(&mut stream, &mut out)
+                .map_err(|e| PyIOError::new_err(format!("Failed to copy stream bytes: {e}")))?;
+            out.flush()
+                .map_err(|e| PyIOError::new_err(format!("Failed to flush output: {e}")))?;
+            Ok(())
+        })
     }
 
     fn __repr__(&self) -> String {

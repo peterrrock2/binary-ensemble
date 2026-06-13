@@ -15,6 +15,20 @@ use crate::io::reader::BenWireFormat;
 use crate::io::writer::BenStreamWriter;
 use crate::BenVariant;
 
+/// Repetitive adjacency-style JSON big enough that xz genuinely beats raw storage (the writer
+/// keeps the compressed form only when it is strictly smaller).
+fn compressible_json(n: usize) -> Vec<u8> {
+    let mut s = String::from("{\"nodes\":[");
+    for i in 0..n {
+        if i > 0 {
+            s.push(',');
+        }
+        s.push_str(&format!("{{\"id\":{i},\"weight\":1000}}"));
+    }
+    s.push_str("]}");
+    s.into_bytes()
+}
+
 fn make_buffer() -> Cursor<Vec<u8>> {
     Cursor::new(Vec::new())
 }
@@ -67,7 +81,8 @@ fn minimal_bundle_round_trip_through_reader() {
 
 #[test]
 fn graph_asset_is_compressed_by_default() {
-    let graph = br#"{"nodes":[0,1,2,3,4,5,6,7,8,9],"edges":[[0,1],[1,2],[2,3],[3,4]]}"#;
+    let graph = compressible_json(64);
+    let graph = graph.as_slice();
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     writer
         .add_json_asset(ASSET_TYPE_GRAPH, "graph.json", graph)
@@ -81,10 +96,8 @@ fn graph_asset_is_compressed_by_default() {
         .cloned()
         .expect("graph entry present");
     assert_ne!(entry.asset_flags & ASSET_FLAG_XZ, 0);
-    // Compressed size should differ from the raw size for a non-trivial JSON payload. For very
-    // short payloads xz actually inflates the bytes, so this just checks the size is non-zero and
-    // different.
-    assert_ne!(entry.payload_len, graph.len() as u64);
+    // The compressed form is only kept when it is strictly smaller than the raw payload.
+    assert!(entry.payload_len < graph.len() as u64);
 
     // Decoded bytes round-trip.
     let decoded = reader.asset_bytes(&entry).unwrap();
@@ -453,9 +466,10 @@ fn append_rejects_finalized_bundle_with_zero_directory() {
 #[test]
 fn append_multiple_assets_in_one_commit() {
     let (bundle, _) = build_base_bundle();
+    let appended_graph = compressible_json(64);
     let mut appender = BendlAppender::open(Cursor::new(bundle)).unwrap();
     appender
-        .add_json_asset(ASSET_TYPE_GRAPH, "graph.json", b"{\"n\":[0,1,2]}")
+        .add_json_asset(ASSET_TYPE_GRAPH, "graph.json", &appended_graph)
         .unwrap();
     appender
         .add_asset(
@@ -485,7 +499,7 @@ fn append_multiple_assets_in_one_commit() {
         .expect("graph entry present");
     assert_ne!(graph_entry.asset_flags & ASSET_FLAG_XZ, 0);
     let graph_bytes = reader.asset_bytes(&graph_entry).unwrap();
-    assert_eq!(graph_bytes, b"{\"n\":[0,1,2]}");
+    assert_eq!(graph_bytes, appended_graph);
 }
 
 #[test]
@@ -607,7 +621,8 @@ fn bundle_xben_stream_round_trips_through_assignment_reader() {
 fn bundle_ben_stream_alongside_front_loaded_asset() {
     use crate::BenVariant;
 
-    let graph = br#"{"nodes":[0,1,2],"edges":[[0,1],[1,2]]}"#;
+    let graph = compressible_json(64);
+    let graph = graph.as_slice();
     let samples: Vec<Vec<u16>> = vec![vec![0, 1, 1, 2], vec![0, 1, 2, 2]];
 
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
@@ -946,7 +961,7 @@ fn writer_xz_asset_stores_crc_over_compressed_bytes_not_raw() {
     // the CRC over the compressed result, and assert it matches the stored value. Asserting that
     // the stored CRC does NOT equal `crc32c(raw_input)` is what catches the "writer accidentally
     // hashed pre-compression bytes" regression.
-    let payload = b"the quick brown fox jumps over the lazy dog".to_vec();
+    let payload = b"the quick brown fox jumps over the lazy dog".repeat(50);
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     writer
         .add_asset(
@@ -2224,4 +2239,39 @@ fn append_commit_syncs_directory_before_the_header_patch_and_header_after() {
         "the patched header must be synced before commit returns: {:?}",
         log.ops
     );
+}
+
+#[test]
+fn incompressible_payload_is_stored_raw_even_above_the_threshold() {
+    // xz inflates incompressible bytes by its container overhead, so the writer keeps the
+    // compressed form only when it is strictly smaller — otherwise the asset is stored raw with
+    // no XZ flag, and reads never pay a pointless decompression. Forcing compress() is a request
+    // to try, not a guarantee of the stored form.
+    let mut noise = vec![0u8; 4096];
+    let mut x: u32 = 0x9E37_79B9;
+    for b in noise.iter_mut() {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        *b = (x >> 24) as u8;
+    }
+
+    for options in [AddAssetOptions::defaults(), AddAssetOptions::defaults().compress()] {
+        let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+        writer
+            .add_asset(ASSET_TYPE_CUSTOM, "noise.bin", &noise, options)
+            .unwrap();
+        let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
+        let buf = writer.finish().unwrap().into_inner();
+
+        let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+        let entry = reader.find_asset_by_name("noise.bin").cloned().unwrap();
+        assert_eq!(
+            entry.asset_flags & ASSET_FLAG_XZ,
+            0,
+            "incompressible payload must be stored raw"
+        );
+        assert_eq!(entry.payload_len, noise.len() as u64);
+        assert_eq!(reader.asset_bytes(&entry).unwrap(), noise);
+    }
 }

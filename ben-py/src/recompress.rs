@@ -76,7 +76,18 @@ fn add_preserved<W: Write + std::io::Seek>(
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite = false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
-pub fn recompress_bundle(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> PyResult<()> {
+pub fn recompress_bundle(
+    py: Python<'_>,
+    in_file: PathBuf,
+    out_file: PathBuf,
+    overwrite: bool,
+) -> PyResult<()> {
+    // Rust-only IO/CPU (whole-stream xz encode): run detached so other Python threads aren't
+    // blocked for its duration.
+    py.detach(move || recompress_bundle_impl(in_file, out_file, overwrite))
+}
+
+fn recompress_bundle_impl(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> PyResult<()> {
     let file = File::open(&in_file)
         .map_err(|e| PyIOError::new_err(format!("Failed to open {}: {e}", in_file.display())))?;
     let mut reader = BendlReader::open(BufReader::new(file)).map_err(|e| {

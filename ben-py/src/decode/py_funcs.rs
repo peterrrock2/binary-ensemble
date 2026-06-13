@@ -22,21 +22,30 @@ use std::path::PathBuf;
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
-pub fn decode_xben_to_ben(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> PyResult<()> {
-    validate_input_output_paths(&in_file, &out_file)?;
-    let reader = open_input(&in_file)?;
-    let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
+pub fn decode_xben_to_ben(
+    py: Python<'_>,
+    in_file: PathBuf,
+    out_file: PathBuf,
+    overwrite: bool,
+) -> PyResult<()> {
+    // Rust-only IO/CPU: run detached so other Python threads aren't blocked for the
+    // conversion's duration.
+    py.detach(move || {
+        validate_input_output_paths(&in_file, &out_file)?;
+        let reader = open_input(&in_file)?;
+        let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
 
-    core_decode_xben_to_ben(reader, writer).map_err(|e| {
-        PyIOError::new_err(format!(
-            "Failed to convert XBEN to BEN from {} to {}: {e}",
-            in_file.display(),
-            out_file.display()
-        ))
-    })?;
-    guard.commit()?;
+        core_decode_xben_to_ben(reader, writer).map_err(|e| {
+            PyIOError::new_err(format!(
+                "Failed to convert XBEN to BEN from {} to {}: {e}",
+                in_file.display(),
+                out_file.display()
+            ))
+        })?;
+        guard.commit()?;
 
-    Ok(())
+        Ok(())
+    })
 }
 
 /// Decode an XBEN file back to canonicalized JSONL.
@@ -54,21 +63,30 @@ pub fn decode_xben_to_ben(in_file: PathBuf, out_file: PathBuf, overwrite: bool) 
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
-pub fn decode_xben_to_jsonl(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> PyResult<()> {
-    validate_input_output_paths(&in_file, &out_file)?;
-    let reader = open_input(&in_file)?;
-    let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
+pub fn decode_xben_to_jsonl(
+    py: Python<'_>,
+    in_file: PathBuf,
+    out_file: PathBuf,
+    overwrite: bool,
+) -> PyResult<()> {
+    // Rust-only IO/CPU: run detached so other Python threads aren't blocked for the
+    // conversion's duration.
+    py.detach(move || {
+        validate_input_output_paths(&in_file, &out_file)?;
+        let reader = open_input(&in_file)?;
+        let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
 
-    core_decode_xben_to_jsonl(reader, writer).map_err(|e| {
-        PyIOError::new_err(format!(
-            "Failed to convert XBEN to JSONL from {} to {}: {e}",
-            in_file.display(),
-            out_file.display()
-        ))
-    })?;
-    guard.commit()?;
+        core_decode_xben_to_jsonl(reader, writer).map_err(|e| {
+            PyIOError::new_err(format!(
+                "Failed to convert XBEN to JSONL from {} to {}: {e}",
+                in_file.display(),
+                out_file.display()
+            ))
+        })?;
+        guard.commit()?;
 
-    Ok(())
+        Ok(())
+    })
 }
 
 /// Decode a BEN stream back to canonicalized JSONL.
@@ -86,19 +104,28 @@ pub fn decode_xben_to_jsonl(in_file: PathBuf, out_file: PathBuf, overwrite: bool
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
-pub fn decode_ben_to_jsonl(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> PyResult<()> {
-    validate_input_output_paths(&in_file, &out_file)?;
-    let reader = open_input(&in_file)?;
-    let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
+pub fn decode_ben_to_jsonl(
+    py: Python<'_>,
+    in_file: PathBuf,
+    out_file: PathBuf,
+    overwrite: bool,
+) -> PyResult<()> {
+    // Rust-only IO/CPU: run detached so other Python threads aren't blocked for the
+    // conversion's duration.
+    py.detach(move || {
+        validate_input_output_paths(&in_file, &out_file)?;
+        let reader = open_input(&in_file)?;
+        let (guard, writer) = TempOutput::create(&out_file, overwrite)?;
 
-    core_decode_ben_to_jsonl(reader, writer).map_err(|e| {
-        PyIOError::new_err(format!(
-            "Failed to convert BEN to JSONL from {} to {}: {e}",
-            in_file.display(),
-            out_file.display()
-        ))
-    })?;
-    guard.commit()?;
+        core_decode_ben_to_jsonl(reader, writer).map_err(|e| {
+            PyIOError::new_err(format!(
+                "Failed to convert BEN to JSONL from {} to {}: {e}",
+                in_file.display(),
+                out_file.display()
+            ))
+        })?;
+        guard.commit()?;
 
-    Ok(())
+        Ok(())
+    })
 }
