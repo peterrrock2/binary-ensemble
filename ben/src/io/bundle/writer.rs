@@ -106,9 +106,9 @@ impl AddAssetOptions {
         self
     }
 
-    /// Choose the xz preset (0–9) used when this asset is compressed. Assets are write-once and
-    /// read-many — decompression speed is essentially flat across presets — so the level only
-    /// trades one-time write CPU against permanent file size.
+    /// Choose the xz preset (0–9) used when this asset is compressed. Decompression speed is
+    /// essentially flat across presets, so the level only trades one-time write CPU against
+    /// permanent file size.
     pub fn compression_level(mut self, level: u32) -> Self {
         self.compression_level = Some(level);
         self
@@ -135,13 +135,6 @@ struct EncodedAsset {
     checksum: Vec<u8>,
 }
 
-/// Compress (if requested), checksum, and assemble the directory-entry flags for one asset payload.
-///
-/// This is the single encode path shared by [`BendlWriter::add_asset`] and
-/// [`BendlAppender::commit`], so the create and append routes can never drift on compression, flag
-/// assembly, or CRC coverage. It is pure (in-memory), so a failure leaves any backing file
-/// untouched. The CRC32C is over the **on-disk** bytes — the compressed bytes when xz is applied,
-/// so verification happens before decompression (see [`ASSET_FLAG_CHECKSUM`]).
 /// Payload size at which compression is probed on a prefix before committing to a full pass.
 const COMPRESSION_PROBE_THRESHOLD: usize = 4 * 1024 * 1024;
 /// Prefix length the probe compresses.
@@ -153,23 +146,28 @@ fn xz_compress_bytes(bytes: &[u8], level: u32) -> io::Result<Vec<u8>> {
     encoder.finish()
 }
 
+/// Compress (if requested), checksum, and assemble the directory-entry flags for one asset payload.
+///
+/// This is the single encode path shared by [`BendlWriter::add_asset`] and
+/// [`BendlAppender::commit`], so the create and append routes cannot drift on compression, flag
+/// assembly, or CRC coverage. It is pure (in-memory), so a failure leaves any backing file
+/// untouched. The CRC32C covers the on-disk bytes (the compressed bytes when xz is applied), so
+/// verification happens before decompression (see [`ASSET_FLAG_CHECKSUM`]).
 fn encode_asset_payload(
     payload: Vec<u8>,
     compress: bool,
     level: u32,
     is_json: bool,
 ) -> io::Result<EncodedAsset> {
-    // Keep the compressed form only when it actually wins: xz carries fixed container overhead,
-    // so small or already-compressed payloads can come out the same size or larger — and every
-    // future read of such an asset would pay a pointless decompression. The flag always
-    // describes the stored bytes truthfully.
+    // Keep the compressed form only when it actually wins: small or already-compressed payloads
+    // can come out larger, and every future read of such an asset would pay a pointless
+    // decompression. The flag always describes the stored bytes.
     let mut compress = compress;
     if compress && payload.len() >= COMPRESSION_PROBE_THRESHOLD {
-        // Probe: compress a prefix first, and skip the full pass when the sample barely
-        // shrinks — already-compressed blobs (zips, GeoPackages) at this size would otherwise
-        // burn a long xz pass just to be stored raw by the size comparison below. A prefix can
-        // misjudge a payload whose head and body differ in compressibility; the cost of a
-        // wrong skip is only a missed size win, never a worse-than-raw stored form.
+        // Skip the full pass when a compressed prefix barely shrinks; large already-compressed
+        // blobs (zips, GeoPackages) would otherwise burn a long xz pass just to be stored raw
+        // by the size comparison below. A wrong skip costs only a missed size win, never a
+        // worse-than-raw stored form.
         let sample = &payload[..COMPRESSION_PROBE_SAMPLE];
         let probe = xz_compress_bytes(sample, level)?;
         if probe.len() * 100 >= sample.len() * 95 {
@@ -206,7 +204,7 @@ fn encode_asset_payload(
 /// canonical-name + uniqueness rules shared by the create and append paths.
 ///
 /// [`Self::claim`] validates fully before mutating, so a rejected asset never leaves the registry
-/// in a half-updated state — there is nothing to roll back.
+/// in a half-updated state.
 #[derive(Default)]
 struct AssetNameRegistry {
     names: HashSet<String>,
@@ -302,10 +300,9 @@ enum WriterState {
 impl<W: Write + Seek> BendlWriter<W> {
     /// Create a new writer by writing a provisional header at offset 0.
     ///
-    /// The assignment stream will begin immediately after the asset payload region —
-    /// [`BendlWriter::into_stream_session`] computes the exact offset at the moment it is called,
-    /// so asset writes that happen between `new` and `into_stream_session` push the stream out as
-    /// expected.
+    /// The assignment stream begins immediately after the asset payload region;
+    /// [`BendlWriter::into_stream_session`] computes the exact offset when it is called, so
+    /// assets added before then push the stream out as expected.
     pub fn new(mut inner: W, assignment_format: AssignmentFormat) -> io::Result<Self> {
         inner.seek(SeekFrom::Start(0))?;
         // stream_offset in the provisional header is patched at into_stream_session time; start it
@@ -352,7 +349,6 @@ impl<W: Write + Seek> BendlWriter<W> {
         let level = resolve_compression_level(&options)?;
         let encoded = encode_asset_payload(payload.to_vec(), compress, level, options.is_json)?;
 
-        // Write at current file position.
         let payload_offset = self.inner.stream_position()?;
         self.inner.write_all(&encoded.bytes)?;
 
@@ -508,7 +504,6 @@ impl<W: Write + Seek> BendlWriter<W> {
             }
         };
 
-        // Position at end of stream (== start of directory).
         let directory_offset = self.header.stream_offset + stream_len;
         self.inner.seek(SeekFrom::Start(directory_offset))?;
 
@@ -519,7 +514,6 @@ impl<W: Write + Seek> BendlWriter<W> {
 
         let directory_len = directory_bytes.len() as u64;
 
-        // Patch the header.
         self.header.directory_offset = directory_offset;
         self.header.directory_len = directory_len;
         self.header.stream_len = stream_len;
@@ -561,8 +555,7 @@ pub struct BendlStreamSession<W: Write + Seek> {
 }
 
 impl<W: Write + Seek> BendlStreamSession<W> {
-    /// Number of bytes written into the stream region so far. Pure counter — no I/O, no `&mut`
-    /// required.
+    /// Number of bytes written into the stream region so far.
     pub fn bytes_written(&self) -> u64 {
         self.bytes_written
     }
@@ -576,8 +569,7 @@ impl<W: Write + Seek> BendlStreamSession<W> {
     /// End the stream phase and return ownership of a [`BendlWriter`] in the `StreamWritten` state,
     /// ready for [`BendlWriter::finish`].
     ///
-    /// Infallible: the body is `take()` + arithmetic + struct construction with no I/O. Once this
-    /// method returns, the session's [`Drop`] impl observes `inner.is_none()` and skips the warn.
+    /// Infallible: the body performs no I/O.
     pub fn finish_into_writer(mut self, sample_count: i64) -> BendlWriter<W> {
         let inner = self.inner.take().expect("session has not been finished");
         let mut parent = self.parent.take().expect("session has not been finished");
@@ -745,9 +737,8 @@ struct PendingAsset {
 
 /// A pending asset whose payload has been encoded in memory and is ready to be written to disk.
 ///
-/// One element per prepared asset — this is the output of the pure, in-memory compression phase of
-/// [`BendlAppender::commit`], carrying everything the subsequent file-mutation phase needs to write
-/// the payload and its directory entry.
+/// Output of the pure, in-memory compression phase of [`BendlAppender::commit`]; carries
+/// everything the file-mutation phase needs to write the payload and its directory entry.
 struct PreparedAppendAsset {
     asset_type: u16,
     asset_name: String,
@@ -757,8 +748,9 @@ struct PreparedAppendAsset {
 impl<W: Read + Write + Seek> BendlAppender<W> {
     /// Open a finalized bundle for append.
     ///
-    /// Returns [`BendlWriteError::BundleIncomplete`] if the header's `finalized` flag is not set —
-    /// append is unsafe on unfinalized bundles because the stream region has no authoritative end.
+    /// Returns [`BendlWriteError::BundleIncomplete`] if the header's `finalized` flag is not set;
+    /// append is unsafe on an unfinalized bundle because the stream region has no authoritative
+    /// end.
     pub fn open(mut inner: W) -> Result<Self, BendlWriteError> {
         let file_len = inner.seek(SeekFrom::End(0))?;
         inner.seek(SeekFrom::Start(0))?;
@@ -804,8 +796,8 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
     /// dead space until the next whole-bundle rewrite (e.g. a recompression) compacts them.
     /// Readers navigate solely via directory offsets, so the gap is invisible to them. The name
     /// (and any singleton-type claim) becomes reusable by a subsequent add in the same session,
-    /// which makes remove-then-add the way to replace an asset's payload (for canonical assets,
-    /// re-add through the typed APIs — a custom asset under a standardized name is refused).
+    /// which makes remove-then-add the way to replace an asset's payload (canonical assets must
+    /// be re-added through the typed APIs; a custom asset under a standardized name is refused).
     ///
     /// Removal targets *committed* entries only; it does not touch assets enqueued with
     /// [`Self::add_asset`] but not yet committed.
@@ -893,11 +885,8 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
     }
 
     /// Phase 1 of [`Self::commit`]: drain the pending queue and encode each payload through the
-    /// shared encode path, entirely in memory.
-    ///
-    /// This is pure with respect to the file — it has no ordering constraint against the
-    /// append-only mutation in `commit`, so a failure here returns before any byte is written and
-    /// leaves the bundle untouched.
+    /// shared encode path, entirely in memory. A failure here returns before any byte is written
+    /// and leaves the bundle untouched.
     fn prepare_pending_assets(&mut self) -> Result<Vec<PreparedAppendAsset>, BendlWriteError> {
         let mut prepared = Vec::with_capacity(self.pending.len());
         for asset in self.pending.drain(..) {
@@ -931,13 +920,11 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
     where
         W: SyncData,
     {
-        // If nothing was enqueued or removed, commit is a no-op — return the file untouched.
         if self.pending.is_empty() && !self.removed_any {
             return Ok(self.inner);
         }
 
-        // Phase 1: compress any pending payloads in memory. This has no ordering constraint against
-        // the file mutation below — a failure here leaves the file untouched.
+        // Phase 1: encode pending payloads in memory; a failure here leaves the file untouched.
         let encoded = self.prepare_pending_assets()?;
 
         // Phase 2: append-only file mutation. Until the final header patch, the old header still
@@ -955,7 +942,6 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
 
         self.inner.seek(SeekFrom::Start(old_directory_end))?;
 
-        // Compute new entries with real offsets as we write.
         let mut new_entries: Vec<BendlDirectoryEntry> =
             Vec::with_capacity(self.existing_entries.len() + encoded.len());
         new_entries.extend(self.existing_entries.iter().cloned());
@@ -974,7 +960,6 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
             });
         }
 
-        // Write the new directory at the new EOF.
         let new_directory_offset = self.inner.stream_position()?;
         let directory_bytes = encode_directory(&new_entries).map_err(BendlWriteError::Format)?;
         self.inner.write_all(&directory_bytes)?;

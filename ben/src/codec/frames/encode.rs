@@ -83,9 +83,8 @@ impl BenEncodeFrame {
     /// # Errors
     ///
     /// Returns `InvalidInput` if `variant` is [`BenVariant::TwoDelta`] (use
-    /// [`BenEncodeFrame::from_run_lengths`] for that) or if the packed payload would exceed the
-    /// `u32` byte length the frame header can carry — a bound far beyond any real assignment,
-    /// so reaching it means the input is corrupt rather than merely large.
+    /// [`BenEncodeFrame::from_run_lengths`] for that) or if the packed payload would overflow
+    /// the frame header's `u32` byte length, a bound only corrupt input can reach.
     pub fn from_rle(
         runs: Vec<(u16, u16)>,
         variant: BenVariant,
@@ -161,9 +160,8 @@ impl BenEncodeFrame {
     ///
     /// # Errors
     ///
-    /// Returns `InvalidInput` if the packed payload would exceed the `u32` byte length the frame
-    /// header can carry — a bound far beyond any real delta, so reaching it means the input is
-    /// corrupt rather than merely large.
+    /// Returns `InvalidInput` if the packed payload would overflow the frame header's `u32` byte
+    /// length, a bound only corrupt input can reach.
     pub fn from_run_lengths(
         pair: (u16, u16),
         run_length_vector: Vec<u16>,
@@ -237,9 +235,9 @@ impl BenEncodeFrame {
     /// Returns [`io::ErrorKind::InvalidData`] when:
     ///
     /// - `max_len_bit_count` is outside `1..=16`;
-    /// - the payload contains an interior zero run length (only the final byte's zero padding may
-    ///   form zero slots — the encoder never emits zero-length runs, and silently dropping one
-    ///   would shift the alternation parity of every later run);
+    /// - the payload contains an interior zero run length; the encoder never emits zero-length
+    ///   runs, so only the final byte's zero padding may form zero slots, and silently dropping
+    ///   one would shift the alternation parity of every later run;
     /// - the payload length is not `ceil(runs * width / 8)` for the recovered run count.
     pub fn try_from_parts(
         pair: (u16, u16),
