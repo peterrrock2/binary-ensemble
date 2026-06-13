@@ -4,13 +4,12 @@
 
 import json
 import os
-import sys
 from importlib import metadata
 
-# Make the source package importable for autodoc even when it is not pip-installed
-# (autodoc imports the built module at runtime to read live docstrings, including
-# the ones that live in the compiled ``_core`` extension).
-sys.path.insert(0, os.path.abspath(".."))
+# autodoc imports the package at runtime to read live docstrings, including those in
+# the compiled ``_core`` extension. We rely on the pip-installed package for this rather
+# than prepending the source tree to ``sys.path``: the source tree carries no built
+# ``_core`` (it lives only in the wheel), so shadowing the install would break the import.
 
 # -- Project information -----------------------------------------------------
 
@@ -120,6 +119,10 @@ linkcheck_ignore = [
     # datacenter IP + non-browser User-Agent linkcheck uses from CI, so no finite timeout
     # validates it. The link is valid; skip it in CI rather than chase the timeout.
     r"https://maturin\.rs/.*",
+    # pyo3.rs answers a browser instantly but stalls (read timeout, never replies) for the
+    # datacenter IP + non-browser User-Agent linkcheck uses from CI, so no finite timeout
+    # validates it. The link is valid; skip it in CI rather than chase the timeout.
+    r"https://pyo3\.rs/.*",
 ]
 
 # -- HTML output -------------------------------------------------------------
