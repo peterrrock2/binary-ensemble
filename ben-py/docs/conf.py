@@ -100,7 +100,7 @@ intersphinx_mapping = {
 #
 # Keep link checking separate from normal HTML builds because it depends on external
 # services. CI runs it as its own step so transient failures are easy to diagnose.
-linkcheck_timeout = 60
+linkcheck_timeout = 10
 linkcheck_retries = 2
 linkcheck_anchors = False
 linkcheck_ignore = [
@@ -116,6 +116,10 @@ linkcheck_ignore = [
     # datacenter IP + non-browser User-Agent linkcheck uses from CI, so no finite timeout
     # validates it. The link is valid; skip it in CI rather than chase the timeout.
     r"https://mggg\.org/.*",
+    # maturin.rs answers a browser instantly but stalls (read timeout, never replies) for the
+    # datacenter IP + non-browser User-Agent linkcheck uses from CI, so no finite timeout
+    # validates it. The link is valid; skip it in CI rather than chase the timeout.
+    r"https://maturin\.rs/.*",
 ]
 
 # -- HTML output -------------------------------------------------------------
