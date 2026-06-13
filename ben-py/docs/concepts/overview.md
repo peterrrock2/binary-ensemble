@@ -4,7 +4,7 @@
 
 A redistricting **sampler** — GerryChain's ReCom, ForestReCom, a Sequential Monte Carlo
 routine — explores the space of legal districting plans by emitting a long sequence of
-plans. Serious analyses want *many* plans: tens of thousands to millions.
+plans. Serious analyses want _many_ plans: tens of thousands to millions.
 
 The natural way to store them is [JSONL](https://jsonlines.org) (JSON Lines), one plan per
 line:
@@ -30,7 +30,7 @@ compression is deliberately simple and works in two stages:
 2. **Bit-packing** — each run's value and length are stored in the minimum number of bits,
    not padded out to whole bytes.
 
-On top of that, the **XBEN** format adds LZMA2 compression to exploit the repetition *across*
+On top of that, the **XBEN** format adds LZMA2 compression to exploit the repetition _across_
 plans, and several **encoding variants** specialize for how a particular sampler produces its
 plans.
 
@@ -45,11 +45,11 @@ single lever is *node reordering*; see [Why reordering shrinks files](compressio
 
 BEN comes as three on-disk **containers**, each suited to a different job:
 
-| Container | What it is | Use it for |
-|-----------|-----------|------------|
-| `.ben`    | A plain BEN **stream** | Working with an ensemble: reading, replaying, subsampling |
-| `.xben`   | A BEN stream wrapped in LZMA2 | Long-term storage and transferring ensembles |
-| `.bendl`  | A **bundle**: a BEN/XBEN stream plus the dual graph and metadata | The recommended default — one self-describing file |
+| Container | What it is                                                       | Use it for                                                |
+| --------- | ---------------------------------------------------------------- | --------------------------------------------------------- |
+| `.ben`    | A plain BEN **stream**                                           | Working with an ensemble: reading, replaying, subsampling |
+| `.xben`   | A BEN stream wrapped in LZMA2                                    | Long-term storage and transferring ensembles              |
+| `.bendl`  | A **bundle**: a BEN/XBEN stream plus the dual graph and metadata | The recommended default — one self-describing file        |
 
 [Formats: BEN vs XBEN vs BENDL](formats.md) covers the trade-offs in detail.
 
@@ -63,8 +63,8 @@ The Python package mirrors the project's CLI tools:
 - **{mod}`binary_ensemble.graph`** — reorder a dual graph before encoding.
 
 See [The API map](api-map.md) for when to reach for each, and the
-[Vocabulary](vocabulary.md) page for the precise meaning of *plan*, *assignment*,
-*sample*, and *ensemble*.
+[Vocabulary](vocabulary.md) page for the precise meaning of _plan_, _assignment_,
+_sample_, and _ensemble_.
 
 For the invariants that must hold across a real run — assignment length, graph node order,
 JSONL shape, and bundle assets — see [The data contract](data-model.md).

@@ -10,6 +10,7 @@ The recipes below assume a small `ensemble.bendl`, a `plans.jsonl`, a `chain.ben
 along, create them all with this snippet:
 
 <!-- docs-test: setup -->
+
 ```python
 import json
 

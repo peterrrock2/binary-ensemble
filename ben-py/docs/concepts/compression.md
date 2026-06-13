@@ -19,15 +19,15 @@ of many short ones.
 
 ### Why a good node order creates long runs
 
-RLE only shrinks an assignment when *consecutive* nodes share a district id. And districts
+RLE only shrinks an assignment when _consecutive_ nodes share a district id. And districts
 aren't random scatterings of nodes — they're **contiguous, densely-connected regions** of the
 dual graph. So a run appears wherever the node order happens to place nodes from the same
 district side by side, and the longer those stretches, the fewer runs the assignment needs.
 
 That reframes the goal: order the nodes so that **nodes likely to share a district sit next to
-each other**. Every assignment in the ensemble is read in that *one* order, so a good order
+each other**. Every assignment in the ensemble is read in that _one_ order, so a good order
 pays off across the entire ensemble at once — and because the runs become longer and more
-regular, the byte patterns *across* plans get more repetitive too, which feeds the XBEN
+regular, the byte patterns _across_ plans get more repetitive too, which feeds the XBEN
 (LZMA2) stage on top (Lever 2).
 
 The three orderings below are different heuristics for that same goal. All of them are
@@ -37,22 +37,22 @@ move.
 
 ### Sort by a key, e.g. `GEOID` (`sort="key"`)
 
-A Census `GEOID` is a *hierarchical* identifier — state, then county, then tract, then block —
+A Census `GEOID` is a _hierarchical_ identifier — state, then county, then tract, then block —
 so sorting nodes lexicographically by `GEOID` lays the map out in nested geographic order: the
 blocks within a tract end up adjacent, the tracts within a county end up adjacent, and so on.
 Because districts are assembled from geographically-contiguous pieces, units that are close in
 that hierarchy usually fall in the same district, which produces long runs.
 
-When you *have* a meaningful geographic key this is often the single most effective ordering,
+When you _have_ a meaningful geographic key this is often the single most effective ordering,
 and it's the cheapest — it's just a sort. Use any node attribute via
 `sort="key", key="GEOID20"`.
 
 ### Reverse Cuthill–McKee (`sort="rcm"`)
 
 RCM comes from sparse linear algebra, where it reorders a matrix to pull all the non-zeros
-close to the diagonal (it minimizes *bandwidth*). On a graph that amounts to: walk it
+close to the diagonal (it minimizes _bandwidth_). On a graph that amounts to: walk it
 breadth-first from a peripheral node, number nodes as you reach them, then reverse the result.
-The effect is that **graph-adjacent nodes get nearby indices**. Since the edges *inside* a
+The effect is that **graph-adjacent nodes get nearby indices**. Since the edges _inside_ a
 district far outnumber the edges that cross a district boundary, neighbors usually share a
 district — so nearby indices usually share a district, and the runs grow.
 
@@ -96,7 +96,7 @@ always recover the original node order. When you embed a graph in a bundle with
   topology alone.
 
 These are all heuristics, so the exact win depends on your dual graph. Reordering is cheap and
-reversible, so it rarely hurts — though on a *tiny* ensemble the extra permutation map can
+reversible, so it rarely hurts — though on a _tiny_ ensemble the extra permutation map can
 occasionally make the file net-larger. It pays off most right before an expensive XBEN
 recompress, where every byte saved in BEN is amplified.
 
@@ -109,7 +109,7 @@ smaller. Without the reorder, the same XBEN is far larger.
 
 ## Lever 2: district relabeling
 
-LZMA2 (the compressor behind XBEN) spots repeated *byte sequences* across plans. Two plans
+LZMA2 (the compressor behind XBEN) spots repeated _byte sequences_ across plans. Two plans
 can be structurally identical yet use different district numbers:
 
 ```

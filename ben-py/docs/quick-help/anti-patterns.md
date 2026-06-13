@@ -55,10 +55,10 @@ Do not name bundles `run.xben.bendl`, `run.sorted.bendl`, or `run.archive.bendl`
 a bundle regardless of the embedded stream. Use one `.bendl` extension and put state in the
 basename:
 
-| Avoid | Prefer |
-|---|---|
-| `run.xben.bendl` | `run-archive.bendl` |
-| `run.sorted.bendl` | `run-sorted.bendl` |
+| Avoid                 | Prefer                |
+| --------------------- | --------------------- |
+| `run.xben.bendl`      | `run-archive.bendl`   |
+| `run.sorted.bendl`    | `run-sorted.bendl`    |
 | `run.relabeled.bendl` | `run-relabeled.bendl` |
 
 Plain streams should still use `.ben` and `.xben`.
@@ -75,4 +75,3 @@ encoder = BendlEncoder.append("ensemble.bendl")
 encoder.add_asset("review-notes.txt", "Asset append only.", content_type="text")
 encoder.close()
 ```
-

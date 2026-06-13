@@ -9,7 +9,7 @@
 
 Redistricting samplers like [GerryChain](https://gerrychain.readthedocs.io)'s ReCom,
 ForestReCom, and Sequential Monte Carlo emit millions of plans. Stored as JSONL, a single
-ensemble can run to *tens of gigabytes* — most of it redundant. **BEN** (Binary-Ensemble) is
+ensemble can run to _tens of gigabytes_ — most of it redundant. **BEN** (Binary-Ensemble) is
 a compression format and toolkit built for exactly this data: it turns those JSONL mountains
 into compact binary files you can store, share, and stream sample-by-sample without unpacking
 the whole thing.

@@ -30,8 +30,8 @@ for chains with repeats, the other variants win comfortably.
 ## `mkv_chain`
 
 Like `standard`, but each frame also carries a **repetition count**. A run of identical
-consecutive plans collapses into one frame plus a count of *N*, which the reader expands back into
-*N* samples — so the stored sample count is preserved while the bytes aren't. This is built for
+consecutive plans collapses into one frame plus a count of _N_, which the reader expands back into
+_N_ samples — so the stored sample count is preserved while the bytes aren't. This is built for
 **MCMC chains logged in full**, where a rejected proposal leaves the same plan repeated on
 consecutive steps (self-loops, as in [Reversible ReCom](https://mggg.org/rrc)).
 
@@ -60,7 +60,7 @@ how it changed from the previous one and picks a frame type:
 
 Because it always falls back to snapshots, `twodelta` is **compatible with every sampler** —
 non-ReCom ensembles just produce more snapshots and less delta savings. Its best case is a
-full-chain *pairwise* ReCom ensemble, where nearly every accepted move is a two-district swap.
+full-chain _pairwise_ ReCom ensemble, where nearly every accepted move is a two-district swap.
 
 The trade-off: a delta frame only makes sense relative to the plan before it, so a reader
 reconstructs a sample by **replaying forward from the most recent snapshot**. That means
@@ -71,12 +71,12 @@ access costs a short replay.
 
 ## Choosing a variant
 
-| Sampler / data shape | Recommended variant |
-|---|---|
-| Pairwise ReCom chain | `twodelta` (default) |
-| Full MCMC chain with many rejections/repeats | `mkv_chain` |
+| Sampler / data shape                              | Recommended variant      |
+| ------------------------------------------------- | ------------------------ |
+| Pairwise ReCom chain                              | `twodelta` (default)     |
+| Full MCMC chain with many rejections/repeats      | `mkv_chain`              |
 | Independent / random sampling, ForestReCom, mixed | `twodelta` or `standard` |
-| Not sure | `twodelta` (the default) |
+| Not sure                                          | `twodelta` (the default) |
 
 ```{admonition} You don't decode by variant
 :class: note

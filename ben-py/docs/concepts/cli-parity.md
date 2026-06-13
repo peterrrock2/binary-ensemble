@@ -5,23 +5,23 @@ the CLI split so workflows can move between notebooks, scripts, and shell pipeli
 
 ## Command map
 
-| CLI task | Python equivalent | Notes |
-|---|---|---|
-| Encode JSONL to BEN | `encode_jsonl_to_ben(...)` | Whole-file conversion |
-| Encode JSONL to XBEN | `encode_jsonl_to_xben(...)` | Whole-file conversion plus XBEN compression |
-| Convert BEN to XBEN | `encode_ben_to_xben(...)` | Plain stream only |
-| Decode BEN to JSONL | `decode_ben_to_jsonl(...)` | Plain stream only |
-| Decode XBEN to BEN | `decode_xben_to_ben(...)` | Useful before repeated subsampling |
-| Decode XBEN to JSONL | `decode_xben_to_jsonl(...)` | Plain stream only |
-| Create a BENDL bundle | `BendlEncoder(...)` | Recommended Python workflow |
-| Inspect a BENDL bundle | `BendlDecoder(...).list_assets()` | Also exposes graph and metadata helpers |
-| Extract a bundle stream | `BendlDecoder(...).extract_stream(...)` | Copies embedded BEN/XBEN stream bytes |
-| Append bundle assets | `BendlEncoder.append(...)` | Asset appends only; no stream appends |
-| Remove bundle assets | `BendlEncoder.remove_asset(...)` | Compacts automatically, like `bendl remove` |
-| Compact a bundle | automatic | `remove_asset`, `compress_stream`, and `relabel_bundle` emit compact bundles (appends leave only a superseded directory behind, a few bytes each); `bendl compact` reclaims dead space in files from other tools |
-| Relabel/reorder a bundle | `relabel_bundle(...)` | Requires BEN stream plus graph |
-| Recompress bundle stream | `compress_stream(...)` | Embedded BEN stream to embedded XBEN stream |
-| Reorder a graph | `binary_ensemble.graph.reorder(...)` | Same orderings as bundle relabeling |
+| CLI task                 | Python equivalent                       | Notes                                                                                                                                                                                                            |
+| ------------------------ | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Encode JSONL to BEN      | `encode_jsonl_to_ben(...)`              | Whole-file conversion                                                                                                                                                                                            |
+| Encode JSONL to XBEN     | `encode_jsonl_to_xben(...)`             | Whole-file conversion plus XBEN compression                                                                                                                                                                      |
+| Convert BEN to XBEN      | `encode_ben_to_xben(...)`               | Plain stream only                                                                                                                                                                                                |
+| Decode BEN to JSONL      | `decode_ben_to_jsonl(...)`              | Plain stream only                                                                                                                                                                                                |
+| Decode XBEN to BEN       | `decode_xben_to_ben(...)`               | Useful before repeated subsampling                                                                                                                                                                               |
+| Decode XBEN to JSONL     | `decode_xben_to_jsonl(...)`             | Plain stream only                                                                                                                                                                                                |
+| Create a BENDL bundle    | `BendlEncoder(...)`                     | Recommended Python workflow                                                                                                                                                                                      |
+| Inspect a BENDL bundle   | `BendlDecoder(...).list_assets()`       | Also exposes graph and metadata helpers                                                                                                                                                                          |
+| Extract a bundle stream  | `BendlDecoder(...).extract_stream(...)` | Copies embedded BEN/XBEN stream bytes                                                                                                                                                                            |
+| Append bundle assets     | `BendlEncoder.append(...)`              | Asset appends only; no stream appends                                                                                                                                                                            |
+| Remove bundle assets     | `BendlEncoder.remove_asset(...)`        | Compacts automatically, like `bendl remove`                                                                                                                                                                      |
+| Compact a bundle         | automatic                               | `remove_asset`, `compress_stream`, and `relabel_bundle` emit compact bundles (appends leave only a superseded directory behind, a few bytes each); `bendl compact` reclaims dead space in files from other tools |
+| Relabel/reorder a bundle | `relabel_bundle(...)`                   | Requires BEN stream plus graph                                                                                                                                                                                   |
+| Recompress bundle stream | `compress_stream(...)`                  | Embedded BEN stream to embedded XBEN stream                                                                                                                                                                      |
+| Reorder a graph          | `binary_ensemble.graph.reorder(...)`    | Same orderings as bundle relabeling                                                                                                                                                                              |
 
 ## Plain stream conversion
 

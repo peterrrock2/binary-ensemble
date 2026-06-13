@@ -29,12 +29,12 @@ Building from source requires a Rust toolchain and `maturin`; see
 
 Import from these public modules, or from the top-level `binary_ensemble` namespace:
 
-| Module | Stability expectation |
-|---|---|
-| `binary_ensemble.bundle` | Public bundle API |
-| `binary_ensemble.stream` | Public plain-stream API |
-| `binary_ensemble.codec` | Public whole-file conversion API |
-| `binary_ensemble.graph` | Public graph-reordering API |
+| Module                   | Stability expectation            |
+| ------------------------ | -------------------------------- |
+| `binary_ensemble.bundle` | Public bundle API                |
+| `binary_ensemble.stream` | Public plain-stream API          |
+| `binary_ensemble.codec`  | Public whole-file conversion API |
+| `binary_ensemble.graph`  | Public graph-reordering API      |
 
 Do not import from `binary_ensemble._core` in application code. It is the compiled extension
 implementation detail behind the public modules.

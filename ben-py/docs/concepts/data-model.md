@@ -16,12 +16,12 @@ assignment = [1, 1, 2, 2, 3, 3]
 The list position is the graph node position. The value is the district id assigned to that
 node.
 
-| Rule | Why it matters |
-|---|---|
-| Every assignment in one stream must have the same length. | A stream represents one ensemble over one fixed dual graph. |
-| Values must be district ids in `0..=65535` (16-bit). | The binary format stores district ids compactly. |
-| The order must match the graph order you intend to use when reading. | BEN cannot infer geographic meaning from the values alone. |
-| Missing nodes are not represented. | Use one entry per graph node, even for islands or zero-population units. |
+| Rule                                                                 | Why it matters                                                           |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Every assignment in one stream must have the same length.            | A stream represents one ensemble over one fixed dual graph.              |
+| Values must be district ids in `0..=65535` (16-bit).                 | The binary format stores district ids compactly.                         |
+| The order must match the graph order you intend to use when reading. | BEN cannot infer geographic meaning from the values alone.               |
+| Missing nodes are not represented.                                   | Use one entry per graph node, even for islands or zero-population units. |
 
 ```python
 from binary_ensemble import BendlDecoder
@@ -101,12 +101,12 @@ encode_jsonl_to_ben("plans.jsonl", "plans.ben", overwrite=True)
 
 A `.bendl` file can carry well-known assets and custom assets:
 
-| Asset | Reader helper | Typical payload |
-|---|---|---|
-| `graph.json` | `read_graph()` or `read_json_asset("graph.json")` | NetworkX adjacency JSON |
-| `metadata.json` | `read_metadata()` | Sampler name, seed, date, chain settings |
-| `node_permutation_map.json` | `read_node_permutation_map()` | Reversible old-to-new node order map |
-| Custom JSON/text/binary asset | `read_json_asset()` or `read_asset_bytes()` | Scores, notes, provenance, run manifests, geometry blobs |
+| Asset                         | Reader helper                                     | Typical payload                                          |
+| ----------------------------- | ------------------------------------------------- | -------------------------------------------------------- |
+| `graph.json`                  | `read_graph()` or `read_json_asset("graph.json")` | NetworkX adjacency JSON                                  |
+| `metadata.json`               | `read_metadata()`                                 | Sampler name, seed, date, chain settings                 |
+| `node_permutation_map.json`   | `read_node_permutation_map()`                     | Reversible old-to-new node order map                     |
+| Custom JSON/text/binary asset | `read_json_asset()` or `read_asset_bytes()`       | Scores, notes, provenance, run manifests, geometry blobs |
 
 ```python
 from binary_ensemble import BendlDecoder
@@ -126,12 +126,12 @@ variant for compression behavior, not for downstream semantics.
 Likewise, `.ben`, `.xben`, and `.bendl` carry the same assignment stream at different
 packaging layers:
 
-| Format | Carries assignments | Carries graph/assets | Best use |
-|---|---:|---:|---|
-| `.ben` | yes | no | Active work, fast streaming and subsampling |
-| `.xben` | yes | no | Small plain-stream archive |
-| `.bendl` with BEN stream | yes | yes | Recommended working bundle |
-| `.bendl` with XBEN stream | yes | yes | Recommended share/archive bundle |
+| Format                    | Carries assignments | Carries graph/assets | Best use                                    |
+| ------------------------- | ------------------: | -------------------: | ------------------------------------------- |
+| `.ben`                    |                 yes |                   no | Active work, fast streaming and subsampling |
+| `.xben`                   |                 yes |                   no | Small plain-stream archive                  |
+| `.bendl` with BEN stream  |                 yes |                  yes | Recommended working bundle                  |
+| `.bendl` with XBEN stream |                 yes |                  yes | Recommended share/archive bundle            |
 
 ## Validation checklist
 

@@ -6,12 +6,12 @@ the graph order yourself before writing assignments.
 
 Each function returns `(reordered_graph, node_permutation_map)`.
 
-| Function | Ordering |
-|---|---|
-| `reorder(graph, sort="mlc")` | Dispatch helper for all orderings |
-| `reorder_multi_level_cluster(graph)` | Recursive topology-based clustering |
-| `reorder_reverse_cuthill_mckee(graph)` | Reverse Cuthill-McKee bandwidth reduction |
-| `reorder_by_key(graph, key)` | Sort by a node attribute, or `"id"` for node id |
+| Function                               | Ordering                                        |
+| -------------------------------------- | ----------------------------------------------- |
+| `reorder(graph, sort="mlc")`           | Dispatch helper for all orderings               |
+| `reorder_multi_level_cluster(graph)`   | Recursive topology-based clustering             |
+| `reorder_reverse_cuthill_mckee(graph)` | Reverse Cuthill-McKee bandwidth reduction       |
+| `reorder_by_key(graph, key)`           | Sort by a node attribute, or `"id"` for node id |
 
 ```{eval-rst}
 .. automodule:: binary_ensemble.graph

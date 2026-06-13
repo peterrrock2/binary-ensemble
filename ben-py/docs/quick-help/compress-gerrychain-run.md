@@ -84,7 +84,7 @@ file. To read it back, see [Read and iterate an ensemble](read-and-iterate.md).
 
 ## Why this is better than reordering later
 
-You *can* write a raw-order `.bendl` file with a BEN stream and later call
+You _can_ write a raw-order `.bendl` file with a BEN stream and later call
 `relabel_bundle()` to reorder the graph and rewrite the stream. But when you control the
 sampling code, it is cleaner to reorder first:
 

@@ -15,7 +15,7 @@ complete file to BEN or XBEN in one call.
 
 `assignment`
 : A list of integer district ids. Every line in one file must describe the same fixed graph
-  order, so every `assignment` should have the same length.
+order, so every `assignment` should have the same length.
 
 ```python
 import json
@@ -85,4 +85,3 @@ encode_jsonl_to_xben("plans.jsonl", "plans.xben", overwrite=True)
 
 Use `encode_jsonl_to_ben()` when you plan to keep working with the ensemble. Use
 `encode_jsonl_to_xben()` when the output is immediately going to archive or transfer.
-

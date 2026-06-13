@@ -6,11 +6,11 @@ contains assignments only; it does not carry a graph, metadata, or custom assets
 
 ## Stream vs. bundle
 
-| Need | Use |
-|---|---|
+| Need                                         | Use                             |
+| -------------------------------------------- | ------------------------------- |
 | Self-describing file with graph and metadata | `BendlEncoder` / `BendlDecoder` |
-| Small raw stream for another tool | `BenEncoder` / `BenDecoder` |
-| Whole-file JSONL conversion | {mod}`binary_ensemble.codec` |
+| Small raw stream for another tool            | `BenEncoder` / `BenDecoder`     |
+| Whole-file JSONL conversion                  | {mod}`binary_ensemble.codec`    |
 
 ```{eval-rst}
 .. automodule:: binary_ensemble.stream

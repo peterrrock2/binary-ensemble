@@ -112,6 +112,10 @@ linkcheck_ignore = [
     # crates.io serves a 404 to non-browser/HEAD requests, so the (valid) crate page link
     # can't be validated by linkcheck even though it resolves fine in a browser.
     r"https://crates\.io/.*",
+    # mggg.org answers a browser instantly but stalls (read timeout, never replies) for the
+    # datacenter IP + non-browser User-Agent linkcheck uses from CI, so no finite timeout
+    # validates it. The link is valid; skip it in CI rather than chase the timeout.
+    r"https://mggg\.org/.*",
 ]
 
 # -- HTML output -------------------------------------------------------------

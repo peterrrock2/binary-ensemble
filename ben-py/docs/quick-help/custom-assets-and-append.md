@@ -8,14 +8,14 @@ you can add more to a bundle even after it's finalized.
 `add_metadata` writes the canonical `metadata.json`. `add_asset` writes any named blob with a
 `content_type` describing the payload:
 
-| `content_type` | Payload | Decoder behavior |
-|---|---|---|
-| `"json"` | Valid UTF-8 JSON (a `dict`/`list` is serialized for you) | `read_json_asset` auto-parses it |
-| `"text"` | Any UTF-8 text | Raw bytes via `read_asset_bytes` |
-| `"binary"` | Arbitrary bytes — a zipped shapefile, a GeoPackage, anything | Raw bytes via `read_asset_bytes` |
-| `"file"` | A `str` or `Path` naming a file, whose contents are read and stored as binary | Raw bytes via `read_asset_bytes` |
+| `content_type` | Payload                                                                       | Decoder behavior                 |
+| -------------- | ----------------------------------------------------------------------------- | -------------------------------- |
+| `"json"`       | Valid UTF-8 JSON (a `dict`/`list` is serialized for you)                      | `read_json_asset` auto-parses it |
+| `"text"`       | Any UTF-8 text                                                                | Raw bytes via `read_asset_bytes` |
+| `"binary"`     | Arbitrary bytes — a zipped shapefile, a GeoPackage, anything                  | Raw bytes via `read_asset_bytes` |
+| `"file"`       | A `str` or `Path` naming a file, whose contents are read and stored as binary | Raw bytes via `read_asset_bytes` |
 
-The payload itself may be bytes-like, a `str` (always stored as UTF-8 *content* — a plain
+The payload itself may be bytes-like, a `str` (always stored as UTF-8 _content_ — a plain
 string is never treated as a path except under `content_type="file"`), a `dict`/`list` (JSON
 only), an open file or other object with `.read()`, or a `pathlib.Path` whose file is read:
 
@@ -34,8 +34,8 @@ with encoder.ben_stream() as ensemble:
 ```
 
 Every asset is stored with a CRC32C integrity checksum, and payloads of 1 KiB or more are
-xz-compressed on disk by default — both invisible on read. Assets may be added before *or*
-after the stream — only the stream itself is single-use. (The one exception is a *reordering*
+xz-compressed on disk by default — both invisible on read. Assets may be added before _or_
+after the stream — only the stream itself is single-use. (The one exception is a _reordering_
 `add_graph`, which must come before the stream because it sets the node order the chain
 writes in.)
 

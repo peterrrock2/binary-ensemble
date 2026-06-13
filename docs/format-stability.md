@@ -27,7 +27,7 @@ In particular:
 
 When the wire format changes:
 
-- **Additive minor change** (a new flag bit, a new asset type): mint a *new* fixture into the
+- **Additive minor change** (a new flag bit, a new asset type): mint a _new_ fixture into the
   current `v<n>/` directory if it pins behavior the existing fixtures do not, but **leave every
   existing fixture untouched**.
 - **Breaking major change** (header shape, frame shape, checksum algorithm): add a new

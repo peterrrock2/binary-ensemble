@@ -8,11 +8,11 @@ the quickest checks before you dig into a large run.
 
 Use the reader that matches the container:
 
-| File | Reader |
-|---|---|
-| `.bendl` | `BendlDecoder` |
-| `.ben` | `BenDecoder(path)` |
-| `.xben` | `BenDecoder(path, mode="xben")` |
+| File     | Reader                          |
+| -------- | ------------------------------- |
+| `.bendl` | `BendlDecoder`                  |
+| `.ben`   | `BenDecoder(path)`              |
+| `.xben`  | `BenDecoder(path, mode="xben")` |
 
 ```python
 from binary_ensemble import BendlDecoder, BenDecoder

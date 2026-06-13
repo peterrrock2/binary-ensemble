@@ -103,6 +103,7 @@ The only GerryChain-specific step is extracting assignments in the same node ord
 graph stored in the bundle.
 
 <!-- docs-test: skip requires GerryChain and a real Partition object -->
+
 ```python
 write_order = list(ordered_graph.nodes)
 

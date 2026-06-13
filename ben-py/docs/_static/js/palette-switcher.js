@@ -43,10 +43,18 @@
     var light = declarations(p.light);
     var dark = declarations(p.dark);
     var css =
-      'body, body[data-theme="light"] {' + light + "}" +
-      'body[data-theme="dark"] {' + dark + "}" +
-      '@media (prefers-color-scheme: dark){body[data-theme="auto"]{' + dark + "}}" +
-      '@media (prefers-color-scheme: light){body[data-theme="auto"]{' + light + "}}";
+      'body, body[data-theme="light"] {' +
+      light +
+      "}" +
+      'body[data-theme="dark"] {' +
+      dark +
+      "}" +
+      '@media (prefers-color-scheme: dark){body[data-theme="auto"]{' +
+      dark +
+      "}}" +
+      '@media (prefers-color-scheme: light){body[data-theme="auto"]{' +
+      light +
+      "}}";
     setStyle("docs-palette-override", css);
     applyCode(name); // the palette's "Auto" default may have changed
   }
@@ -174,8 +182,8 @@
           function (value) {
             applyPalette(value);
             write(PALETTE_KEY, value);
-          }
-        )
+          },
+        ),
       );
     }
 
@@ -199,8 +207,8 @@
           function (value) {
             write(CODE_KEY, value);
             applyCode(currentPalette());
-          }
-        )
+          },
+        ),
       );
     }
 

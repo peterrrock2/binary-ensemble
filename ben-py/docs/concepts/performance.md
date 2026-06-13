@@ -7,13 +7,13 @@
 
 ## Format trade-offs
 
-| Format | Write speed | Read speed | Size | Best use |
-|---|---|---|---|---|
-| JSONL | slowest and largest | simple but bulky | largest | Interchange and debugging |
-| BEN | fast | fast | small | Day-to-day work |
-| XBEN | slow to create | fast after startup | smallest | Archive and sharing |
-| BENDL + BEN | fast | fast | small plus assets | Recommended working file |
-| BENDL + XBEN | slow to create | fast after startup | smallest plus assets | Recommended archive file |
+| Format       | Write speed         | Read speed         | Size                 | Best use                  |
+| ------------ | ------------------- | ------------------ | -------------------- | ------------------------- |
+| JSONL        | slowest and largest | simple but bulky   | largest              | Interchange and debugging |
+| BEN          | fast                | fast               | small                | Day-to-day work           |
+| XBEN         | slow to create      | fast after startup | smallest             | Archive and sharing       |
+| BENDL + BEN  | fast                | fast               | small plus assets    | Recommended working file  |
+| BENDL + XBEN | slow to create      | fast after startup | smallest plus assets | Recommended archive file  |
 
 ## The biggest lever: node order
 
@@ -75,11 +75,11 @@ encode_ben_to_xben(
 
 Guidance:
 
-| Option | Effect | Practical default |
-|---|---|---|
-| `n_threads` | Parallelizes compression work | `None` to use the library default |
-| `compression_level` | Higher is smaller but slower | `9` for final archive, lower for iteration |
-| `xz_block_size` | Controls XZ block sizing | `None` unless benchmarking a specific workload |
+| Option              | Effect                        | Practical default                              |
+| ------------------- | ----------------------------- | ---------------------------------------------- |
+| `n_threads`         | Parallelizes compression work | `None` to use the library default              |
+| `compression_level` | Higher is smaller but slower  | `9` for final archive, lower for iteration     |
+| `xz_block_size`     | Controls XZ block sizing      | `None` unless benchmarking a specific workload |
 
 `compress_stream()` for bundles uses the library's bundle recompression defaults. If you
 need fine control over XBEN tuning, extract the stream, tune the plain-stream conversion, and

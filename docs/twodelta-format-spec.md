@@ -18,7 +18,7 @@ variant; see the BENDL format specification.
 
 ## Design Goals
 
-- Encode a full-chain ensemble from a *pairwise* ReCom sampler compactly by storing, for most
+- Encode a full-chain ensemble from a _pairwise_ ReCom sampler compactly by storing, for most
   samples, only the two district ids that changed and where.
 - Remain a valid BEN stream: same banner mechanism, same `.ben`/`.xben` containers, same expanded
   sample-count semantics.
@@ -30,7 +30,7 @@ variant; see the BENDL format specification.
 
 This document uses the workspace glossary. The terms that matter most here:
 
-- **assignment** — a length-N `Vec<u16>` where index *i* is the district id of dual-graph node *i*.
+- **assignment** — a length-N `Vec<u16>` where index _i_ is the district id of dual-graph node _i_.
 - **ReCom-step** — a single accepted ReCom move: consecutive samples differ by exactly one pairwise
   district swap (exactly two district ids exchange positions; no position outside that pair
   changes).
@@ -79,7 +79,7 @@ frame-skip subsampling that Standard and MkvChain allow.
 A delta frame stores:
 
 - a **pair** `(A, B)` of district ids, and
-- a vector of **alternating run lengths** over the positions the pair occupies in the *new*
+- a vector of **alternating run lengths** over the positions the pair occupies in the _new_
   assignment, ordered by position.
 
 The run lengths describe, in node order and restricted to positions holding A or B, the lengths of
@@ -220,7 +220,7 @@ framing, never the decoded result.
 ## Repeats
 
 A repeated sample (identical to the previous one) is represented in one of two ways, both of which
-preserve the *expanded* sample count:
+preserve the _expanded_ sample count:
 
 - via a frame **`count` greater than 1**, which expands to that many identical samples (as in
   MkvChain); or

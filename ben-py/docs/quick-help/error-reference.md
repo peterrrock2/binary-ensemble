@@ -25,8 +25,8 @@ encode_jsonl_to_ben("plans.jsonl", "error-reference.ben", overwrite=True)
 ## Wrong reader for the file type
 
 **Symptom:** opening a file raises an `Exception` whose message names the decoder to use —
-for example *"…is a .bendl file, not a plain BEN/XBEN stream. Open it with
-binary_ensemble.bundle.BendlDecoder instead."*
+for example _"…is a .bendl file, not a plain BEN/XBEN stream. Open it with
+binary_ensemble.bundle.BendlDecoder instead."_
 
 **Cause:** `.bendl`, `.ben`, and `.xben` are different containers. (A missing or unreadable
 file raises `OSError` instead.)
@@ -155,7 +155,7 @@ must be >= 1`.
 
 **Cause:** sample positions are 1-based everywhere, and out-of-range positions raise
 rather than being silently dropped. (Duplicate indices do not raise — they are dropped; an
-*unsorted* list is sorted with a `UserWarning`. An empty index list raises.)
+_unsorted_ list is sorted with a `UserWarning`. An empty index list raises.)
 
 **Fix:** clamp the request to `len(decoder)` first.
 

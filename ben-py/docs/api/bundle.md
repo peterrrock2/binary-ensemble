@@ -10,14 +10,14 @@ Use this module when you want the file to be self-describing. That is the normal
 redistricting ensembles because an assignment is only meaningful with the graph node order it
 was written against.
 
-| Task | API |
-|---|---|
-| Create a new bundle | `BendlEncoder(path, overwrite=True)` |
-| Attach a dual graph | `encoder.add_graph(graph, sort=...)` |
-| Stream assignments while sampling | `with encoder.ben_stream() as ensemble: ...` |
-| Read assignments and assets | `BendlDecoder(path)` |
-| Reorder/relabel an existing bundle | `relabel_bundle(...)` |
-| Recompress a bundle to XBEN | `compress_stream(...)` |
+| Task                               | API                                          |
+| ---------------------------------- | -------------------------------------------- |
+| Create a new bundle                | `BendlEncoder(path, overwrite=True)`         |
+| Attach a dual graph                | `encoder.add_graph(graph, sort=...)`         |
+| Stream assignments while sampling  | `with encoder.ben_stream() as ensemble: ...` |
+| Read assignments and assets        | `BendlDecoder(path)`                         |
+| Reorder/relabel an existing bundle | `relabel_bundle(...)`                        |
+| Recompress a bundle to XBEN        | `compress_stream(...)`                       |
 
 ```python
 from binary_ensemble import BendlDecoder
@@ -35,10 +35,10 @@ assert decoder.assignment_format() in {"ben", "xben"}
 
 `BendlEncoder` has two modes:
 
-| Mode | Open with | Stream writes | Asset writes |
-|---|---|---:|---:|
-| Create | `BendlEncoder(path, overwrite=True)` | one stream | before or after the stream |
-| Append | `BendlEncoder.append(path)` | unavailable | immediate appends to a finalized bundle |
+| Mode   | Open with                            | Stream writes |                            Asset writes |
+| ------ | ------------------------------------ | ------------: | --------------------------------------: |
+| Create | `BendlEncoder(path, overwrite=True)` |    one stream |              before or after the stream |
+| Append | `BendlEncoder.append(path)`          |   unavailable | immediate appends to a finalized bundle |
 
 The stream context finalizes the bundle when it closes cleanly. You only need to use the
 encoder itself as a context manager for assets-only bundles or if that style is clearer in
@@ -61,12 +61,12 @@ with encoder.ben_stream() as ensemble:
 object. By default it reorders with `sort="mlc"` for better compression and returns the
 reordered NetworkX graph. Write assignments in the returned graph's node order.
 
-| `sort` | Meaning | Needs `key`? | Stores permutation map? |
-|---|---|---:|---:|
-| `"mlc"` | Multi-level clustering; topology-based default | no | yes |
-| `"rcm"` | Reverse Cuthill-McKee topology ordering | no | yes |
-| `"key"` | Sort nodes by a node attribute | yes | yes |
-| `None` | Store the graph as-is | no | no |
+| `sort`  | Meaning                                        | Needs `key`? | Stores permutation map? |
+| ------- | ---------------------------------------------- | -----------: | ----------------------: |
+| `"mlc"` | Multi-level clustering; topology-based default |           no |                     yes |
+| `"rcm"` | Reverse Cuthill-McKee topology ordering        |           no |                     yes |
+| `"key"` | Sort nodes by a node attribute                 |          yes |                     yes |
+| `None`  | Store the graph as-is                          |           no |                      no |
 
 ```python
 import networkx as nx
@@ -114,20 +114,20 @@ with encoder.ben_stream(variant="twodelta") as ensemble:
 
 `BendlDecoder` iterates the embedded stream and exposes bundle inspection methods.
 
-| Method | Use |
-|---|---|
-| `len(decoder)` / `count_samples()` | Expanded number of samples |
-| `assignment_format()` | `"ben"` or `"xben"` for the embedded stream |
-| `version()` / `is_complete()` | Bundle header inspection |
-| `asset_names()` / `list_assets()` | Asset directory inspection |
-| `verify()` | Check every asset and stream checksum; raises on corruption |
-| `read_graph()` | `networkx.Graph` rebuilt from `graph.json`, or `None` |
-| `read_metadata()` | Parsed `metadata.json`, or `None` |
-| `read_node_permutation_map()` | Parsed permutation map, or `None` |
-| `read_json_asset(name)` | Parse a JSON asset |
-| `read_asset_bytes(name)` | Raw bytes for any asset |
-| `extract_stream(path)` | Copy the embedded stream out as `.ben` or `.xben` bytes |
-| `subsample_*()` | Iterate only selected samples |
+| Method                             | Use                                                         |
+| ---------------------------------- | ----------------------------------------------------------- |
+| `len(decoder)` / `count_samples()` | Expanded number of samples                                  |
+| `assignment_format()`              | `"ben"` or `"xben"` for the embedded stream                 |
+| `version()` / `is_complete()`      | Bundle header inspection                                    |
+| `asset_names()` / `list_assets()`  | Asset directory inspection                                  |
+| `verify()`                         | Check every asset and stream checksum; raises on corruption |
+| `read_graph()`                     | `networkx.Graph` rebuilt from `graph.json`, or `None`       |
+| `read_metadata()`                  | Parsed `metadata.json`, or `None`                           |
+| `read_node_permutation_map()`      | Parsed permutation map, or `None`                           |
+| `read_json_asset(name)`            | Parse a JSON asset                                          |
+| `read_asset_bytes(name)`           | Raw bytes for any asset                                     |
+| `extract_stream(path)`             | Copy the embedded stream out as `.ben` or `.xben` bytes     |
+| `subsample_*()`                    | Iterate only selected samples                               |
 
 ```python
 from binary_ensemble import BendlDecoder

@@ -1,7 +1,7 @@
 # Read and iterate an ensemble
 
 A `.bendl` file is self-describing, so opening one with `BendlDecoder` hands you the whole
-package at once: the assignment stream *and* the graph, metadata, and any custom assets stored
+package at once: the assignment stream _and_ the graph, metadata, and any custom assets stored
 beside it. There is no separate graph file to track down and no node order to remember, because
 the bundle already carries both.
 
@@ -46,7 +46,7 @@ all_plans = list(decoder)        # full pass again, from the start
 ```
 
 That shared cursor is also the one thing to watch: iteration is strictly sequential, so don't
-drive two loops over the *same* decoder at once. When you genuinely need two positions in the
+drive two loops over the _same_ decoder at once. When you genuinely need two positions in the
 stream simultaneously, open a second `BendlDecoder` on the file.
 
 ## Recover the dual graph

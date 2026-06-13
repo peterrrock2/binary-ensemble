@@ -6,7 +6,7 @@ they differ in how much extra compression and packaging they add.
 ## `.ben` — the working format
 
 A plain BEN **stream**: a one-line banner followed by the bit-packed, run-length-encoded
-frames. This is the format you *work* with — it supports reading any sample, replaying an
+frames. This is the format you _work_ with — it supports reading any sample, replaying an
 ensemble, and [subsampling](../quick-help/subsample.md) without decompressing everything.
 
 - **Fast** to write and read.
@@ -16,7 +16,7 @@ ensemble, and [subsampling](../quick-help/subsample.md) without decompressing ev
 ## `.xben` — the storage format
 
 A BEN stream wrapped in [LZMA2](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm).
-LZMA2 exploits the repetition *across* plans that bit-packing alone can't reach, taking the
+LZMA2 exploits the repetition _across_ plans that bit-packing alone can't reach, taking the
 Colorado example from ~550 MB down to ~6 MB.
 
 ```{admonition} XBEN is for storage and transfer, not active work
@@ -40,18 +40,18 @@ Because the graph is embedded, a collaborator can open a `.bendl` and immediatel
 plans — no separate graph file to track down, no chance of pairing the wrong one. This is why
 the bundle is the recommended default.
 
-A bundle can wrap *either* a BEN stream (the working form) or an XBEN stream (the compressed
+A bundle can wrap _either_ a BEN stream (the working form) or an XBEN stream (the compressed
 form). You typically build a `.bendl` file with a BEN stream while sampling, then
 [recompress it to XBEN](../quick-help/shrink-for-sharing.md) for distribution.
 
 ## Choosing a format
 
-| If you want to… | Use |
-|---|---|
-| Hand an ensemble to a collaborator as one file | `.bendl` (XBEN inside) |
-| Keep building / reading an ensemble locally | `.bendl` (BEN inside) or `.ben` |
-| Archive an ensemble as small as possible | `.xben`, or a `.bendl` recompressed to XBEN |
-| Interoperate with the JSONL world | convert with the [codec helpers](../quick-help/convert-formats.md) |
+| If you want to…                                | Use                                                                |
+| ---------------------------------------------- | ------------------------------------------------------------------ |
+| Hand an ensemble to a collaborator as one file | `.bendl` (XBEN inside)                                             |
+| Keep building / reading an ensemble locally    | `.bendl` (BEN inside) or `.ben`                                    |
+| Archive an ensemble as small as possible       | `.xben`, or a `.bendl` recompressed to XBEN                        |
+| Interoperate with the JSONL world              | convert with the [codec helpers](../quick-help/convert-formats.md) |
 
 ```{tip}
 When in doubt, use a `.bendl` file. You only need the plain `.ben`/`.xben` stream classes
@@ -75,7 +75,7 @@ stacked layers:
    Fewer, longer runs mean a smaller frame, which is exactly why
    [node reordering](compression.md) is the biggest compression lever.
 2. **Bit-packing.** Each frame inspects its own largest district id and largest run length, then
-   packs every value and length to *exactly* that many bits — no wasted bytes. The example above
+   packs every value and length to _exactly_ that many bits — no wasted bytes. The example above
    has a max id of `3` (2 bits) and a max length of `4` (3 bits), so each run costs 5 bits.
 3. **Frames.** Each sample becomes one self-describing frame: a short header (the two bit-widths
    plus the payload's byte length) followed by the packed payload. Because the header states the
@@ -128,7 +128,7 @@ the embedded assignment stream, then a directory table at the end:
   carries the bytes and notes the format. That's what lets you replace the embedded BEN stream
   with an embedded XBEN stream by recompressing only the inner stream.
 
-The writer lays the file down in order — a provisional header marked *unfinalized*, then assets,
+The writer lays the file down in order — a provisional header marked _unfinalized_, then assets,
 then the stream, then the directory — and **patches the header last** to flip it to finalized and
 fill in the final lengths, checksum, and sample count. So if the process dies mid-write, the
 partial file is clearly flagged incomplete and the stream bytes that reached disk are still

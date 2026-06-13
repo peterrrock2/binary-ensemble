@@ -9,12 +9,12 @@ the assignments.
 
 ## Inputs and outputs
 
-| Function family | Input | Output | Carries assets? |
-|---|---|---|---:|
-| `encode_jsonl_to_*` | JSON Lines with an `assignment` field | BEN or XBEN stream | no |
-| `encode_ben_to_xben` | BEN stream | XBEN stream | no |
-| `decode_*_to_jsonl` | BEN or XBEN stream | JSON Lines | no |
-| `decode_xben_to_ben` | XBEN stream | BEN stream | no |
+| Function family      | Input                                 | Output             | Carries assets? |
+| -------------------- | ------------------------------------- | ------------------ | --------------: |
+| `encode_jsonl_to_*`  | JSON Lines with an `assignment` field | BEN or XBEN stream |              no |
+| `encode_ben_to_xben` | BEN stream                            | XBEN stream        |              no |
+| `decode_*_to_jsonl`  | BEN or XBEN stream                    | JSON Lines         |              no |
+| `decode_xben_to_ben` | XBEN stream                           | BEN stream         |              no |
 
 The expected JSONL shape is:
 

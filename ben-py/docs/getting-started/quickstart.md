@@ -56,7 +56,7 @@ for assignment in decoder:
 
 The real value of a bundle is embedding the **dual graph** so a collaborator can open the
 file without hunting down the matching graph JSON. `add_graph` accepts a graph in NetworkX
-*adjacency* form (a `dict`) or a path to a graph JSON file:
+_adjacency_ form (a `dict`) or a path to a graph JSON file:
 
 ```python
 import networkx as nx
