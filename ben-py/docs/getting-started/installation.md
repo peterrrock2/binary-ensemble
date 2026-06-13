@@ -52,7 +52,8 @@ maturin develop --release      # builds the extension and installs it editable
 ## Command-line tools
 
 This Python package wraps the same engine as the project's CLI tools (`ben`, `reben`,
-`bendl`, `pcben`). Install them with Cargo, either from crates.io or from a checkout:
+`bendl`, `pcben`). Install them with Cargo, either from
+[crates.io](https://crates.io/crates/binary-ensemble) or from a checkout:
 
 ```bash
 cargo install binary-ensemble    # from crates.io

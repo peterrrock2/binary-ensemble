@@ -100,7 +100,7 @@ intersphinx_mapping = {
 #
 # Keep link checking separate from normal HTML builds because it depends on external
 # services. CI runs it as its own step so transient failures are easy to diagnose.
-linkcheck_timeout = 10
+linkcheck_timeout = 30
 linkcheck_retries = 2
 linkcheck_anchors = False
 linkcheck_ignore = [
@@ -109,6 +109,9 @@ linkcheck_ignore = [
     # GitHub source/blob URLs are useful in rendered docs but frequently rate-limit
     # unauthenticated CI linkcheck runs.
     r"https://github\.com/peterrrock2/binary-ensemble/(blob|tree)/.*",
+    # crates.io serves a 404 to non-browser/HEAD requests, so the (valid) crate page link
+    # can't be validated by linkcheck even though it resolves fine in a browser.
+    r"https://crates\.io/.*",
 ]
 
 # -- HTML output -------------------------------------------------------------
