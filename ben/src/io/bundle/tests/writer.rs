@@ -2278,3 +2278,141 @@ fn incompressible_payload_is_stored_raw_even_above_the_threshold() {
         assert_eq!(reader.asset_bytes(&entry).unwrap(), noise);
     }
 }
+
+#[test]
+fn compression_level_is_plumbed_end_to_end() {
+    // The level only changes the stored form, never the decoded bytes. No size ordering is
+    // asserted between presets: xz's per-preset dictionary/properties overhead can make a
+    // *small* payload store larger at 9 than at 0 — the pin here is that the knob actually
+    // reaches the encoder (different presets produce different stored sizes) and that both
+    // round-trip.
+    let payload = compressible_json(512);
+    let mut sizes = Vec::new();
+    for level in [0u32, 9] {
+        let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+        writer
+            .add_asset(
+                ASSET_TYPE_CUSTOM,
+                "level.bin",
+                &payload,
+                AddAssetOptions::defaults()
+                    .compress()
+                    .compression_level(level),
+            )
+            .unwrap();
+        let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
+        let buf = writer.finish().unwrap().into_inner();
+
+        let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+        let entry = reader.find_asset_by_name("level.bin").cloned().unwrap();
+        assert_ne!(entry.asset_flags & ASSET_FLAG_XZ, 0);
+        assert_eq!(reader.asset_bytes(&entry).unwrap(), payload);
+        sizes.push(entry.payload_len);
+    }
+    assert_ne!(
+        sizes[0], sizes[1],
+        "presets 0 and 9 must reach the encoder and produce different stored forms"
+    );
+}
+
+#[test]
+fn invalid_compression_level_is_rejected_and_reserves_nothing() {
+    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    let err = writer
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "x.bin",
+            b"payload",
+            AddAssetOptions::defaults().compression_level(10),
+        )
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("between 0 and 9"),
+        "unexpected error: {err}"
+    );
+    // The rejection reserved nothing: the same name succeeds with valid options.
+    writer
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "x.bin",
+            b"payload",
+            AddAssetOptions::defaults(),
+        )
+        .unwrap();
+
+    // Same contract at the appender, where the options are validated before the registry claim.
+    let (bundle, _) = build_base_bundle();
+    let mut appender = BendlAppender::open(Cursor::new(bundle)).unwrap();
+    let err = appender
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "y.bin",
+            b"payload",
+            AddAssetOptions::defaults().compression_level(99),
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("between 0 and 9"));
+    appender
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "y.bin",
+            b"payload",
+            AddAssetOptions::defaults(),
+        )
+        .unwrap();
+}
+
+#[test]
+fn probe_skips_full_compression_of_large_incompressible_payloads() {
+    // At or above the probe threshold, a prefix sample that barely shrinks short-circuits to
+    // raw storage — the full xz pass over an already-compressed blob never runs. The stored
+    // outcome matches what compress-and-compare would have chosen anyway.
+    let mut noise = vec![0u8; 4 * 1024 * 1024 + 1];
+    let mut x: u32 = 0x2545_F491;
+    for b in noise.iter_mut() {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        *b = (x >> 24) as u8;
+    }
+    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    writer
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "noise.bin",
+            &noise,
+            AddAssetOptions::defaults().compress(),
+        )
+        .unwrap();
+    let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
+    let buf = writer.finish().unwrap().into_inner();
+
+    let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+    let entry = reader.find_asset_by_name("noise.bin").cloned().unwrap();
+    assert_eq!(entry.asset_flags & ASSET_FLAG_XZ, 0);
+    assert_eq!(entry.payload_len, noise.len() as u64);
+    assert_eq!(reader.asset_bytes(&entry).unwrap(), noise);
+}
+
+#[test]
+fn probe_still_compresses_large_compressible_payloads() {
+    // The probe must not rob genuinely compressible large payloads of their size win.
+    let payload = b"all work and no play makes jack a dull boy ".repeat(110_000); // ~4.7 MiB
+    let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    writer
+        .add_asset(
+            ASSET_TYPE_CUSTOM,
+            "text.bin",
+            &payload,
+            AddAssetOptions::defaults(),
+        )
+        .unwrap();
+    let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
+    let buf = writer.finish().unwrap().into_inner();
+
+    let mut reader = BendlReader::open(Cursor::new(buf)).unwrap();
+    let entry = reader.find_asset_by_name("text.bin").cloned().unwrap();
+    assert_ne!(entry.asset_flags & ASSET_FLAG_XZ, 0);
+    assert!(entry.payload_len < payload.len() as u64 / 10);
+    assert_eq!(reader.asset_bytes(&entry).unwrap(), payload);
+}

@@ -6,6 +6,13 @@ use crate::io::bundle::AddAssetOptions;
 use std::fs::OpenOptions;
 
 pub(super) fn run_append(args: AppendArgs) -> Result<(), String> {
+    let base_opts = || {
+        let opts = AddAssetOptions::defaults();
+        match args.asset_compression_level {
+            Some(level) => opts.compression_level(level),
+            None => opts,
+        }
+    };
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -20,15 +27,15 @@ pub(super) fn run_append(args: AppendArgs) -> Result<(), String> {
             &mut appender,
             KnownAssetKind::Metadata,
             path,
-            AddAssetOptions::defaults().json(),
+            base_opts().json(),
         )?;
         added += 1;
     }
     if let Some(ref path) = args.graph {
         let opts = if args.graph_raw {
-            AddAssetOptions::defaults().json().raw()
+            base_opts().json().raw()
         } else {
-            AddAssetOptions::defaults().json()
+            base_opts().json()
         };
         append_known_file_asset(&mut appender, KnownAssetKind::Graph, path, opts)?;
         added += 1;
@@ -38,12 +45,12 @@ pub(super) fn run_append(args: AppendArgs) -> Result<(), String> {
             &mut appender,
             KnownAssetKind::NodePermutationMap,
             path,
-            AddAssetOptions::defaults().json(),
+            base_opts().json(),
         )?;
         added += 1;
     }
     for NamedAsset { name, path } in &args.assets {
-        append_custom_file_asset(&mut appender, name, path, AddAssetOptions::defaults())?;
+        append_custom_file_asset(&mut appender, name, path, base_opts())?;
         added += 1;
     }
 

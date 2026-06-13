@@ -90,6 +90,11 @@ pub(super) struct CreateArgs {
     /// Store `graph.json` raw instead of compressing it.
     #[arg(long)]
     pub graph_raw: bool,
+    /// xz preset (0-9) used when compressing assets added by this invocation. Defaults to the
+    /// writer's preset (6). Assets are write-once and read-many, so the level only trades
+    /// one-time write CPU against permanent file size.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(0..=9))]
+    pub asset_compression_level: Option<u32>,
 }
 
 #[derive(Parser, Debug)]
@@ -155,4 +160,9 @@ pub(super) struct AppendArgs {
     /// Store `graph.json` raw instead of compressing it.
     #[arg(long)]
     pub graph_raw: bool,
+    /// xz preset (0-9) used when compressing assets added by this invocation. Defaults to the
+    /// writer's preset (6). Assets are write-once and read-many, so the level only trades
+    /// one-time write CPU against permanent file size.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(0..=9))]
+    pub asset_compression_level: Option<u32>,
 }

@@ -9,6 +9,13 @@ use std::fs::File;
 use std::io::{self, BufReader};
 
 pub(super) fn run_create(args: CreateArgs) -> Result<(), String> {
+    let base_opts = || {
+        let opts = AddAssetOptions::defaults();
+        match args.asset_compression_level {
+            Some(level) => opts.compression_level(level),
+            None => opts,
+        }
+    };
     let format = format_from_path(&args.input)?;
     check_overwrite(
         args.output.to_str().ok_or("non-utf8 output path")?,
@@ -33,14 +40,14 @@ pub(super) fn run_create(args: CreateArgs) -> Result<(), String> {
             &mut writer,
             KnownAssetKind::Metadata,
             path,
-            AddAssetOptions::defaults().json(),
+            base_opts().json(),
         )?;
     }
     if let Some(ref path) = args.graph {
         let opts = if args.graph_raw {
-            AddAssetOptions::defaults().json().raw()
+            base_opts().json().raw()
         } else {
-            AddAssetOptions::defaults().json()
+            base_opts().json()
         };
         add_known_file_asset(&mut writer, KnownAssetKind::Graph, path, opts)?;
     }
@@ -49,11 +56,11 @@ pub(super) fn run_create(args: CreateArgs) -> Result<(), String> {
             &mut writer,
             KnownAssetKind::NodePermutationMap,
             path,
-            AddAssetOptions::defaults().json(),
+            base_opts().json(),
         )?;
     }
     for NamedAsset { name, path } in &args.assets {
-        add_custom_file_asset(&mut writer, name, path, AddAssetOptions::defaults())?;
+        add_custom_file_asset(&mut writer, name, path, base_opts())?;
     }
 
     // Stream phase: copy bytes from the input file directly into the bundle's stream region. This

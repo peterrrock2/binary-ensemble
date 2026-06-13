@@ -77,6 +77,9 @@ pub struct AddAssetOptions {
     /// Whether the decoded payload is UTF-8 JSON. Adds the [`ASSET_FLAG_JSON`] bit to the entry's
     /// flags.
     pub is_json: bool,
+    /// xz preset (0–9) used when this asset is compressed. `None` follows
+    /// [`DEFAULT_XZ_PRESET`]. Values above 9 are rejected when the asset is added.
+    pub compression_level: Option<u32>,
 }
 
 impl AddAssetOptions {
@@ -102,6 +105,26 @@ impl AddAssetOptions {
         self.compress = Some(false);
         self
     }
+
+    /// Choose the xz preset (0–9) used when this asset is compressed. Assets are write-once and
+    /// read-many — decompression speed is essentially flat across presets — so the level only
+    /// trades one-time write CPU against permanent file size.
+    pub fn compression_level(mut self, level: u32) -> Self {
+        self.compression_level = Some(level);
+        self
+    }
+}
+
+/// Resolve and validate an [`AddAssetOptions`] compression level against the xz preset range.
+fn resolve_compression_level(options: &AddAssetOptions) -> io::Result<u32> {
+    match options.compression_level {
+        None => Ok(DEFAULT_XZ_PRESET),
+        Some(level) if level <= 9 => Ok(level),
+        Some(level) => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("xz compression level must be between 0 and 9, got {level}"),
+        )),
+    }
 }
 
 /// An asset payload prepared for on-disk storage: the (optionally xz-compressed) bytes, the
@@ -119,20 +142,43 @@ struct EncodedAsset {
 /// assembly, or CRC coverage. It is pure (in-memory), so a failure leaves any backing file
 /// untouched. The CRC32C is over the **on-disk** bytes — the compressed bytes when xz is applied,
 /// so verification happens before decompression (see [`ASSET_FLAG_CHECKSUM`]).
+/// Payload size at which compression is probed on a prefix before committing to a full pass.
+const COMPRESSION_PROBE_THRESHOLD: usize = 4 * 1024 * 1024;
+/// Prefix length the probe compresses.
+const COMPRESSION_PROBE_SAMPLE: usize = 256 * 1024;
+
+fn xz_compress_bytes(bytes: &[u8], level: u32) -> io::Result<Vec<u8>> {
+    let mut encoder = XzEncoder::new(Vec::new(), level);
+    encoder.write_all(bytes)?;
+    encoder.finish()
+}
+
 fn encode_asset_payload(
     payload: Vec<u8>,
     compress: bool,
+    level: u32,
     is_json: bool,
 ) -> io::Result<EncodedAsset> {
     // Keep the compressed form only when it actually wins: xz carries fixed container overhead,
     // so small or already-compressed payloads can come out the same size or larger — and every
     // future read of such an asset would pay a pointless decompression. The flag always
     // describes the stored bytes truthfully.
+    let mut compress = compress;
+    if compress && payload.len() >= COMPRESSION_PROBE_THRESHOLD {
+        // Probe: compress a prefix first, and skip the full pass when the sample barely
+        // shrinks — already-compressed blobs (zips, GeoPackages) at this size would otherwise
+        // burn a long xz pass just to be stored raw by the size comparison below. A prefix can
+        // misjudge a payload whose head and body differ in compressibility; the cost of a
+        // wrong skip is only a missed size win, never a worse-than-raw stored form.
+        let sample = &payload[..COMPRESSION_PROBE_SAMPLE];
+        let probe = xz_compress_bytes(sample, level)?;
+        if probe.len() * 100 >= sample.len() * 95 {
+            compress = false;
+        }
+    }
     let mut compressed = None;
     if compress {
-        let mut encoder = XzEncoder::new(Vec::new(), DEFAULT_XZ_PRESET);
-        encoder.write_all(&payload)?;
-        let candidate = encoder.finish()?;
+        let candidate = xz_compress_bytes(&payload, level)?;
         if candidate.len() < payload.len() {
             compressed = Some(candidate);
         }
@@ -303,7 +349,8 @@ impl<W: Write + Seek> BendlWriter<W> {
         let compress = options
             .compress
             .unwrap_or_else(|| default_compresses(asset_type, payload.len()));
-        let encoded = encode_asset_payload(payload.to_vec(), compress, options.is_json)?;
+        let level = resolve_compression_level(&options)?;
+        let encoded = encode_asset_payload(payload.to_vec(), compress, level, options.is_json)?;
 
         // Write at current file position.
         let payload_offset = self.inner.stream_position()?;
@@ -691,6 +738,8 @@ struct PendingAsset {
     raw_payload: Vec<u8>,
     /// Resolved compression decision: `true` means compress, `false` means raw.
     compress: bool,
+    /// Resolved xz preset for the compression pass.
+    level: u32,
     is_json: bool,
 }
 
@@ -782,19 +831,20 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
         payload: &[u8],
         options: AddAssetOptions,
     ) -> Result<(), BendlWriteError> {
-        // Validate against both the loaded directory and previously-enqueued pending assets, and
-        // reserve the name/type on success. Nothing is buffered if validation fails.
-        self.registry.claim(asset_type, name)?;
-
+        // Validate the options before the registry claim and the claim before buffering, so a
+        // rejected add reserves nothing and a retry is clean.
+        let level = resolve_compression_level(&options)?;
         let compress = options
             .compress
             .unwrap_or_else(|| default_compresses(asset_type, payload.len()));
+        self.registry.claim(asset_type, name)?;
 
         self.pending.push(PendingAsset {
             asset_type,
             name: name.to_string(),
             raw_payload: payload.to_vec(),
             compress,
+            level,
             is_json: options.is_json,
         });
         Ok(())
@@ -851,8 +901,12 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
     fn prepare_pending_assets(&mut self) -> Result<Vec<PreparedAppendAsset>, BendlWriteError> {
         let mut prepared = Vec::with_capacity(self.pending.len());
         for asset in self.pending.drain(..) {
-            let encoded_asset =
-                encode_asset_payload(asset.raw_payload, asset.compress, asset.is_json)?;
+            let encoded_asset = encode_asset_payload(
+                asset.raw_payload,
+                asset.compress,
+                asset.level,
+                asset.is_json,
+            )?;
             prepared.push(PreparedAppendAsset {
                 asset_type: asset.asset_type,
                 asset_name: asset.name,

@@ -187,6 +187,9 @@ class BendlEncoder:
         graph: GraphInput,
         sort: SortMethod | None = "mlc",
         key: str | None = None,
+        *,
+        compress: bool | None = None,
+        compression_level: int | None = None,
     ) -> "nx.Graph":
         """Embed the dual ``graph.json`` and return the (possibly reordered) graph.
 
@@ -218,9 +221,17 @@ class BendlEncoder:
             ValueError: If ``sort`` / ``key`` is invalid.
             Exception: If a reordering graph is added after the stream has started.
         """
-        return self._enc.add_graph(graph, sort, key)
+        return self._enc.add_graph(
+            graph, sort, key, compress=compress, compression_level=compression_level
+        )
 
-    def add_metadata(self, metadata: MetadataInput) -> None:
+    def add_metadata(
+        self,
+        metadata: MetadataInput,
+        *,
+        compress: bool | None = None,
+        compression_level: int | None = None,
+    ) -> None:
         """Embed the canonical ``metadata.json`` asset (run provenance).
 
         Args:
@@ -234,27 +245,56 @@ class BendlEncoder:
             Exception: If the payload cannot be converted to JSON bytes, or the encoder is in an
                 invalid state.
         """
-        self._enc.add_metadata(metadata)
+        self._enc.add_metadata(metadata, compress=compress, compression_level=compression_level)
 
     @overload
     def add_asset(
-        self, name: str, payload: JsonAssetPayload, content_type: Literal["json"]
+        self,
+        name: str,
+        payload: JsonAssetPayload,
+        content_type: Literal["json"],
+        *,
+        compress: bool | None = None,
+        compression_level: int | None = None,
     ) -> None: ...
     @overload
     def add_asset(
-        self, name: str, payload: TextAssetPayload, content_type: Literal["text"]
+        self,
+        name: str,
+        payload: TextAssetPayload,
+        content_type: Literal["text"],
+        *,
+        compress: bool | None = None,
+        compression_level: int | None = None,
     ) -> None: ...
     @overload
     def add_asset(
-        self, name: str, payload: BinaryAssetPayload, content_type: Literal["binary"]
+        self,
+        name: str,
+        payload: BinaryAssetPayload,
+        content_type: Literal["binary"],
+        *,
+        compress: bool | None = None,
+        compression_level: int | None = None,
     ) -> None: ...
     @overload
-    def add_asset(self, name: str, payload: StrPath, content_type: Literal["file"]) -> None: ...
+    def add_asset(
+        self,
+        name: str,
+        payload: StrPath,
+        content_type: Literal["file"],
+        *,
+        compress: bool | None = None,
+        compression_level: int | None = None,
+    ) -> None: ...
     def add_asset(
         self,
         name: str,
         payload: object,
         content_type: str,
+        *,
+        compress: bool | None = None,
+        compression_level: int | None = None,
     ) -> None:
         """Embed a custom asset under ``name``.
 
@@ -283,6 +323,14 @@ class BendlEncoder:
                 ``content_type="json"`` stores a JSON file the decoder will auto-parse).
             content_type (AssetContentType): One of ``"json"``, ``"text"``, ``"binary"``, or
                 ``"file"`` (:data:`~binary_ensemble.types.AssetContentType`).
+            compress (bool | None, optional): ``True`` requests xz storage compression,
+                ``False`` stores the payload raw, ``None`` (default) follows the size policy.
+                Even when requested, compression is kept only if it makes the stored form
+                smaller, and very large payloads are probed on a prefix first so an
+                already-compressed blob skips the full pass.
+            compression_level (int | None, optional): xz preset 0–9 for the compression pass.
+                Default is the writer's preset (6). Assets are write-once and read-many, so
+                the level only trades one-time write CPU against permanent file size.
 
         Raises:
             ValueError: If the payload does not satisfy ``content_type`` (e.g. malformed JSON,
@@ -298,7 +346,9 @@ class BendlEncoder:
                 )
             with open(os.fspath(payload), "rb") as f:
                 data = f.read()
-            self._enc.add_asset(name, data, "binary")
+            self._enc.add_asset(
+                name, data, "binary", compress=compress, compression_level=compression_level
+            )
             return
         if content_type not in _CONTENT_TYPES:
             # Validate before coercion: a bad content_type must not consume a file-like
@@ -321,7 +371,9 @@ class BendlEncoder:
                 raise ValueError(f"content_type='text' requires valid UTF-8: {exc}") from exc
         # The guard above leaves only the core-supported literals.
         core_type = cast('Literal["json", "text", "binary"]', content_type)
-        self._enc.add_asset(name, data, core_type)
+        self._enc.add_asset(
+            name, data, core_type, compress=compress, compression_level=compression_level
+        )
 
     def remove_asset(self, name: str) -> None:
         """Remove a named asset from a finalized bundle, reclaiming its bytes.

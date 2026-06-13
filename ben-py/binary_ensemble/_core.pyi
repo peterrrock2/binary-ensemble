@@ -143,7 +143,12 @@ class BendlEncoder:
     # The raw core surface takes the payload as already-coerced bytes; the bundle facade accepts
     # richer payload shapes (and content_type="file").
     def add_asset(
-        self, name: str, payload: bytes, content_type: Literal["json", "text", "binary"]
+        self,
+        name: str,
+        payload: bytes,
+        content_type: Literal["json", "text", "binary"],
+        compress: bool | None = None,
+        compression_level: int | None = None,
     ) -> None: ...
     # Drops the directory entry only (payload bytes become dead space until the next
     # whole-bundle rewrite compacts them); frees the name for re-add. KeyError if absent.
@@ -151,12 +156,22 @@ class BendlEncoder:
     # Drops the entry and reclaims its bytes as one operation; on error the bundle is left
     # untouched with the asset still present. The facade's remove_asset calls this.
     def remove_asset_compacting(self, name: str) -> None: ...
-    def add_metadata(self, metadata: MetadataInput) -> None: ...
+    def add_metadata(
+        self,
+        metadata: MetadataInput,
+        compress: bool | None = None,
+        compression_level: int | None = None,
+    ) -> None: ...
     # Returns the (possibly reordered) graph as a NetworkX graph, matching
     # BendlDecoder.read_graph. sort defaults to "mlc"; sort="key" sorts by `key`; sort=None
     # stores raw.
     def add_graph(
-        self, graph: GraphInput, sort: SortMethod | None = "mlc", key: str | None = None
+        self,
+        graph: GraphInput,
+        sort: SortMethod | None = "mlc",
+        key: str | None = None,
+        compress: bool | None = None,
+        compression_level: int | None = None,
     ) -> nx.Graph: ...
     # The embedded stream is always BEN at write time; XBEN bundles are produced by recompressing
     # a finished bundle (see binary_ensemble.bundle.compress_stream).

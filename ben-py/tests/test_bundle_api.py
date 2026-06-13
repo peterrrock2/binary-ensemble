@@ -757,3 +757,27 @@ def test_add_metadata_and_raw_graph_reject_invalid_json(tmp_path: Path) -> None:
     enc.add_metadata({"seed": 1})  # the valid forms still work
     enc.close()
     assert BendlDecoder(tmp_path / "meta.bendl").read_metadata() == {"seed": 1}
+
+
+def test_asset_compression_controls(tmp_path: Path) -> None:
+    """The compress / compression_level knobs reach the writer: opting out stores the payload
+    raw (stored size equals the payload size), a chosen level still compresses and round-trips,
+    and an out-of-range level is a ValueError before anything is written."""
+    payload = ("all work and no play makes jack a dull boy " * 50).encode()  # compressible
+    enc = BendlEncoder(tmp_path / "knobs.bendl", overwrite=True)
+    enc.add_asset("default.bin", payload, content_type="binary")
+    enc.add_asset("raw.bin", payload, content_type="binary", compress=False)
+    enc.add_asset("level0.bin", payload, content_type="binary", compression_level=0)
+    with pytest.raises(ValueError, match="between 0 and 9"):
+        enc.add_asset("bad.bin", payload, content_type="binary", compression_level=10)
+    enc.add_metadata({"seed": 1}, compress=False)
+    enc.close()
+
+    dec = BendlDecoder(tmp_path / "knobs.bendl")
+    assert dec.asset_size("raw.bin") == len(payload)  # opt-out stored raw
+    assert dec.asset_size("default.bin") < len(payload)  # policy compressed
+    assert dec.asset_size("level0.bin") < len(payload)  # level plumbed, still compressed
+    assert dec.read_asset_bytes("raw.bin") == payload
+    assert dec.read_asset_bytes("level0.bin") == payload
+    assert dec.read_metadata() == {"seed": 1}
+    dec.verify()

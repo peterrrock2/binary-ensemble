@@ -139,7 +139,7 @@ plans = [[1, 1, 2, 2], [1, 2, 2, 2], [1, 1, 1, 2]]
 
 encoder = BendlEncoder("ensemble.bendl", overwrite=True)
 encoder.add_metadata({"sampler": "demo", "seed": 1234})
-with encoder.stream("ben") as stream:
+with encoder.stream() as stream:
     for assignment in plans:
         stream.write(assignment)
 

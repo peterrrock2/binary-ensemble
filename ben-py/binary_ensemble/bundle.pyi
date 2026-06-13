@@ -33,22 +33,57 @@ class BendlEncoder:
         graph: GraphInput,
         sort: SortMethod | None = "mlc",
         key: str | None = None,
+        *,
+        compress: bool | None = None,
+        compression_level: int | None = None,
     ) -> nx.Graph: ...
-    def add_metadata(self, metadata: MetadataInput) -> None: ...
-    @overload
-    def add_asset(
-        self, name: str, payload: JsonAssetPayload, content_type: Literal["json"]
+    def add_metadata(
+        self,
+        metadata: MetadataInput,
+        *,
+        compress: bool | None = None,
+        compression_level: int | None = None,
     ) -> None: ...
     @overload
     def add_asset(
-        self, name: str, payload: TextAssetPayload, content_type: Literal["text"]
+        self,
+        name: str,
+        payload: JsonAssetPayload,
+        content_type: Literal["json"],
+        *,
+        compress: bool | None = None,
+        compression_level: int | None = None,
     ) -> None: ...
     @overload
     def add_asset(
-        self, name: str, payload: BinaryAssetPayload, content_type: Literal["binary"]
+        self,
+        name: str,
+        payload: TextAssetPayload,
+        content_type: Literal["text"],
+        *,
+        compress: bool | None = None,
+        compression_level: int | None = None,
     ) -> None: ...
     @overload
-    def add_asset(self, name: str, payload: StrPath, content_type: Literal["file"]) -> None: ...
+    def add_asset(
+        self,
+        name: str,
+        payload: BinaryAssetPayload,
+        content_type: Literal["binary"],
+        *,
+        compress: bool | None = None,
+        compression_level: int | None = None,
+    ) -> None: ...
+    @overload
+    def add_asset(
+        self,
+        name: str,
+        payload: StrPath,
+        content_type: Literal["file"],
+        *,
+        compress: bool | None = None,
+        compression_level: int | None = None,
+    ) -> None: ...
     # Drops the directory entry and compacts the bundle in place, so the payload bytes are
     # actually reclaimed; frees the name for re-add. KeyError if absent. (The raw
     # _core.BendlEncoder.remove_asset is the cheap, directory-only form.)

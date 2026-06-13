@@ -81,6 +81,7 @@ fn run_create_with_relabel_map_and_custom_asset() {
         assets: vec![asset_str.parse().unwrap()],
         overwrite: false,
         graph_raw: false,
+        asset_compression_level: None,
     };
     run_create(args).unwrap();
 
@@ -136,6 +137,7 @@ fn run_append_no_assets_is_noop() {
         node_permutation_map: None,
         assets: vec![],
         graph_raw: false,
+        asset_compression_level: None,
     };
     run_append(args).unwrap();
     // File should be unchanged (bundle is still valid).
@@ -159,6 +161,7 @@ fn run_append_with_metadata_and_relabel_map() {
         node_permutation_map: Some(relabel.clone()),
         assets: vec![],
         graph_raw: false,
+        asset_compression_level: None,
     };
     run_append(args).unwrap();
 
@@ -202,6 +205,7 @@ fn run_create_with_graph_raw_flag() {
         assets: vec![],
         overwrite: false,
         graph_raw: true,
+        asset_compression_level: None,
     };
     run_create(args).unwrap();
 
@@ -255,6 +259,7 @@ fn run_append_with_graph_raw_and_graph_asset() {
         node_permutation_map: None,
         assets: vec![],
         graph_raw: true,
+        asset_compression_level: None,
     };
     run_append(args).unwrap();
 
@@ -300,6 +305,7 @@ fn run_create_errors_on_missing_metadata_file() {
         assets: vec![],
         overwrite: false,
         graph_raw: false,
+        asset_compression_level: None,
     };
     let err = run_create(args).unwrap_err();
     assert!(err.contains("failed to read"));
@@ -337,6 +343,7 @@ fn run_create_errors_on_missing_relabel_map_file() {
         assets: vec![],
         overwrite: false,
         graph_raw: false,
+        asset_compression_level: None,
     };
     let err = run_create(args).unwrap_err();
     assert!(err.contains("failed to read"));
@@ -376,6 +383,7 @@ fn run_create_errors_on_missing_custom_asset_file() {
         assets: vec![asset_str.parse().unwrap()],
         overwrite: false,
         graph_raw: false,
+        asset_compression_level: None,
     };
     let err = run_create(args).unwrap_err();
     assert!(err.contains("failed to read"));
@@ -433,6 +441,7 @@ fn run_append_errors_on_missing_metadata_file() {
         node_permutation_map: None,
         assets: vec![],
         graph_raw: false,
+        asset_compression_level: None,
     };
     let err = run_append(args).unwrap_err();
     assert!(err.contains("failed to read"));
@@ -449,6 +458,7 @@ fn run_append_errors_on_missing_relabel_map_file() {
         node_permutation_map: Some(unique_path("nonexistent_relabel.json")),
         assets: vec![],
         graph_raw: false,
+        asset_compression_level: None,
     };
     let err = run_append(args).unwrap_err();
     assert!(err.contains("failed to read"));
@@ -467,6 +477,7 @@ fn run_append_errors_on_missing_custom_asset_file() {
         node_permutation_map: None,
         assets: vec![asset_str.parse().unwrap()],
         graph_raw: false,
+        asset_compression_level: None,
     };
     let err = run_append(args).unwrap_err();
     assert!(err.contains("failed to read"));
@@ -668,10 +679,52 @@ fn run_create_rejects_non_json_metadata_file() {
         assets: vec![],
         overwrite: false,
         graph_raw: false,
+        asset_compression_level: None,
     };
     let err = run_create(args).unwrap_err();
     assert!(err.contains("not valid JSON"), "unexpected error: {err}");
     let _ = std::fs::remove_file(&ben);
     let _ = std::fs::remove_file(&notes);
     let _ = std::fs::remove_file(&out);
+}
+
+#[test]
+fn run_create_accepts_asset_compression_level() {
+    let ben = {
+        let p = std::env::temp_dir().join(format!(
+            "bendl-create-level-{}.ben",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let jsonl = b"{\"assignment\":[1,2],\"sample\":1}\n";
+        let mut b = Vec::new();
+        encode_jsonl_to_ben(Cursor::new(jsonl), &mut b, crate::BenVariant::Standard).unwrap();
+        std::fs::write(&p, &b).unwrap();
+        p
+    };
+    let graph = unique_path("create_level_graph.json");
+    std::fs::write(&graph, b"{\"nodes\":[0,1]}").unwrap();
+    let out = unique_path("create_level.bendl");
+
+    let args = CreateArgs {
+        input: ben.clone(),
+        output: out.clone(),
+        graph: Some(graph.clone()),
+        metadata: None,
+        node_permutation_map: None,
+        assets: vec![],
+        overwrite: false,
+        graph_raw: false,
+        asset_compression_level: Some(0),
+    };
+    run_create(args).unwrap();
+
+    let mut reader = BendlReader::open(BufReader::new(std::fs::File::open(&out).unwrap())).unwrap();
+    let entry = reader.find_asset_by_name("graph.json").cloned().unwrap();
+    assert_eq!(reader.asset_bytes(&entry).unwrap(), b"{\"nodes\":[0,1]}");
+    for p in [&ben, &graph, &out] {
+        let _ = std::fs::remove_file(p);
+    }
 }

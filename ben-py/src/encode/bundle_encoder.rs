@@ -42,6 +42,27 @@ fn opts_for(content_type: &str) -> PyResult<AddAssetOptions> {
     }
 }
 
+/// Apply the user's storage-compression overrides onto base options: `compress` is the
+/// tri-state policy override (`None` = default policy), `compression_level` the xz preset.
+/// The level is validated here so the caller gets a ``ValueError`` rather than an ``OSError``
+/// from the core writer.
+fn apply_compression_options(
+    mut opts: AddAssetOptions,
+    compress: Option<bool>,
+    compression_level: Option<u32>,
+) -> PyResult<AddAssetOptions> {
+    opts.compress = compress;
+    if let Some(level) = compression_level {
+        if level > 9 {
+            return Err(PyValueError::new_err(format!(
+                "compression_level must be between 0 and 9, got {level}"
+            )));
+        }
+        opts = opts.compression_level(level);
+    }
+    Ok(opts)
+}
+
 /// Phase of a [`PyBendlEncoder`].
 enum BundleState {
     /// Create mode, before the stream: the writer owns the file and accepts asset writes.
@@ -169,6 +190,12 @@ impl PyBendlEncoder {
     ///     content_type (str): ``"json"``, ``"text"``, or ``"binary"``. JSON assets are marked so
     ///         :meth:`binary_ensemble.bundle.BendlDecoder.read_json_asset` can parse them;
     ///         ``"text"`` and ``"binary"`` store the bytes unmarked.
+    ///     compress (bool | None, optional): ``True`` requests xz storage compression, ``False``
+    ///         stores the payload raw, ``None`` (default) follows the size policy. Even when
+    ///         requested, compression is kept only if it makes the stored form smaller.
+    ///     compression_level (int | None, optional): xz preset 0–9 for the compression pass.
+    ///         Default is the writer's preset (6). Assets are write-once and read-many, so the
+    ///         level only trades one-time write CPU against permanent file size.
     ///
     /// Raises:
     ///     ValueError: If ``content_type`` is not ``"json"``, ``"text"``, or ``"binary"``.
@@ -177,10 +204,19 @@ impl PyBendlEncoder {
     /// Example:
     ///     >>> encoder.add_asset("scores.json", b'{"cut_edges": [10]}', content_type="json")
     ///     >>> encoder.add_asset("tracts.gpkg", gpkg_bytes, content_type="binary")
-    #[pyo3(signature = (name, payload, content_type))]
-    #[pyo3(text_signature = "(self, name, payload, content_type)")]
-    fn add_asset(&mut self, name: &str, payload: Vec<u8>, content_type: &str) -> PyResult<()> {
-        let opts = opts_for(content_type)?;
+    #[pyo3(signature = (name, payload, content_type, compress = None, compression_level = None))]
+    #[pyo3(
+        text_signature = "(self, name, payload, content_type, compress=None, compression_level=None)"
+    )]
+    fn add_asset(
+        &mut self,
+        name: &str,
+        payload: Vec<u8>,
+        content_type: &str,
+        compress: Option<bool>,
+        compression_level: Option<u32>,
+    ) -> PyResult<()> {
+        let opts = apply_compression_options(opts_for(content_type)?, compress, compression_level)?;
         if let BundleState::PreStream { writer, .. } = &mut self.state {
             return writer
                 .add_custom_asset(name, &payload, opts)
@@ -272,11 +308,21 @@ impl PyBendlEncoder {
     ///
     /// Example:
     ///     >>> encoder.add_metadata({"sampler": "ReCom", "seed": 1234})
-    #[pyo3(signature = (metadata))]
-    #[pyo3(text_signature = "(self, metadata)")]
-    fn add_metadata(&mut self, py: Python<'_>, metadata: Bound<'_, PyAny>) -> PyResult<()> {
+    #[pyo3(signature = (metadata, compress = None, compression_level = None))]
+    #[pyo3(text_signature = "(self, metadata, compress=None, compression_level=None)")]
+    fn add_metadata(
+        &mut self,
+        py: Python<'_>,
+        metadata: Bound<'_, PyAny>,
+        compress: Option<bool>,
+        compression_level: Option<u32>,
+    ) -> PyResult<()> {
         let bytes = parse_metadata_input(py, &metadata)?;
-        let opts = AddAssetOptions::defaults().json();
+        let opts = apply_compression_options(
+            AddAssetOptions::defaults().json(),
+            compress,
+            compression_level,
+        )?;
         if let BundleState::PreStream { writer, .. } = &mut self.state {
             return writer
                 .add_known_asset(KnownAssetKind::Metadata, &bytes, opts)
@@ -320,18 +366,26 @@ impl PyBendlEncoder {
     /// Example:
     ///     >>> stored_graph = encoder.add_graph("graph.json", sort="mlc")
     ///     >>> write_order = list(stored_graph.nodes)
-    #[pyo3(signature = (graph, sort = Some("mlc".to_string()), key = None))]
-    #[pyo3(text_signature = "(self, graph, sort='mlc', key=None)")]
+    #[pyo3(signature = (graph, sort = Some("mlc".to_string()), key = None, compress = None, compression_level = None))]
+    #[pyo3(
+        text_signature = "(self, graph, sort='mlc', key=None, compress=None, compression_level=None)"
+    )]
     fn add_graph(
         &mut self,
         py: Python<'_>,
         graph: Bound<'_, PyAny>,
         sort: Option<String>,
         key: Option<String>,
+        compress: Option<bool>,
+        compression_level: Option<u32>,
     ) -> PyResult<Py<PyAny>> {
         let plan = resolve_reorder(sort.as_deref(), key.as_deref())?;
         let graph_bytes = parse_graph_input(py, &graph)?;
-        let opts = AddAssetOptions::defaults().json();
+        let opts = apply_compression_options(
+            AddAssetOptions::defaults().json(),
+            compress,
+            compression_level,
+        )?;
 
         if let Some(plan) = plan {
             // Reordering rewrites the node ordering the chain must write in, so it is pre-stream
