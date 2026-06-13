@@ -59,8 +59,8 @@ encoder = BendlEncoder("ordering.bendl", overwrite=True)
 ordered_graph = encoder.add_graph(adjacency, sort="rcm")
 write_order = list(ordered_graph.nodes)
 
-with encoder.stream() as stream:
-    stream.write([1, 1, 2, 2])
+with encoder.ben_stream() as ensemble:
+    ensemble.write([1, 1, 2, 2])
 
 assert len(write_order) == 4
 ```

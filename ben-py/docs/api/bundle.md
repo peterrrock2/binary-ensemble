@@ -14,7 +14,7 @@ was written against.
 |---|---|
 | Create a new bundle | `BendlEncoder(path, overwrite=True)` |
 | Attach a dual graph | `encoder.add_graph(graph, sort=...)` |
-| Stream assignments while sampling | `with encoder.stream() as stream: ...` |
+| Stream assignments while sampling | `with encoder.ben_stream() as ensemble: ...` |
 | Read assignments and assets | `BendlDecoder(path)` |
 | Reorder/relabel an existing bundle | `relabel_bundle(...)` |
 | Recompress a bundle to XBEN | `compress_stream(...)` |
@@ -50,9 +50,9 @@ from binary_ensemble import BendlEncoder
 encoder = BendlEncoder("api-demo.bendl", overwrite=True)
 encoder.add_metadata({"sampler": "demo"})
 
-with encoder.stream() as stream:
-    stream.write([1, 1, 2, 2])
-    stream.write([1, 2, 2, 2])
+with encoder.ben_stream() as ensemble:
+    ensemble.write([1, 1, 2, 2])
+    ensemble.write([1, 2, 2, 2])
 ```
 
 ### Graph handling
@@ -80,8 +80,8 @@ for node in graph.nodes:
 encoder = BendlEncoder("api-graph.bendl", overwrite=True)
 ordered_graph = encoder.add_graph(nx.adjacency_data(graph), sort="key", key="GEOID20")
 
-with encoder.stream() as stream:
-    stream.write([1, 1, 2, 2])
+with encoder.ben_stream() as ensemble:
+    ensemble.write([1, 1, 2, 2])
 
 assert ordered_graph.number_of_nodes() == 4
 ```
@@ -93,16 +93,16 @@ assert ordered_graph.number_of_nodes() == 4
 
 ## The stream session
 
-`BendlEncoder.stream()` returns a `BendlStreamSession`. It is intentionally small: write
+`BendlEncoder.ben_stream()` returns a `BendlStreamSession`. It is intentionally small: write
 assignments, then close. A bundle can have only one assignment stream.
 
 ```python
 from binary_ensemble import BendlEncoder
 
 encoder = BendlEncoder("api-session.bendl", overwrite=True)
-with encoder.stream(variant="twodelta") as stream:
+with encoder.ben_stream(variant="twodelta") as ensemble:
     for assignment in [[1, 1, 2, 2], [1, 2, 2, 2]]:
-        stream.write(assignment)
+        ensemble.write(assignment)
 ```
 
 ```{eval-rst}

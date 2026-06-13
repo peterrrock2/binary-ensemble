@@ -75,8 +75,8 @@ graph = nx.convert_node_labels_to_integers(nx.path_graph(4))
 
 encoder = BendlEncoder("error-with-graph.bendl", overwrite=True)
 encoder.add_graph(nx.adjacency_data(graph), sort=None)
-with encoder.stream() as stream:
-    stream.write([1, 1, 2, 2])
+with encoder.ben_stream() as ensemble:
+    ensemble.write([1, 1, 2, 2])
 ```
 
 ## Relabeling fails after XBEN recompression
@@ -115,8 +115,8 @@ encoder.add_asset("valid.json", {"ok": True}, content_type="json")
 encoder.add_asset("valid.txt", "plain text", content_type="text")
 encoder.add_asset("valid.bin", b"\x00\x01\x02", content_type="binary")
 
-with encoder.stream() as stream:
-    stream.write([1, 1, 2, 2])
+with encoder.ben_stream() as ensemble:
+    ensemble.write([1, 1, 2, 2])
 ```
 
 ## `sort="key"` fails
@@ -167,7 +167,7 @@ window = list(decoder.subsample_range(1, min(50, len(decoder))))
 assert len(window) == 50
 ```
 
-## `stream.write()` rejects an assignment
+## `ensemble.write()` rejects an assignment
 
 **Symptom:** `ValueError: assignment length N does not match graph node count M`.
 

@@ -3,7 +3,7 @@
 //! For the create path, the encoder threads the bundle through the library's typestate machinery:
 //! `BendlWriter` (assets) → `BendlStreamSession` (stream) → `BendlWriter::finish` (finalize). It
 //! reopens a `BendlAppender` per asset for post-stream / append-mode adds. The state enum
-//! below tracks which phase the encoder is in so a second `stream()` is refused and so `add_*`
+//! below tracks which phase the encoder is in so a second `ben_stream()` is refused and so `add_*`
 //! routes through the writer pre-stream and the appender afterwards.
 
 use crate::common::{
@@ -97,7 +97,7 @@ impl PyBendlEncoder {
     /// Open a new bundle writer in create mode.
     ///
     /// A create-mode encoder writes one `.bendl` file. Add graph and metadata assets, then
-    /// open exactly one assignment stream with :meth:`stream`. The stream context finalizes the
+    /// open exactly one assignment stream with :meth:`ben_stream`. The stream context finalizes the
     /// bundle on a clean close.
     ///
     /// Args:
@@ -113,8 +113,8 @@ impl PyBendlEncoder {
     /// Example:
     ///     >>> from binary_ensemble import BendlEncoder
     ///     >>> encoder = BendlEncoder("ensemble.bendl", overwrite=True)
-    ///     >>> with encoder.stream() as stream:
-    ///     ...     stream.write([1, 1, 2, 2])
+    ///     >>> with encoder.ben_stream() as ensemble:
+    ///     ...     ensemble.write([1, 1, 2, 2])
     #[new]
     #[pyo3(signature = (file_path, overwrite = false))]
     #[pyo3(text_signature = "(file_path, overwrite=False)")]
@@ -133,7 +133,7 @@ impl PyBendlEncoder {
 
     /// Open an existing finalized bundle for append.
     ///
-    /// Append mode is for assets only. ``stream()`` is unavailable because a bundle has exactly
+    /// Append mode is for assets only. ``ben_stream()`` is unavailable because a bundle has exactly
     /// one assignment stream. Each ``add_*`` operation commits immediately.
     ///
     /// Args:
@@ -392,7 +392,7 @@ impl PyBendlEncoder {
             // only.
             if !matches!(self.state, BundleState::PreStream { .. }) {
                 return Err(PyException::new_err(
-                    "a reordering add_graph (sort != None) is only allowed before stream(); \
+                    "a reordering add_graph (sort != None) is only allowed before ben_stream(); \
                      post-stream or append-mode graphs must use sort=None",
                 ));
             }
@@ -454,11 +454,11 @@ impl PyBendlEncoder {
     ///         is closed/failed.
     ///
     /// Example:
-    ///     >>> with encoder.stream(variant="standard") as stream:
-    ///     ...     stream.write([1, 1, 2, 2])
+    ///     >>> with encoder.ben_stream(variant="standard") as ensemble:
+    ///     ...     ensemble.write([1, 1, 2, 2])
     #[pyo3(signature = (*, variant = "twodelta"))]
     #[pyo3(text_signature = "(self, *, variant='twodelta')")]
-    fn stream(slf: Bound<'_, Self>, variant: &str) -> PyResult<PyBendlStreamSession> {
+    fn ben_stream(slf: Bound<'_, Self>, variant: &str) -> PyResult<PyBendlStreamSession> {
         let ben_var = parse_variant(Some(variant))?;
 
         let encoder_handle: Py<PyBendlEncoder> = slf.clone().unbind();
@@ -466,7 +466,7 @@ impl PyBendlEncoder {
 
         if me.append_mode {
             return Err(PyException::new_err(
-                "stream() is unavailable in append mode; open a fresh BendlEncoder to write a \
+                "ben_stream() is unavailable in append mode; open a fresh BendlEncoder to write a \
                  new stream",
             ));
         }
@@ -602,7 +602,7 @@ fn state_error(state: &BundleState, op: &str) -> PyErr {
 
 /// Single-use context manager over a bundle's assignment stream.
 ///
-/// Obtained from :meth:`binary_ensemble.bundle.BendlEncoder.stream`; you don't construct it
+/// Obtained from :meth:`binary_ensemble.bundle.BendlEncoder.ben_stream`; you don't construct it
 /// directly. Write assignments with :meth:`write` inside a ``with`` block. Closing the context
 /// cleanly **finalizes** the bundle; if the block exits via an exception the bundle is left
 /// unfinalized (recoverable, rather than stamped complete over a truncated stream).
@@ -632,7 +632,7 @@ impl PyBendlStreamSession {
     ///     OSError: If the session is already closed, or the write fails.
     ///
     /// Example:
-    ///     >>> stream.write([1, 1, 2, 2])
+    ///     >>> ensemble.write([1, 1, 2, 2])
     #[pyo3(signature = (assignment))]
     #[pyo3(text_signature = "(self, assignment)")]
     fn write(&mut self, assignment: Vec<u16>) -> PyResult<()> {

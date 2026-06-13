@@ -54,9 +54,9 @@ plans = [[1, 1, 2, 2], [1, 2, 2, 2], [1, 1, 1, 2]]
 
 # The stream context finalizes the bundle when it closes.
 encoder = BendlEncoder("ensemble.bendl", overwrite=True)
-with encoder.stream() as stream:
+with encoder.ben_stream() as ensemble:
     for assignment in plans:
-        stream.write(assignment)
+        ensemble.write(assignment)
 
 # Iterate the assignments straight back out, one at a time.
 for assignment in BendlDecoder("ensemble.bendl"):

@@ -981,7 +981,7 @@ def _checksummed_bundle(path: Path) -> None:
     """A small finalized bundle written by the real encoder (checksums populated)."""
     with BendlEncoder(path, overwrite=True) as enc:
         enc.add_asset("notes.txt", "integrity matters", content_type="text")
-        with enc.stream(variant="standard") as s:
+        with enc.ben_stream(variant="standard") as s:
             for a in ([1, 1, 2, 2], [2, 2, 1, 1]):
                 s.write(a)
 
@@ -1021,7 +1021,7 @@ def test_verify_rejects_unfinalized_bundle(tmp_path: Path) -> None:
     path = tmp_path / "unfinalized.bendl"
     with pytest.raises(RuntimeError, match="boom"):
         with BendlEncoder(path, overwrite=True) as enc:
-            with enc.stream() as s:
+            with enc.ben_stream() as s:
                 s.write([1, 2, 3])
                 raise RuntimeError("boom")
 

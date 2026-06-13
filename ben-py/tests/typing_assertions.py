@@ -57,16 +57,16 @@ def bundle_encoder_surface(tmp: Path) -> None:
     enc.add_asset("bad.txt", {"not": "text"}, "text")  # type: ignore
     enc.add_asset("bad.any", b"x", "blob")  # type: ignore
 
-    with enc.stream(variant="twodelta") as stream:
+    with enc.ben_stream(variant="twodelta") as stream:
         stream.write([1, 2, 3])
         stream.write((1, 2, 3))
     BendlEncoder.append(tmp / "out.bendl").remove_asset("notes.txt")
 
-    # stream() has no format parameter, and variant is keyword-only with a literal "twodelta"
+    # ben_stream() has no format parameter, and variant is keyword-only with a literal "twodelta"
     # default; None is not a legal stand-in for it.
-    enc.stream("ben")  # type: ignore
-    enc.stream(variant="xben")  # type: ignore
-    enc.stream(variant=None)  # type: ignore
+    enc.ben_stream("ben")  # type: ignore
+    enc.ben_stream(variant="xben")  # type: ignore
+    enc.ben_stream(variant=None)  # type: ignore
 
 
 def bundle_decoder_surface(dec: BendlDecoder) -> None:

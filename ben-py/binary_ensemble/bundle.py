@@ -9,9 +9,9 @@ Typical write::
     with BendlEncoder(path, overwrite=True) as enc:
         enc.add_graph(graph, sort="rcm")                # sort=None => store raw
         enc.add_metadata({"seed": 1234})
-        with enc.stream() as stream:
+        with enc.ben_stream() as ensemble:
             for assignment in chain:
-                stream.write(assignment)
+                ensemble.write(assignment)
 
 Typical read::
 
@@ -131,20 +131,20 @@ class BendlEncoder:
     """Writer for a ``.bendl`` bundle (create mode) or an asset appender (append mode).
 
     In create mode (the constructor), assets may be added before or after a single-use
-    ``stream()``. You do **not** need to use ``BendlEncoder`` itself as a context manager: closing
-    the ``stream()`` context finalizes the bundle, so the common pattern is::
+    ``ben_stream()``. You do **not** need to use ``BendlEncoder`` itself as a context manager: closing
+    the ``ben_stream()`` context finalizes the bundle, so the common pattern is::
 
         enc = BendlEncoder(path, overwrite=True)
         graph = enc.add_graph(my_graph)          # MLC-reordered by default
-        with enc.stream() as stream:             # only the stream needs ``with``
+        with enc.ben_stream() as ensemble:             # only the stream needs ``with``
             for assignment in chain:
-                stream.write(assignment)
+                ensemble.write(assignment)
         # bundle is finalized here
 
     The encoder is still usable as a context manager if you prefer, and that is the easy way to
-    finalize an *assets-only* bundle (one written with no ``stream()``): either
+    finalize an *assets-only* bundle (one written with no ``ben_stream()``): either
     ``with BendlEncoder(...) as enc: ...`` or an explicit :meth:`close`. In append mode
-    (:meth:`append`), an existing finalized bundle is grown with new assets and ``stream()`` is
+    (:meth:`append`), an existing finalized bundle is grown with new assets and ``ben_stream()`` is
     unavailable.
 
     Args:
@@ -165,7 +165,7 @@ class BendlEncoder:
     def append(cls, file_path: StrPath) -> "BendlEncoder":
         """Open an existing *finalized* bundle to append new assets.
 
-        ``stream()`` is unavailable in append mode; each ``add_*`` commits immediately.
+        ``ben_stream()`` is unavailable in append mode; each ``add_*`` commits immediately.
 
         Args:
             file_path (StrPath): Path to an existing, finalized ``.bendl`` bundle (``str`` or
@@ -410,7 +410,7 @@ class BendlEncoder:
         """
         self._enc.remove_asset_compacting(name)
 
-    def stream(self, *, variant: Variant = "twodelta") -> BendlStreamSession:
+    def ben_stream(self, *, variant: Variant = "twodelta") -> BendlStreamSession:
         """Open the single-use assignment stream context manager.
 
         The embedded stream is always written in the BEN wire format; produce an XBEN bundle with
@@ -432,7 +432,7 @@ class BendlEncoder:
             Exception: If a stream was already written, append mode is active, or the encoder is
                 closed.
         """
-        return self._enc.stream(variant=variant)
+        return self._enc.ben_stream(variant=variant)
 
     def close(self) -> None:
         """Finalize (create mode) or finish (append mode) the bundle. Idempotent."""

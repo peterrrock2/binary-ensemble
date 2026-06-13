@@ -40,7 +40,7 @@ def _build_bundle_with_dead_space(path: Path) -> tuple[list[list[int]], int]:
     enc = BendlEncoder(path, overwrite=True)
     enc.add_graph(_graph(), sort=None)
     enc.add_metadata({"seed": 99})
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         for a in samples:
             s.write(a)
     enc.add_asset("notes.txt", "keep me", content_type="text")
@@ -193,7 +193,7 @@ def test_compact_rejects_unfinalized_bundle(tmp_path: Path) -> None:
     path = tmp_path / "partial.bendl"
     with pytest.raises(RuntimeError, match="boom"):
         with BendlEncoder(path, overwrite=True) as enc:
-            with enc.stream() as s:
+            with enc.ben_stream() as s:
                 s.write([1] * _n())
                 raise RuntimeError("boom")
     with pytest.raises(Exception, match="finalized"):
@@ -246,7 +246,7 @@ def test_public_append_leaves_a_superseded_directory(tmp_path: Path) -> None:
     facade transforms emit compact bundles themselves."""
     path = tmp_path / "appended.bendl"
     enc = BendlEncoder(path, overwrite=True)
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         s.write([1, 2, 3])
     enc.add_asset("notes.txt", "hello", content_type="text")  # commits immediately
 
@@ -263,7 +263,7 @@ def test_facade_remove_asset_leaves_bundle_fully_compact(tmp_path: Path) -> None
     """The facade's remove_asset compacts in place: a follow-up compaction finds nothing."""
     path = tmp_path / "removed.bendl"
     enc = BendlEncoder(path, overwrite=True)
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         s.write([1, 2, 3])
     enc.add_asset("a.txt", "a", content_type="text")
     enc.add_asset("b.txt", "b", content_type="text")
@@ -284,7 +284,7 @@ def test_facade_remove_asset_failure_leaves_bundle_untouched(tmp_path: Path) -> 
     path = tmp_path / "atomic.bendl"
     enc = BendlEncoder(path, overwrite=True)
     enc.add_graph(_graph(), sort=None)
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         s.write([1] * _n())
     enc.add_asset("notes.txt", "keep me", content_type="text")
     _flip_byte_at(path, b"keep me")  # corrupt the surviving post-stream asset
@@ -302,7 +302,7 @@ def test_facade_remove_asset_can_remove_a_corrupt_asset(tmp_path: Path) -> None:
     situation, not blocked by it."""
     path = tmp_path / "corrupt-removal.bendl"
     enc = BendlEncoder(path, overwrite=True)
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         s.write([1, 2, 3])
     enc.add_asset("bad.txt", "doomed bytes", content_type="text")
     _flip_byte_at(path, b"doomed bytes")

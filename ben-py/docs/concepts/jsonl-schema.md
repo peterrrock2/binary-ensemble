@@ -41,8 +41,8 @@ from binary_ensemble import BendlEncoder
 
 encoder = BendlEncoder("jsonl-contract.bendl", overwrite=True)
 encoder.add_metadata({"source": "plans.jsonl", "assignment_field": "assignment"})
-with encoder.stream() as stream:
-    stream.write([1, 1, 2, 2])
+with encoder.ben_stream() as ensemble:
+    ensemble.write([1, 1, 2, 2])
 ```
 
 ## Validation before conversion

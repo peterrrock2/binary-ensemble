@@ -41,10 +41,10 @@ encoder.add_metadata({"sampler": "toy-grid", "seed": 2026, "node_order": "GEOID2
 
 node_count = ordered_graph.number_of_nodes()
 
-with encoder.stream(variant="twodelta") as stream:
+with encoder.ben_stream(variant="twodelta") as ensemble:
     for step in range(20):
         assignment = [(node + step) % 4 + 1 for node in range(node_count)]
-        stream.write(assignment)
+        ensemble.write(assignment)
 ```
 
 ## Inspect the result
@@ -106,11 +106,11 @@ graph stored in the bundle.
 ```python
 write_order = list(ordered_graph.nodes)
 
-with encoder.stream(variant="twodelta") as stream:
+with encoder.ben_stream(variant="twodelta") as ensemble:
     for partition in chain:
         series = partition.assignment.to_series()
-        stream.write(series.loc[write_order].astype(int).tolist())
+        ensemble.write(series.loc[write_order].astype(int).tolist())
 ```
 
-The invariant is the same for every sampler: the list you pass to `stream.write()` must be in
+The invariant is the same for every sampler: the list you pass to `ensemble.write()` must be in
 the embedded graph's node order.

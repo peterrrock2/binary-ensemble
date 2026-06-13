@@ -38,9 +38,9 @@ plans = [[(node + step) % 4 + 1 for node in range(n_nodes)] for step in range(12
 encoder = BendlEncoder("ensemble.bendl", overwrite=True)
 encoder.add_graph(adjacency, sort=None)
 encoder.add_metadata({"sampler": "demo", "seed": 0})
-with encoder.stream() as stream:
+with encoder.ben_stream() as ensemble:
     for plan in plans:
-        stream.write(plan)
+        ensemble.write(plan)
 
 # ...the same plans as JSONL...
 with open("plans.jsonl", "w") as handle:
@@ -48,9 +48,9 @@ with open("plans.jsonl", "w") as handle:
         handle.write(json.dumps({"assignment": plan, "sample": sample}) + "\n")
 
 # ...and as plain BEN / XBEN streams.
-with BenEncoder("chain.ben", overwrite=True) as stream:
+with BenEncoder("chain.ben", overwrite=True) as ensemble:
     for plan in plans:
-        stream.write(plan)
+        ensemble.write(plan)
 encode_ben_to_xben("chain.ben", "chain.xben", overwrite=True)
 ```
 

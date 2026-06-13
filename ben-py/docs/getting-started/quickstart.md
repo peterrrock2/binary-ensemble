@@ -18,7 +18,7 @@ An **ensemble** is just a sequence of these. `binary-ensemble` compresses that s
 ## Write an ensemble
 
 The recommended container is a **`.bendl` file** — a single self-describing file. Open a
-`BendlEncoder`, attach any metadata, then write assignments through a `stream` context that
+`BendlEncoder`, attach any metadata, then write assignments through a `ben_stream()` context that
 finalizes the bundle when it closes:
 
 ```python
@@ -28,9 +28,9 @@ plans = [[1, 1, 2, 2], [1, 2, 2, 2], [1, 1, 1, 2]]
 
 encoder = BendlEncoder("ensemble.bendl", overwrite=True)
 encoder.add_metadata({"sampler": "demo", "seed": 1234})
-with encoder.stream() as stream:
+with encoder.ben_stream() as ensemble:
     for assignment in plans:
-        stream.write(assignment)
+        ensemble.write(assignment)
 # bundle is finalized here
 ```
 
@@ -68,9 +68,9 @@ adjacency = nx.adjacency_data(graph)          # the dict shape add_graph expects
 
 encoder = BendlEncoder("ensemble.bendl", overwrite=True)
 encoder.add_graph(adjacency, sort=None)       # store as-is; see below for reordering
-with encoder.stream() as stream:
+with encoder.ben_stream() as ensemble:
     for assignment in [[1, 1, 2, 2], [1, 2, 2, 2]]:
-        stream.write(assignment)
+        ensemble.write(assignment)
 
 decoder = BendlDecoder("ensemble.bendl")
 graph = decoder.read_graph()                  # back as a live NetworkX graph

@@ -28,9 +28,9 @@ encoder.add_asset("scores.json", {"mean_cut_edges": 41.2}, content_type="json")
 encoder.add_asset("README.txt", "Generated for the 2026 analysis.", content_type="text")
 encoder.add_asset("render.png", b"\x89PNG\r\n\x1a\n...", content_type="binary")
 
-with encoder.stream() as stream:
+with encoder.ben_stream() as ensemble:
     for assignment in [[1, 1, 2, 2], [1, 2, 2, 2]]:
-        stream.write(assignment)
+        ensemble.write(assignment)
 ```
 
 Every asset is stored with a CRC32C integrity checksum, and payloads of 1 KiB or more are
@@ -66,7 +66,7 @@ BendlDecoder("ensemble.bendl").verify()   # raises on corruption or an unfinaliz
 ## Append to a finalized bundle
 
 To add assets to a bundle that's already finalized, open it with `BendlEncoder.append`. In
-append mode each `add_*` commits immediately, and `stream()` is unavailable (a bundle's
+append mode each `add_*` commits immediately, and `ben_stream()` is unavailable (a bundle's
 assignment stream is written once):
 
 ```python

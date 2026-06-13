@@ -23,7 +23,7 @@ def _build_ben_bundle(path: Path, with_graph: bool = True):
     if with_graph:
         enc.add_graph(_graph(), sort=None)  # store in raw order
     enc.add_metadata({"seed": 99})
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         for a in samples:
             s.write(a)
     enc.add_asset("notes.txt", "hi", content_type="text")
@@ -128,7 +128,7 @@ def test_relabel_rejects_unfinalized_bundle(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="boom"):
         with BendlEncoder(src, overwrite=True) as enc:
             enc.add_graph(_graph(), sort=None)
-            with enc.stream() as s:
+            with enc.ben_stream() as s:
                 s.write([1] * _n())
                 raise RuntimeError("boom")
 

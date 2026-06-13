@@ -42,9 +42,9 @@ plans = [[1, 1, 2, 2], [1, 2, 2, 2], [1, 1, 1, 2]]
 # The stream context finalizes the bundle when it closes.
 encoder = BendlEncoder("ensemble.bendl", overwrite=True)
 encoder.add_metadata({"sampler": "demo", "seed": 1234})
-with encoder.stream() as stream:
+with encoder.ben_stream() as ensemble:
     for assignment in plans:
-        stream.write(assignment)
+        ensemble.write(assignment)
 
 # Iterate the assignments straight back out, one at a time.
 for assignment in BendlDecoder("ensemble.bendl"):
@@ -65,9 +65,9 @@ dual_graph = nx.convert_node_labels_to_integers(nx.grid_2d_graph(4, 4))
 
 encoder = BendlEncoder("run.bendl", overwrite=True)
 ordered = encoder.add_graph(nx.adjacency_data(dual_graph))  # reordered for compression
-with encoder.stream() as stream:
+with encoder.ben_stream() as ensemble:
     for step in range(1000):
-        stream.write([(node + step) % 4 + 1 for node in range(16)])
+        ensemble.write([(node + step) % 4 + 1 for node in range(16)])
 
 decoder = BendlDecoder("run.bendl")
 graph = decoder.read_graph()        # back as a live networkx.Graph, in assignment order

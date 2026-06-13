@@ -120,7 +120,7 @@ class BendlDecoder:
 class BendlStreamSession:
     """Single-use context manager over a bundle's assignment stream.
 
-    Obtained from :meth:`BendlEncoder.stream`; finalizes the bundle on a clean close and leaves
+    Obtained from :meth:`BendlEncoder.ben_stream`; finalizes the bundle on a clean close and leaves
     it unfinalized if the context exits via an exception.
     """
 
@@ -175,7 +175,7 @@ class BendlEncoder:
     ) -> nx.Graph: ...
     # The embedded stream is always BEN at write time; XBEN bundles are produced by recompressing
     # a finished bundle (see binary_ensemble.bundle.compress_stream).
-    def stream(self, *, variant: Variant = "twodelta") -> BendlStreamSession: ...
+    def ben_stream(self, *, variant: Variant = "twodelta") -> BendlStreamSession: ...
     def close(self) -> None: ...
     def __enter__(self) -> "BendlEncoder": ...
     def __exit__(

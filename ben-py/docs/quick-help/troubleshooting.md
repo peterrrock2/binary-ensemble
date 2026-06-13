@@ -52,8 +52,8 @@ Use context managers around stream writes so finalization happens at the right t
 from binary_ensemble import BendlEncoder
 
 encoder = BendlEncoder("new.bendl", overwrite=True)
-with encoder.stream() as stream:
-    stream.write([1, 1, 2, 2])
+with encoder.ben_stream() as ensemble:
+    ensemble.write([1, 1, 2, 2])
 ```
 
 For an assets-only bundle, use the encoder itself as the context manager or call `close()`:
@@ -95,9 +95,9 @@ while True:
 
 # Re-encode the salvaged samples into a fresh, finalized bundle.
 encoder = BendlEncoder("recovered.bendl", overwrite=True)
-with encoder.stream() as out:
+with encoder.ben_stream() as ensemble:
     for assignment in recovered:
-        out.write(assignment)
+        ensemble.write(assignment)
 ```
 
 Two things to know about what survives a crash:
@@ -157,8 +157,8 @@ graph = nx.convert_node_labels_to_integers(nx.path_graph(4))
 
 encoder = BendlEncoder("with-graph.bendl", overwrite=True)
 encoder.add_graph(nx.adjacency_data(graph), sort=None)
-with encoder.stream() as stream:
-    stream.write([1, 1, 2, 2])
+with encoder.ben_stream() as ensemble:
+    ensemble.write([1, 1, 2, 2])
 ```
 
 ## Recompression or relabeling refuses my arguments
@@ -195,8 +195,8 @@ the bundle is ready to share.
 from binary_ensemble import BendlEncoder, compress_stream
 
 encoder = BendlEncoder("to-archive.bendl", overwrite=True)
-with encoder.stream() as stream:
-    stream.write([1, 1, 2, 2])
+with encoder.ben_stream() as ensemble:
+    ensemble.write([1, 1, 2, 2])
 
 compress_stream("to-archive.bendl", out_file="archive-copy.bendl")
 ```

@@ -71,11 +71,11 @@ encoder.add_metadata(
     }
 )
 
-with encoder.stream(variant="twodelta") as stream:  # twodelta suits ReCom chains
+with encoder.ben_stream(variant="twodelta") as ensemble:  # twodelta suits ReCom chains
     for partition in chain:
         series = partition.assignment.to_series()
         assignment = series.loc[node_order].astype(int).tolist()
-        stream.write(assignment)
+        ensemble.write(assignment)
 # the bundle is finalized when the stream context closes
 ```
 

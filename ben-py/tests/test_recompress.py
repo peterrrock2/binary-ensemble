@@ -16,7 +16,7 @@ def _build_ben_bundle(path: Path):
     with BendlEncoder(path, overwrite=True) as enc:
         enc.add_graph(_graph(), sort="rcm")
         enc.add_metadata({"seed": 99})
-        with enc.stream() as s:
+        with enc.ben_stream() as s:
             for a in samples:
                 s.write(a)
         enc.add_asset("notes.txt", "hi", content_type="text")

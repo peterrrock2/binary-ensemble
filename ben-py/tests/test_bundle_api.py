@@ -29,7 +29,7 @@ def test_create_round_trip_all_asset_kinds(tmp_path: Path) -> None:
     with BendlEncoder(path, overwrite=True) as enc:
         returned = enc.add_graph(_graph(), sort=None)
         enc.add_metadata({"seed": 1234})
-        with enc.stream() as stream:
+        with enc.ben_stream() as stream:
             for a in samples:
                 stream.write(a)
         enc.add_asset("notes.txt", "hello world", content_type="text")
@@ -57,7 +57,7 @@ def test_create_round_trip_all_asset_kinds(tmp_path: Path) -> None:
 def test_post_stream_add_commits_immediately(tmp_path: Path) -> None:
     path = tmp_path / "commit.bendl"
     enc = BendlEncoder(path, overwrite=True)
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         s.write([1, 2])
     enc.add_asset("a.txt", "one", content_type="text")
     # A successful post-stream add is durable on disk before close().
@@ -70,7 +70,7 @@ def test_post_stream_add_commits_immediately(tmp_path: Path) -> None:
 def test_context_manager_and_idempotent_close(tmp_path: Path) -> None:
     path = tmp_path / "ctx.bendl"
     enc = BendlEncoder(path, overwrite=True)
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         s.write([1, 2, 3])
     enc.close()
     enc.close()  # idempotent
@@ -124,7 +124,7 @@ def test_exception_in_stream_leaves_bundle_unfinalized(tmp_path: Path) -> None:
     path = tmp_path / "fail.bendl"
     with pytest.raises(RuntimeError, match="boom"):
         with BendlEncoder(path, overwrite=True) as enc:
-            with enc.stream() as s:
+            with enc.ben_stream() as s:
                 s.write([1, 2, 3])
                 raise RuntimeError("boom")
     dec = BendlDecoder(path)
@@ -256,7 +256,7 @@ def test_add_graph_reorder_emits_graph_and_permutation_map(tmp_path: Path) -> No
     path = tmp_path / "reord.bendl"
     enc = BendlEncoder(path, overwrite=True)
     reordered = enc.add_graph(_graph(), sort="rcm")
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         s.write([1] * n)
     enc.close()
 
@@ -300,7 +300,7 @@ def test_add_graph_node_count_mismatch_raises(tmp_path: Path) -> None:
     n = _n()
     enc = BendlEncoder(tmp_path / "nc.bendl", overwrite=True)
     enc.add_graph(_graph(), sort=None)
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         s.write([1] * n)  # correct
         with pytest.raises(ValueError, match="does not match graph node count"):
             s.write([1] * (n - 1))
@@ -310,7 +310,7 @@ def test_reorder_add_graph_after_stream_raises_but_raw_succeeds(tmp_path: Path) 
     n = _n()
     path = tmp_path / "after.bendl"
     enc = BendlEncoder(path, overwrite=True)
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         s.write([1] * n)
     with pytest.raises(Exception, match="only allowed before"):
         enc.add_graph(_graph(), sort="rcm")
@@ -334,26 +334,26 @@ def test_duplicate_graph_raises(tmp_path: Path) -> None:
 
 def test_stream_takes_no_positional_arguments(tmp_path: Path) -> None:
     # The embedded stream is always BEN at write time (XBEN comes from compress_stream), so
-    # stream() has no format parameter and variant is keyword-only; a stale positional call
+    # ben_stream() has no format parameter and variant is keyword-only; a stale positional call
     # must fail loudly, not bind to variant.
     enc = BendlEncoder(tmp_path / "fmt.bendl", overwrite=True)
     with pytest.raises(TypeError):
-        enc.stream("ben")  # type: ignore
+        enc.ben_stream("ben")  # type: ignore
 
 
 def test_stream_rejects_unknown_variant(tmp_path: Path) -> None:
     enc = BendlEncoder(tmp_path / "var.bendl", overwrite=True)
     with pytest.raises(ValueError, match="Unknown variant"):
-        enc.stream(variant="xben")
+        enc.ben_stream(variant="xben")
 
 
 def test_second_stream_refused(tmp_path: Path) -> None:
     path = tmp_path / "two.bendl"
     enc = BendlEncoder(path, overwrite=True)
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         s.write([1, 2])
     with pytest.raises(Exception, match="already been written"):
-        enc.stream()
+        enc.ben_stream()
 
 
 # ---------------------------------------------------------------------------
@@ -364,7 +364,7 @@ def test_second_stream_refused(tmp_path: Path) -> None:
 def test_append_mode_adds_assets(tmp_path: Path) -> None:
     path = tmp_path / "app.bendl"
     with BendlEncoder(path, overwrite=True) as enc:
-        with enc.stream() as s:
+        with enc.ben_stream() as s:
             s.write([1, 2, 3])
 
     ap = BendlEncoder.append(path)
@@ -381,17 +381,17 @@ def test_append_mode_adds_assets(tmp_path: Path) -> None:
 def test_append_mode_disallows_stream(tmp_path: Path) -> None:
     path = tmp_path / "app2.bendl"
     with BendlEncoder(path, overwrite=True) as enc:
-        with enc.stream() as s:
+        with enc.ben_stream() as s:
             s.write([1])
     ap = BendlEncoder.append(path)
     with pytest.raises(Exception, match="append mode"):
-        ap.stream()
+        ap.ben_stream()
 
 
 def test_append_mode_reorder_graph_raises(tmp_path: Path) -> None:
     path = tmp_path / "app3.bendl"
     with BendlEncoder(path, overwrite=True) as enc:
-        with enc.stream() as s:
+        with enc.ben_stream() as s:
             s.write([1] * _n())
     ap = BendlEncoder.append(path)
     with pytest.raises(Exception, match="only allowed before"):
@@ -406,7 +406,7 @@ def test_append_on_unfinalized_bundle_raises(tmp_path: Path) -> None:
     path = tmp_path / "unfin.bendl"
     with pytest.raises(RuntimeError):
         with BendlEncoder(path, overwrite=True) as enc:
-            with enc.stream() as s:
+            with enc.ben_stream() as s:
                 s.write([1, 2])
                 raise RuntimeError("stop")
     with pytest.raises(Exception):
@@ -430,7 +430,7 @@ def test_add_graph_accepts_live_networkx_graph(tmp_path: Path) -> None:
     stored = enc.add_graph(live, sort=None)
     # A raw (sort=None) embed of a live graph preserves its node iteration order.
     assert list(stored.nodes) == list(live.nodes)
-    with enc.stream() as stream:
+    with enc.ben_stream() as stream:
         for a in samples:
             stream.write(a)
 
@@ -473,7 +473,7 @@ def test_stream_size_matches_extracted_bytes(tmp_path: Path) -> None:
     path = tmp_path / "s.bendl"
     enc = BendlEncoder(path, overwrite=True)
     enc.add_graph(_graph(), sort=None)
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         for i in range(5):
             s.write([(i + j) % 3 + 1 for j in range(n)])
 
@@ -529,7 +529,7 @@ def test_remove_asset_drops_entry_and_preserves_everything_else(tmp_path: Path) 
     path = tmp_path / "rm.bendl"
     enc = BendlEncoder(path, overwrite=True)
     enc.add_graph(_graph(), sort=None)
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         for a in samples:
             s.write(a)
     enc.add_asset("notes.txt", "scratch notes", content_type="text")
@@ -566,7 +566,7 @@ def test_remove_then_add_replaces_an_asset(tmp_path: Path) -> None:
 def test_remove_asset_reclaims_bytes_automatically(tmp_path: Path) -> None:
     path = tmp_path / "reclaim.bendl"
     enc = BendlEncoder(path, overwrite=True)
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         s.write([1, 2, 3])
     import random
 
@@ -592,7 +592,7 @@ def test_remove_asset_guards(tmp_path: Path) -> None:
     # Pre-stream create mode: nothing is committed yet, so there is nothing to remove.
     with pytest.raises(Exception, match="not finalized"):
         enc.remove_asset("a.txt")
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         s.write([1, 2])
     # Post-stream (finalized) the same encoder can remove, and unknown names are KeyErrors.
     with pytest.raises(KeyError, match="no asset named"):
@@ -612,7 +612,7 @@ def test_failed_stream_finalize_poisons_the_encoder(tmp_path: Path) -> None:
 
     path = tmp_path / "limited.bendl"
     enc = BendlEncoder(path, overwrite=True)
-    s = enc.stream(variant="standard")
+    s = enc.ben_stream(variant="standard")
     for _ in range(64):
         s.write([1, 2, 3, 4] * 64)
 
@@ -635,7 +635,7 @@ def test_failed_stream_finalize_poisons_the_encoder(tmp_path: Path) -> None:
     with pytest.raises(Exception, match="previous stream failed"):
         enc.add_asset("notes.txt", "x", content_type="text")
     with pytest.raises(Exception, match="previous stream failed"):
-        enc.stream()
+        enc.ben_stream()
     # And the bundle on disk is, truthfully, unfinalized.
     assert not BendlDecoder(path).is_complete()
 
@@ -651,7 +651,7 @@ def test_decoder_refuses_file_replaced_under_it(tmp_path: Path) -> None:
     path = tmp_path / "replaced.bendl"
     enc = BendlEncoder(path, overwrite=True)
     enc.add_graph(_graph(), sort=None)
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         s.write([1] * _n())
         s.write([2] * _n())
 
@@ -679,7 +679,7 @@ def test_decoder_refuses_after_append(tmp_path: Path) -> None:
     directory (it would not even list the new asset), so its data reads refuse too."""
     path = tmp_path / "appended.bendl"
     enc = BendlEncoder(path, overwrite=True)
-    with enc.stream() as s:
+    with enc.ben_stream() as s:
         s.write([1, 2, 3])
     enc.add_asset("a.txt", "alpha", content_type="text")
 
