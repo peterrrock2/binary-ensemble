@@ -100,7 +100,7 @@ intersphinx_mapping = {
 #
 # Keep link checking separate from normal HTML builds because it depends on external
 # services. CI runs it as its own step so transient failures are easy to diagnose.
-linkcheck_timeout = 30
+linkcheck_timeout = 60
 linkcheck_retries = 2
 linkcheck_anchors = False
 linkcheck_ignore = [
