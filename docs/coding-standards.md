@@ -12,7 +12,7 @@ A companion document, [`docs/glossary.md`](glossary.md), is the source of truth 
 This document covers **mechanics**. The two are meant to be read together: the glossary tells you
 what to call a thing, this tells you how to write the code around it.
 
-______________________________________________________________________
+---
 
 ## 1. Workspace layout
 
@@ -37,7 +37,7 @@ Conventions:
 - **The Python crate owns all PyO3.** Nothing in `ben/` depends on `pyo3`. Python concerns live
   entirely in `ben-py/`.
 
-______________________________________________________________________
+---
 
 ## 2. Toolchain, formatting, and the task runner
 
@@ -57,7 +57,7 @@ ______________________________________________________________________
   `task ben-py-develop` (runs `maturin develop` inside the `uv` env). Format/lint Python with
   `ruff`.
 
-______________________________________________________________________
+---
 
 ## 3. Module organization
 
@@ -69,7 +69,7 @@ ______________________________________________________________________
   does `pub use errors::FormatError;`). Add new public items to the appropriate re-export rather
   than forcing callers down deep paths.
 - **Every module opens with a `//!` doc comment** that says what the module is for and links
-  siblings with intra-doc links (e.g. `` [`encode`] ``, `` [`decode`] ``, `` [`translate`] ``). The
+  siblings with intra-doc links (e.g. ``[`encode`]``, ``[`decode`]``, ``[`translate`]``). The
   `pub mod` declarations in `lib.rs` each carry a `///` one-liner.
 - **Errors live in `errors.rs`.** A module that defines its own error type puts it in a sibling
   `errors.rs` (e.g. `format/errors.rs`, `codec/translate/errors.rs`, `json/graph/errors.rs`) and
@@ -84,7 +84,7 @@ ______________________________________________________________________
 - **Guard platform assumptions explicitly.** `lib.rs` rejects non-64-bit targets with
   `compile_error!`. Encode invariants you rely on rather than letting them fail silently.
 
-______________________________________________________________________
+---
 
 ## 4. Types and domain modeling
 
@@ -92,7 +92,7 @@ ______________________________________________________________________
   `BenVariant { Standard, MkvChain, TwoDelta }`, each variant documented with what it stores and
   when it applies.
 - **Push invariants into the type system when you can.** `XBenVariant` is a deliberately restricted
-  subset (`Standard`, `MkvChain`) that *cannot* represent `TwoDelta`, so functions parameterised by
+  subset (`Standard`, `MkvChain`) that _cannot_ represent `TwoDelta`, so functions parameterised by
   `XBenVariant` are uncallable for TwoDelta at compile time. Prefer this kind of
   make-illegal-states-unrepresentable design over runtime `assert!`s.
 - **Provide `From`/`TryFrom` between related types**, and when a conversion can fail, return a
@@ -110,13 +110,13 @@ ______________________________________________________________________
 - **Reserve unused bits/fields explicitly** for forward compatibility (e.g. named `RESERVED_BIT_*`
   constants) rather than leaving holes undocumented.
 
-______________________________________________________________________
+---
 
 ## 5. Error handling
 
 - **Library errors are `thiserror` enums, one per module, in `errors.rs`.** Each variant has a
   descriptive `#[error("...")]` message that includes the relevant values (e.g. `UnknownBanner`
-  prints the actual bytes seen *and* the expected set). Wrap source errors with `#[from]` (e.g.
+  prints the actual bytes seen _and_ the expected set). Wrap source errors with `#[from]` (e.g.
   `Io(#[from] io::Error)`).
 - **Bridge domain errors to `io::Error` at streaming boundaries.** The pattern is an explicit
   `impl From<DomainError> for io::Error` that forwards a real IO error unchanged and maps everything
@@ -128,7 +128,7 @@ ______________________________________________________________________
 - **`?` is the default control flow** for fallible calls. Reserve `panic!`/`unreachable!` for true
   logic invariants, not expected failures.
 
-______________________________________________________________________
+---
 
 ## 6. Logging
 
@@ -143,7 +143,7 @@ ______________________________________________________________________
   for logging. **`stderr`** carries logs and progress.
 - **Long streaming operations report progress with `indicatif`.**
 
-______________________________________________________________________
+---
 
 ## 7. I/O and performance
 
@@ -160,7 +160,7 @@ ______________________________________________________________________
   unpacking runs, which is what makes subsample-by-skip and random-access reads fast. Don't
   introduce a unified frame representation that forces eager bit-unpacking on read.
 
-______________________________________________________________________
+---
 
 ## 8. Documentation
 
@@ -168,16 +168,16 @@ Documentation is treated as part of the code, not an afterthought.
 
 - **`//!` on every module, `///` on public items.** Item docs use the conventional rustdoc sections
   already prevalent here: `# Arguments`, `# Returns`, `# Examples`, `# Errors`, `# Panics`. Format
-  illustrations in docs use fenced ```` ```text ```` blocks.
+  illustrations in docs use fenced ` ```text ` blocks.
 - **Comments explain intent and stay self-contained and timeless.** Don't reference planning-doc
   filenames, plan section numbers, or version numbers from source/inline comments. Pointing a reader
   at the stable `docs/glossary.md` for terminology is fine and done in the code; pointing at a
   transient plan is not.
 - **Substantive design goes in `docs/`.** Architecture/context in `CONTEXT.md`; vocabulary in
   `docs/glossary.md`; the on-disk contract in the format spec; plans in `docs/<topic>-plan.md`
-  *before* implementation.
+  _before_ implementation.
 
-______________________________________________________________________
+---
 
 ## 9. Naming
 
@@ -200,7 +200,7 @@ ______________________________________________________________________
 - **Name magic values once as consts** (banners, magic bytes, header sizes, asset-type/flag values);
   never inline a protocol literal at a use site.
 
-______________________________________________________________________
+---
 
 ## 10. Testing
 
@@ -217,7 +217,7 @@ ______________________________________________________________________
   (`test_cli.rs`), and format stability is pinned by golden tests — treat an on-disk format change
   that breaks them as a deliberate, documented decision.
 
-______________________________________________________________________
+---
 
 ## 11. Python bindings (`ben-py`)
 
@@ -249,11 +249,11 @@ ______________________________________________________________________
   `reportUnnecessaryTypeIgnoreComment`).
 - **Python-visible docstrings document every argument** (facade `.py` files and the Rust `///`
   docs alike, Google style): each `Args:` entry carries its type in parentheses — the shared alias
-  name where one exists, e.g. ``graph (GraphInput):`` — with custom-type shapes spelled out in the
-  description. Defaulted parameters are marked ``(<type>, optional)`` and state the default as
-  "Default is ``X``." — or, when ``None`` is meaningful, "Default is ``None`` which ⟨meaning⟩."
+  name where one exists, e.g. `graph (GraphInput):` — with custom-type shapes spelled out in the
+  description. Defaulted parameters are marked `(<type>, optional)` and state the default as
+  "Default is `X`." — or, when `None` is meaningful, "Default is `None` which ⟨meaning⟩."
 
-______________________________________________________________________
+---
 
 ## 12. Dependencies
 
@@ -267,21 +267,21 @@ ______________________________________________________________________
   documented inline; do the same for any future "why this crate" decision.
 - **Prefer reusing a present dependency** over adding a new one.
 
-______________________________________________________________________
+---
 
 ## Quick checklist for a new change
 
 - [ ] `cargo fmt --all` clean; `task test` green (fast + `--ignored` + Python);
-  `ruff check`/`ruff format` clean for any Python.
+      `ruff check`/`ruff format` clean for any Python.
 - [ ] New public items have `//!`/`///` docs with the standard sections; comments are self-contained
-  (no plan/section/version references).
+      (no plan/section/version references).
 - [ ] Errors are `thiserror` enums in `errors.rs` with informative messages; boundaries bridge to
-  `io::Error`; no stray `unwrap()`/`expect()` on real IO or input.
+      `io::Error`; no stray `unwrap()`/`expect()` on real IO or input.
 - [ ] Diagnostics via `tracing` (stderr); program output only on stdout; progress via `indicatif`.
 - [ ] Streaming over buffered, generic IO; explicit endianness; BEN frame lazy-decode preserved;
-  integrity (CRC32C) intact.
+      integrity (CRC32C) intact.
 - [ ] Identifiers match `docs/glossary.md`; magic values named as consts.
 - [ ] Round-trip / invariant covered by `proptest`; randomness seeded; slow tests `#[ignore]`d; temp
-  files for FS tests.
+      files for FS tests.
 - [ ] PyO3 changes stay in `ben-py`, keep `abi3`, map errors to typed Python exceptions, and update
-  the `_core.pyi` stub.
+      the `_core.pyi` stub.

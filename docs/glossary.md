@@ -12,22 +12,22 @@ renames listed at the end.
   - Orientation-free and label-free up to relabeling. A plan has many possible assignments (one per
     node ordering and district relabeling).
 - **Assignment**
-  - The vector encoding of a plan: a length-N `Vec<u16>` where index *i* is the **district id** of
-    node *i*, in dual-graph node order.
+  - The vector encoding of a plan: a length-N `Vec<u16>` where index _i_ is the **district id** of
+    node _i_, in dual-graph node order.
   - An assignment uniquely determines a plan; a plan does not uniquely determine an assignment.
 - **District id**
-  - The integer values stored in an assignment vector. Names *what the integer means* (a district).
+  - The integer values stored in an assignment vector. Names _what the integer means_ (a district).
     Replaces "assignment id" in prose; code rename pending.
 - **Sample**
   - One entry in an ensemble stream: the pair `(sample_number, assignment)`.
-  - `sample_number` is 1-indexed and lives in *expanded* space (see **sample count**).
+  - `sample_number` is 1-indexed and lives in _expanded_ space (see **sample count**).
 - **Ensemble**
   - An ordered stream of samples produced by a single sampler run. The unit that `.ben`, `.xben`,
     and `.bendl` files all wrap.
   - Conceptually, an ensemble is a probabilistic draw from the space of possible plans.
 - **Sample count**
   - The number of independent draws represented by an ensemble.
-  - Always *expanded*: when a `MkvChain` frame collapses 5 identical consecutive samples into a
+  - Always _expanded_: when a `MkvChain` frame collapses 5 identical consecutive samples into a
     single frame with `count = 5`, the ensemble's sample count contribution is 5, not 1.
   - The `sample_count` field of a bundle header carries this expanded number.
 
@@ -40,7 +40,7 @@ renames listed at the end.
   - Specifically MCMC. Use only when the Markov property matters; otherwise prefer "sampler."
 - **ReCom-step**
   - A single accepted ReCom (recombination) move: consecutive samples differ by exactly one pairwise
-    district swap. The transition a `TwoDelta` **delta frame** encodes. Transitions that are *not* a
+    district swap. The transition a `TwoDelta` **delta frame** encodes. Transitions that are _not_ a
     clean pairwise swap — a multi-district move, random/independent sampling, or a district that was
     previously empty — are encoded as full snapshot frames instead (see **Variant fitness by
     sampler**).
@@ -59,13 +59,13 @@ renames listed at the end.
 The five layers of the BEN-family encoding pipeline. Use the layer name unambiguously; never
 compress multiple layers into one word.
 
-| Layer | Name | What it is |
-|---|---|---|
-| 0 | bit-packing | cramming run values into bit-precise widths |
-| 1 | RLE | `(value, length)` pairs |
-| 2 | frame | one sample's encoded bytes: frame header + payload, plus a repetition count for `MkvChain` and `TwoDelta` |
-| 3 | stream | banner + concatenated frames; the contents of a `.ben` file or the LZMA2-decompressed body of a `.xben` file |
-| 4 | container | the on-disk file: `.ben`, `.xben`, or `.bendl` |
+| Layer | Name        | What it is                                                                                                   |
+| ----- | ----------- | ------------------------------------------------------------------------------------------------------------ |
+| 0     | bit-packing | cramming run values into bit-precise widths                                                                  |
+| 1     | RLE         | `(value, length)` pairs                                                                                      |
+| 2     | frame       | one sample's encoded bytes: frame header + payload, plus a repetition count for `MkvChain` and `TwoDelta`    |
+| 3     | stream      | banner + concatenated frames; the contents of a `.ben` file or the LZMA2-decompressed body of a `.xben` file |
+| 4     | container   | the on-disk file: `.ben`, `.xben`, or `.bendl`                                                               |
 
 - **Banner**
   - 17-byte ASCII identifier at the start of every BEN/XBEN stream. One per file.
@@ -106,7 +106,7 @@ compress multiple layers into one word.
   - The rule a variant imposes on consecutive samples.
   - `Standard`: none.
   - `MkvChain`: identical-consecutive samples are collapsible into a single frame with `count > 1`.
-  - `TwoDelta`: none on the input. A *non-repeat* transition that is a single ReCom-step (exactly
+  - `TwoDelta`: none on the input. A _non-repeat_ transition that is a single ReCom-step (exactly
     two district ids exchange positions; no position outside that pair changes, and both ids already
     exist) is delta-encoded; any other transition is stored as a full snapshot frame.
     Identical-consecutive samples are accommodated via repetition counts and a repeat-frame layout,
@@ -118,7 +118,7 @@ compress multiple layers into one word.
   - `TwoDelta`: any ensemble. Delta-compresses pairwise ReCom steps and emits a full snapshot frame
     for every other transition, so it is **compatible** with random sampling and Forest ReCom —
     those just produce more snapshot frames and less delta compression. Best compression comes from
-    a full-chain *pairwise* ReCom ensemble, where nearly every accepted move changes exactly two
+    a full-chain _pairwise_ ReCom ensemble, where nearly every accepted move changes exactly two
     districts.
 
 ## Files and Containers
@@ -172,7 +172,7 @@ listed for reference.
   - CLI: `ben -m decode` (BEN → JSONL), `ben -m x-decode` (XBEN → BEN, or with `-p` to JSONL).
 - **`x-` prefix**
   - Means "with LZMA2 wrapping." Not a separate verb; a modifier on `encode`/`decode`.
-- **Sample lookup** *(prose)* / random-access decode
+- **Sample lookup** _(prose)_ / random-access decode
   - Decode just sample N from a BEN file.
   - CLI: `ben -m read -n N`. The mode is a candidate for a CLI rename in the next major release.
 - **Subsampling**
@@ -191,8 +191,8 @@ listed for reference.
   - List the assets in a bundle. CLI: `bendl inspect`.
 - **Create**
   - Build a new bundle from a stream plus assets. CLI: `bendl create`.
-- **Append** *(strict)*
-  - Add a new asset to a *finalized* bundle: write new asset payloads after the old EOF, write a
+- **Append** _(strict)_
+  - Add a new asset to a _finalized_ bundle: write new asset payloads after the old EOF, write a
     replacement trailing directory, then repatch the header. The old directory becomes orphaned
     bytes after a successful patch, and remains authoritative if the final header patch fails.
   - **Never** means extending the assignment stream. If stream-extension is ever wanted, call it
@@ -204,8 +204,8 @@ listed for reference.
 ## Dual Graphs
 
 The geographic adjacency graph that gives meaning to a node ordering. Every assignment vector is
-interpreted with respect to a particular dual graph: index *i* is the district id of dual-graph node
-*i*.
+interpreted with respect to a particular dual graph: index _i_ is the district id of dual-graph node
+_i_.
 
 - **Dual graph**
   - The adjacency graph over geographic units (blocks, VTDs, tracts, precincts). Nodes are units;
@@ -252,7 +252,7 @@ interpreted with respect to a particular dual graph: index *i* is the district i
 - **Resolution**
   - The chosen geographic-unit type for an ensemble. Block is the highest resolution; VTD, tract,
     county get progressively lower.
-  - A property of the *ensemble*, not of the BEN-family file format.
+  - A property of the _ensemble_, not of the BEN-family file format.
 - **GEOID** / **GEOID20**
   - US Census Bureau identifier strings. A common choice of **sort key** for key-based node
     ordering.
@@ -340,13 +340,13 @@ Words that historically had multiple meanings; the meanings are now segregated.
   - The `flags: u32` field at offset 16 of the bundle header. Bundle-level capabilities.
 - **Asset flags**
   - The `asset_flags: u16` field on each directory entry. Per-asset encoding/checksum.
-- **Finalize** *(verb)*
+- **Finalize** _(verb)_
   - Write the trailing directory and flip the finalized flag. The terminating step of bundle
     creation.
-- **Finalized** *(state)*
+- **Finalized** _(state)_
   - The bundle's directory and stream lengths are authoritative; safe to read with no recovery
     logic.
-- **Incomplete** *(state)*
+- **Incomplete** _(state)_
   - The finalized flag is unset. The directory may be missing; the assignment stream extends to EOF.
 - **Provisional directory**
   - An optional pre-stream directory written for crash recovery. Becomes obsolete once finalize

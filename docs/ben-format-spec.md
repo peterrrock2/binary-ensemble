@@ -26,10 +26,10 @@ opaque payload; see the BENDL format specification for that.
 
 This document uses the workspace glossary. The terms that matter most here:
 
-- **assignment** — a length-N `Vec<u16>` where index *i* is the district id of dual-graph node *i*.
+- **assignment** — a length-N `Vec<u16>` where index _i_ is the district id of dual-graph node _i_.
 - **district id** — an integer value stored in an assignment. Range `0..=65535`.
-- **sample** — one `(sample_number, assignment)` pair. `sample_number` lives in *expanded* space.
-- **sample count** — the *expanded* number of samples: a MkvChain frame with `count = 5` contributes
+- **sample** — one `(sample_number, assignment)` pair. `sample_number` lives in _expanded_ space.
+- **sample count** — the _expanded_ number of samples: a MkvChain frame with `count = 5` contributes
   5, not 1.
 - **variant** — `Standard` or `MkvChain` here. One variant per stream, fixed by the banner.
 - **banner** — the 17-byte ASCII stream identifier. Distinct from a BENDL **magic**.
@@ -38,13 +38,13 @@ This document uses the workspace glossary. The terms that matter most here:
 
 The encoding stack is layered as in the glossary:
 
-| Layer | Name | What it is here |
-|---|---|---|
-| 0 | bit-packing | run values and run lengths crammed into bit-precise widths |
-| 1 | RLE | `(value, length)` pairs over an assignment |
-| 2 | frame | one sample's bytes: frame header + payload, plus a `u16` count for `MkvChain` |
-| 3 | stream | banner + concatenated frames; the contents of a `.ben` file |
-| 4 | container | the on-disk file: `.ben`, or `.xben` (the stream wrapped in LZMA2) |
+| Layer | Name        | What it is here                                                               |
+| ----- | ----------- | ----------------------------------------------------------------------------- |
+| 0     | bit-packing | run values and run lengths crammed into bit-precise widths                    |
+| 1     | RLE         | `(value, length)` pairs over an assignment                                    |
+| 2     | frame       | one sample's bytes: frame header + payload, plus a `u16` count for `MkvChain` |
+| 3     | stream      | banner + concatenated frames; the contents of a `.ben` file                   |
+| 4     | container   | the on-disk file: `.ben`, or `.xben` (the stream wrapped in LZMA2)            |
 
 ## Byte Order
 
@@ -137,7 +137,7 @@ An MkvChain frame is exactly `6 + n_bytes + 2` bytes.
   as the bit width of the largest run length in this frame, with a floor of `1`. Range `1..=16`.
 - `n_bytes` — the exact byte length of the bit-packed payload that follows the header (`u32`,
   big-endian). Equal to `ceil((max_val_bit_count + max_len_bit_count) * n_runs / 8)`.
-- `count` *(MkvChain only)* — the number of identical consecutive samples this frame represents
+- `count` _(MkvChain only)_ — the number of identical consecutive samples this frame represents
   (`u16`, big-endian). MUST be `>= 1`; a reader MUST treat `count == 0` as a corrupt frame and
   error. The frame's assignment is emitted `count` times, and the stream's expanded sample count
   increases by `count`.

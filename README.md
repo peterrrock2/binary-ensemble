@@ -22,11 +22,11 @@ The expected input is canonicalized JSONL, one plan per line:
 
 ## The format family
 
-| Format | What it is | Use it for |
-|---|---|---|
-| `.ben` | Bit-packed, run-length-encoded stream | Working with an ensemble: reading, replaying, subsampling |
-| `.xben` | A BEN stream further compressed with LZMA2 | Long-term storage and transfer (slow to create, fast to extract) |
-| `.bendl` | A BEN or XBEN stream plus the dual graph, metadata, and custom assets in one self-describing file | Sharing an ensemble without losing its context |
+| Format   | What it is                                                                                        | Use it for                                                       |
+| -------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `.ben`   | Bit-packed, run-length-encoded stream                                                             | Working with an ensemble: reading, replaying, subsampling        |
+| `.xben`  | A BEN stream further compressed with LZMA2                                                        | Long-term storage and transfer (slow to create, fast to extract) |
+| `.bendl` | A BEN or XBEN stream plus the dual graph, metadata, and custom assets in one self-describing file | Sharing an ensemble without losing its context                   |
 
 The byte-level layouts are specified in [`docs/`](./docs):
 [BEN/XBEN](./docs/ben-format-spec.md) · [TwoDelta variant](./docs/twodelta-format-spec.md) ·
@@ -34,17 +34,17 @@ The byte-level layouts are specified in [`docs/`](./docs):
 
 ## What's in the repository
 
-| Component | What it does |
-|---|---|
-| [`ben/`](./ben) | The Rust crate ([`binary-ensemble` on crates.io](https://crates.io/crates/binary-ensemble)) and the CLI tools below |
-| `ben` (CLI) | Encode/decode between JSONL, BEN, and XBEN; random-access sample lookup |
-| `reben` (CLI) | Relabel and reorder ensembles so they compress dramatically better |
-| `bendl` (CLI) | Create, inspect, extract from, and append assets to `.bendl` files |
-| `pcben` (CLI) | Convert between BEN and [PCompress](https://github.com/mggg/pcompress) formats |
-| [`ben-py/`](./ben-py) | The Python package ([`binary-ensemble` on PyPI](https://pypi.org/project/binary-ensemble/)) — full docs at [binary-ensemble.readthedocs.io](https://binary-ensemble.readthedocs.io/) |
-| [`docs/`](./docs) | Format specifications, stability policy, and project glossary |
-| [`example/`](./example) | Small sample files used throughout this README |
-| [`fuzz/`](./fuzz) | Fuzz targets for the readers and writers |
+| Component               | What it does                                                                                                                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`ben/`](./ben)         | The Rust crate ([`binary-ensemble` on crates.io](https://crates.io/crates/binary-ensemble)) and the CLI tools below                                                                  |
+| `ben` (CLI)             | Encode/decode between JSONL, BEN, and XBEN; random-access sample lookup                                                                                                              |
+| `reben` (CLI)           | Relabel and reorder ensembles so they compress dramatically better                                                                                                                   |
+| `bendl` (CLI)           | Create, inspect, extract from, and append assets to `.bendl` files                                                                                                                   |
+| `pcben` (CLI)           | Convert between BEN and [PCompress](https://github.com/mggg/pcompress) formats                                                                                                       |
+| [`ben-py/`](./ben-py)   | The Python package ([`binary-ensemble` on PyPI](https://pypi.org/project/binary-ensemble/)) — full docs at [binary-ensemble.readthedocs.io](https://binary-ensemble.readthedocs.io/) |
+| [`docs/`](./docs)       | Format specifications, stability policy, and project glossary                                                                                                                        |
+| [`example/`](./example) | Small sample files used throughout this README                                                                                                                                       |
+| [`fuzz/`](./fuzz)       | Fuzz targets for the readers and writers                                                                                                                                             |
 
 ## Install
 
@@ -124,8 +124,8 @@ On the Colorado example ([`example/CO_small.json`](./example/CO_small.json), wit
 this takes the BEN file from ~7 GB to ~550 MB, and the final `ben -m x-encode` brings it to
 ~6 MB.
 
-**A note on speed:** XBEN *decoding* is fast — a large file extracts in minutes. High-ratio
-XBEN *encoding* is slow (an hour or more for block-level ensembles; ~10 minutes for VTD-level
+**A note on speed:** XBEN _decoding_ is fast — a large file extracts in minutes. High-ratio
+XBEN _encoding_ is slow (an hour or more for block-level ensembles; ~10 minutes for VTD-level
 ones). Encode to XBEN once for storage; work against BEN day to day.
 
 ## Python
@@ -139,9 +139,9 @@ plans = [[1, 1, 2, 2], [1, 2, 2, 2], [1, 1, 1, 2]]
 
 encoder = BendlEncoder("ensemble.bendl", overwrite=True)
 encoder.add_metadata({"sampler": "demo", "seed": 1234})
-with encoder.stream() as stream:
+with encoder.ben_stream() as ensemble:
     for assignment in plans:
-        stream.write(assignment)
+        ensemble.write(assignment)
 
 for assignment in BendlDecoder("ensemble.bendl"):
     print(assignment)
@@ -169,7 +169,7 @@ A BEN stream encodes each assignment vector in two stages:
    01011_10100_11001_01001_11011_0000000  <- the five runs, 5 bits each, zero-padded
    ```
 
-XBEN then runs LZMA2 over the stream to exploit the repetition *across* plans. Bit-packed
+XBEN then runs LZMA2 over the stream to exploit the repetition _across_ plans. Bit-packed
 frames don't line up byte-for-byte, so the encoder first re-expands them into a byte-aligned
 intermediate form (BEN32, one `(value, length)` pair per 4 bytes) that LZMA2 can deduplicate
 — one frame at a time, so memory stays flat. This is also why first-seen relabeling helps:
@@ -195,7 +195,7 @@ pc-to-xben -i <file>`), so ensembles can move between the two ecosystems.
 
 ## Testing and format stability
 
-A compression format's worst failure mode is decoding *silently wrong*, so the test policy
+A compression format's worst failure mode is decoding _silently wrong_, so the test policy
 is built around the wire formats rather than just the code:
 
 - **Golden fixtures.** Byte-exact reference files for every format and variant — including
