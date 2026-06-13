@@ -118,12 +118,11 @@ linkcheck_ignore = [
     # maturin.rs answers a browser instantly but stalls (read timeout, never replies) for the
     # datacenter IP + non-browser User-Agent linkcheck uses from CI, so no finite timeout
     # validates it. The link is valid; skip it in CI rather than chase the timeout.
-    r"https://www.maturin\.rs/.*",
-    r"https://maturin\.rs/.*",
+    r"https://(www\.)?maturin\.rs(/.*)?$",
     # pyo3.rs answers a browser instantly but stalls (read timeout, never replies) for the
     # datacenter IP + non-browser User-Agent linkcheck uses from CI, so no finite timeout
     # validates it. The link is valid; skip it in CI rather than chase the timeout.
-    r"https://pyo3\.rs/.*",
+    r"https://pyo3\.rs(/.*)?$",
 ]
 
 # -- HTML output -------------------------------------------------------------
