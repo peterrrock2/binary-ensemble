@@ -11,7 +11,7 @@ use std::io::{self, BufReader, BufWriter, Read};
 
 /// Execute the `ben-to-pc` sub-mode.
 pub(in crate::cli::pcben) fn run(args: Args) -> CliResult {
-    tracing::trace!("Converting BEN to PCOMPRESS");
+    tracing::info!("Converting BEN to PCOMPRESS");
 
     let ben_reader: Box<dyn Read + Send> = match args.input_file.as_ref() {
         Some(file) => Box::new(BufReader::new(File::open(file)?)),

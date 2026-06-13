@@ -10,7 +10,7 @@ use std::io::{BufReader, Write};
 
 /// Execute the `lookup` sub-mode.
 pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
-    tracing::trace!("Running in lookup mode");
+    tracing::info!("Running in lookup mode");
 
     let in_file = args
         .input_file

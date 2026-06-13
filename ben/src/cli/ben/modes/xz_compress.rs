@@ -9,7 +9,7 @@ use std::io::{BufReader, BufWriter};
 
 /// Execute the `xz-compress` sub-mode.
 pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
-    tracing::trace!("Running in xz compress mode");
+    tracing::info!("Running in xz compress mode");
 
     let in_file_name = args
         .input_file

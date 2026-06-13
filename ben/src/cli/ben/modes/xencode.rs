@@ -10,7 +10,7 @@ use std::path::Path;
 
 /// Execute the `x-encode` sub-mode.
 pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
-    tracing::trace!("Running in xencode mode");
+    tracing::info!("Running in xencode mode");
 
     let mut ben_and_xben = args.ben_and_xben;
     let mut jsonl_and_xben = args.jsonl_and_xben;

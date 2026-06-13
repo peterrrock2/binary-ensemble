@@ -10,7 +10,7 @@ use std::path::Path;
 
 /// Execute the `encode` sub-mode.
 pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
-    tracing::trace!("Running in encode mode");
+    tracing::info!("Running in encode mode");
 
     // --graph path: produce a .bendl file with the BEN stream plus a post-stream graph asset.
     if let Some(graph_path) = args.graph.as_ref() {

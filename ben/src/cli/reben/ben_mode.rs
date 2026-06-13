@@ -26,9 +26,9 @@ pub(super) fn run_ben_mode(args: Args) -> Result<(), String> {
 
     if args.map_file.is_none() && args.key.is_none() && args.ordering.is_none() {
         if args.convert_only {
-            tracing::trace!("Converting BEN file to requested variant.");
+            tracing::info!("Converting BEN file to requested variant.");
         } else {
-            tracing::trace!("Canonicalizing assignment vectors in ben file.");
+            tracing::info!("Canonicalizing assignment vectors in ben file.");
         }
 
         let output_file_name = match args.output_file {
@@ -79,7 +79,7 @@ pub(super) fn run_ben_mode(args: Args) -> Result<(), String> {
             "No dual-graph file provided to go with the requested ordering.".to_string()
         })?;
         let label = relabeling_label(args.key.as_deref(), args.ordering.as_ref())?;
-        tracing::trace!("Creating map file for ordering: {}", label);
+        tracing::info!("Creating map file for ordering: {}", label);
 
         let output_file_name = dual_graph.trim_end_matches(".json").to_owned()
             + format!("_sorted_by_{}.json", label).as_str();
@@ -143,7 +143,7 @@ pub(super) fn run_ben_mode(args: Args) -> Result<(), String> {
         .map_err(|e| format!("Could not create output file {output_file_name:?}: {e}"))?;
     let writer = BufWriter::new(output_file);
 
-    tracing::trace!(
+    tracing::info!(
         "Relabeling ben file according to map file {}",
         map_file_name,
     );

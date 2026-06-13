@@ -11,7 +11,7 @@ use std::io::{self, BufReader, BufWriter, Read};
 
 /// Execute the `pc-to-xben` sub-mode.
 pub(in crate::cli::pcben) fn run(args: Args) -> CliResult {
-    tracing::trace!("Converting PCOMPRESS to XBEN");
+    tracing::info!("Converting PCOMPRESS to XBEN");
 
     let mut pcompress_reader: BufReader<Box<dyn Read + Send>> = match args.input_file.as_ref() {
         Some(file) => BufReader::new(Box::new(BufReader::new(File::open(file)?))),

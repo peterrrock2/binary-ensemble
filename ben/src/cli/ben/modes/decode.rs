@@ -8,7 +8,7 @@ use crate::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben};
 
 /// Execute the `decode` sub-mode.
 pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
-    tracing::trace!("Running in decode mode");
+    tracing::info!("Running in decode mode");
 
     let mut ben_and_xben = args.ben_and_xben;
     let mut jsonl_and_ben = args.jsonl_and_ben;

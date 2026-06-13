@@ -10,14 +10,16 @@ static QUIET: AtomicBool = AtomicBool::new(false);
 /// Configure tracing for CLI execution.
 ///
 /// When `verbose` is set and the user has not already provided `RUST_LOG`, the default log filter
-/// is elevated to `trace`. The tracing subscriber is then initialized exactly once for the process.
+/// is elevated to `info`. An explicit `RUST_LOG` (e.g. `trace`) always wins, so deep tracing stays
+/// opt-in through the environment. The tracing subscriber is then initialized exactly once for the
+/// process.
 ///
 /// # Arguments
 ///
-/// * `verbose` - Whether verbose trace logging should be enabled by default.
+/// * `verbose` - Whether info-level logging should be enabled by default.
 pub fn set_verbose(verbose: bool) {
     if verbose && std::env::var_os("RUST_LOG").is_none() {
-        std::env::set_var("RUST_LOG", "trace");
+        std::env::set_var("RUST_LOG", "info");
     }
     crate::logging::init_logging();
 }

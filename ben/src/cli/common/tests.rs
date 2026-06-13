@@ -13,7 +13,7 @@ fn set_verbose_sets_rust_log() {
     let _guard = env_lock().lock().unwrap();
     std::env::remove_var("RUST_LOG");
     set_verbose(true);
-    assert_eq!(std::env::var("RUST_LOG").as_deref(), Ok("trace"));
+    assert_eq!(std::env::var("RUST_LOG").as_deref(), Ok("info"));
 }
 
 #[test]

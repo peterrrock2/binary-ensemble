@@ -8,7 +8,7 @@ use crate::codec::decode::decode_xben_to_jsonl;
 
 /// Execute the `x-decode` sub-mode.
 pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
-    tracing::trace!("Running in x-decode mode");
+    tracing::info!("Running in x-decode mode");
 
     let reader = open_reader(args.input_file.as_deref())?;
     let writer = match args.input_file.as_ref() {
