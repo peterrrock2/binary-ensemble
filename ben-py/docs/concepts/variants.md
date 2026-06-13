@@ -11,7 +11,7 @@ You choose a variant with the `variant=` argument on the encoders and the
 All three sit on the same foundation — run-length encoding and bit-packing into frames, behind
 a banner (see [how BEN works](formats.md#how-each-format-works)). What differs is the **frame
 shape**: whether a frame stands alone, carries a repeat count, or is a difference against the
-plan before it. That choice also decides whether you can [subsample](../how-to/subsample.md) by
+plan before it. That choice also decides whether you can [subsample](../quick-help/subsample.md) by
 skipping frames or have to replay them.
 
 ## `standard`

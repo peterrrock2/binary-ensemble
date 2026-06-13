@@ -98,6 +98,6 @@ decode_ben_to_jsonl("plans.ben", "plans_again.jsonl")  # round-trip back to JSON
 
 ## Next steps
 
-- [Compress a GerryChain run](../how-to/compress-gerrychain-run.md) — the most common workflow.
-- [Subsample a large ensemble](../how-to/subsample.md) without decoding the whole thing.
+- [Compress a GerryChain run](../quick-help/compress-gerrychain-run.md) — the most common workflow.
+- [Subsample a large ensemble](../quick-help/subsample.md) without decoding the whole thing.
 - [Concepts](../concepts/overview.md) — formats, encoding variants, and how the compression works.

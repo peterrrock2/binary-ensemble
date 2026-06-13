@@ -7,7 +7,7 @@ they differ in how much extra compression and packaging they add.
 
 A plain BEN **stream**: a one-line banner followed by the bit-packed, run-length-encoded
 frames. This is the format you *work* with — it supports reading any sample, replaying an
-ensemble, and [subsampling](../how-to/subsample.md) without decompressing everything.
+ensemble, and [subsampling](../quick-help/subsample.md) without decompressing everything.
 
 - **Fast** to write and read.
 - Already much smaller than JSONL (the Colorado example: 27 GB → ~550 MB).
@@ -42,7 +42,7 @@ the bundle is the recommended default.
 
 A bundle can wrap *either* a BEN stream (the working form) or an XBEN stream (the compressed
 form). You typically build a `.bendl` file with a BEN stream while sampling, then
-[recompress it to XBEN](../how-to/shrink-for-sharing.md) for distribution.
+[recompress it to XBEN](../quick-help/shrink-for-sharing.md) for distribution.
 
 ## Choosing a format
 
@@ -51,7 +51,7 @@ form). You typically build a `.bendl` file with a BEN stream while sampling, the
 | Hand an ensemble to a collaborator as one file | `.bendl` (XBEN inside) |
 | Keep building / reading an ensemble locally | `.bendl` (BEN inside) or `.ben` |
 | Archive an ensemble as small as possible | `.xben`, or a `.bendl` recompressed to XBEN |
-| Interoperate with the JSONL world | convert with the [codec helpers](../how-to/convert-formats.md) |
+| Interoperate with the JSONL world | convert with the [codec helpers](../quick-help/convert-formats.md) |
 
 ```{tip}
 When in doubt, use a `.bendl` file. You only need the plain `.ben`/`.xben` stream classes
@@ -80,7 +80,7 @@ stacked layers:
 3. **Frames.** Each sample becomes one self-describing frame: a short header (the two bit-widths
    plus the payload's byte length) followed by the packed payload. Because the header states the
    byte length up front, a reader can **skip** a sample it doesn't want without unpacking a single
-   payload bit — that's what makes [subsampling](../how-to/subsample.md) cheap.
+   payload bit — that's what makes [subsampling](../quick-help/subsample.md) cheap.
 4. **Stream.** A 17-byte banner that names the [variant](variants.md), then the frames written
    back-to-back. There's no global index or end marker, so frames can be appended one at a time
    while sampling and read back until the input simply runs out.
@@ -133,7 +133,7 @@ then the stream, then the directory — and **patches the header last** to flip 
 fill in the final lengths, checksum, and sample count. So if the process dies mid-write, the
 partial file is clearly flagged incomplete and the stream bytes that reached disk are still
 salvageable — see
-[Recovering samples from a crashed run](../how-to/troubleshooting.md#recovering-samples-from-a-crashed-run);
+[Recovering samples from a crashed run](../quick-help/troubleshooting.md#recovering-samples-from-a-crashed-run);
 that final header patch is the single commit point.
 
 ## Going deeper

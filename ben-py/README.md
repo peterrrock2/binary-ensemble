@@ -113,7 +113,7 @@ Full docs are at **[binary-ensemble.readthedocs.io](https://binary-ensemble.read
 
 - [Quickstart](https://binary-ensemble.readthedocs.io/getting-started/quickstart/) — your first ensemble in a few lines.
 - [Concepts](https://binary-ensemble.readthedocs.io/concepts/overview/) — dual graphs, the BEN/XBEN/BENDL formats, encoding variants, and the compression levers.
-- [How-to guides](https://binary-ensemble.readthedocs.io/how-to/) — compress a GerryChain run, analyze with NumPy/pandas, subsample, convert formats, shrink a file for sharing, recover a crashed run.
+- [Quick Help](https://binary-ensemble.readthedocs.io/quick-help/) — compress a GerryChain run, analyze with NumPy/pandas, subsample, convert formats, shrink a file for sharing, recover a crashed run.
 - [API reference](https://binary-ensemble.readthedocs.io/api/) — every public class and function.
 - [Tutorial notebooks](https://binary-ensemble.readthedocs.io/user/using_bendl/) — executed end to end in CI against the live API, as is every code snippet in the docs.
 

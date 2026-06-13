@@ -4,7 +4,7 @@ This page is intentionally blunt. `binary-ensemble` is designed for a specific d
 large streams of district-assignment vectors over a fixed dual graph. It is very good at
 that job, but it does not try to be a general geospatial archive format.
 
-For concrete examples of what not to do, see [Anti-patterns](../how-to/anti-patterns.md).
+For concrete examples of what not to do, see [Anti-patterns](../quick-help/anti-patterns.md).
 
 ## Assignment-only streams
 

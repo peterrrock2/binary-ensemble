@@ -29,12 +29,12 @@ vast majority of the time.
 
 **`stream`** — when you specifically *don't* want a bundle: a raw `.ben`/`.xben` stream with
 no embedded graph. `BenEncoder` writes one; `BenDecoder` reads and
-[subsamples](../how-to/subsample.md) one. Note that the bundle decoder supports the same
+[subsamples](../quick-help/subsample.md) one. Note that the bundle decoder supports the same
 subsampling methods, so you rarely need to drop down to the stream classes just for that.
 
 **`codec`** — when you have whole files to convert and don't need sample-by-sample access:
 `encode_jsonl_to_ben`, `encode_ben_to_xben`, `decode_ben_to_jsonl`, and friends transform an
-entire file in one call. See [Convert between formats](../how-to/convert-formats.md).
+entire file in one call. See [Convert between formats](../quick-help/convert-formats.md).
 
 **`graph`** — when you want to reorder a dual graph yourself (to inspect the permutation, or
 to reorder before running a sampler) rather than letting `BendlEncoder.add_graph` do it

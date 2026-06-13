@@ -139,7 +139,7 @@ relabel_bundle("ensemble.bendl", out_file="ensemble-relabeled.bendl", sort="key"
 compress_stream("ensemble-relabeled.bendl", out_file="ensemble-archive.bendl")
 ```
 
-See [Shrink a bundle for sharing](../how-to/shrink-for-sharing.md) for the full recipe.
+See [Shrink a bundle for sharing](../quick-help/shrink-for-sharing.md) for the full recipe.
 
 ## A note on resolution
 
