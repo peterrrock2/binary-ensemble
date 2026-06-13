@@ -2,16 +2,15 @@ use std::io::{self, Read};
 
 /// Upper bound on `n_bytes` accepted by [`decode_ben_line`] and by the frame readers in
 /// [`crate::codec::BenDecodeFrame`]. A frame larger than this is rejected without allocating, so
-/// malformed or adversarial input cannot OOM the process during fuzzing or stream decoding. The
-/// cap is well above any legitimate BEN frame: at 64 MiB of packed RLE data it would hold tens of
-/// millions of run pairs.
+/// malformed or malicious input cannot OOM the process during fuzzing or stream decoding. The cap
+/// is well above any legitimate BEN frame.
 pub(crate) const MAX_FRAME_PAYLOAD_BYTES: u32 = 1 << 26;
 
 /// Upper bound on the *speculative* run-pair reservation made before decoding a frame payload.
-/// The header-derived pair count is attacker-controlled: a minimum-width frame at the payload cap
-/// implies ~268 million pairs (≈1 GiB) before a single payload byte has been read. Legitimate
-/// frames rarely exceed a few hundred thousand runs, and `Vec` growth covers any that do, so the
-/// reservation is clamped and a hostile header costs kilobytes instead of a gigabyte.
+/// The header-derived pair count is untrusted: a minimum-width frame at the payload cap implies
+/// ~268 million pairs (≈1 GiB) before a single payload byte has been read. Legitimate frames rarely
+/// exceed a few hundred thousand runs, and `Vec` growth covers any that do, so the reservation is
+/// clamped and a corrupt or malicious header costs kilobytes instead of a gigabyte.
 const MAX_RLE_PREALLOC_PAIRS: usize = 1 << 16;
 
 /// Decode a single BEN frame payload into run-length encoded assignments.
@@ -91,8 +90,8 @@ pub fn decode_ben_line<R: Read>(
     // Tracks zero-length pairs seen since the last real (len > 0) pair. The encoder never emits
     // zero-length runs, so any zero-length pair in the decoded stream is either trailing padding
     // (for narrow bit widths, where padding bits may form a complete pair) or a corrupt-frame
-    // signal. We accumulate them until either (a) the frame ends — accepted as padding — or
-    // (b) a real pair follows — rejected as interior corruption.
+    // signal. We accumulate them until either (a) the frame ends (accepted as padding) or
+    // (b) a real pair follows (rejected as interior corruption).
     let mut pending_zero_pairs: usize = 0;
 
     for &byte in &assign_bits {
@@ -205,7 +204,7 @@ mod tests {
     #[test]
     fn decode_ben_line_rejects_zero_length_run_when_trailing_real_pair_present() {
         // Hand-built frame: mvb=4, mlb=4 (bit_width=8 = one full byte per pair). First byte
-        // 0x10 = (val=1, len=0) — zero-length, should not exist. Second byte 0x23 = (val=2,
+        // 0x10 = (val=1, len=0), a zero-length pair that should not exist. Second byte 0x23 = (val=2,
         // len=3). The trailing real pair makes the leading zero-length pair "interior", which is
         // rejected.
         let err =
@@ -217,7 +216,7 @@ mod tests {
     #[test]
     fn decode_ben_line_rejects_inconsistent_n_bytes() {
         // Plan's headline case: mvb=8, mlb=8 → 16 bits/pair = 2 bytes/pair. n_bytes=3 should
-        // decode 1 pair but leaves a full byte of "padding" — the encoder uses div_ceil(2*16/8)=2,
+        // decode 1 pair but leaves a full byte of "padding": the encoder uses div_ceil(2*16/8)=2,
         // never 3. The post-decode consistency check rejects this.
         let err = decode_ben_line(Cursor::new(&[0x01u8, 0x03u8, 0xff]), 8, 8, 3)
             .expect_err("must reject");

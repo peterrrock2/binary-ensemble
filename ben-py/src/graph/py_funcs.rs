@@ -18,12 +18,12 @@ fn json_loads(py: Python<'_>, bytes: &[u8]) -> PyResult<Py<PyAny>> {
 ///         ``gerrychain.Graph`` count), or NetworkX adjacency JSON as a ``dict``/``list``, raw
 ///         JSON ``bytes``, a file-like object with ``.read()``, or a ``str``/``os.PathLike``
 ///         path to a JSON file (a plain ``str`` is a *path* here).
-///     sort (SortMethod, optional): The ordering — ``"mlc"`` (multi-level clustering),
+///     sort (SortMethod, optional): The ordering: ``"mlc"`` (multi-level clustering),
 ///         ``"rcm"`` (reverse Cuthill-McKee), or ``"key"`` (sort by the node attribute named
 ///         in ``key``). Default is ``"mlc"``.
 ///     key (str | None, optional): Node attribute to sort by (e.g. ``key="GEOID"``, or the
-///         special ``key="id"`` for the NetworkX node id); required with — and only valid
-///         with — ``sort="key"``. Default is ``None``.
+///         special ``key="id"`` for the NetworkX node id); required with (and only valid
+///         with) ``sort="key"``. Default is ``None``.
 ///
 /// Returns:
 ///     tuple[networkx.Graph, NodePermutationMap]: The reordered graph (a live NetworkX graph,

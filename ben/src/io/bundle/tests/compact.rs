@@ -57,8 +57,8 @@ fn crash_after_stage_leaves_consistent_bundle_and_recompaction_recovers() {
     // EOF, adopts it, and only then rewrites the final tail. Simulate a crash immediately after
     // the staged adoption (the widest window) and check both halves of the crash-safety
     // invariant: the staged state is a fully intact bundle, and re-running compaction from it
-    // converges losslessly. The staged directory used to carry the survivors' *final* offsets —
-    // bytes not yet written — so in the crash state the survivor failed its checksum, and the
+    // converges losslessly. The staged directory used to carry the survivors' *final* offsets
+    // (bytes not yet written), so in the crash state the survivor failed its checksum, and the
     // re-run rewrote it from those dead bytes and truncated away the only good copy.
     let (bytes, _) = build_base_bundle();
     let tmp = temp_bundle(&bytes, "crash-after-stage");
@@ -96,7 +96,7 @@ fn crash_after_stage_leaves_consistent_bundle_and_recompaction_recovers() {
     appender.remove_asset("doomed.bin").unwrap();
     appender.commit().unwrap();
 
-    // Run phase 1 only — up to the moment the staged directory becomes authoritative — then
+    // Run phase 1 only (up to the moment the staged directory becomes authoritative), then
     // "crash" by dropping the handle before phase 2.
     {
         let reader = BendlReader::open(BufReader::new(File::open(&path).unwrap())).unwrap();
@@ -173,7 +173,7 @@ fn remove_assets_in_place_drops_post_stream_assets_via_tail_path() {
 
 #[test]
 fn remove_assets_in_place_rejects_unknown_name_without_touching_the_file() {
-    // Unknown names fail the whole batch up front — including any valid names beside them — so
+    // Unknown names fail the whole batch up front (including any valid names beside them), so
     // a caller never has to guess which removals landed.
     let (bytes, _) = build_base_bundle();
     let tmp = temp_bundle(&bytes, "remove-unknown");
@@ -193,8 +193,8 @@ fn remove_assets_in_place_rejects_unknown_name_without_touching_the_file() {
 fn remove_assets_in_place_failure_mid_rewrite_leaves_asset_present() {
     // The non-atomicity regression: removal used to commit its directory drop *before* the
     // compaction ran, so a failed compaction left the asset unreachable (a retry raised
-    // "no asset named") with its dead bytes still in the file. Fused, a mid-rewrite failure —
-    // here a corrupt surviving asset detected by verify-on-touch — leaves the file
+    // "no asset named") with its dead bytes still in the file. Fused, a mid-rewrite failure
+    // (here a corrupt surviving asset detected by verify-on-touch) leaves the file
     // byte-identical and the asset still present for a retry.
     let (bytes, _) = build_base_bundle();
     let tmp = temp_bundle(&bytes, "remove-atomic");
@@ -320,7 +320,7 @@ fn full_rewrite_preserves_file_permissions() {
 
 #[test]
 fn full_rewrite_carries_assets_verbatim() {
-    // The full rewrite copies each surviving asset's stored form — bytes, flags, and checksum —
+    // The full rewrite copies each surviving asset's stored form (bytes, flags, and checksum)
     // unchanged, rather than decoding and re-encoding it. Pin it with one xz-stored and one
     // raw-stored survivor: under the old decode-and-re-add behavior the raw-stored noise blob
     // came back xz-flagged (re-evaluated under the default policy), so its stored form changed.

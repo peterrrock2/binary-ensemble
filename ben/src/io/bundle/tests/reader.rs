@@ -355,7 +355,7 @@ fn open_rejects_directory_with_count_over_max() {
 
 #[test]
 fn open_rejects_directory_with_truncated_entries() {
-    // A count within the cap but larger than the directory region can supply must still fail — here
+    // A count within the cap but larger than the directory region can supply must still fail; here
     // it surfaces as an Io error when read_exact runs out of bytes mid-directory.
     let mut bytes = build_basic_finalized_bundle();
     let directory_offset = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
@@ -429,7 +429,7 @@ fn asset_bytes_errors_with_unexpected_eof_when_payload_len_runs_past_eof() {
     // file provides must surface as BendlReadError::Io wrapping io::ErrorKind::UnexpectedEof.
     // Returning a short successful read on a corrupt bundle is exactly the silent-corruption
     // failure mode this contract exists to prevent. (Open itself stays lenient so a truncated
-    // bundle remains inspectable; paths that trust the lengths — append, in-place compaction —
+    // bundle remains inspectable; paths that trust the lengths (append, in-place compaction)
     // reject via validate_entry_extents instead.)
     let mut bytes = build_basic_finalized_bundle();
     let directory_offset = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
@@ -1016,7 +1016,7 @@ fn verify_asset_checksum_uncompressed_corrupt_payload_byte_returns_mismatch() {
 
 #[test]
 fn verify_asset_checksum_xz_corrupt_stored_crc_returns_mismatch_no_decoder() {
-    // The explicit verifier reads raw bytes — no XzDecoder is invoked, so even an intact compressed
+    // The explicit verifier reads raw bytes; no XzDecoder is invoked, so even an intact compressed
     // payload reports `Mismatch` deterministically when only the stored CRC has been corrupted.
     let (mut bytes, name, _, dir_off, _) =
         make_single_xz_asset_bundle("blob.xz", b"some compressible content");
@@ -1033,7 +1033,7 @@ fn verify_asset_checksum_xz_corrupt_stored_crc_returns_mismatch_no_decoder() {
 
 #[test]
 fn verify_asset_checksum_xz_corrupt_payload_returns_mismatch_no_decoder() {
-    // Verifier is over raw bytes — a payload flip that breaks xz framing still surfaces as
+    // Verifier is over raw bytes; a payload flip that breaks xz framing still surfaces as
     // Mismatch, NOT a decoder error, because the explicit verifier never invokes the decoder.
     let (mut bytes, name, compressed, _, payload_off) =
         make_single_xz_asset_bundle("blob.xz", b"some compressible content");
@@ -1124,7 +1124,7 @@ fn asset_bytes_unverified_uncompressed_returns_corrupted_bytes_no_check() {
     let entry = reader.find_asset_by_name(&name).cloned().unwrap();
     let got = reader.asset_bytes_unverified(&entry).unwrap();
     // The bytes returned are the corrupted bytes; we do not assert exact content, only that the
-    // operation succeeded — the *_unverified contract is that ChecksumError NEVER fires.
+    // operation succeeded; the *_unverified contract is that ChecksumError NEVER fires.
     assert_eq!(got.len(), b"hello world".len());
 }
 
@@ -1147,7 +1147,7 @@ fn asset_bytes_xz_corrupt_stored_crc_returns_checksum_mismatch() {
 
 #[test]
 fn asset_bytes_xz_corrupt_framing_returns_decode_error_not_checksum() {
-    // Payload flip breaks xz framing — the decoder fails before the CRC tee reaches raw EOF, so the
+    // Payload flip breaks xz framing; the decoder fails before the CRC tee reaches raw EOF, so the
     // variant is `BendlReadError::Decode`, not `BendlReadError::Checksum`.
     let (mut bytes, name, compressed, _, payload_off) =
         make_single_xz_asset_bundle("blob.xz", b"some compressible content");
@@ -1354,7 +1354,7 @@ fn crc32c_polynomial_pin_against_known_vectors() {
 }
 
 // =====================================================================
-// Stream CRC32C verification — API surface tests
+// Stream CRC32C verification: API surface tests
 // =====================================================================
 //
 // These tests cover the error cases for unfinalized bundles and unflagged bundles (hand-built
@@ -1501,7 +1501,7 @@ fn verify_stream_checksum_returns_unavailable_when_flag_clear() {
 #[test]
 fn asset_payload_reader_unverified_returns_compressed_bytes_for_xz_asset() {
     // For an xz-flagged asset, `asset_payload_reader_unverified` is the raw on-disk byte
-    // accessor — it must NOT invoke the xz decoder. This is the distinction from
+    // accessor; it must NOT invoke the xz decoder. This is the distinction from
     // `asset_reader_unverified`, which decompresses but skips CRC verification.
     let raw = b"the quick brown fox jumps over the lazy dog".to_vec();
     let (bytes, name, compressed, _, _) = make_single_xz_asset_bundle("xz_blob", &raw);
@@ -1519,7 +1519,7 @@ fn asset_payload_reader_unverified_returns_compressed_bytes_for_xz_asset() {
     assert_ne!(out, raw, "payload reader did NOT decompress");
 
     // For an uncompressed asset, the payload reader and the decoded unverified reader produce the
-    // same bytes — there is no codec to bypass.
+    // same bytes; there is no codec to bypass.
     let (bytes2, name2, _, _) = make_single_asset_bundle("raw_blob", b"plain payload");
     let mut reader2 = BendlReader::open(Cursor::new(bytes2)).unwrap();
     let entry2 = reader2.find_asset_by_name(&name2).cloned().unwrap();
@@ -1737,7 +1737,7 @@ fn asset_payload_reader_unverified_returns_unexpected_eof_when_payload_len_runs_
 #[test]
 fn asset_bytes_returns_unexpected_eof_for_xz_asset_with_overlong_payload_len() {
     // For an xz-flagged asset whose payload_len claims more bytes than the backing file holds, the
-    // surface must be BendlReadError::Io(UnexpectedEof) — not BendlReadError::Decode — because the
+    // surface must be BendlReadError::Io(UnexpectedEof), not BendlReadError::Decode, because the
     // failure is a bundle-layer short range, not a codec failure. Layout the bundle as
     // `[header | directory | compressed_payload | EOF]` so the compressed payload is the last
     // region; otherwise xz would over-read into unrelated trailing bytes and report a corrupt-xz
@@ -1865,11 +1865,11 @@ fn write_all_jsonl_returns_unexpected_eof_when_stream_len_runs_past_eof() {
 fn open_assignment_reader_returns_unexpected_eof_when_banner_falls_in_short_range() {
     // Construction-time variant of the strict-EOF contract: if stream_len is so short that
     // BenStreamReader can't even read its 17-byte banner, the surface must be a bundle-layer
-    // UnexpectedEof — not BendlReadError::DecoderInit. The banner read happens inside
+    // UnexpectedEof, not BendlReadError::DecoderInit. The banner read happens inside
     // `from_ben`/`from_xben`, before any iterator step, so this catches the
     // "codec-reclassification at construction" gap.
     //
-    // Build a bundle whose declared stream_len claims 100 bytes but only provides 4 — fewer than
+    // Build a bundle whose declared stream_len claims 100 bytes but only provides 4, fewer than
     // the 17-byte banner needs.
     let stream_bytes = b"STAN".to_vec();
     let directory = encode_directory(&[]).unwrap();

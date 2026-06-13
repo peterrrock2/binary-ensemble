@@ -2,7 +2,7 @@
 //!
 //! Removal goes through [`remove_assets_in_place`], which drops the directory entries and
 //! reclaims their bytes as one operation, so "removed" means the bytes are actually gone from
-//! the file — and a failure partway leaves the bundle untouched, assets still present. `compact`
+//! the file, and a failure partway leaves the bundle untouched, assets still present. `compact`
 //! is the standalone reclamation form, useful after many appends (each of which leaves a
 //! superseded directory behind).
 

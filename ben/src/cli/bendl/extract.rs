@@ -36,7 +36,7 @@ pub(super) fn run_extract(args: ExtractArgs) -> Result<(), String> {
         io::copy(&mut stream, &mut out).map_err(|e| format!("failed to copy stream bytes: {e}"))?;
         out.flush().map_err(|e| format!("flush failed: {e}"))?;
     } else {
-        // asset is Some — validated by the early return above.
+        // asset is Some, validated by the early return above.
         let name = args.asset.unwrap();
         let entry = reader
             .find_asset_by_name(&name)

@@ -2,7 +2,7 @@
 //!
 //! This module is the pure format layer: it defines the on-disk byte layout, the associated
 //! constants, and the encode/decode helpers that convert between in-memory Rust structs and their
-//! on-disk representation. There is no I/O orchestration here — higher layers (`reader`, `writer`)
+//! on-disk representation. There is no I/O orchestration here; higher layers (`reader`, `writer`)
 //! combine these primitives with seekable files.
 //!
 //! All multi-byte integers in the `.bendl` format are little-endian.
@@ -155,8 +155,8 @@ impl KnownAssetKind {
 
 /// Payload size at and above which the writer compresses an asset by default.
 ///
-/// Below this, the xz container overhead (~60–90 bytes) can exceed the savings — a ~100-byte
-/// `metadata.json` would *grow* under compression — so small payloads stay raw. At or above it,
+/// Below this, the xz container overhead (~60–90 bytes) can exceed the savings (a ~100-byte
+/// `metadata.json` would *grow* under compression), so small payloads stay raw. At or above it,
 /// the JSON/text payloads bundles typically carry (per-plan scores, node maps, provenance)
 /// compress well for negligible CPU. An explicit [`AddAssetOptions::raw`] or
 /// [`AddAssetOptions::compress`] always overrides the default.
@@ -183,7 +183,7 @@ pub const ASSET_FLAG_XZ: u16 = 1 << 1;
 /// When set, the trailing checksum is exactly four little-endian bytes containing a CRC32C
 /// (Castagnoli polynomial) over the **on-disk payload bytes** (`payload_offset..payload_offset +
 /// payload_len`). For an xz-compressed asset the CRC is over the compressed bytes, not the
-/// decompressed content — verification happens before decompression. Library writer paths always
+/// decompressed content, so verification happens before decompression. Library writer paths always
 /// set this flag with `checksum_len == [`ASSET_CHECKSUM_LEN`]`; readers reject any entry where the
 /// flag and `checksum_len` are inconsistent (see [`BendlDirectoryEntry::read_from`]).
 pub const ASSET_FLAG_CHECKSUM: u16 = 1 << 2;
@@ -216,7 +216,7 @@ pub struct BendlHeader {
     pub assignment_format: u8,
     /// Alignment padding after `assignment_format` that keeps the following 8-byte fields at
     /// offset ≥ 24 8-byte aligned. Writers set this to zero; readers ignore non-zero bytes.
-    /// This is not a forward-compat slot — new fields must live elsewhere.
+    /// This is not a forward-compat slot; new fields must live elsewhere.
     pub alignment_padding: u16,
     /// Bundle-level feature flags (32-bit). See `HEADER_FLAG_*` constants. Bits without a defined
     /// constant are reserved; readers must ignore them and writers must set them to zero.
@@ -352,14 +352,14 @@ pub const DIRECTORY_ENTRY_HEADER_SIZE: usize = 28;
 
 /// Upper bound on the number of directory entries a single bundle may declare.
 ///
-/// A real bundle carries only a handful of assets — typically `graph.json`, a node-permutation
-/// map, `metadata.json`, and at most a few small custom blobs — so this ceiling sits far above any
+/// A real bundle carries only a handful of assets (typically `graph.json`, a node-permutation
+/// map, `metadata.json`, and at most a few small custom blobs), so this ceiling sits far above any
 /// legitimate use while keeping the worst-case directory read bounded. The assignment stream is
 /// stored outside the directory and does not count toward this limit, so a large ensemble does not
 /// push against it.
 ///
 /// [`read_directory`] rejects an inflated `entry_count` against this bound **before** allocating,
-/// so a corrupt or adversarial header cannot trigger a multi-gigabyte reservation;
+/// so a corrupt or malicious header cannot trigger a multi-gigabyte reservation;
 /// [`encode_directory`] enforces the same bound on the write side so the library never produces a
 /// bundle it would refuse to read back.
 pub const MAX_DIRECTORY_ENTRIES: u32 = 256;
@@ -501,7 +501,7 @@ pub fn read_directory<R: Read>(
 
     // Reject an inflated count before allocating: `entry_count` is untrusted on-disk data, and
     // `Vec::with_capacity` would otherwise reserve `entry_count * size_of::<BendlDirectoryEntry>()`
-    // bytes up front — a `u32::MAX` count aborts the process on the allocation rather than failing
+    // bytes up front; a `u32::MAX` count aborts the process on the allocation rather than failing
     // gracefully on the missing entry bytes.
     if entry_count > MAX_DIRECTORY_ENTRIES {
         return Err(BendlFormatError::TooManyDirectoryEntries {

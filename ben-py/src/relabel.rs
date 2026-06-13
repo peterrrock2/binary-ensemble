@@ -57,10 +57,10 @@ fn new_to_old_from_map_bytes(map_bytes: &[u8]) -> PyResult<HashMap<usize, usize>
 ///         Must hold a BEN (not XBEN) stream and a ``graph.json``.
 ///     out_file (StrPath): Destination path for the relabeled bundle (``str`` or
 ///         ``os.PathLike``).
-///     sort (SortMethod, optional): The ordering — ``"mlc"``, ``"rcm"``, or ``"key"``.
+///     sort (SortMethod, optional): The ordering: ``"mlc"``, ``"rcm"``, or ``"key"``.
 ///         Default is ``"mlc"``.
-///     key (str | None, optional): Node attribute to sort by; required with — and only valid
-///         with — ``sort="key"``. Default is ``None``.
+///     key (str | None, optional): Node attribute to sort by; required with (and only valid
+///         with) ``sort="key"``. Default is ``None``.
 ///     overwrite (bool, optional): Replace ``out_file`` if it already exists. Default is
 ///         ``False``.
 ///

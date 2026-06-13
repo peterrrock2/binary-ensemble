@@ -80,7 +80,7 @@ pub fn encode_ben_to_xben(
 ///     out_file (StrPath): Path to write the ``.ben`` output (``str`` or ``os.PathLike``).
 ///     overwrite (bool, optional): Replace ``out_file`` if it already exists. Default is
 ///         ``False``.
-///     variant (Variant, optional): BEN encoding variant — ``"standard"``, ``"mkv_chain"``,
+///     variant (Variant, optional): BEN encoding variant: ``"standard"``, ``"mkv_chain"``,
 ///         or ``"twodelta"``. Default is ``"twodelta"``.
 ///
 /// Raises:
@@ -128,7 +128,7 @@ pub fn encode_jsonl_to_ben(
 ///     out_file (StrPath): Path to write the ``.xben`` output (``str`` or ``os.PathLike``).
 ///     overwrite (bool, optional): Replace ``out_file`` if it already exists. Default is
 ///         ``False``.
-///     variant (Variant, optional): BEN encoding variant — ``"standard"``, ``"mkv_chain"``,
+///     variant (Variant, optional): BEN encoding variant: ``"standard"``, ``"mkv_chain"``,
 ///         or ``"twodelta"``. Default is ``"twodelta"``.
 ///     n_threads (int | None, optional): Number of worker threads. Default is ``None``
 ///         which uses all available cores.

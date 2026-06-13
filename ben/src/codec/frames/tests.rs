@@ -206,7 +206,7 @@ fn ben_decode_twodelta_inconsistent_n_bytes_errors() {
 #[test]
 fn ben_decode_oversized_n_bytes_rejected_before_allocating() {
     // Headers declaring an absurd payload length must be rejected before the payload buffer is
-    // allocated — no payload bytes are supplied here, so reaching the allocation would surface as
+    // allocated; no payload bytes are supplied here, so reaching the allocation would surface as
     // an UnexpectedEof (or worse, an OOM under fuzzing) instead of the cap's InvalidData.
     let oversized = u32::MAX.to_be_bytes();
 

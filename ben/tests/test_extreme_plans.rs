@@ -1,7 +1,7 @@
 //! Round-trip coverage for an extreme-but-legal plan shape at realistic scale: a 770,000-node
 //! dual graph split into two districts, one of which holds a single node.
 //!
-//! This geometry stresses every run-length limit at once — the lone node leaves monochrome
+//! This geometry stresses every run-length limit at once: the lone node leaves monochrome
 //! stretches of ~385k+ nodes, far beyond the `u16` run limit, so layer-1 RLE must split runs in
 //! every BEN frame, the BEN32 body must split its 4-byte runs, and every TwoDelta transition's
 //! pair projection spans all positions, forcing the long-run snapshot fallback on each move.

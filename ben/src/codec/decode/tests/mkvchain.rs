@@ -124,7 +124,7 @@ fn decode_ben_to_jsonl_empty_stream_produces_no_output() {
     assert!(out.is_empty());
 }
 
-// ─── decode_xben_to_jsonl — byte-level ben32 bodies ───────────────────
+// ─── decode_xben_to_jsonl: byte-level ben32 bodies ───────────────────
 
 #[test]
 fn decode_xben_to_jsonl_ben32_mkvchain_count_one() {
@@ -288,7 +288,7 @@ fn decode_xben_to_ben_rejects_mkvchain_zero_count_frame() {
     assert!(err.to_string().contains("count"));
 }
 
-// ─── decode_ben_to_jsonl — byte-level frame encoding counterparts ────── These mirror the Standard
+// ─── decode_ben_to_jsonl: byte-level frame encoding counterparts ────── These mirror the Standard
 // tests in standard.rs exactly, differing only in the MKVCHAIN banner and the trailing u16 BE count
 // field appended to each frame.
 
@@ -474,7 +474,7 @@ fn decode_ben_to_jsonl_single_one() {
 
 #[test]
 fn decode_ben_to_jsonl_three_frames() {
-    // Three distinct frames, each count=1 — mirrors test_decode_ben_multiple_simple_lines.
+    // Three distinct frames, each count=1; mirrors test_decode_ben_multiple_simple_lines.
     let mut ben = b"MKVCHAIN BEN FILE".to_vec();
     // Frame 1: rle [(1,4),(2,4),(3,4),(4,4)]
     ben.extend_from_slice(&[3, 3, 0, 0, 0, 3, 0b001100_01, 0b0100_0111, 0b00_100100]);
@@ -545,7 +545,7 @@ fn decode_ben_to_jsonl_three_frames() {
     assert_eq!(out, expected.as_bytes());
 }
 
-// ─── decode_xben_to_jsonl — more byte-level counterparts ─────────────── Each Standard ben32
+// ─── decode_xben_to_jsonl: more byte-level counterparts ─────────────── Each Standard ben32
 // record has [pairs...][0,0,0,0] terminator. Each MkvChain ben32 record appends a u16 BE count
 // after the terminator.
 
@@ -640,7 +640,7 @@ fn decode_xben_to_jsonl_ben32_single_element() {
 
 #[test]
 fn decode_xben_to_jsonl_ben32_three_frames() {
-    // Three ben32 records with count=1 each — mirrors test_decode_ben32_multiple_simple_lines.
+    // Three ben32 records with count=1 each; mirrors test_decode_ben32_multiple_simple_lines.
     let mut body: Vec<u8> = Vec::new();
     // Record 1: rle [(1,4),(2,4),(3,4),(4,4)]
     body.extend_from_slice(&[0, 1, 0, 4, 0, 2, 0, 4, 0, 3, 0, 4, 0, 4, 0, 4, 0, 0, 0, 0]);

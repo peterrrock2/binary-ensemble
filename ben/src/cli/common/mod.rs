@@ -15,10 +15,6 @@ static QUIET: AtomicBool = AtomicBool::new(false);
 /// # Arguments
 ///
 /// * `verbose` - Whether verbose trace logging should be enabled by default.
-///
-/// # Returns
-///
-/// This function does not return a value.
 pub fn set_verbose(verbose: bool) {
     if verbose && std::env::var_os("RUST_LOG").is_none() {
         std::env::set_var("RUST_LOG", "trace");
@@ -34,10 +30,6 @@ pub fn set_verbose(verbose: bool) {
 /// # Arguments
 ///
 /// * `quiet` - When `true`, [`crate::progress::Spinner`] becomes a no-op.
-///
-/// # Returns
-///
-/// This function does not return a value.
 pub fn set_quiet(quiet: bool) {
     QUIET.store(quiet, Ordering::Relaxed);
 }

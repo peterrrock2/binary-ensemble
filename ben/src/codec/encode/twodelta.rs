@@ -7,8 +7,8 @@ use std::io::{Error, ErrorKind, Result};
 /// caller-supplied hints to accelerate encoding.
 ///
 /// This single-frame builder is **strict**: it errors on any transition that is not a clean 2-swap
-/// (see [`EncodeError::TwoDeltaTooManyIds`]). Stream-level generality — falling back to a snapshot
-/// frame for multi-district or new-district transitions — is provided by the writer's transition
+/// (see [`EncodeError::TwoDeltaTooManyIds`]). Stream-level generality (falling back to a snapshot
+/// frame for multi-district or new-district transitions) is provided by the writer's transition
 /// classifier, not by this builder.
 ///
 /// # Arguments
@@ -38,7 +38,7 @@ use std::io::{Error, ErrorKind, Result};
 /// Two optional hints can be provided to avoid scanning the full assignment vector:
 ///
 /// - `delta_pair`: The caller asserts that exactly this pair of ids is involved in the transition.
-///   Must be provided together with `previous_masks`. The pair must have two distinct ids — passing
+///   Must be provided together with `previous_masks`. The pair must have two distinct ids; passing
 ///   `(x, x)` is an error.
 ///
 /// - `previous_masks`: A mutable map from district id to the sorted list of positions it occupies
@@ -48,7 +48,7 @@ use std::io::{Error, ErrorKind, Result};
 ///   pair; a missing or empty entry is an error.
 ///
 /// The hints are not independent: `delta_pair` requires `previous_masks`. Providing
-/// `previous_masks` without `delta_pair` is allowed — the function will infer the pair from the
+/// `previous_masks` without `delta_pair` is allowed; the function will infer the pair from the
 /// first differing position and then use the previous_masks from there.
 ///
 /// When no hints are provided the function falls back to a full scan of both assignment vectors.
@@ -110,7 +110,7 @@ pub(crate) fn encode_twodelta_frame_with_hint(
 }
 
 /// A district pair ordered so that the first element is the district occupying the **first pair
-/// position in the current assignment** — i.e. the district whose run is emitted first.
+/// position in the current assignment**, i.e. the district whose run is emitted first.
 ///
 /// This ordering is not mere numeric or positional sorting of the two ids; it is the
 /// round-trip-determinism invariant TwoDelta depends on. The decoder replays the alternating runs
@@ -269,7 +269,7 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
     let (mut i, mut j) = (0usize, 0usize);
     // The first-run district is guaranteed to equal current[first_pair_pos] by
     // validate_masks_and_order_pairs_for_twodelta, so the first iteration always hits the
-    // `new_val == active_district` branch and increments the run length — no special-case
+    // `new_val == active_district` branch and increments the run length, with no special-case
     // initialization needed.
     let mut active_district = pair.first_run_district();
     let mut active_run_length = 0u16;
@@ -332,7 +332,7 @@ fn construct_twodelta_frame_from_pair_and_mask_hints(
     }
     run_lengths.push(active_run_length);
 
-    // Special error that signals that we can reuse the last TwoDelta frame
+    // Signals the last TwoDelta frame can be reused.
     if !saw_changed_assignment_position {
         return Err(Error::from(EncodeError::TwoDeltaIdentical));
     }

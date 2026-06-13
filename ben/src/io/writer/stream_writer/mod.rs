@@ -1,4 +1,4 @@
-//! Unified writer for the BEN-stack stream layer (layer 3 — see `docs/glossary.md`).
+//! Unified writer for the BEN-stack stream layer (layer 3, see `docs/glossary.md`).
 //!
 //! Hides the wire-format choice (BEN bit-packed vs ben32 / XBEN columnar) and the transport choice
 //! (plain vs xz-compressed) behind one type.
@@ -30,7 +30,7 @@ pub use crate::io::reader::BenWireFormat;
 use ben::BenState;
 use xben::XBenInner;
 
-/// Writer for an encoded BEN-stack stream of samples (layer 3 — see `docs/glossary.md`).
+/// Writer for an encoded BEN-stack stream of samples (layer 3, see `docs/glossary.md`).
 ///
 /// Construct with [`BenStreamWriter::for_ben`] for plain BEN or [`BenStreamWriter::for_xben`] for
 /// XBEN. `write_assignment` is available on both arms; `write_frame` is plain-BEN-only and
@@ -38,7 +38,7 @@ use xben::XBenInner;
 /// `InvalidInput`.
 pub struct BenStreamWriter<W: Write> {
     /// Wrapped in `Option` so [`Self::finish_into_inner`] can `take()` it without partial-moving
-    /// out of a `Drop` type. All other access sites unwrap with `.expect("inner present")` — only
+    /// out of a `Drop` type. All other access sites unwrap with `.expect("inner present")`; only
     /// the consuming `finish_into_inner` ever leaves it `None`.
     inner: Option<BenStreamInner<W>>,
     state: WriterState,
@@ -63,7 +63,7 @@ enum BenStreamInner<W: Write> {
 impl<W: Write> BenStreamWriter<W> {
     /// Open a plain-BEN writer. Emits the BEN banner immediately.
     ///
-    /// On error, the underlying `writer` is dropped — no partial `BenStreamWriter` is returned. The
+    /// On error, the underlying `writer` is dropped; no partial `BenStreamWriter` is returned. The
     /// caller treats the output as failed and discards.
     pub fn for_ben(mut writer: W, variant: BenVariant) -> io::Result<Self> {
         writer.write_all(banner_for_variant(variant))?;

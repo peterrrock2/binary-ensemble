@@ -645,7 +645,7 @@ fn encode_ben_vec_from_assign_single_element() {
 fn encode_ben_vec_from_assign_all_same() {
     let assign = vec![7u16; 500];
     let frame = BenEncodeFrame::from_assignment(&assign, BenVariant::Standard, None).unwrap();
-    // Should encode efficiently — the payload compresses a single run.
+    // Should encode efficiently; the payload compresses a single run.
     assert!(!frame.as_slice().is_empty());
 }
 
@@ -1698,7 +1698,7 @@ fn graph_invalid_link_id_errors() {
 
 #[test]
 fn sort_by_ordering_large_graph_multilevel_verifies_permutation() {
-    // 30-node ring — large enough that greedy_cluster_partition produces multiple clusters and the
+    // 30-node ring, large enough that greedy_cluster_partition produces multiple clusters and the
     // coarse graph recursion fires
     let graph_json = make_ring_graph_json(30);
     let mut output = Vec::new();

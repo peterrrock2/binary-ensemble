@@ -1,8 +1,8 @@
 //! `.bendl` file authoring bindings: [`PyBendlEncoder`] and its [`PyBendlStreamSession`].
 //!
-//! The encoder threads the bundle through the library's typestate machinery — `BendlWriter`
-//! (assets) → `BendlStreamSession` (stream) → `BendlWriter::finish` (finalize) — for the create
-//! path, and reopens a `BendlAppender` per asset for post-stream / append-mode adds. The state enum
+//! For the create path, the encoder threads the bundle through the library's typestate machinery:
+//! `BendlWriter` (assets) → `BendlStreamSession` (stream) → `BendlWriter::finish` (finalize). It
+//! reopens a `BendlAppender` per asset for post-stream / append-mode adds. The state enum
 //! below tracks which phase the encoder is in so a second `stream()` is refused and so `add_*`
 //! routes through the writer pre-stream and the appender afterwards.
 
@@ -178,7 +178,7 @@ impl PyBendlEncoder {
 
     /// Add a custom asset (asset type ``CUSTOM``).
     ///
-    /// Payloads are stored verbatim with a CRC32C integrity checksum, so any bytes round-trip —
+    /// Payloads are stored verbatim with a CRC32C integrity checksum, so any bytes round-trip,
     /// including binary blobs such as zipped shapefiles or GeoPackages. Payloads at or above 1
     /// KiB are xz-compressed on disk by default (transparent on read); already-compressed blobs
     /// gain little from this but are not harmed by it.
@@ -231,13 +231,13 @@ impl PyBendlEncoder {
     /// Remove a named asset from a finalized bundle's directory.
     ///
     /// Available wherever ``add_asset`` commits immediately: append mode, or create mode after
-    /// the stream has closed. Only the directory entry is dropped — the payload bytes remain in
+    /// the stream has closed. Only the directory entry is dropped; the payload bytes remain in
     /// the file as unreferenced dead space until the next whole-bundle rewrite (e.g.
     /// :func:`binary_ensemble.bundle.compress_stream` or
     /// :func:`binary_ensemble.bundle.relabel_bundle`) compacts them. The name (and any
     /// singleton-type claim, e.g. ``metadata.json``) becomes free again, so remove-then-add is
     /// the way to replace an asset's payload (for canonical assets, re-add through the typed
-    /// methods — a custom asset under a standardized name is refused).
+    /// methods; a custom asset under a standardized name is refused).
     ///
     /// Args:
     ///     name (str): The asset's name, as listed by
@@ -264,7 +264,7 @@ impl PyBendlEncoder {
     ///
     /// Available wherever ``add_asset`` commits immediately: append mode, or create mode after
     /// the stream has closed. The directory drop and the compaction commit together, so there is
-    /// never a published state in which the asset is unreferenced but its bytes remain — and on
+    /// never a published state in which the asset is unreferenced but its bytes remain, and on
     /// any error the bundle is left untouched, the asset still present. This is what
     /// :meth:`binary_ensemble.bundle.BendlEncoder.remove_asset` calls; ``remove_asset`` here is
     /// the raw directory-only form.
@@ -442,7 +442,7 @@ impl PyBendlEncoder {
     /// compression).
     ///
     /// Args:
-    ///     variant (Variant, optional): BEN encoding variant — ``"standard"``,
+    ///     variant (Variant, optional): BEN encoding variant: ``"standard"``,
     ///         ``"mkv_chain"``, or ``"twodelta"``. Default is ``"twodelta"``.
     ///
     /// Returns:

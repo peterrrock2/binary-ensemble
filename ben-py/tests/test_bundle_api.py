@@ -206,7 +206,7 @@ def test_add_asset_file_content_type_reads_paths(tmp_path: Path) -> None:
     src.write_bytes(blob)
 
     enc = BendlEncoder(tmp_path / "p.bendl", overwrite=True)
-    # Under content_type="file", a plain str payload *is* a path — the explicit opt-in that
+    # Under content_type="file", a plain str payload *is* a path, the explicit opt-in that
     # resolves the str-is-content default of every other content type.
     enc.add_asset("from_str_path.gpkg", str(src), content_type="file")
     enc.add_asset("from_pathlib.gpkg", src, content_type="file")
@@ -222,8 +222,8 @@ def test_add_asset_file_content_type_reads_paths(tmp_path: Path) -> None:
 
 
 def test_binary_asset_round_trips_arbitrary_bytes(tmp_path: Path) -> None:
-    # A blob that is deliberately not valid UTF-8 and not JSON — the shape of a zipped
-    # shapefile or GeoPackage — must round-trip byte-exactly under CRC protection.
+    # A blob that is deliberately not valid UTF-8 and not JSON (the shape of a zipped
+    # shapefile or GeoPackage) must round-trip byte-exactly under CRC protection.
     blob = bytes(range(256)) * 5
     enc = BendlEncoder(tmp_path / "blob.bendl", overwrite=True)
     enc.add_asset("tracts.gpkg", blob, content_type="binary")
@@ -334,7 +334,7 @@ def test_duplicate_graph_raises(tmp_path: Path) -> None:
 
 def test_stream_takes_no_positional_arguments(tmp_path: Path) -> None:
     # The embedded stream is always BEN at write time (XBEN comes from compress_stream), so
-    # stream() has no format parameter and variant is keyword-only — a stale positional call
+    # stream() has no format parameter and variant is keyword-only; a stale positional call
     # must fail loudly, not bind to variant.
     enc = BendlEncoder(tmp_path / "fmt.bendl", overwrite=True)
     with pytest.raises(TypeError):
@@ -606,7 +606,7 @@ def test_failed_stream_finalize_poisons_the_encoder(tmp_path: Path) -> None:
     """A finalize that fails (EFBIG from RLIMIT_FSIZE while flushing the stream tail and
     directory) must poison the encoder. The failure used to leave the state machine stuck in
     'streaming': a retried close() silently returned success on an unfinalized bundle, and
-    add_asset advised 'close it before adding assets' — advice that did nothing."""
+    add_asset advised 'close it before adding assets', advice that did nothing."""
     import resource
     import signal
 
@@ -642,9 +642,9 @@ def test_failed_stream_finalize_poisons_the_encoder(tmp_path: Path) -> None:
 
 def test_decoder_refuses_file_replaced_under_it(tmp_path: Path) -> None:
     """A decoder is a snapshot: after an in-place transform swaps a rewritten file over the
-    path, every data read must refuse. The old behavior was split-brain — asset reads and
+    path, every data read must refuse. The old behavior was split-brain: asset reads and
     verify() served the OLD file through the held handle (verify passed, read_graph returned
-    the just-replaced graph) while iteration reopened the NEW file at stale offsets — which
+    the just-replaced graph) while iteration reopened the NEW file at stale offsets, which
     could silently pair the old graph with relabeled assignments."""
     from binary_ensemble.bundle import relabel_bundle
 
@@ -699,7 +699,7 @@ def test_decoder_refuses_after_append(tmp_path: Path) -> None:
 def test_generic_add_asset_refuses_canonical_names(tmp_path: Path) -> None:
     """A custom asset stored under a standardized name would be invisible to the type-keyed
     readers (read_metadata() returned None while asset_names() listed 'metadata.json' and
-    verify() passed) — the silent failure mode of doing the replace flow through the generic
+    verify() passed), the silent failure mode of doing the replace flow through the generic
     add_asset. The writer now refuses with guidance, and the typed re-add works."""
     path = tmp_path / "reserved.bendl"
     with BendlEncoder(path, overwrite=True) as enc:
@@ -723,7 +723,7 @@ def test_generic_add_asset_refuses_canonical_names(tmp_path: Path) -> None:
 
 def test_invalid_content_type_does_not_consume_the_payload(tmp_path: Path) -> None:
     """The content_type is validated before the payload is coerced, so a typo'd content_type
-    cannot drain a file-like payload (or read a path from disk) on its way to the error — a
+    cannot drain a file-like payload (or read a path from disk) on its way to the error, a
     caller that catches and retries with the right content_type still has its data."""
     import io
 

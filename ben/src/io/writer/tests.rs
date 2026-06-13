@@ -547,7 +547,7 @@ fn writer_twodelta_anchor_count_overflow_u16max() {
     // Use 3 distinct values to exercise the `continue` skip in twodelta_repeat_buffered_frame for
     // values outside the picked pair.
     let assign = vec![1u16, 2, 3, 1, 2];
-    let n = u16::MAX as usize + 2; // 65537 — triggers the overflow branch
+    let n = u16::MAX as usize + 2; // 65537, triggers the overflow branch
 
     let mut xben = Vec::new();
     {
@@ -1022,7 +1022,7 @@ fn ben_write_frame_then_write_assignment_mixed_mkv() {
 #[test]
 fn ben_write_frame_zero_count_is_noop_and_does_not_flush() {
     // write_assignment(a); write_frame(b, 0); write_assignment(a) should act like two adjacent
-    // write_assignment(a) calls — no inserted frame boundary.
+    // write_assignment(a) calls; no inserted frame boundary.
     let a = vec![1u16, 2, 3];
     let b = vec![4u16, 5, 6];
 
@@ -1290,7 +1290,7 @@ fn for_xben_top_level_constructor_round_trips_per_variant() {
 
 #[test]
 fn writer_variant_and_wire_format_accessors_reflect_construction() {
-    // The variant() and wire_format() accessors are zero-cost getters but easy to regress —
+    // The variant() and wire_format() accessors are zero-cost getters but easy to regress;
     // a future refactor that adds a third inner variant must keep these in sync. Pin both.
     for variant in [
         BenVariant::Standard,

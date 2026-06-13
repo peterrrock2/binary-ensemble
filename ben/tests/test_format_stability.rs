@@ -6,7 +6,7 @@
 //!
 //! Committed fixtures are a permanent compatibility contract: they MUST continue to decode cleanly
 //! in every future v1.x release of the library. The `generate_format_stability_fixtures` regen test
-//! at the bottom of this file is marked `#[ignore]` precisely so it is never run by accident — if
+//! at the bottom of this file is marked `#[ignore]` precisely so it is never run by accident; if
 //! the wire format ever needs to change, add a new `tests/fixtures/v<n>/` directory and a parallel
 //! generator, but never overwrite an older one. See `docs/format-stability.md`.
 //!
@@ -257,7 +257,7 @@ fn unknown_flags_bendl_v1_0_0_opens_and_decodes_cleanly() {
 // =====================================================================
 //
 // IMPORTANT: this is intentionally `#[ignore]`. Once v1.0.0 fixtures are committed, they MUST NOT
-// be regenerated in place — see `docs/format-stability.md`. If a future format change requires
+// be regenerated in place; see `docs/format-stability.md`. If a future format change requires
 // new fixtures, add a `tests/fixtures/v<n>/` directory and a parallel generator; never overwrite
 // an older directory.
 
@@ -438,7 +438,7 @@ fn generate_format_stability_fixtures() {
 }
 
 /// The canonical assignments rendered in PCompress's zero-based line format (one JSON array per
-/// line) — the input the foreign `pcompress` encoder consumes. District ids are CANONICAL_JSONL's
+/// line), the input the foreign `pcompress` encoder consumes. District ids are CANONICAL_JSONL's
 /// minus one, so the pcben bridge's one-based shift converts the fixture back to CANONICAL_JSONL
 /// exactly.
 const CANONICAL_PCOMPRESS_INPUT: &str = "\

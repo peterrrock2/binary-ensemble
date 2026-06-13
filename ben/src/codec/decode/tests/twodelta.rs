@@ -64,7 +64,7 @@ fn apply_runs_full_reversal() {
 
 #[test]
 fn apply_runs_exhausted_before_all_positions_covered_errors() {
-    // prev: [1,2,1], pair=(1,2), run_lengths=[1] — too short After consuming run 0 (1 position with
+    // prev: [1,2,1], pair=(1,2), run_lengths=[1], too short. After consuming run 0 (1 position with
     // value 1), run 1 missing → error
     let prev = vec![1u16, 2, 1];
     let err = apply_twodelta_runs_to_assignment(prev, (1, 2), &[1]).unwrap_err();
@@ -216,7 +216,7 @@ fn decode_ben_to_jsonl_twodelta_multiple_repeated_deltas() {
     assert_eq!(out, expected.as_bytes());
 }
 
-// ─── decode_ben_to_jsonl — byte-level anchor frame counterparts ──────── The TwoDelta first frame
+// ─── decode_ben_to_jsonl: byte-level anchor frame counterparts ──────── The TwoDelta first frame
 // (anchor) is encoded in MkvChain format. These tests mirror every byte-level Standard / MkvChain
 // decode_ben_to_jsonl test using the TWODELTA banner and the same bit-packed frame bytes, verifying
 // that the anchor path decodes the same payload correctly regardless of variant.

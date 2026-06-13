@@ -1,7 +1,7 @@
 //! Test helpers shared across unit and integration tests.
 //!
-//! This module is always-compiled (not `#[cfg(test)]`) so integration tests in `ben/tests/` — which
-//! are separate crates — can reuse the same helpers as unit tests inside `ben/src/.../tests.rs`. It
+//! This module is always-compiled (not `#[cfg(test)]`) so integration tests in `ben/tests/` (which
+//! are separate crates) can reuse the same helpers as unit tests inside `ben/src/.../tests.rs`. It
 //! is `#[doc(hidden)]` and is not part of the stable public API.
 
 use std::io::{Cursor, Write};

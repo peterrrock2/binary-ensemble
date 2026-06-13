@@ -157,7 +157,7 @@ mod mkvchain {
 
     #[test]
     fn alternating_assignments_each_have_count_one() {
-        // A,B,A,B,A — no adjacent pair is identical, so every frame has count=1.
+        // A,B,A,B,A: no adjacent pair is identical, so every frame has count=1.
         let a = vec![1u16, 2, 3];
         let b = vec![3u16, 2, 1];
         let assignments: Vec<Vec<u16>> = (0..5)

@@ -1,10 +1,10 @@
 """Static typing assertions for the public ben-py surface.
 
-This is not a pytest module — the type checkers check it (via ``task typecheck-python``) and
+This is not a pytest module: the type checkers check it (via ``task typecheck-python``) and
 fail if the public signatures regress. Positive assertions use :func:`typing.assert_type`;
 negative assertions are calls that *must not* type-check, suppressed with bare
 ``# type: ignore`` comments (both ty and pyright honor those) and kept honest by pyright's
-``reportUnnecessaryTypeIgnoreComment`` — if the call ever becomes legal, the now-unused ignore
+``reportUnnecessaryTypeIgnoreComment``; if the call ever becomes legal, the now-unused ignore
 fails the check.
 
 Nothing here executes; the module exists purely for static analysis.
@@ -63,7 +63,7 @@ def bundle_encoder_surface(tmp: Path) -> None:
     BendlEncoder.append(tmp / "out.bendl").remove_asset("notes.txt")
 
     # stream() has no format parameter, and variant is keyword-only with a literal "twodelta"
-    # default — None is not a legal stand-in for it.
+    # default; None is not a legal stand-in for it.
     enc.stream("ben")  # type: ignore
     enc.stream(variant="xben")  # type: ignore
     enc.stream(variant=None)  # type: ignore

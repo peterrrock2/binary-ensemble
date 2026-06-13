@@ -379,7 +379,7 @@ fn xz_compress_propagates_input_reader_errors() {
 fn xz_compress_propagates_output_writer_errors_at_finish() {
     // A writer that swallows nothing during streaming but fails once the encoder flushes its
     // final block. xz buffers small inputs internally, so the only write the sink ever sees is
-    // the finish-time flush — exactly the failure a `drop(encoder)` would silently discard.
+    // the finish-time flush, exactly the failure a `drop(encoder)` would silently discard.
     struct FailingWriter;
     impl Write for FailingWriter {
         fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
@@ -814,7 +814,7 @@ fn assert_bendl_bytes_do_not_panic(bytes: impl Into<Vec<u8>>) {
         // verify_all_asset_checksums short-circuits on first mismatch; bounded by directory size.
         let _ = reader.verify_all_asset_checksums();
 
-        // Stream accessors. The verified raw path may surface ChecksumError; that's fine — we
+        // Stream accessors. The verified raw path may surface ChecksumError; that's fine, we
         // only care about absence of panics.
         if let Ok(mut r) = reader.assignment_stream_reader() {
             let mut buf = [0u8; 1024];
@@ -865,7 +865,7 @@ fn seeded_malformed_bendl_bytes_do_not_panic() {
     }
 
     // Single-byte XOR mutations everywhere. This covers every byte of the header, directory, and
-    // payload regions — the same coverage pattern the BEN/XBEN fuzz tests use.
+    // payload regions, the same coverage pattern the BEN/XBEN fuzz tests use.
     for idx in 0..seed.len() {
         let mut mutated = seed.clone();
         mutated[idx] ^= 0xA5;
@@ -912,7 +912,7 @@ fn seeded_malformed_bendl_bytes_do_not_panic() {
     let entry_count = BendlBytes::new(seed.clone()).entry_count();
     assert!(entry_count > 0, "valid_bendl_seed must contain entries");
 
-    // entry_count inflation (capped to keep test runtime bounded — the reader must not try to
+    // entry_count inflation (capped to keep test runtime bounded; the reader must not try to
     // pre-allocate a Vec with u32::MAX capacity, but we don't want to find out the hard way here).
     assert_bendl_bytes_do_not_panic(
         BendlBytes::new(seed.clone()).with_entry_count(ADVERSARIAL_LEN_CAP),
@@ -1014,7 +1014,7 @@ fn bendl_open_rejects_name_len_longer_than_remaining_directory_bytes() {
 #[test]
 fn bendl_unknown_header_flag_bits_are_ignored() {
     // Forward-compat contract: bits 1..31 of `flags` are reserved. Setting them on a finalized
-    // bundle must not change anything observable — open succeeds, directory entries are intact,
+    // bundle must not change anything observable: open succeeds, directory entries are intact,
     // verify_stream_checksum passes, asset access works.
     let seed = BendlBytes::new(valid_bendl_seed());
     let original_flags = seed.header_u64(HeaderField::Flags) as u32;
@@ -1034,7 +1034,7 @@ fn bendl_unknown_header_flag_bits_are_ignored() {
         "all three seed assets must be present"
     );
 
-    // Stream CRC must still pass — the verifier doesn't inspect reserved bits.
+    // Stream CRC must still pass; the verifier doesn't inspect reserved bits.
     reader
         .verify_stream_checksum()
         .expect("stream CRC must still verify with unknown flag bits set");
@@ -1054,7 +1054,7 @@ fn bendl_unknown_header_flag_bits_are_ignored() {
 fn bendl_clear_stream_checksum_flag_with_nonzero_bytes_returns_unavailable_not_mismatch() {
     // Plan-mandated contract: when HEADER_FLAG_STREAM_CHECKSUM is clear, verified stream APIs
     // must return Unavailable regardless of what's in bytes 20..24. Pin this by clearing the flag
-    // but leaving non-zero garbage in the stream_checksum slot — a buggy reader that interpreted
+    // but leaving non-zero garbage in the stream_checksum slot, a buggy reader that interpreted
     // bytes 20..24 unconditionally would return Mismatch (since the garbage would not match the
     // actual CRC).
     let seed = BendlBytes::new(valid_bendl_seed());
@@ -1108,7 +1108,7 @@ fn bendl_nonzero_alignment_padding_is_ignored() {
 #[test]
 fn bendl_stream_offset_plus_stream_len_overflow_surfaces_short_range() {
     // stream_offset + stream_len overflows u64. BendlReader::open does not validate stream range
-    // (intentional — keeps metadata inspection cheap), so open succeeds. Each accessor must
+    // (intentional, keeps metadata inspection cheap), so open succeeds. Each accessor must
     // surface the strict-EOF contract: the verified raw stream reader returns UnexpectedEof from
     // read; verify_stream_checksum returns BendlReadError::Io(UnexpectedEof);
     // open_assignment_reader either fails at construction or surfaces UnexpectedEof during
@@ -1164,7 +1164,7 @@ fn bendl_stream_offset_plus_stream_len_overflow_surfaces_short_range() {
 
 #[test]
 fn bendl_stream_offset_past_eof_surfaces_short_range() {
-    // stream_offset alone points past EOF. Same surface contract as the overflow case — open
+    // stream_offset alone points past EOF. Same surface contract as the overflow case: open
     // succeeds; every stream accessor reports UnexpectedEof on read.
     let seed = valid_bendl_seed();
     let past_eof = seed.len() as u64 + 4096;

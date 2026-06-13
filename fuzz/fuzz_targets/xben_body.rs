@@ -2,7 +2,7 @@
 //!
 //! Fuzzing the raw `.xben` container mostly exercises the xz layer, whose integrity checks
 //! reject mutants before the BEN32/TwoDelta parsers run. This target re-wraps the fuzz input in
-//! a fresh, valid xz container so corruption lands directly on the inner parsers — the same
+//! a fresh, valid xz container so corruption lands directly on the inner parsers; the same
 //! trick as the deterministic harness's recompressed-body sweeps, but coverage-guided.
 
 //! Full-drain entry points (`decode_xben_to_jsonl`/`decode_xben_to_ben`) are deliberately

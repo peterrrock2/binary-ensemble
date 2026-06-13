@@ -1,11 +1,11 @@
 """Tests for the ``_core`` bundle-compaction machinery (dead-space reclamation).
 
 Compaction must be *semantically invisible*: same stream bytes, same decoded asset payloads,
-same metadata, same wire format — just no unreferenced byte ranges (left behind by
+same metadata, same wire format, just no unreferenced byte ranges (left behind by
 directory-only removals and superseded directories). These tests pin both halves: the space
-actually comes back, and nothing else changes. The public facade has no standalone compact —
+actually comes back, and nothing else changes. The public facade has no standalone compact;
 the facade transforms (``remove_asset``, ``compress_stream``, ``relabel_bundle``) emit
-compact bundles themselves, while appends leave a small superseded directory behind — so the
+compact bundles themselves, while appends leave a small superseded directory behind, so the
 machinery is exercised through ``_core``, which also reports which strategy ran
 (``"none"`` / ``"tail"`` / ``"full"``).
 """
@@ -32,7 +32,7 @@ def _build_bundle_with_dead_space(path: Path) -> tuple[list[list[int]], int]:
     """A finalized bundle that has been appended to and had a large asset removed.
 
     Returns ``(samples, live_size)`` where ``live_size`` is the file size before the bloating
-    asset was added — an upper bound on what a compacted file may occupy (compaction also drops
+    asset was added, an upper bound on what a compacted file may occupy (compaction also drops
     the superseded directories the appends left behind).
     """
     n = _n()
@@ -46,7 +46,7 @@ def _build_bundle_with_dead_space(path: Path) -> tuple[list[list[int]], int]:
     enc.add_asset("notes.txt", "keep me", content_type="text")
     live_size = path.stat().st_size
 
-    # Bloat: a genuinely incompressible 64 KiB blob (seeded random bytes — a periodic pattern
+    # Bloat: a genuinely incompressible 64 KiB blob (seeded random bytes; a periodic pattern
     # would be crushed by the xz storage compression and leave no dead space), removed through
     # the *core* binding, whose removal is directory-only (the facade's remove_asset compacts
     # automatically, which would destroy the dead space these tests exist to exercise).
@@ -203,7 +203,7 @@ def test_compact_rejects_unfinalized_bundle(tmp_path: Path) -> None:
 def test_full_compact_refuses_corrupt_stream(tmp_path: Path) -> None:
     path = tmp_path / "in.bendl"
     _build_bundle_with_dead_space(path)
-    # Flip a byte inside the stream region (the stream's banner — the default variant is
+    # Flip a byte inside the stream region (the stream's banner; the default variant is
     # twodelta). The full rewrite copies the stream through the verified reader, so it must
     # refuse and must not leave a destination file behind.
     _flip_byte_at(path, b"TWODELTA BEN FILE")
@@ -217,7 +217,7 @@ def test_full_compact_refuses_corrupt_stream(tmp_path: Path) -> None:
     assert list(tmp_path.glob("*.tmp")) == []  # and no stray temp files either
 
     # The in-place form takes the tail-rewrite fast path here (all dead space is post-stream),
-    # which by design never reads the stream — so it succeeds, the corruption travels along
+    # which by design never reads the stream, so it succeeds, the corruption travels along
     # unread, and verify() is what catches it. This is the documented trade-off that makes
     # removal O(tail) instead of O(stream) on huge bundles.
     _core.compact_bundle_in_place(path)
@@ -277,7 +277,7 @@ def test_facade_remove_asset_leaves_bundle_fully_compact(tmp_path: Path) -> None
 
 def test_facade_remove_asset_failure_leaves_bundle_untouched(tmp_path: Path) -> None:
     """Removal and compaction commit together: when the rewrite fails mid-way (a corrupt
-    surviving asset caught by verify-on-touch), the bundle is left byte-identical — the asset
+    surviving asset caught by verify-on-touch), the bundle is left byte-identical; the asset
     is still present and a retry still sees it. The removal used to commit its directory drop
     first, so a failed compaction left the asset already unreachable and a retry raised
     KeyError."""

@@ -76,7 +76,7 @@ fn compact_bundle_impl(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> 
 /// Compact the bundle at `path` in place, choosing the cheapest applicable strategy.
 ///
 /// When every unreferenced byte lies after the assignment stream (the layout that asset
-/// removals and appends produce), only the small post-stream tail is rebuilt — O(tail),
+/// removals and appends produce), only the small post-stream tail is rebuilt: O(tail),
 /// independent of stream size, no scratch space, stream never read. Otherwise the bundle is
 /// rewritten wholesale through a temp file (stream checksum-verified during the copy) and
 /// atomically swapped over `path`.
@@ -90,11 +90,11 @@ fn compact_bundle_impl(in_file: PathBuf, out_file: PathBuf, overwrite: bool) -> 
 ///     path (StrPath): Path to the ``.bendl`` bundle to compact (``str`` or ``os.PathLike``).
 ///
 /// Returns:
-///     str: Which strategy ran — ``"none"`` (already compact), ``"tail"`` (post-stream tail
+///     str: Which strategy ran: ``"none"`` (already compact), ``"tail"`` (post-stream tail
 ///     rebuilt; stream untouched and not verified), or ``"full"`` (whole-bundle rewrite).
 ///
 /// Raises:
-///     Exception: If the bundle is unfinalized, or — on the full-rewrite path — an asset or
+///     Exception: If the bundle is unfinalized, or (on the full-rewrite path) an asset or
 ///         the stream fails its checksum.
 #[pyfunction]
 #[pyo3(signature = (path))]

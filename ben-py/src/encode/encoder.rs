@@ -24,7 +24,7 @@ use std::path::PathBuf;
 ///         ``overwrite=True``.
 ///     overwrite (bool, optional): Replace an existing file at ``file_path``. Default is
 ///         ``False``.
-///     variant (Variant, optional): BEN encoding variant for the stream — ``"standard"``,
+///     variant (Variant, optional): BEN encoding variant for the stream: ``"standard"``,
 ///         ``"mkv_chain"``, or ``"twodelta"``. Default is ``"twodelta"``.
 ///
 /// Raises:
@@ -51,7 +51,7 @@ impl PyBenEncoder {
     ///         unless ``overwrite=True``.
     ///     overwrite (bool, optional): Replace an existing file at ``file_path``. Default is
     ///         ``False``.
-    ///     variant (Variant, optional): BEN encoding variant for the stream — ``"standard"``,
+    ///     variant (Variant, optional): BEN encoding variant for the stream: ``"standard"``,
     ///         ``"mkv_chain"``, or ``"twodelta"``. Default is ``"twodelta"``.
     ///
     /// Raises:

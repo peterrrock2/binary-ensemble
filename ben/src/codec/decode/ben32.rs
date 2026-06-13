@@ -49,8 +49,8 @@ pub(crate) fn decode_ben32_line<R: BufRead>(
                     ));
                 }
 
-                // Expansion sanity bound: each 4-byte run can demand up to 65,535 elements, so an
-                // adversarial frame could otherwise request a multi-gigabyte allocation from a few
+                // Expansion sanity bound: each 4-byte run can demand up to 65,535 elements, so a
+                // malformed frame could otherwise request a multi-gigabyte allocation from a few
                 // kilobytes of input.
                 if output_vec.len() as u64 + u64::from(count) > super::MAX_ASSIGNMENT_LEN {
                     return Err(io::Error::new(

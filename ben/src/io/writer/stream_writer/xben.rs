@@ -323,7 +323,7 @@ impl<W: Write> XBenInner<W> {
         let spinner = Spinner::new("Encoding line");
 
         // Each BEN frame is prefixed with a per-frame tag. This path keeps no masks and
-        // materializes no assignments, so there is nothing to reset across a snapshot — it simply
+        // materializes no assignments, so there is nothing to reset across a snapshot; it simply
         // mirrors the BEN framing onto the XBEN columnar layout.
         loop {
             let tag = match reader.read_u8() {
@@ -465,7 +465,7 @@ fn flush_mkv_pending<W: Write>(
 /// Emit a buffered full frame (payload then trailing count) and rebase the delta state onto it.
 ///
 /// Used for both the initial anchor and mid-stream snapshots, so `previous_masks` is cleared before
-/// reseeding rather than only pushed onto — the map is non-empty after the first frame.
+/// reseeding rather than only pushed onto; the map is non-empty after the first frame.
 fn flush_twodelta_full<W: Write>(
     encoder: &mut XzEncoder<W>,
     pending_full_assignment: &mut Option<Vec<u16>>,

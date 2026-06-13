@@ -1,7 +1,7 @@
 //! Boundary-biased round-trip property tests.
 //!
 //! The strategies in `test_impls_pipeline.rs` deliberately stay small (ids ≤ 2000, runs ≤ 300,
-//! length ≤ 1500) to keep runtime bounded — which means they structurally cannot reach any `u16`
+//! length ≤ 1500) to keep runtime bounded, which means they structurally cannot reach any `u16`
 //! wire-format boundary. This suite is the complement: its generators are *biased toward* the
 //! representability edges where data-dependent encode bugs live:
 //!
@@ -12,7 +12,7 @@
 //!   (snapshot transitions).
 //!
 //! Every generated sequence must round-trip *exactly* through every `(variant × wire format)`
-//! cell — there is no input a writer may reject, because every BEN-stack writer is total over
+//! cell: there is no input a writer may reject, because every BEN-stack writer is total over
 //! arbitrary `Vec<u16>` sequences (delta-shaped frames fall back to snapshots when a pair
 //! projection exceeds the `u16` run limit).
 
@@ -59,7 +59,7 @@ fn boundary_assignment() -> impl Strategy<Value = Vec<u16>> {
 
 /// Repaint the positions occupied by two distinct values of `prev` with seed-derived alternating
 /// stretches of those same two values: a valid 2-id transition (delta-eligible when both ids have
-/// masks), whose pair projection inherits `prev`'s long runs — exactly the shape that forces the
+/// masks), whose pair projection inherits `prev`'s long runs, exactly the shape that forces the
 /// TwoDelta long-run fallback.
 fn repaint_pair(prev: &[u16], seed: u64) -> Vec<u16> {
     let mut distinct: Vec<u16> = prev.to_vec();

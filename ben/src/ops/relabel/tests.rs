@@ -993,7 +993,7 @@ fn test_relabel_ben_file_as_variant_rejects_invalid_banner() {
 
 #[test]
 fn test_relabel_ben_length_mismatch() {
-    // BEN stream with assignment length 3 ([1,2,3]); permutation of length 5 — triggers
+    // BEN stream with assignment length 3 ([1,2,3]); permutation of length 5 triggers
     // LengthMismatch.
     let jsonl = r#"{"assignment":[1,2,3],"sample":1}
 "#;
@@ -1209,7 +1209,7 @@ fn fast_path_matches_slow_path_mkvchain() {
     .unwrap();
 
     // Decoded equivalence is the load-bearing assertion. Byte-identity is also expected here
-    // (per plan verification step 4) — tighten if it holds.
+    // (per plan verification step 4); tighten if it holds.
     let mut fast_jsonl = Vec::new();
     decode_ben_to_jsonl(fast_out.as_slice(), &mut fast_jsonl).unwrap();
     let mut slow_jsonl = Vec::new();
@@ -1249,7 +1249,7 @@ fn collapse_policy_disables_fast_path() {
 }
 
 /// Decision #9: with `PreserveFrameBoundaries`, two adjacent input frames with the same assignment
-/// but distinct counts must remain distinct counted frames at MkvChain target — not merged into one
+/// but distinct counts must remain distinct counted frames at MkvChain target, not merged into one
 /// frame with summed count. With `CollapseAdjacentEqualAssignments`, they are merged.
 #[test]
 fn run_policy_pins_frame_preservation_and_collapse() {

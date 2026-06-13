@@ -344,7 +344,7 @@ fn test_decode_xben_to_jsonl_rejects_invalid_inner_header() {
 
 #[test]
 fn test_decode_xben_to_ben_rejects_truncated_ben32_body() {
-    // The decompressed body ends three bytes into a ben32 run — a truncated stream, not a clean
+    // The decompressed body ends three bytes into a ben32 run: a truncated stream, not a clean
     // end at a frame boundary. The reader must reject it rather than silently dropping the tail.
     let xz = standard_xben_from_ben32_body(&[1, 2, 3]);
 
@@ -372,7 +372,7 @@ fn test_decode_xben_to_jsonl_rejects_truncated_ben32_body() {
 #[test]
 fn test_decode_xben_to_jsonl_rejects_zero_length_ben32_run() {
     // Run (value=7, len=0): not the frame sentinel (value bytes are non-zero), and the encoder
-    // never emits zero-length runs — silently skipping it would mask corruption.
+    // never emits zero-length runs; silently skipping it would mask corruption.
     let xz = standard_xben_from_ben32_body(&[0, 7, 0, 0, 0, 0, 0, 0]);
 
     let mut out = Vec::new();
@@ -556,7 +556,7 @@ fn test_decode_ben_multiple_simple_lines() {
     assert_eq!(output, expected_output.concat().as_bytes());
 }
 
-// ─── decode_xben_to_jsonl — byte-level ben32 bodies ────────────────────
+// ─── decode_xben_to_jsonl: byte-level ben32 bodies ────────────────────
 // Each test wraps a hand-built Standard ben32 body in a banner + xz so the public decoder is
 // exercised against exact wire bytes.
 

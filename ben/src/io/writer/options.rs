@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn with_n_threads_clamps_zero_to_one() {
-        // The clamp is part of the contract — the underlying xz mt encoder requires ≥1.
+        // The clamp is part of the contract: the underlying xz mt encoder requires ≥1.
         assert_eq!(XzEncodeOptions::new().with_n_threads(0).n_threads, Some(1));
         assert_eq!(XzEncodeOptions::new().with_n_threads(8).n_threads, Some(8));
     }

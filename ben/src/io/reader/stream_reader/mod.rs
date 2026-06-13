@@ -1,4 +1,4 @@
-//! Unified reader for the BEN-stack stream layer (layer 3 — see `docs/glossary.md`).
+//! Unified reader for the BEN-stack stream layer (layer 3, see `docs/glossary.md`).
 //!
 //! Hides the wire-format choice (BEN bit-packed vs ben32 columnar) and the transport choice (plain
 //! vs xz-compressed) behind one type. The decode-side laziness invariant is preserved on both wire

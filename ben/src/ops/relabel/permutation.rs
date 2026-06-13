@@ -53,7 +53,7 @@ fn too_many_labels_error() -> io::Error {
 /// Remap an assignment vector's district labels in first-seen order, starting at 1.
 ///
 /// Errors if the assignment holds more than `u16::MAX` distinct ids, which one-based `u16` labels
-/// cannot represent — wrapping would silently alias two districts.
+/// cannot represent; wrapping would silently alias two districts.
 pub(super) fn first_seen_relabel_assignment(assignment: &[u16]) -> io::Result<Vec<u16>> {
     let mut label_map = HashMap::new();
     let mut next_label = 0u16;
@@ -79,7 +79,7 @@ pub(super) fn first_seen_relabel_assignment(assignment: &[u16]) -> io::Result<Ve
 /// Rewrite the value of each `(val, len)` RLE pair in first-seen order, in place.
 ///
 /// Errors if the runs hold more than `u16::MAX` distinct ids; see
-/// [`first_seen_relabel_assignment`]. On error, a prefix of `runs` may already be relabeled —
+/// [`first_seen_relabel_assignment`]. On error, a prefix of `runs` may already be relabeled;
 /// callers treat the whole operation as failed and discard.
 pub(super) fn first_seen_relabel_rle(runs: &mut [(u16, u16)]) -> io::Result<()> {
     let mut label_map = HashMap::new();
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn dense_permutation_duplicate_old_indices_rejected() {
-        // {0 -> 5, 1 -> 5}: a duplicated old index is not a permutation — applying it would copy
+        // {0 -> 5, 1 -> 5}: a duplicated old index is not a permutation, so applying it would copy
         // one node's value into two positions and silently drop another node entirely.
         let map: HashMap<usize, usize> = [(0, 5), (1, 5)].into_iter().collect();
         let err = dense_permutation(&map).unwrap_err();

@@ -3,7 +3,7 @@
 //! This repackages a bundle: it reads back every asset's decoded payload and the BEN assignment
 //! stream, re-encodes the stream as XBEN, and writes a fresh `Xben`-format bundle with the same
 //! assets (name, type, JSON flag, decoded bytes). Storage compression is normalized to the writer's
-//! default policy — the decoded payload bytes are preserved, not the byte-for-byte on-disk form.
+//! default policy: the decoded payload bytes are preserved, not the byte-for-byte on-disk form.
 
 use crate::common::{add_preserved, map_bundle_err, PreservedAsset, TempOutput};
 use binary_ensemble::codec::encode::encode_ben_to_xben;
@@ -79,7 +79,7 @@ fn recompress_bundle_impl(in_file: PathBuf, out_file: PathBuf, overwrite: bool) 
         });
     }
 
-    // Recompress the BEN stream to XBEN bytes (skipped for an empty stream — there is no banner).
+    // Recompress the BEN stream to XBEN bytes (skipped for an empty stream, which has no banner).
     let xben_bytes = if empty {
         Vec::new()
     } else {

@@ -452,7 +452,7 @@ def test_decode_helpers_error_paths(tmp_path: Path) -> None:
 
 def test_decoder_surfaces_truncated_streams_as_clean_exceptions(tmp_path: Path) -> None:
     # The Rust core guarantees corrupt input errors rather than panics; this pins the Python
-    # half of that contract — a truncated stream raises an ordinary exception from iteration.
+    # half of that contract: a truncated stream raises an ordinary exception from iteration.
     samples = [[1, 1, 2, 2], [2, 2, 1, 1], [1, 2, 1, 2]]
 
     ben = tmp_path / "trunc.ben"

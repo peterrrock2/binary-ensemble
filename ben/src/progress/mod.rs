@@ -1,13 +1,13 @@
 //! In-place progress spinners for streaming encode/decode/relabel loops.
 //!
 //! Streaming operations have no upfront totals (BEN/JSONL inputs are read frame-by-frame), so a
-//! percentage bar is not possible — this module provides a running-counter spinner instead. The
+//! percentage bar is not possible, so this module provides a running-counter spinner instead. The
 //! spinner writes directly to stderr via [`indicatif`], bypassing `tracing` (whose fmt subscriber
 //! appends `\n` and would defeat carriage-return redraws).
 //!
 //! Visibility is gated by two checks performed at construction time:
-//! 1. `cli::common::is_quiet()` — the `--quiet` CLI flag.
-//! 2. `std::io::stderr().is_terminal()` — auto-disable when stderr is redirected, so logs and
+//! 1. `cli::common::is_quiet()`: the `--quiet` CLI flag.
+//! 2. `std::io::stderr().is_terminal()`: auto-disable when stderr is redirected, so logs and
 //!    pipelines stay clean.
 //!
 //! Both checks happen once in [`Spinner::new`]; the resulting [`Spinner`] is either a live
@@ -58,10 +58,6 @@ impl Spinner {
     /// # Arguments
     ///
     /// * `n` - The new counter value to display.
-    ///
-    /// # Returns
-    ///
-    /// This function does not return a value.
     pub fn set_count(&self, n: u64) {
         if let Some(bar) = &self.bar {
             bar.set_position(n);

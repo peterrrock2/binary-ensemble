@@ -47,7 +47,7 @@ fn bin_path(name: &str) -> &'static str {
 /// Build a `Command` for one of the workspace CLIs, honoring any cross-compilation runner cargo
 /// was configured with (e.g. `CARGO_TARGET_S390X_UNKNOWN_LINUX_GNU_RUNNER` inside a `cross`
 /// container running the suite under QEMU). Cargo routes the *test binary itself* through that
-/// runner automatically, but subprocesses spawned by tests exec directly — without this shim, a
+/// runner automatically, but subprocesses spawned by tests exec directly; without this shim, a
 /// foreign-architecture CLI binary is handed straight to the host kernel, which rejects it (or
 /// hands it to a shell that mangles the ELF as a script). The variable is only ever set in
 /// cross-compilation environments, so native runs take the plain-exec path.
@@ -1673,7 +1673,7 @@ fn bendl_cli_create_inspect_extract_append_roundtrip() {
     let metadata_path = temp.path().join("metadata.json");
     fs::write(&metadata_path, r#"{"note":"hello"}"#).unwrap();
 
-    // `bendl create` — build a finalized bundle.
+    // `bendl create`: build a finalized bundle.
     let bundle_path = temp.path().join("out.bendl");
     let create = run(
         "bendl",
@@ -1694,7 +1694,7 @@ fn bendl_cli_create_inspect_extract_append_roundtrip() {
     assert_success(&create);
     assert!(bundle_path.exists());
 
-    // `bendl inspect` — header should report both assets and complete=true.
+    // `bendl inspect`: header should report both assets and complete=true.
     let inspect = run(
         "bendl",
         &["inspect", bundle_path.to_str().unwrap()],
@@ -1707,7 +1707,7 @@ fn bendl_cli_create_inspect_extract_append_roundtrip() {
     assert!(inspect_out.contains("graph.json"));
     assert!(inspect_out.contains("metadata.json"));
 
-    // `bendl extract --stream` — recover the original .ben bytes exactly.
+    // `bendl extract --stream`: recover the original .ben bytes exactly.
     let recovered_ben = temp.path().join("recovered.ben");
     let extract_stream = run(
         "bendl",
@@ -1727,7 +1727,7 @@ fn bendl_cli_create_inspect_extract_append_roundtrip() {
         fs::read(&ben_path).unwrap()
     );
 
-    // `bendl extract --asset graph.json` — recover the decoded graph JSON.
+    // `bendl extract --asset graph.json`: recover the decoded graph JSON.
     let recovered_graph = temp.path().join("recovered-graph.json");
     let extract_asset = run(
         "bendl",
@@ -1748,7 +1748,7 @@ fn bendl_cli_create_inspect_extract_append_roundtrip() {
         sample_graph()
     );
 
-    // `bendl append` — add a custom asset to the already-finalized bundle.
+    // `bendl append`: add a custom asset to the already-finalized bundle.
     let custom_path = temp.path().join("notes.txt");
     fs::write(&custom_path, b"bundle notes").unwrap();
     let append = run(
@@ -1795,7 +1795,7 @@ fn bendl_cli_create_inspect_extract_append_roundtrip() {
         fs::read(&ben_path).unwrap()
     );
 
-    // Appending a second graph.json is rejected — singleton constraint.
+    // Appending a second graph.json is rejected: singleton constraint.
     let append_duplicate = run(
         "bendl",
         &[

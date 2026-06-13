@@ -8,15 +8,15 @@
 //!
 //! The writer operates in three logical phases, expressed via owned typestate transitions:
 //!
-//! 1. **asset phase** — the caller invokes [`BendlWriter::add_asset`] zero or more times. Each call
+//! 1. **asset phase**: the caller invokes [`BendlWriter::add_asset`] zero or more times. Each call
 //!    writes the (optionally xz-compressed) payload to the file and records its absolute offset and
 //!    length in an in-memory entry list.
-//! 2. **stream phase** — the caller invokes [`BendlWriter::into_stream_session`] to consume the
+//! 2. **stream phase**: the caller invokes [`BendlWriter::into_stream_session`] to consume the
 //!    writer and obtain a [`BendlStreamSession`] that owns the underlying writer and implements
 //!    `Write`. When the stream is complete the caller calls
 //!    [`BendlStreamSession::finish_into_writer`] to recover the [`BendlWriter`] in the
 //!    `StreamWritten` state.
-//! 3. **finalize phase** — [`BendlWriter::finish`] writes the trailing directory and patches the
+//! 3. **finalize phase**: [`BendlWriter::finish`] writes the trailing directory and patches the
 //!    header.
 //!
 //! The writer requires `Write + Seek` because the header is written provisionally at construction
@@ -913,7 +913,7 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
     ///
     /// If compression fails, the file is left unchanged. The mutation is ordered durably: the new
     /// payloads and directory are synced to stable storage before the header is patched to point
-    /// at them, and the patched header is synced before `commit` returns — so a crash or power
+    /// at them, and the patched header is synced before `commit` returns, so a crash or power
     /// loss at any point leaves either the previous bundle (with at most trailing orphaned bytes)
     /// or the fully appended one.
     pub fn commit(mut self) -> Result<W, BendlWriteError>

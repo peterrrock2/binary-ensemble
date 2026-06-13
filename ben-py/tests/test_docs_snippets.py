@@ -2,8 +2,8 @@
 
 The **docs are the single source of truth**. The sample data the recipes read
 (``ensemble.bendl``, ``plans.jsonl``, ``chain.ben`` / ``chain.xben``, ``gerrymandria.json``)
-is created by the "Sample data" snippet in ``docs/how-to/index.md`` — marked
-``<!-- docs-test: setup -->`` — which is shown to readers *and* run by this test. This runner
+is created by the "Sample data" snippet in ``docs/how-to/index.md`` (marked
+``<!-- docs-test: setup -->``) which is shown to readers *and* run by this test. This runner
 contains no fixture-creation logic and no per-page knowledge: it discovers the docs, runs the
 setup snippet(s), then runs each page's blocks. Editing the docs never requires editing this
 test; if a recipe needs new sample data, that goes in the setup snippet (in the docs).
@@ -70,7 +70,7 @@ def test_markdown_snippets_execute(doc: Path, tmp_path, monkeypatch) -> None:
 
     monkeypatch.chdir(tmp_path)
     # Create the sample files from the docs' own setup snippet. It runs in a throwaway
-    # namespace so only its files (not its variables) are visible to the page — a snippet
+    # namespace so only its files (not its variables) are visible to the page; a snippet
     # that relies on an undefined name then fails honestly instead of being masked.
     exec(
         compile(_SETUP_CODE, "docs:sample-data-setup", "exec"),
@@ -92,12 +92,12 @@ README = Path(__file__).resolve().parents[2] / "README.md"
 
 
 def test_readme_python_snippets_execute(tmp_path, monkeypatch) -> None:
-    """The repo-root README's Python example is the first code a new user copies — run it with
+    """The repo-root README's Python example is the first code a new user copies, run it with
     the same machinery as the docs pages so it can't silently drift from the API."""
     monkeypatch.chdir(tmp_path)
     namespace: dict = {}
     blocks = list(_blocks(README.read_text()))
-    assert blocks, "README.md has no python blocks — update this test if that is intentional"
+    assert blocks, "README.md has no python blocks; update this test if that is intentional"
     for i, (directive, code) in enumerate(blocks, start=1):
         if directive == "skip":
             continue

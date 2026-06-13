@@ -35,14 +35,6 @@ pub enum SampleError {
 
 impl SampleError {
     /// Wrap a plain I/O error as a [`SampleError`].
-    ///
-    /// # Arguments
-    ///
-    /// * `error` - The underlying I/O error.
-    ///
-    /// # Returns
-    ///
-    /// Returns a new [`SampleError`] with [`SampleError::IoError`].
     pub fn new_io_error(error: io::Error) -> Self {
         SampleError::IoError(error)
     }

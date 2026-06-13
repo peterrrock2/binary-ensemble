@@ -1,4 +1,4 @@
-//! Frame-layer types — one sample's encoded bytes.
+//! Frame-layer types: one sample's encoded bytes.
 //!
 //! See `docs/glossary.md` for the encoding-stack layering. This module owns layer 2 (frame). Each
 //! direction is a single enum whose arms mirror [`crate::BenVariant`]:

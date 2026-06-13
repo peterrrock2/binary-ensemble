@@ -1597,7 +1597,7 @@ fn xz_frame_reader_twodelta_truncated_errors() {
     {
         let mut encoder = XzEncoder::new(&mut xben, 1);
         encoder.write_all(b"STANDARD BEN FILE").unwrap();
-        // Partial ben32 frame — no zero terminator, triggers truncated error
+        // Partial ben32 frame; no zero terminator, triggers truncated error
         encoder.write_all(&[0, 1, 0, 3]).unwrap();
         encoder.finish().unwrap();
     }
@@ -1623,7 +1623,7 @@ fn xz_reader_standard_corrupt_frame_errors() {
     {
         let mut encoder = XzEncoder::new(&mut xben, 1);
         encoder.write_all(b"STANDARD BEN FILE").unwrap();
-        // Write 4 bytes followed by zero terminator — the frame decodes to a single run (value=255,
+        // Write 4 bytes followed by zero terminator; the frame decodes to a single run (value=255,
         // count=255). This should actually be valid. Instead, write a completely empty frame
         // (just the zero terminator).
         encoder.write_all(&[0, 0, 0, 0]).unwrap(); // just zero terminator (no runs)

@@ -2,7 +2,7 @@
 //!
 //! "Streaming, not slurping" is a core invariant of this workspace: ensembles are too large to
 //! hold in memory, so every encode/decode path must process samples incrementally. Nothing else
-//! in the suite *measures* that — every other harness uses small inputs, so an accidental
+//! in the suite *measures* that; every other harness uses small inputs, so an accidental
 //! buffer-everything regression would pass the entire suite and only surface as an OOM on a real
 //! multi-gigabyte ensemble.
 //!

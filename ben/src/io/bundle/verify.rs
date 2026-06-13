@@ -237,7 +237,7 @@ fn check_stream_crc(computed: u32, expected: u32) -> io::Result<()> {
 }
 
 /// CRC accumulator that sits between a byte source and its consumer. It never substitutes an error
-/// for raw EOF — the surrounding [`VerifyingReader`] (for uncompressed assets) or the post-decoder
+/// for raw EOF; the surrounding [`VerifyingReader`] (for uncompressed assets) or the post-decoder
 /// [`VerifyingReader`] (for xz assets) decides when and whether to check the accumulated hash.
 pub(crate) struct CrcTeeReader<R: Read> {
     inner: R,
@@ -378,7 +378,7 @@ impl<S: Read + CrcSource> Read for VerifyingReader<S> {
 /// reader for [`BendlVerifiedStreamReader`]: the `Arc` lets the outer wrapper read the final hash
 /// after a consuming inner method (e.g. `count_samples`) moves ownership away from the wrapper.
 ///
-/// Unlike [`CrcTeeReader`], this type never substitutes a checksum error for raw EOF — it is always
+/// Unlike [`CrcTeeReader`], this type never substitutes a checksum error for raw EOF; it is always
 /// the outer [`BendlVerifiedStreamReader`] that decides when and whether to check.
 pub(crate) struct SharedCrc32cAccumulatorReader<R: Read> {
     inner: R,
@@ -419,7 +419,7 @@ pub(crate) type VerifiedStreamSource<'a, R> = SharedCrc32cAccumulatorReader<Exac
 ///
 /// Wraps a [`BenStreamReader`] over a CRC-accumulating source and checks the stored stream CRC32C
 /// after the codec reaches natural EOF. CRC mismatch surfaces from [`Iterator::next`] as
-/// `Some(Err(io::ErrorKind::InvalidData))` — returned once after the last decoded record, then
+/// `Some(Err(io::ErrorKind::InvalidData))`, returned once after the last decoded record, then
 /// `None`. Consuming methods (`count_samples`, `write_all_jsonl`, `for_each_assignment` when driven
 /// to natural EOF) also fold the CRC check into their return value.
 pub struct BendlVerifiedStreamReader<'a, R: Read + Seek> {
@@ -521,7 +521,7 @@ impl<'a, R: Read + Seek> BendlVerifiedStreamReader<'a, R> {
     ///
     /// When the callback drives the reader to natural EOF, the stream CRC is verified and a
     /// mismatch is returned as an error. When the callback stops early (`f` returns `Ok(false)`),
-    /// the CRC is not checked — only a full traversal can verify the whole stream.
+    /// the CRC is not checked; only a full traversal can verify the whole stream.
     pub fn for_each_assignment<F>(&mut self, mut f: F) -> io::Result<()>
     where
         F: FnMut(&[u16], u16) -> io::Result<bool>,
@@ -581,7 +581,7 @@ impl<'a, R: Read + Seek> Iterator for BendlVerifiedStreamReader<'a, R> {
             }
             Some(item) => Some(item),
             None => {
-                // Inner reached natural EOF — finalize the CRC check.
+                // Inner reached natural EOF; finalize the CRC check.
                 match self.finalize_checksum() {
                     Ok(()) => {
                         self.state = StreamVerifyState::Verified;

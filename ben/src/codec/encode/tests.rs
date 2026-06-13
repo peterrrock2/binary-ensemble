@@ -1195,7 +1195,7 @@ fn encode_jsonl_to_xben_twodelta_roundtrip() {
 fn twodelta_encode_outside_pair_change_errors() {
     use super::twodelta::encode_twodelta_frame;
 
-    // prev=[1,2,3,4], curr=[2,1,3,5] — positions 0,1 swap pair (1,2), but position 3 changes from
+    // prev=[1,2,3,4], curr=[2,1,3,5]: positions 0,1 swap pair (1,2), but position 3 changes from
     // 4→5 which is outside the pair.
     let prev = vec![1u16, 2, 3, 4];
     let curr = vec![2u16, 1, 3, 5];
@@ -1377,7 +1377,7 @@ fn mkvchain_round_trip_with_label_zero() {
 
 /// TwoDelta round-trips with delta-frame pairs that contain `0`. The pair `(first, second)` is
 /// computed by `twodelta_repeat_runs` from the first distinct values it sees; these fixtures
-/// force both orderings — `(0, 1)` and `(1, 0)` — to confirm the bit-packing and unpacking
+/// force both orderings (`(0, 1)` and `(1, 0)`) to confirm the bit-packing and unpacking
 /// handle a zero-valued label on either side of the pair. Each fixture pairs an anchor with at
 /// least one delta so the delta-frame path is exercised, not just the anchor.
 ///
@@ -1503,13 +1503,13 @@ fn assert_ben_round_trip(assignment: Vec<u16>, variant: BenVariant) {
     );
 }
 
-/// For each `width` in {1, 7, 8, 9, 16} — single-bit, just-under and just-over byte-aligned,
-/// exactly byte-aligned, and the upper bound — exercise both the `mvb` and `mlb` sides of the
+/// For each `width` in {1, 7, 8, 9, 16} (single-bit, just-under and just-over byte-aligned,
+/// exactly byte-aligned, and the upper bound) exercise both the `mvb` and `mlb` sides of the
 /// bit-packing code by constructing assignments whose encoded frame is forced to that width. The
 /// encoder picks `max_val_bit_count = (16 - max_val.leading_zeros()).max(1)`, so a `max_val` of
 /// `2.pow(width - 1)` (or 1 for width=1) lands on the requested width exactly.
 ///
-/// The upper bound of `17` is not tested here because the encoder cannot produce it — `u16`
+/// The upper bound of `17` is not tested here because the encoder cannot produce it; `u16`
 /// values cap bit widths at 16. Rejection of a hand-built frame with mvb=17 is already pinned by
 /// `malformed_ben_bit_widths_return_invalid_data` in `tests/test_stress_edges.rs`.
 ///
@@ -1555,7 +1555,7 @@ fn bit_packing_boundary_widths_round_trip() {
 
 /// Independently verify that the encoder actually picks the bit width we expect for each fixture
 /// in `bit_packing_boundary_widths_round_trip`. If a future encoder change makes a different
-/// width choice for the same input, the round-trip test above can still pass — this guards
+/// width choice for the same input, the round-trip test above can still pass; this guards
 /// against that drift.
 #[test]
 fn bit_packing_boundary_widths_pin_encoder_choice() {

@@ -1,7 +1,7 @@
 //! Translation helpers between BEN and ben32 representations.
 //!
 //! The ben32 intermediate format is used only by the Standard and MkvChain variants. TwoDelta
-//! streams use a separate columnar layout and bypass ben32 entirely — see
+//! streams use a separate columnar layout and bypass ben32 entirely; see
 //! [`BenStreamWriter`](crate::io::writer::BenStreamWriter) and
 //! [`BenStreamReader`](crate::io::reader::BenStreamReader) for the TwoDelta compressed-I/O path.
 
@@ -142,7 +142,6 @@ pub fn ben32_to_ben_lines<R: Read, W: Write>(
         loop {
             if !read_ben32_word(&mut reader, &mut ben32_read_buff)? {
                 if ben32_vec.is_empty() {
-                    // Clean end of input at a frame boundary.
                     return Ok(());
                 }
                 return Err(io::Error::new(

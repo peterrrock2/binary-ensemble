@@ -36,10 +36,6 @@ pub fn rle_to_vec(rle_vec: Vec<(u16, u16)>) -> Vec<u16> {
 ///
 /// * `rle_vec` - The run-length encoded assignment vector.
 /// * `output_vec` - The buffer that will receive the expanded assignments.
-///
-/// # Returns
-///
-/// This function does not return a value.
 pub(crate) fn rle_to_vec_in_place(rle_vec: &[(u16, u16)], output_vec: &mut Vec<u16>) {
     output_vec.clear();
     let total_len: usize = rle_vec.iter().map(|(_, len)| *len as usize).sum();
@@ -59,10 +55,6 @@ pub(crate) fn rle_to_vec_in_place(rle_vec: &[(u16, u16)], output_vec: &mut Vec<u
 ///
 /// * `assign_vec` - The full assignment vector.
 /// * `rle_vec` - The buffer that will receive `(value, count)` pairs.
-///
-/// # Returns
-///
-/// This function does not return a value.
 pub(crate) fn assign_slice_to_rle(assign_vec: &[u16], rle_vec: &mut Vec<(u16, u16)>) {
     rle_vec.clear();
     let mut prev_assign: u16 = 0;

@@ -570,7 +570,7 @@ fn run_extract_stream_allows_unfinalized_when_requested() {
 
 #[test]
 fn run_extract_asset_with_unknown_name_errors_cleanly() {
-    // Pin the no-asset-named-X branch of extract.rs — find_asset_by_name returns None and the
+    // Pin the no-asset-named-X branch of extract.rs; find_asset_by_name returns None and the
     // caller surfaces a clear "no asset named ..." error.
     let bendl = write_temp_bendl("extract_unknown_asset.bendl", AssignmentFormat::Ben);
     let out = unique_path("extract_unknown_out.bin");
@@ -594,7 +594,7 @@ fn run_extract_asset_with_unknown_name_errors_cleanly() {
 
 #[test]
 fn run_inspect_displays_asset_with_no_flags_as_dash() {
-    // Pin inspect.rs line 60 — the `"-".to_string()` fallback for an asset whose asset_flags
+    // Pin inspect.rs line 60: the `"-".to_string()` fallback for an asset whose asset_flags
     // bitmap has no known bits set. Reaching it requires hand-building a directory entry with
     // asset_flags=0 (the library writer always sets ASSET_FLAG_CHECKSUM).
     use crate::io::bundle::format::{

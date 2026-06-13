@@ -18,7 +18,7 @@ pub(super) struct SampleCursor {
     source: StreamSource,
     mode: DecoderMode,
     /// Lazily-constructed frame iterator. Construction is deferred so opening a bundle with an
-    /// empty or truncated stream still succeeds — only methods that actually walk the stream
+    /// empty or truncated stream still succeeds; only methods that actually walk the stream
     /// need a live iterator.
     iter: Option<DynIter>,
     current_assignment: Option<Vec<u16>>,

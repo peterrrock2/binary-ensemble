@@ -73,12 +73,12 @@ never inline JSON)."""
 
 BinaryAssetPayload = bytes | bytearray | memoryview | str | SupportsRead | os.PathLike[str]
 """``add_asset`` payloads for ``content_type="binary"``: bytes-like (stored verbatim), ``str``
-(stored as its UTF-8 encoding — *content*, not a path), a file-like with ``.read()``, or an
+(stored as its UTF-8 encoding: *content*, not a path), a file-like with ``.read()``, or an
 ``os.PathLike`` whose file is read. Note that a plain ``str`` is content; only ``os.PathLike``
 objects are treated as paths."""
 
 TextAssetPayload = BinaryAssetPayload
-"""``add_asset`` payloads for ``content_type="text"`` — the same shapes as
+"""``add_asset`` payloads for ``content_type="text"``: the same shapes as
 :data:`BinaryAssetPayload`, but the resulting bytes must be valid UTF-8."""
 
 JsonAssetPayload = dict[str, Any] | list[Any] | BinaryAssetPayload

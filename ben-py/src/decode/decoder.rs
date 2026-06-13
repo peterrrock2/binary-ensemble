@@ -20,7 +20,7 @@ use std::path::PathBuf;
 /// Args:
 ///     file_path (StrPath): Path to the input ``.ben`` or ``.xben`` file (``str`` or
 ///         ``os.PathLike``).
-///     mode (AssignmentFormat, optional): Which reader to use — ``"ben"`` or ``"xben"``.
+///     mode (AssignmentFormat, optional): Which reader to use: ``"ben"`` or ``"xben"``.
 ///         Opening an XBEN stream warns about a one-time decompression startup cost.
 ///         Default is ``"ben"``.
 ///
@@ -81,7 +81,7 @@ impl PyBenDecoder {
         }
 
         // For plain streams, opening the file as a BEN/XBEN reader is the only way to learn the
-        // variant — keep eager construction so a malformed-banner error surfaces at open time.
+        // variant; keep eager construction so a malformed-banner error surfaces at open time.
         let mut cursor = SampleCursor::new(StreamSource::Plain { path: file_path }, parsed_mode);
         cursor.prime_iter()?;
         Ok(Self { cursor })

@@ -1,7 +1,7 @@
 //! Compaction: rewriting a bundle without its unreferenced byte ranges.
 //!
 //! Removing an asset through [`super::writer::BendlAppender::remove_asset`] only drops the
-//! directory entry, and every append leaves a superseded directory behind — both leave dead bytes
+//! directory entry, and every append leaves a superseded directory behind; both leave dead bytes
 //! in the file that no reader ever touches. Compaction reclaims them. The user-facing removal
 //! paths (the `bendl remove` CLI command and the Python facade) compact automatically, so for
 //! them "removed" means the bytes are actually gone.
@@ -12,7 +12,7 @@
 //!   assignment stream (pre-stream assets are written back-to-back, and appends land past the
 //!   stream). When the prefix through the stream is fully live, only the small post-stream tail
 //!   (surviving appended assets + directory) is rebuilt, in place, and the file is truncated. Cost
-//!   is O(tail), independent of stream size — removing an appended asset from a 50 GB bundle costs
+//!   is O(tail), independent of stream size; removing an appended asset from a 50 GB bundle costs
 //!   milliseconds and needs no scratch space. The stream is never read, so this path performs no
 //!   stream checksum verification.
 //! - **Full rewrite.** When dead space exists before the stream (a removed pre-stream asset), the
@@ -47,9 +47,9 @@ pub enum Compaction {
 
 /// Rewrite the finalized bundle behind `reader` into `out`, dropping unreferenced byte ranges.
 ///
-/// This is the full-rewrite strategy: assets are carried over **verbatim** — stored bytes,
-/// flags, and checksum unchanged, verified against their stored CRC32C as they are copied — and
-/// the assignment stream is copied through the verified stream reader, so a checksum mismatch
+/// This is the full-rewrite strategy: assets are carried over **verbatim** (stored bytes, flags,
+/// and checksum unchanged, verified against their stored CRC32C as they are copied), and the
+/// assignment stream is copied through the verified stream reader, so a checksum mismatch
 /// anywhere in the source surfaces as an error here instead of propagating. Memory is bounded by
 /// the largest single stored payload; an xz-stored asset is never decompressed just to travel.
 /// Returns the destination writer on success.
@@ -84,7 +84,7 @@ where
         .assignment_format_typed()
         .unwrap_or(AssignmentFormat::Ben);
 
-    // Carry every surviving asset verbatim — stored bytes, flags, and checksum unchanged — one
+    // Carry every surviving asset verbatim (stored bytes, flags, and checksum unchanged), one
     // asset at a time, so memory is bounded by the largest single stored payload and an
     // xz-stored asset is never decompressed just to travel. Each payload is still verified
     // against its stored CRC32C before being written (verify-on-touch); excluded assets are
@@ -143,7 +143,7 @@ struct PayloadMove {
 
 /// The post-stream tail to rebuild: surviving appended assets followed by the new directory.
 ///
-/// Planning is pure arithmetic over the directory — no payload byte is read until a rewrite
+/// Planning is pure arithmetic over the directory: no payload byte is read until a rewrite
 /// actually executes, and the rewrite itself copies file-to-file through a fixed-size buffer,
 /// so tail compaction needs no payload-sized memory.
 pub(super) struct PlannedTail {
@@ -206,7 +206,7 @@ pub(super) fn plan_tail(
         return Ok(None);
     }
 
-    // Lay the survivors out from the stream end — arithmetic only, no payload reads. Extent
+    // Lay the survivors out from the stream end: arithmetic only, no payload reads. Extent
     // validation before planning guarantees every source range lies within the file.
     post.sort_by_key(|e| e.payload_offset);
     let mut moves = Vec::with_capacity(post.len());
@@ -289,8 +289,8 @@ fn execute_tail(
     finalize_tail(file, header, plan, staged_base)
 }
 
-/// Phase 1: copy the survivor payloads and write a *staged* directory — one whose entries point
-/// at those appended copies — at the current EOF, then patch the header to adopt it. Returns the
+/// Phase 1: copy the survivor payloads and write a *staged* directory (one whose entries point
+/// at those appended copies) at the current EOF, then patch the header to adopt it. Returns the
 /// EOF the staging started at (the staged payload base).
 ///
 /// Every write is append-only and the staged directory references only bytes that already exist
@@ -344,7 +344,7 @@ pub(super) fn stage_tail(
 ///
 /// Every byte this touches is dead under the staged state: the staged directory references only
 /// the live prefix (which ends at the stream end) and the staged copies at or beyond the old EOF,
-/// and the final tail never extends past the old EOF — so the source and destination of the copy
+/// and the final tail never extends past the old EOF, so the source and destination of the copy
 /// are disjoint. The truncate runs only after the final header patch is synced.
 fn finalize_tail(
     file: &mut File,
@@ -378,7 +378,7 @@ pub fn compact_bundle_in_place(path: &Path) -> Result<Compaction, BendlWriteErro
 ///
 /// The removal and the compaction commit together: the directory that drops the names is the
 /// same one the rewrite publishes, so no intermediate state ever exists in which an asset is
-/// unreferenced but its bytes remain — and on any error the original file is left untouched,
+/// unreferenced but its bytes remain, and on any error the original file is left untouched,
 /// with every asset still present for a retry. Unknown names are rejected up front, before any
 /// byte of the file changes. The assets being removed are never read, so removal also succeeds
 /// when the asset being removed is itself corrupt.
@@ -420,11 +420,11 @@ fn compact_in_place_excluding(path: &Path, remove: &[&str]) -> Result<Compaction
         .collect();
     drop(reader);
 
-    // Planning is pure directory arithmetic, so the already-compact case is decided here —
+    // Planning is pure directory arithmetic, so the already-compact case is decided here,
     // before the file is even opened for writing, and without reading a single payload byte.
     if let Some(plan) = plan_tail(&header, &entries)? {
         // Already compact? Then the directory sits right at its planned offset and the file ends
-        // right after it — nothing to do. (Unreachable with removals: dropping an entry always
+        // right after it; nothing to do. (Unreachable with removals: dropping an entry always
         // shrinks the directory, so the planned layout cannot match the current one.)
         if header.directory_offset == plan.directory_offset && file_len == plan.file_len {
             return Ok(Compaction::None);

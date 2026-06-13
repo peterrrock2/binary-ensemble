@@ -300,7 +300,7 @@ impl<R: Read + Seek> BendlReader<R> {
     /// Read the fully-decoded bytes of an asset by directory entry, verifying its CRC32C before
     /// returning.
     ///
-    /// **Contract:** this is exactly `asset_reader(entry)? then read_to_end` — one behavioral path
+    /// **Contract:** this is exactly `asset_reader(entry)? then read_to_end`, one behavioral path
     /// shared with the streaming API so the two cannot drift apart. Implications:
     ///
     /// - Uncompressed asset, payload byte flipped → the CRC tee observes the mismatch at raw EOF
@@ -325,7 +325,7 @@ impl<R: Read + Seek> BendlReader<R> {
 
     /// Same as [`Self::asset_bytes`] but skips CRC verification.
     ///
-    /// Never returns [`BendlReadError::Checksum`]. Other variants (I/O, codec) still apply —
+    /// Never returns [`BendlReadError::Checksum`]. Other variants (I/O, codec) still apply;
     /// corrupted xz framing still surfaces as [`BendlReadError::Decode`].
     pub fn asset_bytes_unverified(
         &mut self,
@@ -347,7 +347,7 @@ impl<R: Read + Seek> BendlReader<R> {
     ///
     /// Checksum mismatch surfaces from `Read::read` as
     /// `io::Error::new(io::ErrorKind::InvalidData, ChecksumError)` on the call that would otherwise
-    /// return `Ok(0)` at EOF. Early-drop or partial-read callers do **not** observe verification —
+    /// return `Ok(0)` at EOF. Early-drop or partial-read callers do **not** observe verification;
     /// the reader must be driven to EOF for the CRC to be checked.
     pub fn asset_reader<'a>(
         &'a mut self,
@@ -385,7 +385,7 @@ impl<R: Read + Seek> BendlReader<R> {
         }
     }
 
-    /// Decoded reader without CRC verification — explicit escape hatch for recovery/debug or
+    /// Decoded reader without CRC verification: the explicit escape hatch for recovery/debug or
     /// `--no-verify` flows.
     ///
     /// If the asset is xz-flagged the returned bytes are still decompressed; "unverified" only
@@ -408,7 +408,7 @@ impl<R: Read + Seek> BendlReader<R> {
         }
     }
 
-    /// Raw on-disk payload reader without CRC verification — kept distinct from
+    /// Raw on-disk payload reader without CRC verification, kept distinct from
     /// [`Self::asset_reader_unverified`] so that callers doing low-level recovery never
     /// accidentally emit decompressed bytes (or, conversely, never accidentally emit compressed
     /// bytes expecting raw).
@@ -420,7 +420,7 @@ impl<R: Read + Seek> BendlReader<R> {
         entry: &BendlDirectoryEntry,
     ) -> Result<Box<dyn Read + 'a>, BendlReadError> {
         // No codec or CRC layer sits above this range, so the short-range flag has nothing to
-        // observe it — a short read surfaces directly as the ExactLen's own marker.
+        // observe it; a short read surfaces directly as the ExactLen's own marker.
         let (raw, _short_flag) = self.open_asset_payload_range(entry)?;
         Ok(Box::new(raw))
     }
@@ -498,7 +498,7 @@ fn classify_read_error(err: io::Error, entry: &BendlDirectoryEntry) -> BendlRead
         {
             Some(Ok(boxed)) => return BendlReadError::Checksum(*boxed),
             Some(Err(other)) => {
-                // Downcast failed unexpectedly — reconstruct an io::Error around the still-boxed
+                // Downcast failed unexpectedly; reconstruct an io::Error around the still-boxed
                 // payload so we don't lose context.
                 return BendlReadError::Io(io::Error::new(io::ErrorKind::InvalidData, other));
             }
@@ -519,11 +519,11 @@ fn classify_read_error(err: io::Error, entry: &BendlDirectoryEntry) -> BendlRead
 
 /// Validate that every entry's payload range lies within the backing file.
 ///
-/// Read paths stay lenient at open — a truncated bundle remains inspectable, and every byte
-/// access surfaces a strict-EOF error at touch — but paths that *trust* the declared lengths
+/// Read paths stay lenient at open (a truncated bundle remains inspectable, and every byte
+/// access surfaces a strict-EOF error at touch), but paths that *trust* the declared lengths
 /// (the appender, which carries entries into a rewritten directory, and in-place compaction,
 /// which sizes allocations and the new layout from them) must reject out-of-range extents up
-/// front, so a corrupt or adversarial length surfaces as an error instead of an oversized
+/// front, so a corrupt or malicious length surfaces as an error instead of an oversized
 /// reservation or a garbage layout.
 pub(crate) fn validate_entry_extents(
     directory: &[BendlDirectoryEntry],

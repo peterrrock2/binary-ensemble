@@ -4,14 +4,14 @@
 //! mutants are produced (bit-flip, increment, zero) and each mutant is driven through **every
 //! public read entry point** for its wire format. The contract under test is *panic freedom*:
 //!
-//! - A mutant may fail to parse — any `io::Result` error is acceptable.
+//! - A mutant may fail to parse: any `io::Result` error is acceptable.
 //! - A mutant may even decode successfully (plain BEN and XBEN carry no integrity bytes, so a
 //!   payload mutation can produce a different-but-structurally-valid stream). That is acceptable
 //!   here too; whole-stream integrity is the `.bendl` layer's job and is covered by its own
 //!   checksum tests.
 //! - What a mutant must never do, at any byte position, is panic, abort, or hang an entry point.
 //!
-//! When a new public read API is added, register it in the matching `drive_*` function below —
+//! When a new public read API is added, register it in the matching `drive_*` function below;
 //! that one registration extends the exhaustive corruption coverage to the new surface.
 
 use std::io::{self, Cursor, Read};
@@ -212,7 +212,7 @@ fn drive_xben_entry_points(fixture_name: &str, pos: usize, byte: u8, bytes: &[u8
 
 /// Drive every public `.bendl` read entry point over `bytes`.
 ///
-/// Mutants split into two classes: open-rejected (constructor errors — nothing else reachable)
+/// Mutants split into two classes: open-rejected (constructor errors, nothing else reachable)
 /// and openable (every accessor must then hold the no-panic contract).
 fn drive_bendl_entry_points(fixture_name: &str, pos: usize, byte: u8, bytes: &[u8]) {
     let run = |label: &str, f: &dyn Fn()| assert_no_panic(fixture_name, pos, byte, label, f);
@@ -345,7 +345,7 @@ fn mutated_xben_bodies_never_panic_any_entry_point() {
 }
 
 /// Truncation of the *decompressed* XBEN bodies, re-wrapped in valid xz: a clean container whose
-/// inner stream ends mid-frame — the corruption class a damaged-but-recompressed file presents.
+/// inner stream ends mid-frame: the corruption class a damaged-but-recompressed file presents.
 #[test]
 fn truncated_xben_bodies_never_panic_any_entry_point() {
     for name in xben_fixture_names() {

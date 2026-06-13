@@ -437,7 +437,7 @@ fn append_rejects_incomplete_bundle() {
 
 #[test]
 fn append_rejects_finalized_bundle_with_zero_directory() {
-    // Header claims finalized but has directory_offset=0 — hits the second BundleIncomplete check.
+    // Header claims finalized but has directory_offset=0; hits the second BundleIncomplete check.
     let header = BendlHeader {
         magic: BENDL_MAGIC,
         major_version: BENDL_MAJOR_VERSION,
@@ -904,7 +904,7 @@ fn append_does_not_disturb_front_loaded_asset_bytes() {
 #[test]
 fn writer_rejects_custom_asset_claiming_canonical_name() {
     // Readers look canonical assets up by type, so a custom asset stored under a standardized
-    // name would be invisible to read_graph()/read_metadata() while still occupying the name —
+    // name would be invisible to read_graph()/read_metadata() while still occupying the name,
     // the silent failure mode of the remove-then-add replace flow. The writer refuses instead,
     // and the refusal reserves nothing: the real typed asset can still be added.
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
@@ -956,7 +956,7 @@ fn writer_asset_round_trips_with_auto_computed_crc32c() {
 
 #[test]
 fn writer_xz_asset_stores_crc_over_compressed_bytes_not_raw() {
-    // The CRC contract for xz-flagged assets is "CRC32C over the on-disk bytes" — i.e. the
+    // The CRC contract for xz-flagged assets is "CRC32C over the on-disk bytes", i.e. the
     // compressed bytes, not the raw input. Pin this directly: re-compress the same input, compute
     // the CRC over the compressed result, and assert it matches the stored value. Asserting that
     // the stored CRC does NOT equal `crc32c(raw_input)` is what catches the "writer accidentally
@@ -1002,7 +1002,7 @@ fn writer_xz_asset_stores_crc_over_compressed_bytes_not_raw() {
 fn finished_writer_rejects_further_operations() {
     let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     let writer = write_stream_bytes_via_session(writer, b"STANDARD BEN FILE\x00fake", 1);
-    // `finish` consumes `self`, which is itself the protection — there is no way to call add_asset
+    // `finish` consumes `self`, which is itself the protection; there is no way to call add_asset
     // / into_stream_session afterwards.
     let buf = writer.finish().unwrap().into_inner();
     // The resulting buffer is a valid finalized bundle.
@@ -1040,7 +1040,7 @@ fn writer_rejects_add_json_asset_with_wrong_canonical_metadata_name() {
             ..
         }
     ));
-    // After a rejected add, no entries have been recorded — a subsequent valid add proceeds
+    // After a rejected add, no entries have been recorded; a subsequent valid add proceeds
     // normally.
     writer
         .add_json_asset(ASSET_TYPE_METADATA, "metadata.json", b"{}")
@@ -1053,10 +1053,10 @@ fn writer_rejects_add_json_asset_with_wrong_canonical_metadata_name() {
 
 #[test]
 fn writer_rejected_add_leaves_singleton_slot_usable() {
-    // A rejected singleton add must not consume the singleton slot — otherwise a future valid add
+    // A rejected singleton add must not consume the singleton slot; otherwise a future valid add
     // with the correct standardized name would spuriously fail with DuplicateSingletonType.
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
-    // First try with wrong standardized name — rejected.
+    // First try with wrong standardized name, rejected.
     let _ = writer
         .add_json_asset(ASSET_TYPE_GRAPH, "not_graph.json", b"{}")
         .unwrap_err();
@@ -1344,7 +1344,7 @@ fn stream_session_flush_succeeds() {
     let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     let mut session = writer.into_stream_session().unwrap();
     session.flush().unwrap();
-    // Discard the session — it would warn on Drop, but the test runner does not assert on log
+    // Discard the session; it would warn on Drop, but the test runner does not assert on log
     // output, so this is fine for unit tests.
     let _ = session.finish_into_writer(0);
 }
@@ -1863,7 +1863,7 @@ fn bundle_with_reserved_asset_flag_bit() -> (Vec<u8>, u16) {
 fn two_parallel_readers_against_the_same_bundle_agree() {
     // Two `BendlReader`s opened from independent `Cursor`s over an `Arc<Vec<u8>>` shared
     // buffer must produce identical results across the full accessor surface. The bundle
-    // bytes are immutable for the duration of the test — this pins that the reader holds no
+    // bytes are immutable for the duration of the test; this pins that the reader holds no
     // shared mutable state internally (e.g., no static caches, no thread-local position
     // tracking) that would let one thread's reads scramble the other's.
     //
@@ -2057,8 +2057,8 @@ fn writer_failed_asset_write_does_not_poison_registry() {
 
 #[test]
 fn writer_reserved_name_rejection_leaves_writer_usable() {
-    // A failed reserved-name claim must reserve nothing — neither the name nor any singleton
-    // state — so the writer remains usable for the real typed asset and unrelated additions.
+    // A failed reserved-name claim must reserve nothing (neither the name nor any singleton
+    // state), so the writer remains usable for the real typed asset and unrelated additions.
     let mut writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
     let err = writer
         .add_asset(
@@ -2204,7 +2204,7 @@ fn append_commit_syncs_directory_before_the_header_patch_and_header_after() {
     // any order, so the new tail (payloads + directory) must hit a sync barrier before the
     // header is patched to reference it, and the patched header must be synced before commit
     // reports success. Without the first barrier, power loss could leave the header pointing at
-    // unwritten directory bytes — the previous bundle unrecoverable.
+    // unwritten directory bytes, the previous bundle unrecoverable.
     let (bundle, _) = build_base_bundle();
     let log = SyncLog {
         inner: Cursor::new(bundle),
@@ -2244,7 +2244,7 @@ fn append_commit_syncs_directory_before_the_header_patch_and_header_after() {
 #[test]
 fn incompressible_payload_is_stored_raw_even_above_the_threshold() {
     // xz inflates incompressible bytes by its container overhead, so the writer keeps the
-    // compressed form only when it is strictly smaller — otherwise the asset is stored raw with
+    // compressed form only when it is strictly smaller; otherwise the asset is stored raw with
     // no XZ flag, and reads never pay a pointless decompression. Forcing compress() is a request
     // to try, not a guarantee of the stored form.
     let mut noise = vec![0u8; 4096];
@@ -2283,7 +2283,7 @@ fn incompressible_payload_is_stored_raw_even_above_the_threshold() {
 fn compression_level_is_plumbed_end_to_end() {
     // The level only changes the stored form, never the decoded bytes. No size ordering is
     // asserted between presets: xz's per-preset dictionary/properties overhead can make a
-    // *small* payload store larger at 9 than at 0 — the pin here is that the knob actually
+    // *small* payload store larger at 9 than at 0; the pin here is that the knob actually
     // reaches the encoder (different presets produce different stored sizes) and that both
     // round-trip.
     let payload = compressible_json(512);
@@ -2365,7 +2365,7 @@ fn invalid_compression_level_is_rejected_and_reserves_nothing() {
 #[test]
 fn probe_skips_full_compression_of_large_incompressible_payloads() {
     // At or above the probe threshold, a prefix sample that barely shrinks short-circuits to
-    // raw storage — the full xz pass over an already-compressed blob never runs. The stored
+    // raw storage; the full xz pass over an already-compressed blob never runs. The stored
     // outcome matches what compress-and-compare would have chosen anyway.
     let mut noise = vec![0u8; 4 * 1024 * 1024 + 1];
     let mut x: u32 = 0x2545_F491;

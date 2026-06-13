@@ -63,17 +63,16 @@ mod tests {
         )
         .unwrap();
 
-        // Use a read-only File as the writer — writing to it fails with a permission error, which
-        // propagates through the write_all_jsonl call. No custom Write impl needed.
+        // A read-only File as the writer fails with a permission error that propagates through the
+        // write_all_jsonl call, so no custom Write impl is needed.
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         let path = std::env::temp_dir().join(format!("xben-ro-{nonce}.tmp"));
         std::fs::write(&path, b"").unwrap();
-        let ro_file = std::fs::File::open(&path).unwrap(); // read-only
-                                                           // Writing to a read-only file fails —
-                                                           // the exact error kind varies by OS.
+        let ro_file = std::fs::File::open(&path).unwrap();
+        // Writing to a read-only file fails; the exact error kind varies by OS.
         let err = decode_xben_to_jsonl(BufReader::new(xben.as_slice()), ro_file).unwrap_err();
         assert!(err.kind() != io::ErrorKind::UnexpectedEof);
         let _ = std::fs::remove_file(path);

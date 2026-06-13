@@ -19,7 +19,7 @@ pub const DEFAULT_TWODELTA_CHUNK_SIZE: usize = 10_000;
 ///
 /// Used by both the BEN and XBEN writers to construct the body of a TwoDelta "repeat" frame: each
 /// writer wraps the result in its own frame type. Returns an `InvalidInput` error carrying
-/// [`EncodeError::TwoDeltaRunTooLong`] if any run exceeds `u16::MAX` in length — the wire format
+/// [`EncodeError::TwoDeltaRunTooLong`] if any run exceeds `u16::MAX` in length: the wire format
 /// cannot represent such a run in a delta-shaped frame, and the writers recover by emitting a
 /// snapshot frame instead.
 pub(crate) fn twodelta_repeat_runs(assignment: &[u16]) -> io::Result<((u16, u16), Vec<u16>)> {

@@ -17,7 +17,7 @@ use std::path::Path;
 /// In-place transforms (`remove_asset`, `compress_stream`, `relabel_bundle`) swap a rewritten
 /// file over the path, and appends rewrite the directory in place. A decoder built before
 /// either would silently serve a mix of old bytes (through its held handle) and new bytes
-/// (through path reopens for iteration) — so every IO entry point compares the file's current
+/// (through path reopens for iteration), so every IO entry point compares the file's current
 /// identity against this snapshot and refuses with a clear error when they diverge.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct FileIdentity {

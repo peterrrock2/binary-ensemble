@@ -12,7 +12,7 @@ use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Map a core bundle write error onto the Python exception taxonomy — identically at every
+/// Map a core bundle write error onto the Python exception taxonomy, identically at every
 /// entry point, so the same core failure never surfaces as different exception types depending
 /// on which transform raised it. Unknown names are ``KeyError`` (matching the decoder's lookup
 /// errors), reserved names are ``ValueError``, IO is ``OSError``, the rest a generic
@@ -119,7 +119,7 @@ pub fn open_output(out_file: &PathBuf, overwrite: bool) -> PyResult<BufWriter<Fi
 /// A one-shot output destination written via temp-file-then-rename.
 ///
 /// The destination is never visible half-written: bytes go to a uniquely named hidden temp file
-/// in the destination's directory, and only an explicit commit — after an fsync — renames it
+/// in the destination's directory, and only an explicit commit (after an fsync) renames it
 /// into place. If the guard drops uncommitted (any error path), the temp file is removed and an
 /// existing destination is left exactly as it was, even with `overwrite = true`. When the
 /// destination already exists (including the in-place case where it is also the source), the
@@ -358,8 +358,8 @@ pub fn parse_graph_input(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<Vec
 
 /// Build a live NetworkX graph from an already-parsed adjacency-format JSON object.
 ///
-/// The shared tail behind every API that hands a graph back to the caller —
-/// `BendlEncoder.add_graph`, `BendlDecoder.read_graph`, and the `graph` reordering utilities — so
+/// The shared tail behind every API that hands a graph back to the caller
+/// (`BendlEncoder.add_graph`, `BendlDecoder.read_graph`, and the `graph` reordering utilities), so
 /// they all return graphs in the same shape.
 pub fn networkx_graph_from_json(py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     let json_graph = py.import("networkx.readwrite.json_graph")?;

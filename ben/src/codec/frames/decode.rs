@@ -4,7 +4,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use std::io::{self, Read};
 
 /// Reject a declared payload length above [`MAX_FRAME_PAYLOAD_BYTES`] **before** allocating the
-/// payload buffer, so a corrupt or adversarial frame header cannot force a multi-gigabyte
+/// payload buffer, so a corrupt or malicious frame header cannot force a multi-gigabyte
 /// reservation. Well-formed frames never approach the cap.
 pub(crate) fn check_payload_len(n_bytes: u32) -> io::Result<()> {
     if n_bytes > MAX_FRAME_PAYLOAD_BYTES {
@@ -21,7 +21,7 @@ pub(crate) fn check_payload_len(n_bytes: u32) -> io::Result<()> {
 
 /// Reject a TwoDelta run-length bit width outside `1..=16`. The bit unpackers shift a 32-bit
 /// register by `32 - width` and decrement a counter by `width`, so a zero or oversized width
-/// is not merely corrupt — it would shift out of range or never terminate.
+/// is not merely corrupt; it would shift out of range or never terminate.
 pub(crate) fn check_twodelta_run_width(max_len_bits: u8) -> io::Result<()> {
     if max_len_bits == 0 || max_len_bits > 16 {
         return Err(io::Error::new(
@@ -104,7 +104,7 @@ pub(crate) fn unpack_twodelta_run_lengths(
 
 /// One sample's encoded bytes at the frame layer, freshly read from a wire stream.
 ///
-/// `Standard` and `MkvChain` carry **opaque** bit-packed payload bytes — the runs are not expanded
+/// `Standard` and `MkvChain` carry **opaque** bit-packed payload bytes: the runs are not expanded
 /// until a caller asks for them. This is what makes frame-level subsampling cheap: the iterator can
 /// pull frames at byte level and only the kept frames pay the bit-unpacking cost.
 ///
@@ -121,7 +121,7 @@ pub enum BenDecodeFrame {
         max_len_bit_count: u8,
         /// The number of bytes in the packed payload.
         n_bytes: u32,
-        /// The bit-packed payload bytes — opaque until `expand` is called.
+        /// The bit-packed payload bytes, opaque until `expand` is called.
         raw_bytes: Vec<u8>,
     },
     /// An `MkvChain`-variant frame carrying its repetition count.
@@ -132,7 +132,7 @@ pub enum BenDecodeFrame {
         max_len_bit_count: u8,
         /// The number of bytes in the packed payload.
         n_bytes: u32,
-        /// The bit-packed payload bytes — opaque until `expand` is called.
+        /// The bit-packed payload bytes, opaque until `expand` is called.
         raw_bytes: Vec<u8>,
         /// The number of times this frame repeats.
         count: u16,
@@ -155,7 +155,7 @@ impl BenDecodeFrame {
     /// Returns `Ok(None)` on a clean EOF at a frame boundary, `Ok(Some(frame))` on success, and
     /// `Err` on any I/O or format error.
     ///
-    /// Note: in a `TwoDelta` *stream* the body layout is chosen per frame — snapshot frames are
+    /// Note: in a `TwoDelta` *stream* the body layout is chosen per frame: snapshot frames are
     /// `MkvChain`-formatted and delta frames are `TwoDelta`-formatted. That choice is carried by a
     /// 1-byte tag the stream reader (e.g. [`BenStreamReader`]) consumes before calling this; it
     /// resolves the tag to a [`BenVariant`] and passes it here. This function reads the body for

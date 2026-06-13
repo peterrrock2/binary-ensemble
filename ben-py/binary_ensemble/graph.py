@@ -1,14 +1,14 @@
 """Graph reordering utilities (the reben orderings).
 
 Reordering a dual graph before building a chain (or a bundle) can dramatically improve BEN/XBEN
-compression. Each function takes a graph — a live ``networkx.Graph``, or adjacency-format JSON
-as a ``dict``/``list``, raw ``bytes``, a file-like with ``.read()``, or a path — and returns
+compression. Each function takes a graph (a live ``networkx.Graph``, or adjacency-format JSON
+as a ``dict``/``list``, raw ``bytes``, a file-like with ``.read()``, or a path) and returns
 ``(reordered_graph, node_permutation_map)``:
 
 - ``reordered_graph`` is a live NetworkX graph in its new node ordering (the same shape
   :meth:`binary_ensemble.bundle.BendlEncoder.add_graph` and
   :meth:`binary_ensemble.bundle.BendlDecoder.read_graph` return).
-- ``node_permutation_map`` is the parsed ``node_permutation_map.json`` payload — an object with a
+- ``node_permutation_map`` is the parsed ``node_permutation_map.json`` payload, an object with a
   ``node_permutation_old_to_new`` field mapping original zero-based node positions to their new
   positions.
 
@@ -49,7 +49,7 @@ def reorder(
             ``"mlc"`` (multi-level clustering), ``"rcm"`` (reverse Cuthill-McKee), or ``"key"``
             (sort by the node attribute named in ``key``). Default is ``"mlc"``.
         key (str | None, optional): Node attribute to sort by, e.g. ``key="GEOID"``;
-            ``key="id"`` sorts by the NetworkX node id. Required with — and only valid with —
+            ``key="id"`` sorts by the NetworkX node id. Required with (and only valid with)
             ``sort="key"``. Default is ``None``.
 
     Returns:
@@ -82,7 +82,7 @@ def reorder_multi_level_cluster(
 
     Returns:
         tuple[networkx.Graph, NodePermutationMap]: The reordered graph and the parsed permutation
-        map — see :func:`reorder`.
+        map (see :func:`reorder`).
     """
     return graph_reorder(graph, "mlc")
 
@@ -102,7 +102,7 @@ def reorder_reverse_cuthill_mckee(
 
     Returns:
         tuple[networkx.Graph, NodePermutationMap]: The reordered graph and the parsed permutation
-        map — see :func:`reorder`.
+        map (see :func:`reorder`).
     """
     return graph_reorder(graph, "rcm")
 
@@ -122,6 +122,6 @@ def reorder_by_key(graph: GraphInput, key: str) -> "tuple[nx.Graph, NodePermutat
 
     Returns:
         tuple[networkx.Graph, NodePermutationMap]: The reordered graph and the parsed permutation
-        map — see :func:`reorder`.
+        map (see :func:`reorder`).
     """
     return graph_reorder(graph, "key", key)

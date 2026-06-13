@@ -8,7 +8,7 @@ import sys
 from importlib import metadata
 
 # Make the source package importable for autodoc even when it is not pip-installed
-# (autodoc imports the built module at runtime to read live docstrings — including
+# (autodoc imports the built module at runtime to read live docstrings, including
 # the ones that live in the compiled ``_core`` extension).
 sys.path.insert(0, os.path.abspath(".."))
 
@@ -73,7 +73,7 @@ nb_merge_streams = True
 # -- autodoc / napoleon ------------------------------------------------------
 
 # Members are listed by the explicit ``autoclass``/``autofunction`` directives in the
-# API pages, so ``automodule`` is left to render only the module docstring (no members) —
+# API pages, so ``automodule`` is left to render only the module docstring (no members);
 # documenting each object twice produces "duplicate object description" warnings.
 autodoc_default_options = {
     "show-inheritance": True,
@@ -125,7 +125,7 @@ pygments_dark_style = "github-dark"
 # -- Color palettes ----------------------------------------------------------
 #
 # Each palette gives furo a light-mode and a dark-mode brand color as
-# ``(primary, content)`` — ``primary`` tints sidebar accents/headings, ``content``
+# ``(primary, content)``: ``primary`` tints sidebar accents/headings, ``content``
 # is the in-text link color (kept darker in light mode / lighter in dark mode for
 # legible contrast). Swap the whole site palette by changing ACTIVE_PALETTE below,
 # or without editing this file via the DOCS_PALETTE env var, e.g.:
@@ -134,8 +134,8 @@ pygments_dark_style = "github-dark"
 #
 # Add your own entries freely.
 # Each entry maps a mode ("light"/"dark") to a dict of Furo CSS variables. Most
-# palettes set only the two brand colors — "color-brand-primary" (sidebar/heading
-# accents) and "color-brand-content" (in-text links) — via the _brand() helper, but a
+# palettes set only the two brand colors ("color-brand-primary" (sidebar/heading
+# accents) and "color-brand-content" (in-text links)) via the _brand() helper, but a
 # palette may set *any* Furo variable, e.g. backgrounds/foregrounds (see "aurora").
 #
 # A palette may also carry "dark_pygments" / "light_pygments": the names of the Pygments
@@ -321,16 +321,16 @@ ogp_social_cards = {"enable": False}
 # -- Swappable code (Pygments) themes ----------------------------------------
 #
 # Furo bakes one light + one dark Pygments theme (pygments_style / pygments_dark_style)
-# into pygments.css. To make code themes swappable — per palette and live in the
-# browser — we render each style below and key it off a <body> attribute the switcher
+# into pygments.css. To make code themes swappable (per palette and live in the
+# browser) we render each style below and key it off a <body> attribute the switcher
 # sets. Pygments' own `.highlight { background }` line rides along, so every theme
 # brings its matching code-block surface.
 #
 # Two attributes, two behaviors:
-#   * data-code-theme  — an explicit pick from the dropdown. Scoped `html body[…]` so it
+#   * data-code-theme: an explicit pick from the dropdown. Scoped `html body[…]` so it
 #                        applies in BOTH light and dark mode and out-specifies Furo's
 #                        own rules regardless of stylesheet order.
-#   * data-code-auto   — the active palette's "dark_pygments" default (the "Auto" entry),
+#   * data-code-auto: the active palette's "dark_pygments" default (the "Auto" entry),
 #                        scoped to dark mode only so light mode keeps the global light
 #                        style. The auto-mode (`prefers-color-scheme`) variant mirrors
 #                        Furo's `:not([data-theme="light"])` selector for system readers.
@@ -378,8 +378,8 @@ CODE_THEMES = {
 # instead of a builtin style name (HtmlFormatter accepts either).
 #
 # "warm-light" is built to fit the warm palettes (tangerine/nebula/ember): a cream
-# background with tokens drawn from the brand accent family — orange and amber warms
-# against cerulean and teal cools — rather than a stock theme's unrelated hues. Every
+# background with tokens drawn from the brand accent family (orange and amber warms
+# against cerulean and teal cools) rather than a stock theme's unrelated hues. Every
 # token color is chosen to clear ~4.5:1 contrast on the cream background.
 def _warm_light():
     from pygments.style import Style
@@ -563,7 +563,7 @@ html_css_files.append("css/pygments-themes.css")
 #
 # Expose the registries to the page (single source of truth) and add the switcher script.
 # It always paints the active palette and its default code themes on load (the full
-# palette isn't baked into the theme — only its brand colors are), and additionally
+# palette isn't baked into the theme, only its brand colors are), and additionally
 # renders the palette/code dropdowns when DOCS_SHOW_SWITCHER is true. Choices recolor the
 # live site and persist in localStorage; delete this setup() and js/palette-switcher.js
 # to remove it.

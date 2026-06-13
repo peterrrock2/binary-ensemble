@@ -2,14 +2,14 @@
 
 The public surface mirrors the CLI's ``ben`` vs ``bendl`` split:
 
-- :mod:`binary_ensemble.bundle` — the recommended single-file ``.bendl`` format:
+- :mod:`binary_ensemble.bundle`: the recommended single-file ``.bendl`` format:
   :class:`~binary_ensemble.bundle.BendlEncoder`, :class:`~binary_ensemble.bundle.BendlDecoder`,
   and :func:`~binary_ensemble.bundle.compress_stream`.
-- :mod:`binary_ensemble.stream` — plain BEN/XBEN streams:
+- :mod:`binary_ensemble.stream`: plain BEN/XBEN streams:
   :class:`~binary_ensemble.stream.BenEncoder`, :class:`~binary_ensemble.stream.BenDecoder`.
-- :mod:`binary_ensemble.codec` — whole-file JSONL ↔ BEN ↔ XBEN transforms.
-- :mod:`binary_ensemble.graph` — graph reordering utilities.
-- :mod:`binary_ensemble.types` — shared type aliases for annotating user code.
+- :mod:`binary_ensemble.codec`: whole-file JSONL ↔ BEN ↔ XBEN transforms.
+- :mod:`binary_ensemble.graph`: graph reordering utilities.
+- :mod:`binary_ensemble.types`: shared type aliases for annotating user code.
 
 All public symbols are re-exported here for convenience.
 """

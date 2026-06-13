@@ -36,8 +36,7 @@ struct DepthBar {
 /// bar's total grows as new work at that depth is discovered (e.g. when the next top-level
 /// component recurses and introduces more coarse nodes).
 ///
-/// Spinners auto-hide when stderr is not a terminal (e.g. under `cargo test` or when output is
-/// piped), so no config is needed for CI/test environments.
+/// Spinners auto-hide when stderr is not a terminal.
 struct MlcProgress {
     multi: MultiProgress,
     depths: Vec<DepthBar>,

@@ -547,7 +547,7 @@ fn append_graph_asset_errors_when_bundle_already_has_graph() {
     let bendl_path = unique_path("dup_graph.bendl");
     fs::write(&bendl_path, &buf).unwrap();
 
-    // graph.json already exists — add_asset must fail with duplicate name.
+    // graph.json already exists; add_asset must fail with duplicate name.
     let graph_path = write_temp_graph("dup_graph.json");
     let err = append_graph_asset(bendl_path.to_str().unwrap(), &graph_path).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::Other);

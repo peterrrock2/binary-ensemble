@@ -9,7 +9,7 @@ use xz2::write::XzEncoder;
 /// Default per-block size used by the multithreaded XZ encoder when the caller does not pass an
 /// explicit `block_size`.
 ///
-/// liblzma's `block_size = 0` means "auto" (`3 × dict_size`), which at preset 9 is ~192 MiB — far
+/// liblzma's `block_size = 0` means "auto" (`3 × dict_size`), which at preset 9 is ~192 MiB, far
 /// too coarse for streaming inputs to fan out across worker threads. 16 MiB strikes a balance
 /// between scaling thread utilization on medium ensembles and keeping per-block dictionary reuse
 /// mostly intact.

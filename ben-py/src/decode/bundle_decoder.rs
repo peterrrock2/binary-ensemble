@@ -17,15 +17,15 @@ use std::path::PathBuf;
 ///
 /// Iterate the decoder to yield the embedded assignment stream one plan at a time (each a
 /// ``list[int]`` of district ids), and use ``len()`` for the sample count. Alongside the
-/// stream, a bundle carries assets — the dual graph, metadata, a node permutation map, and any
-/// custom blobs — exposed through the canonical getters (:meth:`read_graph`,
+/// stream, a bundle carries assets (the dual graph, metadata, a node permutation map, and any
+/// custom blobs) exposed through the canonical getters (:meth:`read_graph`,
 /// :meth:`read_metadata`, :meth:`read_node_permutation_map`) and the generic
 /// :meth:`read_asset_bytes` / :meth:`read_json_asset`. Inspect the directory with
 /// :meth:`asset_names`, :meth:`list_assets`, :meth:`version`, and :meth:`is_complete`.
 ///
 /// A decoder is a snapshot of the file it opened: if the bundle changes on disk afterwards
 /// (an in-place transform swaps in a rewritten file, or an append rewrites the directory),
-/// every data-reading call refuses with a clear error rather than mixing old and new bytes —
+/// every data-reading call refuses with a clear error rather than mixing old and new bytes;
 /// open a fresh decoder to read the current file.
 ///
 /// This decoder is bundle-only: opening it on a plain ``.ben``/``.xben`` stream raises and
@@ -268,7 +268,7 @@ impl PyBendlDecoder {
 
     /// Return the on-disk byte length of the embedded assignment stream.
     ///
-    /// Read straight from the bundle header's ``stream_len`` field — no decoding or copying.
+    /// Read straight from the bundle header's ``stream_len`` field; no decoding or copying.
     /// This is the size of the stream region as stored (BEN bytes, or compressed XBEN bytes),
     /// the same bytes ``extract_stream`` would copy out. For an unfinalized bundle the stream
     /// is taken to extend to the directory (or EOF), matching recovery extraction.
@@ -290,9 +290,9 @@ impl PyBendlDecoder {
 
     /// Return the on-disk byte length of a named asset's stored payload.
     ///
-    /// Read straight from the bundle directory — no decoding or copying. For assets stored
+    /// Read straight from the bundle directory; no decoding or copying. For assets stored
     /// xz-compressed (the ``"xz"`` flag in :meth:`list_assets`), this is the compressed size;
-    /// the decoded payload can be larger — use ``len(read_asset_bytes(name))`` for that.
+    /// the decoded payload can be larger, so use ``len(read_asset_bytes(name))`` for that.
     ///
     /// Args:
     ///     name (str): The asset's name, as listed by :meth:`asset_names`.
@@ -370,7 +370,7 @@ impl PyBendlDecoder {
     /// Scans the raw on-disk bytes of every asset and of the assignment stream and compares
     /// them against the CRC32C checksums recorded when the bundle was written. Iterating or
     /// subsampling a decoder reads the stream *without* checking these checksums (partial
-    /// reads cannot prove a whole-stream checksum), so call this when integrity matters —
+    /// reads cannot prove a whole-stream checksum), so call this when integrity matters,
     /// e.g. after downloading a bundle or before an important run.
     ///
     /// Raises:
@@ -445,7 +445,7 @@ impl PyBendlDecoder {
     /// The stored adjacency-format JSON is rebuilt into a live graph via
     /// `networkx.readwrite.json_graph.adjacency_graph`, so its node order matches the order
     /// assignments were written in and it can be handed straight to consumers like GerryChain's
-    /// `Partition`. The result is a :class:`networkx.Graph` — or a
+    /// `Partition`. The result is a :class:`networkx.Graph`, or a
     /// :class:`networkx.MultiGraph` if the stored adjacency declares itself a multigraph.
     /// The raw JSON is still available through `read_json_asset("graph.json")`.
     #[pyo3(text_signature = "(self)")]
@@ -508,7 +508,7 @@ impl PyBendlDecoder {
             )));
         }
         // The copy is Rust-only IO; run it detached. The boxed stream reader is created inside
-        // the closure (locals need not be Send — only captures do).
+        // the closure (locals need not be Send, only captures do).
         let reader = &mut self.reader;
         py.detach(move || {
             let mut stream = if allow_unfinalized && !reader.is_finalized() {

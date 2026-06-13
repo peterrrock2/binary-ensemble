@@ -73,8 +73,7 @@ pub enum ChecksumError {
     },
 
     /// The bundle is not finalized, so the stored checksum is not authoritative. Stream-only:
-    /// asset-checksum APIs never produce this variant because directory entries are authoritative
-    /// regardless of bundle finalization.
+    /// asset-checksum APIs never produce this variant.
     #[error("bundle is unfinalized; {target} checksum is not authoritative yet")]
     BundleIncomplete {
         /// Which region's checksum is not yet authoritative.

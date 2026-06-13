@@ -1,4 +1,4 @@
-"""The ``.bendl`` bundle format — the recommended single-file container.
+"""The ``.bendl`` bundle format: the recommended single-file container.
 
 A bundle wraps a BEN/XBEN assignment stream together with front-loaded assets: a dual
 ``graph.json``, a ``node_permutation_map.json``, a ``metadata.json``, and arbitrary custom blobs.
@@ -68,7 +68,7 @@ def _atomic_or_out(
 
     ``transform(src, dst, overwrite)`` writes the result. The ``_core`` bindings own the swap
     discipline: the destination is written via a uniquely named temp file that inherits an
-    existing destination's permissions, fsynced, and atomically renamed into place — so a
+    existing destination's permissions, fsynced, and atomically renamed into place, so a
     destination is never visible half-written and an error leaves it exactly as it was.
     ``out_file=None`` means in place: the transform's destination is ``path`` itself.
     """
@@ -88,14 +88,14 @@ def _coerce_asset_payload(payload: object, content_type: str) -> bytes:
 
     Accepted forms:
 
-    - ``dict`` / ``list`` — serialized via ``json.dumps`` (requires ``content_type="json"``).
-    - ``str`` — UTF-8 encoded **content** (not a path; pass a ``pathlib.Path`` to read a file —
-      this deliberately differs from :meth:`BendlEncoder.add_metadata`, whose payloads are never
+    - ``dict`` / ``list``: serialized via ``json.dumps`` (requires ``content_type="json"``).
+    - ``str``: UTF-8 encoded **content** (not a path; pass a ``pathlib.Path`` to read a file. This
+      deliberately differs from :meth:`BendlEncoder.add_metadata`, whose payloads are never
       plain text, so there a ``str`` is a path).
-    - ``bytes`` / ``bytearray`` / ``memoryview`` — used verbatim.
-    - any object with a ``.read()`` method (open files, ``io.BytesIO``) — read, with ``str``
+    - ``bytes`` / ``bytearray`` / ``memoryview``: used verbatim.
+    - any object with a ``.read()`` method (open files, ``io.BytesIO``): read, with ``str``
       results UTF-8 encoded.
-    - ``os.PathLike`` (e.g. ``pathlib.Path``) — the file at that path is read.
+    - ``os.PathLike`` (e.g. ``pathlib.Path``): the file at that path is read.
     """
     if isinstance(payload, (dict, list)):
         if content_type != "json":
@@ -205,11 +205,11 @@ class BendlEncoder:
                 ``os.PathLike`` path to a JSON file. A plain ``str`` is a *path* here.
             sort (SortMethod | None, optional): How to order the nodes
                 (:data:`~binary_ensemble.types.SortMethod` or ``None``): ``"mlc"`` (multi-level
-                clustering — reorders the graph for better compression), ``"rcm"`` (reverse
+                clustering that reorders the graph for better compression), ``"rcm"`` (reverse
                 Cuthill-McKee), ``"key"`` (sort by the node attribute named in ``key``), or
                 ``None`` to store the graph as-is with no permutation map. Default is ``"mlc"``.
             key (str | None, optional): Node attribute to sort by, e.g. ``key="GEOID"``;
-                ``key="id"`` sorts by the NetworkX node id. Required with — and only valid with —
+                ``key="id"`` sorts by the NetworkX node id. Required with (and only valid with)
                 ``sort="key"``. Default is ``None``.
 
         Returns:
@@ -319,7 +319,7 @@ class BendlEncoder:
                   ``os.PathLike`` naming a file whose contents are read and stored as binary.
 
                 Outside ``content_type="file"``, a plain ``str`` is always *content*, never a
-                path — pass a ``pathlib.Path`` to read from disk (e.g. a ``Path`` with
+                path; pass a ``pathlib.Path`` to read from disk (e.g. a ``Path`` with
                 ``content_type="json"`` stores a JSON file the decoder will auto-parse).
             content_type (AssetContentType): One of ``"json"``, ``"text"``, ``"binary"``, or
                 ``"file"`` (:data:`~binary_ensemble.types.AssetContentType`).
@@ -359,7 +359,7 @@ class BendlEncoder:
             )
         data = _coerce_asset_payload(payload, content_type)
         if content_type == "json" and not isinstance(payload, (dict, list)):
-            # dict/list payloads were serialized by json.dumps just above — already valid.
+            # dict/list payloads were serialized by json.dumps just above, already valid.
             try:
                 json.loads(data.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -380,12 +380,12 @@ class BendlEncoder:
 
         Available wherever :meth:`add_asset` commits immediately: append mode, or create mode
         after the stream has closed. The directory drop and the compaction commit as one
-        operation, so the asset's payload bytes are actually gone from the file — not just
-        unreferenced — and on any error the bundle is left untouched, the asset still present
+        operation, so the asset's payload bytes are actually gone from the file (not just
+        unreferenced), and on any error the bundle is left untouched, the asset still present
         for a retry. The name (and any singleton-type claim, e.g. ``metadata.json``) becomes
         free again, so remove-then-add is the way to replace an asset's payload. For the
         canonical assets, re-add through the typed methods (:meth:`add_metadata`,
-        :meth:`add_graph`) — a generic :meth:`add_asset` under a standardized name is refused,
+        :meth:`add_graph`); a generic :meth:`add_asset` under a standardized name is refused,
         because the result would be invisible to the type-keyed readers.
 
         Removing appended (post-stream) assets is cheap at any scale: the compaction rebuilds
@@ -494,7 +494,7 @@ def relabel_bundle(
     Reorders the embedded ``graph.json``, rewrites every assignment into the new node order, and
     writes a fresh bundle storing the reordered graph and a ``node_permutation_map.json`` (so the
     reordering is reversible). Metadata and custom assets are preserved. This is the bundle-level
-    form of the CLI's ``reben`` ordering flow — typically run to shrink a bundle before an XBEN
+    form of the CLI's ``reben`` ordering flow, typically run to shrink a bundle before an XBEN
     recompress.
 
     Only BEN bundles are supported (relabel before compressing to XBEN); the source must carry a
@@ -510,7 +510,7 @@ def relabel_bundle(
             ``"mlc"`` (multi-level clustering), ``"rcm"`` (reverse Cuthill-McKee), or ``"key"``
             (sort by the node attribute named in ``key``). Default is ``"mlc"``.
         key (str | None, optional): Node attribute to sort by, e.g. ``key="GEOID"``. Required
-            with — and only valid with — ``sort="key"``. Default is ``None``.
+            with (and only valid with) ``sort="key"``. Default is ``None``.
         overwrite (bool, optional): Replace ``out_file`` if it already exists. Irrelevant in
             place, which always replaces ``path``. Default is ``False``.
 

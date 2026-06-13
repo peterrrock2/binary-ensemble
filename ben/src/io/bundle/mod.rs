@@ -8,9 +8,9 @@
 //!
 //! The module is organised as:
 //!
-//! - [`format`] — binary header and directory entry types, constants, and encode/decode helpers.
+//! - [`format`]: binary header and directory entry types, constants, and encode/decode helpers.
 //!   Pure functions over byte buffers; no I/O.
-//! - [`manifest`] — serde structs for the optional `metadata.json` asset.
+//! - [`manifest`]: serde structs for the optional `metadata.json` asset.
 
 pub mod compact;
 pub mod error;
