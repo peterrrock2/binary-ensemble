@@ -35,12 +35,12 @@ impl CliVariant {
 
 /// Resolve the BEN variant for an encode.
 ///
-/// `--variant` takes precedence over `--save-all`. If neither is given, defaults to MkvChain.
+/// `--variant` takes precedence over `--save-all`. If neither is given, defaults to TwoDelta.
 pub(super) fn resolve_variant(variant: Option<CliVariant>, save_all: bool) -> BenVariant {
     match variant {
         Some(v) => v.to_ben_variant(),
         None if save_all => BenVariant::Standard,
-        None => BenVariant::MkvChain,
+        None => BenVariant::TwoDelta,
     }
 }
 
@@ -126,7 +126,7 @@ pub(super) enum Command {
 pub(super) struct EncodeArgs {
     /// Input JSONL file. Reads stdin when omitted.
     pub input_file: Option<String>,
-    /// BEN variant to encode into. Defaults to mkvchain. Takes precedence over `--save-all`.
+    /// BEN variant to encode into [default: twodelta]. Takes precedence over `--save-all`.
     #[arg(short = 't', long, value_enum)]
     pub variant: Option<CliVariant>,
     /// Store every assignment vector without run-length repetition counts. Equivalent to
@@ -144,7 +144,7 @@ pub(super) struct EncodeArgs {
 pub(super) struct XencodeArgs {
     /// Input JSONL or BEN file. Reads stdin when omitted.
     pub input_file: Option<String>,
-    /// BEN variant to encode into (JSONL input only). Defaults to mkvchain.
+    /// BEN variant to encode into (JSONL input only) [default: twodelta].
     #[arg(short = 't', long, value_enum)]
     pub variant: Option<CliVariant>,
     /// Store every assignment vector without run-length repetition counts (JSONL input only).
@@ -157,20 +157,20 @@ pub(super) struct XencodeArgs {
     /// extension; needed only when reading BEN from stdin.
     #[arg(long)]
     pub from_ben: bool,
-    /// Number of threads the XZ encoder may use. Defaults to 1. `-1` means every available core
-    /// (sklearn convention); values above the host's parallelism are clamped down.
+    /// Number of threads the XZ encoder may use. `-1` means every available core (sklearn
+    /// convention); values above the host's parallelism are clamped down [default: 1].
     #[arg(short = 'c', long, allow_hyphen_values = true)]
     pub n_cpus: Option<i32>,
-    /// XZ compression level, 0-9. Defaults to the highest level.
+    /// XZ compression level, 0-9 [default: 9].
     #[arg(short = 'l', long)]
     pub compression_level: Option<u32>,
     /// Number of TwoDelta delta frames per columnar chunk. Only affects the TwoDelta variant.
-    /// Larger chunks improve XZ compression. Default is 10,000.
+    /// Larger chunks improve XZ compression [default: 10000].
     #[arg(long)]
     pub chunk_size: Option<usize>,
     /// Per-block size in bytes for the multithreaded XZ encoder. liblzma needs a non-zero block
-    /// size to fan compression out across threads. Defaults to 16 MiB when `--n-cpus > 1`, or 0
-    /// (liblzma auto) for single-thread runs.
+    /// size to fan compression out across threads [default: 16 MiB when `--n-cpus` > 1, else 0
+    /// (liblzma auto)].
     #[arg(long)]
     pub xz_block_size: Option<u64>,
 }
@@ -208,13 +208,14 @@ pub(super) struct LookupArgs {
 pub(super) struct XzCompressArgs {
     /// Input file to compress.
     pub input_file: String,
-    /// Number of threads the XZ encoder may use. Defaults to 1. `-1` means every available core.
+    /// Number of threads the XZ encoder may use. `-1` means every available core [default: 1].
     #[arg(short = 'c', long, allow_hyphen_values = true)]
     pub n_cpus: Option<i32>,
-    /// XZ compression level, 0-9. Defaults to the highest level.
+    /// XZ compression level, 0-9 [default: 9].
     #[arg(short = 'l', long)]
     pub compression_level: Option<u32>,
-    /// Per-block size in bytes for the multithreaded XZ encoder.
+    /// Per-block size in bytes for the multithreaded XZ encoder [default: 16 MiB when `--n-cpus`
+    /// > 1, else 0 (liblzma auto)].
     #[arg(long)]
     pub xz_block_size: Option<u64>,
 }
@@ -246,7 +247,7 @@ pub(super) struct RelabelArgs {
     /// Only relabel the first `n` expanded samples.
     #[arg(long)]
     pub n_items: Option<usize>,
-    /// BEN variant for the output file.
+    /// BEN variant for the output file [default: preserve the input variant].
     #[arg(long, value_enum)]
     pub output_variant: Option<CliVariant>,
     /// Write a suffixed sibling file instead of replacing the input in place.
@@ -262,7 +263,7 @@ pub(super) struct CanonicalizeArgs {
     /// Only canonicalize the first `n` expanded samples.
     #[arg(long)]
     pub n_items: Option<usize>,
-    /// BEN variant for the output file.
+    /// BEN variant for the output file [default: preserve the input variant].
     #[arg(long, value_enum)]
     pub output_variant: Option<CliVariant>,
     /// Write a suffixed sibling file instead of replacing the input in place.
@@ -278,11 +279,11 @@ pub(super) struct CanonicalizeArgs {
 pub(super) struct ReencodeArgs {
     /// Input BEN file to re-encode.
     pub input_file: String,
-    /// BEN variant for the output file.
+    /// BEN variant for the output file [default: preserve the input variant].
     #[arg(long, value_enum)]
     pub output_variant: Option<CliVariant>,
-    /// Collapse adjacent equal assignments, matching the historical conversion run policy. Without
-    /// this, frame boundaries are preserved exactly.
+    /// Merge adjacent equal assignments into one counted frame (what the old variant-conversion
+    /// path always did). Without this, input frame boundaries are preserved exactly.
     #[arg(long)]
     pub collapse_runs: bool,
     /// Only re-encode the first `n` expanded samples.

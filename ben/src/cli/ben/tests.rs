@@ -167,8 +167,8 @@ fn resolve_variant_precedence() {
     );
     // --save-all alone means Standard
     assert_eq!(resolve_variant(None, true), BenVariant::Standard);
-    // neither means MkvChain
-    assert_eq!(resolve_variant(None, false), BenVariant::MkvChain);
+    // neither means TwoDelta
+    assert_eq!(resolve_variant(None, false), BenVariant::TwoDelta);
 }
 
 #[test]
