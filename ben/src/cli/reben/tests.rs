@@ -5,9 +5,11 @@ use super::helpers::{
 };
 use super::json_mode::run_json_mode;
 use crate::codec::encode::encode_jsonl_to_ben;
-use crate::test_utils::{sample_ben_bytes, unique_path};
+use crate::io::reader::BenStreamReader;
+use crate::test_utils::{jsonl_from_assignments, sample_ben_bytes, unique_path};
 use crate::BenVariant;
 use clap::{CommandFactory, Parser};
+use std::path::Path;
 use std::{fs, io::Cursor};
 
 /// Write a minimal Standard BEN file to a temp path and return the path.
@@ -17,6 +19,29 @@ fn write_temp_ben(name: &str) -> std::path::PathBuf {
     let ben = sample_ben_bytes(jsonl, BenVariant::Standard);
     fs::write(&path, &ben).unwrap();
     path
+}
+
+/// Write a Standard BEN file holding the given assignments (which may contain `0` and
+/// non-consecutive labels) and return the path.
+fn write_temp_ben_with(name: &str, assignments: &[Vec<u16>]) -> std::path::PathBuf {
+    let path = unique_path(name);
+    let jsonl = jsonl_from_assignments(assignments);
+    let ben = sample_ben_bytes(&jsonl, BenVariant::Standard);
+    fs::write(&path, &ben).unwrap();
+    path
+}
+
+/// Decode every sample (repetitions expanded) from a BEN file on disk.
+fn decode_ben_file(path: &Path) -> Vec<Vec<u16>> {
+    let bytes = fs::read(path).unwrap();
+    BenStreamReader::from_ben(Cursor::new(bytes))
+        .unwrap()
+        .silent(true)
+        .flat_map(|r| {
+            let (a, c) = r.unwrap();
+            std::iter::repeat_n(a, c as usize)
+        })
+        .collect()
 }
 
 #[test]
@@ -199,6 +224,7 @@ fn run_ben_mode_with_n_items_limit() {
         input.to_str().unwrap(),
         "--mode",
         "ben",
+        "--canonicalize",
         "--n-items",
         "1",
         "--output-file",
@@ -208,6 +234,88 @@ fn run_ben_mode_with_n_items_limit() {
     run_ben_mode(args).unwrap();
     let _ = fs::remove_file(&input);
     let _ = fs::remove_file(&out);
+}
+
+#[test]
+fn run_ben_mode_default_preserves_arbitrary_labels() {
+    // No relabel flags: the default rewrite must preserve `0` and non-consecutive ids verbatim.
+    let samples = vec![vec![0u16, 5, 5, 3], vec![3u16, 3, 0, 5]];
+    let input = write_temp_ben_with("default_preserve_input.jsonl.ben", &samples);
+    let out = unique_path("default_preserve_output.jsonl.ben");
+    let args = Args::try_parse_from([
+        "reben",
+        input.to_str().unwrap(),
+        "--mode",
+        "ben",
+        "--output-file",
+        out.to_str().unwrap(),
+    ])
+    .unwrap();
+    run_ben_mode(args).unwrap();
+
+    assert_eq!(decode_ben_file(&out), samples);
+    let _ = fs::remove_file(&input);
+    let _ = fs::remove_file(&out);
+}
+
+#[test]
+fn run_ben_mode_canonicalize_relabels_first_seen() {
+    // `--canonicalize` opts back into first-seen 0-based relabeling, applied per sample.
+    let samples = vec![vec![0u16, 5, 5, 3], vec![3u16, 3, 0, 5]];
+    let input = write_temp_ben_with("canon_input.jsonl.ben", &samples);
+    let out = unique_path("canon_output.jsonl.ben");
+    let args = Args::try_parse_from([
+        "reben",
+        input.to_str().unwrap(),
+        "--mode",
+        "ben",
+        "--canonicalize",
+        "--output-file",
+        out.to_str().unwrap(),
+    ])
+    .unwrap();
+    run_ben_mode(args).unwrap();
+
+    // Per sample: [0,5,5,3] -> 0->0,5->1,3->2; [3,3,0,5] -> 3->0,0->1,5->2.
+    assert_eq!(
+        decode_ben_file(&out),
+        vec![vec![0u16, 1, 1, 2], vec![0u16, 0, 1, 2]]
+    );
+    let _ = fs::remove_file(&input);
+    let _ = fs::remove_file(&out);
+}
+
+#[test]
+fn run_ben_mode_rejects_canonicalize_with_convert_only() {
+    let args = Args::try_parse_from([
+        "reben",
+        "x.ben",
+        "--mode",
+        "ben",
+        "--canonicalize",
+        "--convert-only",
+        "--output-variant",
+        "standard",
+    ])
+    .unwrap();
+    let err = run_ben_mode(args).unwrap_err();
+    assert!(err.contains("--canonicalize cannot be combined with --convert-only"));
+}
+
+#[test]
+fn run_ben_mode_rejects_canonicalize_with_relabeling() {
+    let args = Args::try_parse_from([
+        "reben",
+        "x.ben",
+        "--mode",
+        "ben",
+        "--canonicalize",
+        "--key",
+        "k",
+    ])
+    .unwrap();
+    let err = run_ben_mode(args).unwrap_err();
+    assert!(err.contains("--canonicalize cannot be combined with a map file, key, or ordering"));
 }
 
 #[test]
@@ -561,6 +669,7 @@ fn run_ben_mode_canonicalize_add_suffix_derives_output_name() {
         input.to_str().unwrap(),
         "--mode",
         "ben",
+        "--canonicalize",
         "--add-suffix",
     ])
     .unwrap();
@@ -571,9 +680,36 @@ fn run_ben_mode_canonicalize_add_suffix_derives_output_name() {
         .trim_end_matches(".jsonl.ben")
         .to_owned()
         + "_first_seen_relabeled.ben";
+    let derived_exists = Path::new(&derived).exists();
     let _ = fs::remove_file(&derived);
     fs::remove_file(&input).unwrap();
     result.unwrap();
+    assert!(derived_exists, "canonicalize --add-suffix must derive {derived}");
+}
+
+#[test]
+fn run_ben_mode_default_add_suffix_derives_rewrite_name() {
+    let input = write_temp_ben("rewrite.jsonl.ben");
+    let args = Args::try_parse_from([
+        "reben",
+        input.to_str().unwrap(),
+        "--mode",
+        "ben",
+        "--add-suffix",
+    ])
+    .unwrap();
+    let result = run_ben_mode(args);
+    let derived = input
+        .to_str()
+        .unwrap()
+        .trim_end_matches(".jsonl.ben")
+        .to_owned()
+        + "_rewrite.ben";
+    let derived_exists = Path::new(&derived).exists();
+    let _ = fs::remove_file(&derived);
+    fs::remove_file(&input).unwrap();
+    result.unwrap();
+    assert!(derived_exists, "default --add-suffix must derive {derived}");
 }
 
 #[test]
@@ -596,19 +732,20 @@ fn run_ben_mode_with_output_variant_add_suffix_derives_name() {
     result.unwrap();
 }
 
-/// Default (no `--output-file`, no `--add-suffix`) canonicalize replaces the input in place: the
-/// input path still holds a decodable BEN and no `_first_seen_relabeled` sibling is created.
+/// The default (no `--output-file`, no `--add-suffix`) verbatim rewrite replaces the input in
+/// place: the input path holds a decodable BEN with labels preserved and no suffixed sibling is
+/// created. `[2,1,3]` is preserved as-is, which also distinguishes the default from
+/// `--canonicalize` (which would relabel it to `[0,1,2]`).
 #[test]
-fn run_ben_mode_canonicalize_in_place_default() {
-    use crate::codec::decode::decode_ben_to_jsonl;
-
-    let input = write_temp_ben("canon_in_place.jsonl.ben");
+fn run_ben_mode_default_rewrite_in_place() {
+    let samples = vec![vec![1u16, 2, 3], vec![2u16, 1, 3]];
+    let input = write_temp_ben_with("rewrite_in_place.jsonl.ben", &samples);
     let sibling = input
         .to_str()
         .unwrap()
         .trim_end_matches(".jsonl.ben")
         .to_owned()
-        + "_first_seen_relabeled.ben";
+        + "_rewrite.ben";
 
     let args = Args::try_parse_from(["reben", input.to_str().unwrap(), "--mode", "ben"]).unwrap();
     run_ben_mode(args).unwrap();
@@ -618,8 +755,30 @@ fn run_ben_mode_canonicalize_in_place_default() {
         !std::path::Path::new(&sibling).exists(),
         "no suffixed sibling should be created by default"
     );
-    let bytes = fs::read(&input).unwrap();
-    decode_ben_to_jsonl(bytes.as_slice(), Vec::new()).expect("in-place output must decode");
+    assert_eq!(decode_ben_file(&input), samples, "labels must be preserved");
+
+    fs::remove_file(&input).unwrap();
+}
+
+/// Canonicalize also replaces the input in place when no output path is given.
+#[test]
+fn run_ben_mode_canonicalize_in_place() {
+    let samples = vec![vec![2u16, 1, 3]];
+    let input = write_temp_ben_with("canon_in_place.jsonl.ben", &samples);
+
+    let args = Args::try_parse_from([
+        "reben",
+        input.to_str().unwrap(),
+        "--mode",
+        "ben",
+        "--canonicalize",
+    ])
+    .unwrap();
+    run_ben_mode(args).unwrap();
+
+    assert!(input.exists(), "input must remain after in-place replace");
+    // First-seen 0-based relabel of [2,1,3] is [0,1,2].
+    assert_eq!(decode_ben_file(&input), vec![vec![0u16, 1, 2]]);
 
     fs::remove_file(&input).unwrap();
 }

@@ -40,32 +40,36 @@ pub(super) fn dense_permutation(
     Ok(permutation)
 }
 
-/// Error for an input whose distinct district ids cannot all receive a one-based `u16` label:
-/// labels start at 1, so at most `u16::MAX` (65,535) distinct ids are representable.
+/// Error for an input whose distinct district ids cannot all receive a zero-based `u16` label:
+/// labels start at 0, so at most 65,536 (`0..=u16::MAX`) distinct ids are representable.
 fn too_many_labels_error() -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidData,
-        "assignment has more than 65535 distinct district ids; \
-         one-based u16 labels cannot represent them all",
+        "assignment has more than 65536 distinct district ids; \
+         zero-based u16 labels cannot represent them all",
     )
 }
 
-/// Remap an assignment vector's district labels in first-seen order, starting at 1.
+/// The next first-seen label for a map that has already assigned `count` labels: `count` itself,
+/// since labels are dense and zero-based. Errors once `count` reaches 65,536, the first value a
+/// `u16` cannot hold; wrapping would silently alias two districts.
+fn next_first_seen_label(count: usize) -> io::Result<u16> {
+    u16::try_from(count).map_err(|_| too_many_labels_error())
+}
+
+/// Remap an assignment vector's district labels in first-seen order, starting at 0.
 ///
-/// Errors if the assignment holds more than `u16::MAX` distinct ids, which one-based `u16` labels
-/// cannot represent; wrapping would silently alias two districts.
+/// Errors if the assignment holds more than 65,536 distinct ids, which zero-based `u16` labels
+/// cannot represent.
 pub(super) fn first_seen_relabel_assignment(assignment: &[u16]) -> io::Result<Vec<u16>> {
     let mut label_map = HashMap::new();
-    let mut next_label = 0u16;
     let mut out = Vec::with_capacity(assignment.len());
 
     for &value in assignment {
         let mapped = match label_map.get(&value) {
             Some(mapped) => *mapped,
             None => {
-                next_label = next_label
-                    .checked_add(1)
-                    .ok_or_else(too_many_labels_error)?;
+                let next_label = next_first_seen_label(label_map.len())?;
                 label_map.insert(value, next_label);
                 next_label
             }
@@ -78,18 +82,17 @@ pub(super) fn first_seen_relabel_assignment(assignment: &[u16]) -> io::Result<Ve
 
 /// Rewrite the value of each `(val, len)` RLE pair in first-seen order, in place.
 ///
-/// Errors if the runs hold more than `u16::MAX` distinct ids; see
-/// [`first_seen_relabel_assignment`]. On error, a prefix of `runs` may already be relabeled;
-/// callers treat the whole operation as failed and discard.
+/// Errors if the runs hold more than 65,536 distinct ids; see [`first_seen_relabel_assignment`].
+/// On error, a prefix of `runs` may already be relabeled; callers treat the whole operation as
+/// failed and discard.
 pub(super) fn first_seen_relabel_rle(runs: &mut [(u16, u16)]) -> io::Result<()> {
     let mut label_map = HashMap::new();
-    let mut label = 0u16;
     label_map.reserve(runs.len());
     for (val, _len) in runs {
         let new_val = match label_map.get(val) {
             Some(v) => *v,
             None => {
-                label = label.checked_add(1).ok_or_else(too_many_labels_error)?;
+                let label = next_first_seen_label(label_map.len())?;
                 label_map.insert(*val, label);
                 label
             }
@@ -180,7 +183,7 @@ mod tests {
     fn first_seen_relabel_assignment_all_same() {
         assert_eq!(
             first_seen_relabel_assignment(&[7, 7, 7]).unwrap(),
-            vec![1, 1, 1]
+            vec![0, 0, 0]
         );
     }
 
@@ -188,7 +191,7 @@ mod tests {
     fn first_seen_relabel_assignment_monotonic() {
         assert_eq!(
             first_seen_relabel_assignment(&[2, 3, 4, 5]).unwrap(),
-            vec![1, 2, 3, 4]
+            vec![0, 1, 2, 3]
         );
     }
 
@@ -196,7 +199,7 @@ mod tests {
     fn first_seen_relabel_assignment_reversed() {
         assert_eq!(
             first_seen_relabel_assignment(&[5, 4, 3, 2]).unwrap(),
-            vec![1, 2, 3, 4]
+            vec![0, 1, 2, 3]
         );
     }
 
@@ -204,22 +207,32 @@ mod tests {
     fn first_seen_relabel_assignment_with_gaps() {
         assert_eq!(
             first_seen_relabel_assignment(&[1, 5, 9, 5, 1, 9]).unwrap(),
-            vec![1, 2, 3, 2, 1, 3]
+            vec![0, 1, 2, 1, 0, 2]
         );
     }
 
     #[test]
-    fn first_seen_relabel_rejects_more_distinct_ids_than_labels() {
-        // All 65,536 distinct u16 ids: one-based labels max out at 65,535, so the 65,536th
-        // distinct id has no label. Wrapping would silently alias two districts.
+    fn first_seen_relabel_accepts_all_distinct_u16_ids() {
+        // Zero-based labels span 0..=65535, exactly the u16 space, so all 65,536 distinct ids fit:
+        // the sorted input relabels to itself, and the assignment and RLE paths agree.
         let assignment: Vec<u16> = (0..=u16::MAX).collect();
-        let err = first_seen_relabel_assignment(&assignment).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-        assert!(err.to_string().contains("65535"));
+        assert_eq!(first_seen_relabel_assignment(&assignment).unwrap(), assignment);
 
         let mut runs: Vec<(u16, u16)> = (0..=u16::MAX).map(|v| (v, 1)).collect();
-        let err = first_seen_relabel_rle(&mut runs).unwrap_err();
+        first_seen_relabel_rle(&mut runs).unwrap();
+        assert_eq!(runs, (0..=u16::MAX).map(|v| (v, 1)).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn next_first_seen_label_zero_based_and_bounded() {
+        // First label is 0; the bound is the first count a u16 cannot hold (65,536). u16 inputs
+        // can never reach it (at most 65,536 distinct ids, the last assigned at count 65,535), so
+        // this guards the helper directly.
+        assert_eq!(next_first_seen_label(0).unwrap(), 0);
+        assert_eq!(next_first_seen_label(65_535).unwrap(), u16::MAX);
+        let err = next_first_seen_label(65_536).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("65536"));
     }
 
     // ── first_seen_relabel_rle ─────────────────────────────────────────
@@ -228,7 +241,7 @@ mod tests {
     fn first_seen_relabel_rle_basic() {
         let mut runs = vec![(2u16, 3u16), (3, 1), (2, 2), (5, 1)];
         first_seen_relabel_rle(&mut runs).unwrap();
-        assert_eq!(runs, vec![(1, 3), (2, 1), (1, 2), (3, 1)]);
+        assert_eq!(runs, vec![(0, 3), (1, 1), (0, 2), (2, 1)]);
     }
 
     /// Cross-check: assignment-level and RLE-level first-seen relabeling must agree for any input.

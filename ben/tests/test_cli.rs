@@ -891,6 +891,7 @@ fn reben_cli_json_and_ben_modes_work() {
             ben_path.to_str().unwrap(),
             "--mode",
             "ben",
+            "--canonicalize",
             "--output-file",
             canonical_path.to_str().unwrap(),
         ],
@@ -920,8 +921,8 @@ fn reben_cli_json_and_ben_modes_work() {
     )
     .unwrap();
     let canonical_text = String::from_utf8(canonical_jsonl).unwrap();
-    assert!(canonical_text.contains(r#""assignment":[1,1,2]"#));
-    assert!(canonical_text.contains(r#""assignment":[1,2,2]"#));
+    assert!(canonical_text.contains(r#""assignment":[0,0,1]"#));
+    assert!(canonical_text.contains(r#""assignment":[0,1,1]"#));
 
     let mut relabeled_jsonl = Vec::new();
     decode_ben_to_jsonl(
@@ -1058,6 +1059,7 @@ fn reben_cli_can_limit_ben_relabeling_to_first_n_items() {
             ben_path.to_str().unwrap(),
             "--mode",
             "ben",
+            "--canonicalize",
             "--n-items",
             "1",
             "--output-file",
@@ -1092,7 +1094,7 @@ fn reben_cli_can_limit_ben_relabeling_to_first_n_items() {
     .unwrap();
     assert_eq!(
         String::from_utf8(canonical_jsonl).unwrap(),
-        "{\"assignment\":[1,1,2],\"sample\":1}\n"
+        "{\"assignment\":[0,0,1],\"sample\":1}\n"
     );
 
     let mut relabeled_jsonl = Vec::new();
@@ -1155,6 +1157,7 @@ fn reben_cli_supports_twodelta_ben_mode() {
             ben_path.to_str().unwrap(),
             "--mode",
             "ben",
+            "--canonicalize",
             "--output-file",
             canonical_path.to_str().unwrap(),
         ],
@@ -1185,7 +1188,7 @@ fn reben_cli_supports_twodelta_ben_mode() {
     .unwrap();
     assert!(String::from_utf8(canonical_jsonl)
         .unwrap()
-        .contains(r#""assignment":[1,1,2]"#));
+        .contains(r#""assignment":[0,0,1]"#));
 
     let mut relabeled_jsonl = Vec::new();
     decode_ben_to_jsonl(
@@ -1358,6 +1361,7 @@ fn reben_cli_can_canonicalize_into_a_different_ben_variant() {
             ben_path.to_str().unwrap(),
             "--mode",
             "ben",
+            "--canonicalize",
             "--output-variant",
             "twodelta",
             "--output-file",
@@ -1377,8 +1381,8 @@ fn reben_cli_can_canonicalize_into_a_different_ben_variant() {
     )
     .unwrap();
     let canonical_text = String::from_utf8(canonical_jsonl).unwrap();
-    assert!(canonical_text.contains(r#""assignment":[1,1,2]"#));
-    assert!(canonical_text.contains(r#""assignment":[1,2,2]"#));
+    assert!(canonical_text.contains(r#""assignment":[0,0,1]"#));
+    assert!(canonical_text.contains(r#""assignment":[0,1,1]"#));
 }
 
 #[test]

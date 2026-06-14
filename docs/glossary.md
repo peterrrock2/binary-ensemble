@@ -275,7 +275,7 @@ means **district relabeling**.
     `ops/relabel/`. Neutral about which transform runs.
 - **First-seen relabeling** (or **first-seen district labeling**)
   - The specific district relabeling that renames labels in order of first appearance, starting at
-    1\. Replaces the historical "canonicalize_assignment" terminology; code rename pending.
+    0\. Replaces the historical "canonicalize_assignment" terminology; code rename pending.
 - **`reben`** as a tool
   - The CLI that runs the relabel pipeline with one of the canned transforms.
 

@@ -826,14 +826,14 @@ fn relabel_ben_file_as_variant_standard_to_standard() {
     decode_ben_to_jsonl(out.as_slice(), &mut decoded).unwrap();
     let s = String::from_utf8(decoded).unwrap();
 
-    // Each frame is canonicalized independently (first-seen within the frame → 1, etc.). Frame 1:
-    // [5,5,1] → first 5→1, then 1→2 → [1,1,2] Frame 2: [1,5,5] → first 1→1, then 5→2 → [1,2,2]
+    // Each frame is canonicalized independently (first-seen within the frame → 0, etc.). Frame 1:
+    // [5,5,1] → first 5→0, then 1→1 → [0,0,1] Frame 2: [1,5,5] → first 1→0, then 5→1 → [0,1,1]
     assert!(
-        s.contains("\"assignment\":[1,1,2]"),
+        s.contains("\"assignment\":[0,0,1]"),
         "frame1 mismatch, got: {s}"
     );
     assert!(
-        s.contains("\"assignment\":[1,2,2]"),
+        s.contains("\"assignment\":[0,1,1]"),
         "frame2 mismatch, got: {s}"
     );
 }
@@ -1090,7 +1090,7 @@ fn convert_ben_file_limit_with_mkvchain_repetitions() {
 
 #[test]
 fn relabel_ben_file_twodelta_canonicalizes_labels() {
-    // Start with high label values; after canonicalization they should map to 1,2,3.
+    // Start with high label values; after canonicalization they should map to 0,1,2.
     let file = concat!(
         r#"{"assignment":[100,100,200,200,300,300],"sample":1}"#,
         "\n",
@@ -1109,8 +1109,8 @@ fn relabel_ben_file_twodelta_canonicalizes_labels() {
     decode_ben_to_jsonl(relabeled.as_slice(), &mut decoded).unwrap();
     let s = String::from_utf8(decoded).unwrap();
 
-    // Canonical: first-seen is 1, second is 2, third is 3.
-    assert!(s.contains("\"assignment\":[1,1,2,2,3,3]"), "got: {s}");
+    // Canonical: first-seen is 0, second is 1, third is 2.
+    assert!(s.contains("\"assignment\":[0,0,1,1,2,2]"), "got: {s}");
 }
 
 // ────────────────────────────────────────────────────────────────────────────── Encoding – empty
@@ -1290,8 +1290,8 @@ fn relabel_ben_file_as_variant_mkvchain_to_standard() {
     let mut decoded = Vec::new();
     decode_ben_to_jsonl(out.as_slice(), &mut decoded).unwrap();
     let s = String::from_utf8(decoded).unwrap();
-    // Canonical labels: 5→1, 3→2
-    assert!(s.contains("\"assignment\":[1,1,2]"), "got: {s}");
+    // Canonical labels: 5→0, 3→1
+    assert!(s.contains("\"assignment\":[0,0,1]"), "got: {s}");
     assert_eq!(s.lines().count(), 3);
 }
 
@@ -1403,7 +1403,7 @@ fn single_unique_label_assignment_round_trips() {
 }
 
 #[test]
-fn single_unique_label_relabeled_to_one() {
+fn single_unique_label_relabeled_to_zero() {
     let assignment = vec![99u16; 10];
     let ben = encode_standard_ben(&[assignment]);
 
@@ -1411,9 +1411,9 @@ fn single_unique_label_relabeled_to_one() {
     relabel_ben_file(ben.as_slice(), &mut relabeled, RelabelOptions::first_seen()).unwrap();
 
     let decoded_str = decode_ben_to_string(&relabeled);
-    // All 99s should become 1s.
+    // All 99s should become 0s.
     assert!(
-        decoded_str.contains("\"assignment\":[1,1,1"),
+        decoded_str.contains("\"assignment\":[0,0,0"),
         "got: {decoded_str}"
     );
 }

@@ -118,7 +118,7 @@ can be structurally identical yet use different district numbers:
 ```
 
 To a human these are "the same map"; to LZMA2 they look different. **First-seen relabeling**
-fixes this by renumbering district ids in order of first appearance, starting at 1, so
+fixes this by renumbering district ids in order of first appearance, starting at 0, so
 equivalent plans encode identically and compress better. Run it before encoding to XBEN.
 
 ## Putting it together

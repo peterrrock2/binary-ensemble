@@ -61,7 +61,7 @@ fn test_relabel_ben_line_simple() {
 
     let input = BenEncodeFrame::from_rle(in_rle, BenVariant::Standard, None).unwrap();
 
-    let out_rle = vec![(1, 2), (2, 2), (3, 2), (4, 2)];
+    let out_rle = vec![(0, 2), (1, 2), (2, 2), (3, 2)];
     let expected = BenEncodeFrame::from_rle(out_rle, BenVariant::Standard, None).unwrap();
 
     let with_banner_in = with_banner(BenVariant::Standard, input.as_slice());
@@ -112,13 +112,13 @@ fn test_relabel_simple_file() {
 
     let out_file = format!(
         "{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
-        "{\"assignment\":[1,2,3,4,5,5,3,4,2],\"sample\":1}",
-        "{\"assignment\":[1,2,3,4,5,5,3,4,1],\"sample\":2}",
-        "{\"assignment\":[1,1,2,2,3,3,1,1,4],\"sample\":3}",
-        "{\"assignment\":[1,2,3,4,1,2,3,4,4],\"sample\":4}",
-        "{\"assignment\":[1,2,2,3,4,1,4,3,1],\"sample\":5}",
-        "{\"assignment\":[1,1,2,2,3,3,4,4,5],\"sample\":6}",
-        "{\"assignment\":[1,2,3,4,1,2,5,3,5],\"sample\":7}"
+        "{\"assignment\":[0,1,2,3,4,4,2,3,1],\"sample\":1}",
+        "{\"assignment\":[0,1,2,3,4,4,2,3,0],\"sample\":2}",
+        "{\"assignment\":[0,0,1,1,2,2,0,0,3],\"sample\":3}",
+        "{\"assignment\":[0,1,2,3,0,1,2,3,3],\"sample\":4}",
+        "{\"assignment\":[0,1,1,2,3,0,3,2,0],\"sample\":5}",
+        "{\"assignment\":[0,0,1,1,2,2,3,3,4],\"sample\":6}",
+        "{\"assignment\":[0,1,2,3,0,1,4,2,4],\"sample\":7}"
     );
 
     assert_eq!(output_str, out_file);
@@ -159,16 +159,16 @@ fn test_relabel_simple_file_mkv() {
 
     let out_file = format!(
         "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
-        "{\"assignment\":[1,2,3,4,5,5,3,4,2],\"sample\":1}",
-        "{\"assignment\":[1,2,3,4,5,5,3,4,1],\"sample\":2}",
-        "{\"assignment\":[1,1,2,2,3,3,1,1,4],\"sample\":3}",
-        "{\"assignment\":[1,2,3,4,1,2,3,4,4],\"sample\":4}",
-        "{\"assignment\":[1,2,2,3,4,1,4,3,1],\"sample\":5}",
-        "{\"assignment\":[1,2,2,3,4,1,4,3,1],\"sample\":6}",
-        "{\"assignment\":[1,2,2,3,4,1,4,3,1],\"sample\":7}",
-        "{\"assignment\":[1,1,2,2,3,3,4,4,5],\"sample\":8}",
-        "{\"assignment\":[1,2,3,4,1,2,5,3,5],\"sample\":9}",
-        "{\"assignment\":[1,2,3,4,1,2,5,3,5],\"sample\":10}"
+        "{\"assignment\":[0,1,2,3,4,4,2,3,1],\"sample\":1}",
+        "{\"assignment\":[0,1,2,3,4,4,2,3,0],\"sample\":2}",
+        "{\"assignment\":[0,0,1,1,2,2,0,0,3],\"sample\":3}",
+        "{\"assignment\":[0,1,2,3,0,1,2,3,3],\"sample\":4}",
+        "{\"assignment\":[0,1,1,2,3,0,3,2,0],\"sample\":5}",
+        "{\"assignment\":[0,1,1,2,3,0,3,2,0],\"sample\":6}",
+        "{\"assignment\":[0,1,1,2,3,0,3,2,0],\"sample\":7}",
+        "{\"assignment\":[0,0,1,1,2,2,3,3,4],\"sample\":8}",
+        "{\"assignment\":[0,1,2,3,0,1,4,2,4],\"sample\":9}",
+        "{\"assignment\":[0,1,2,3,0,1,4,2,4],\"sample\":10}"
     );
 
     assert_eq!(output_str, out_file);
@@ -204,8 +204,8 @@ fn test_relabel_simple_file_mkv_with_limit() {
 
     let output_str = String::from_utf8(decoded).unwrap();
     let expected = concat!(
-        "{\"assignment\":[1,2,3],\"sample\":1}\n",
-        "{\"assignment\":[1,2,3],\"sample\":2}\n"
+        "{\"assignment\":[0,1,2],\"sample\":1}\n",
+        "{\"assignment\":[0,1,2],\"sample\":2}\n"
     );
     assert_eq!(output_str, expected);
 }
@@ -240,10 +240,10 @@ fn test_relabel_simple_file_twodelta() {
 
     let output_str = String::from_utf8(decoded).unwrap();
     let expected = concat!(
-        "{\"assignment\":[1,1,2,2,3,3],\"sample\":1}\n",
-        "{\"assignment\":[1,1,2,2,3,3],\"sample\":2}\n",
-        "{\"assignment\":[1,2,2,1,3,3],\"sample\":3}\n",
-        "{\"assignment\":[1,1,2,2,3,3],\"sample\":4}\n"
+        "{\"assignment\":[0,0,1,1,2,2],\"sample\":1}\n",
+        "{\"assignment\":[0,0,1,1,2,2],\"sample\":2}\n",
+        "{\"assignment\":[0,1,1,0,2,2],\"sample\":3}\n",
+        "{\"assignment\":[0,0,1,1,2,2],\"sample\":4}\n"
     );
     assert_eq!(output_str, expected);
 }
@@ -740,6 +740,7 @@ fn test_convert_ben_file_limit_truncates() {
     let mut decoded = Vec::new();
     decode_ben_to_jsonl(converted.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
     let output_str = String::from_utf8(decoded).unwrap();
+    // convert_to preserves labels verbatim; only the variant changes.
     let expected = concat!(
         "{\"assignment\":[1,2,3],\"sample\":1}\n",
         "{\"assignment\":[1,2,3],\"sample\":2}\n",
@@ -777,8 +778,8 @@ fn test_relabel_ben_lines_limit_standard() {
     decode_ben_to_jsonl(full_relabeled.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
     let output_str = String::from_utf8(decoded).unwrap();
     let expected = concat!(
-        "{\"assignment\":[1,2,3],\"sample\":1}\n",
-        "{\"assignment\":[1,2,3],\"sample\":2}\n",
+        "{\"assignment\":[0,1,2],\"sample\":1}\n",
+        "{\"assignment\":[0,1,2],\"sample\":2}\n",
     );
     assert_eq!(output_str, expected);
 }
@@ -846,8 +847,8 @@ fn test_relabel_ben_file_as_variant_standard_to_twodelta() {
     decode_ben_to_jsonl(converted.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
     let output_str = String::from_utf8(decoded).unwrap();
     let expected = concat!(
-        "{\"assignment\":[1,1,2,2],\"sample\":1}\n",
-        "{\"assignment\":[1,2,1,2],\"sample\":2}\n",
+        "{\"assignment\":[0,0,1,1],\"sample\":1}\n",
+        "{\"assignment\":[0,1,0,1],\"sample\":2}\n",
     );
     assert_eq!(output_str, expected);
 }
@@ -882,8 +883,8 @@ fn test_relabel_ben_file_as_variant_limit() {
     decode_ben_to_jsonl(converted.as_slice(), io::BufWriter::new(&mut decoded)).unwrap();
     let output_str = String::from_utf8(decoded).unwrap();
     let expected = concat!(
-        "{\"assignment\":[1,2,3],\"sample\":1}\n",
-        "{\"assignment\":[1,2,3],\"sample\":2}\n",
+        "{\"assignment\":[0,1,2],\"sample\":1}\n",
+        "{\"assignment\":[0,1,2],\"sample\":2}\n",
     );
     assert_eq!(output_str, expected);
 }
@@ -1245,7 +1246,7 @@ fn collapse_policy_disables_fast_path() {
     let mut decoded = Vec::new();
     decode_ben_to_jsonl(out.as_slice(), &mut decoded).unwrap();
     let s = String::from_utf8(decoded).unwrap();
-    assert!(s.contains("\"assignment\":[1,2,3]"));
+    assert!(s.contains("\"assignment\":[0,1,2]"));
 }
 
 /// Decision #9: with `PreserveFrameBoundaries`, two adjacent input frames with the same assignment

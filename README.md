@@ -99,14 +99,15 @@ assets. Asset payloads are checksummed (CRC32C) and xz-compressed on disk by def
 BEN's core compression is run-length encoding, so anything that produces longer runs of the
 same district id shrinks the files dramatically. `reben` provides the two big levers:
 
-1. **First-seen relabeling.** `[2,2,3,3,1,1]` and `[1,1,2,2,3,3]` are the same partition
+1. **First-seen relabeling.** `[2,2,3,3,1,1]` and `[0,0,1,1,2,2]` are the same partition
    with different labels, but the XBEN compressor cannot know that. Renumbering districts in
-   order of first appearance makes equivalent plans encode identically:
+   order of first appearance (starting at 0) makes equivalent plans encode identically:
 
    ```bash
-   reben -m ben 100k_CO_chain.jsonl.ben
+   reben -m ben 100k_CO_chain.jsonl.ben --canonicalize
    # rewrites 100k_CO_chain.jsonl.ben in place
-   # (pass --output-file to write elsewhere, or --add-suffix for
+   # (without --canonicalize, reben rewrites preserving labels verbatim;
+   #  pass --output-file to write elsewhere, or --add-suffix for
    #  100k_CO_chain_first_seen_relabeled.ben)
    ```
 

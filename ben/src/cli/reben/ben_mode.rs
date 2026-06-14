@@ -18,6 +18,16 @@ pub(super) fn run_ben_mode(args: Args) -> Result<(), String> {
     {
         return Err("--convert-only cannot be combined with relabeling options.".to_string());
     }
+    if args.canonicalize && args.convert_only {
+        return Err("--canonicalize cannot be combined with --convert-only.".to_string());
+    }
+    if args.canonicalize
+        && (args.map_file.is_some() || args.key.is_some() || args.ordering.is_some())
+    {
+        return Err(
+            "--canonicalize cannot be combined with a map file, key, or ordering.".to_string(),
+        );
+    }
 
     let input_file = File::open(&args.input_file)
         .map_err(|e| format!("Could not open input file {:?}: {e}", args.input_file))?;
@@ -31,21 +41,29 @@ pub(super) fn run_ben_mode(args: Args) -> Result<(), String> {
 
         if args.convert_only {
             tracing::info!("Converting BEN file to requested variant.");
-        } else {
+        } else if args.canonicalize {
             tracing::info!("Canonicalizing assignment vectors in ben file.");
+        } else {
+            tracing::info!("Rewriting BEN file, preserving labels.");
         }
 
-        let options = if args.convert_only {
+        // The default rewrite preserves labels verbatim; `--canonicalize` opts into first-seen
+        // 0-based relabeling, and `--convert-only` only changes the variant. All three may carry an
+        // optional target-variant conversion.
+        let base = if args.convert_only {
             RelabelOptions::convert_to(output_variant.expect("checked above"))
         } else {
-            let base = RelabelOptions::first_seen();
-            if let Some(variant) = output_variant {
-                base.with_target_variant(variant)
+            let base = if args.canonicalize {
+                RelabelOptions::first_seen()
             } else {
-                base
+                RelabelOptions::verbatim()
+            };
+            match output_variant {
+                Some(variant) => base.with_target_variant(variant),
+                None => base,
             }
-        }
-        .with_max_samples_opt(args.n_items);
+        };
+        let options = base.with_max_samples_opt(args.n_items);
 
         // Default to replacing the input in place; `--add-suffix` restores the historical sibling
         // name, and `--output-file` writes to an explicit path.
@@ -53,11 +71,12 @@ pub(super) fn run_ben_mode(args: Args) -> Result<(), String> {
             Some(name) => Some(name),
             None if args.add_suffix => {
                 let stem = ben_stem(&args.input_file);
-                Some(if args.convert_only {
-                    let variant = output_variant.expect("checked above");
+                Some(if args.canonicalize {
+                    format!("{stem}_first_seen_relabeled.ben")
+                } else if let Some(variant) = output_variant {
                     format!("{stem}_{}.ben", ben_variant_name(variant))
                 } else {
-                    format!("{stem}_first_seen_relabeled.ben")
+                    format!("{stem}_rewrite.ben")
                 })
             }
             None => None,

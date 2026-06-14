@@ -63,8 +63,9 @@ pub(super) struct Args {
     pub map_file: Option<String>,
     /// Mode to run the program in (either JSON or BEN). The JSON mode will sort a JSON file by a
     /// given key or graph-ordering method. The BEN mode will relabel a BEN file according to a map
-    /// file or a graph-ordering request (which also requires a dual-graph file). If no map file or
-    /// key is provided, the BEN mode will canonicalize the assignment vectors in the BEN file.
+    /// file or a graph-ordering request (which also requires a dual-graph file). With no map file,
+    /// key, or ordering, the BEN mode rewrites the file preserving its labels verbatim; pass
+    /// `--canonicalize` to remap labels to first-seen 0-based ids instead.
     #[arg(short, long)]
     pub mode: Mode,
     /// Only relabel the first `n` expanded samples in BEN mode.
@@ -76,6 +77,11 @@ pub(super) struct Args {
     /// Rewrite the BEN stream without canonicalizing or map relabeling.
     #[arg(long)]
     pub convert_only: bool,
+    /// Canonicalize assignment vectors by relabeling districts in first-seen order, starting at 0.
+    /// Only valid in BEN mode with no map file, key, or ordering. Without this flag the default
+    /// rewrite preserves labels verbatim.
+    #[arg(long)]
+    pub canonicalize: bool,
     /// In the canonicalize/convert paths, write a suffixed sibling file (the historical naming)
     /// instead of replacing the input in place. No effect on the map/key/ordering relabel path,
     /// which is always suffixed.

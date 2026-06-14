@@ -1,6 +1,6 @@
 //! Relabeling operations for BEN files.
 //!
-//! All seven logical relabel/convert operations route through the single [`relabel_ben_file`]
+//! Every logical relabel/convert operation routes through the single [`relabel_ben_file`]
 //! driver, parameterised by [`RelabelOptions`].
 
 mod errors;
@@ -81,6 +81,18 @@ impl RelabelOptions {
         }
     }
 
+    /// Rewrite a BEN file without touching its labels, preserving the input variant and frame
+    /// boundaries. District ids pass through exactly as written, including `0` and non-consecutive
+    /// ids. Compose `with_target_variant` to convert variant while still preserving labels.
+    pub fn verbatim() -> Self {
+        Self {
+            transform: RelabelTransform::Identity,
+            target_variant: None,
+            max_samples: None,
+            run_policy: RunPolicy::PreserveFrameBoundaries,
+        }
+    }
+
     /// Convert to `target` without relabeling, collapsing adjacent equal assignments to preserve
     /// today's conversion compression behavior.
     pub fn convert_to(target: BenVariant) -> Self {
@@ -136,7 +148,7 @@ impl RelabelOptions {
 
 /// Process a BEN file according to the supplied options.
 ///
-/// All seven logical relabel/convert operations route through this driver. Internally chooses
+/// Every logical relabel/convert operation routes through this driver. Internally chooses
 /// between an RLE-fast-path byte walker (first-seen relabeling, no variant change,
 /// frame-preserving, Standard/MkvChain input) and the high-level decoder driver (everything else).
 pub fn relabel_ben_file<R: Read, W: Write>(
