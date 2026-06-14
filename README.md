@@ -66,11 +66,11 @@ pip install binary-ensemble
 Using [`example/small_example.jsonl`](./example/small_example.jsonl):
 
 ```bash
-ben -m encode small_example.jsonl                         # -> small_example.jsonl.ben
-ben -m x-encode small_example.jsonl.ben                   # -> small_example.jsonl.xben
-ben -m decode small_example.jsonl.xben -w                 # XBEN -> BEN (one layer down)
-ben -m decode small_example.jsonl.ben -o roundtrip.jsonl  # BEN -> JSONL
-ben -m lookup -n 4 small_example.jsonl.ben                # prints sample 4: [1, 1, 1, 2, ...]
+ben -m encode small_example.jsonl              # -> small_example.ben
+ben -m x-encode small_example.ben              # -> small_example.xben
+ben -m decode small_example.xben -w            # XBEN -> BEN (one layer down)
+ben -m decode small_example.ben -o roundtrip.jsonl  # BEN -> JSONL
+ben -m lookup -n 4 small_example.ben           # prints sample 4: [1, 1, 1, 2, ...]
 ```
 
 `ben` also has `x-decode` (XBEN straight to JSONL) and general-purpose `xz-compress` /
@@ -84,7 +84,7 @@ A plain stream is just assignments — it is meaningless without the dual graph 
 its node order. A `.bendl` file keeps the stream and that context together:
 
 ```bash
-bendl create -i small_example.jsonl.ben -o run.bendl --metadata meta.json
+bendl create -i small_example.ben -o run.bendl --metadata meta.json
 bendl inspect run.bendl                        # header, sample count, asset directory
 bendl append run.bendl --asset notes.txt=notes.txt
 bendl extract run.bendl --asset metadata.json -o meta-out.json
@@ -105,7 +105,9 @@ same district id shrinks the files dramatically. `reben` provides the two big le
 
    ```bash
    reben -m ben 100k_CO_chain.jsonl.ben
-   # -> 100k_CO_chain_first_seen_relabeled.jsonl.ben
+   # rewrites 100k_CO_chain.jsonl.ben in place
+   # (pass --output-file to write elsewhere, or --add-suffix for
+   #  100k_CO_chain_first_seen_relabeled.ben)
    ```
 
 2. **Node reordering.** Nearby geographic units tend to share a district, so sorting the
@@ -113,11 +115,14 @@ same district id shrinks the files dramatically. `reben` provides the two big le
    / `--ordering rcm`) turns each plan into a handful of long runs:
 
    ```bash
-   reben -m ben -d CO_small.json -k GEOID20 100k_CO_chain_first_seen_relabeled.jsonl.ben
-   # -> ..._sorted_by_GEOID20.jsonl.ben        (the rewritten ensemble)
-   # -> CO_small_sorted_by_GEOID20.json        (the reordered dual graph)
-   # -> CO_small_sorted_by_GEOID20_map.json    (the reversible permutation map)
+   reben -m ben -d CO_small.json -k GEOID20 -o 100k_CO_chain_sorted.ben 100k_CO_chain.jsonl.ben
+   # -> 100k_CO_chain_sorted.ben              (the rewritten ensemble)
+   # -> CO_small_sorted_by_GEOID20.json       (the reordered dual graph)
+   # -> CO_small_sorted_by_GEOID20_map.json   (the reversible permutation map)
    ```
+
+   Without `-o`/`--output-file` the relabeled ensemble lands at
+   `100k_CO_chain_sorted_by_GEOID20.ben` next to the input.
 
 On the Colorado example ([`example/CO_small.json`](./example/CO_small.json), with the
 100k-plan ensemble in [`example/100k_CO_chain.jsonl.xben`](./example/100k_CO_chain.jsonl.xben)),

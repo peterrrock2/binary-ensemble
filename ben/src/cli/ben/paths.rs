@@ -44,10 +44,16 @@ pub(super) fn encode_setup(
             let stripped_ben = input_file_name.ends_with(".ben")
                 && (extension == ".xben" || extension == ".bendl");
             let stripped_xben = input_file_name.ends_with(".xben") && extension == ".bendl";
+            // A `.jsonl` source swaps its extension for the BEN-family target rather than stacking
+            // it (`samples.jsonl` -> `samples.ben`, not `samples.jsonl.ben`). `.xz` compression
+            // keeps the original name and appends, matching the usual `name.xz` convention.
+            let stripped_jsonl = input_file_name.ends_with(".jsonl") && extension != ".xz";
             if stripped_ben {
                 input_file_name.trim_end_matches(".ben").to_owned() + extension
             } else if stripped_xben {
                 input_file_name.trim_end_matches(".xben").to_owned() + extension
+            } else if stripped_jsonl {
+                input_file_name.trim_end_matches(".jsonl").to_owned() + extension
             } else {
                 input_file_name.to_string() + extension
             }
@@ -79,12 +85,23 @@ pub(super) fn decode_setup(
     let out_file_name = if let Some(name) = out_file_name {
         name.to_owned()
     } else if in_file_name.ends_with(".ben") {
-        in_file_name.trim_end_matches(".ben").to_owned()
-    } else if in_file_name.ends_with(".xben") {
-        if !full_decode {
-            in_file_name.trim_end_matches(".xben").to_owned() + ".ben"
+        // A full BEN decode yields a JSONL stream, so the bare stem gets a `.jsonl` extension. A
+        // legacy stacked `.jsonl.ben` already carries it, so we only drop the `.ben` there.
+        let stem = in_file_name.trim_end_matches(".ben");
+        if stem.ends_with(".jsonl") {
+            stem.to_owned()
         } else {
-            in_file_name.trim_end_matches(".xben").to_owned()
+            stem.to_owned() + ".jsonl"
+        }
+    } else if in_file_name.ends_with(".xben") {
+        let stem = in_file_name.trim_end_matches(".xben");
+        if !full_decode {
+            // Stops at BEN, so the intermediate output is a `.ben` file.
+            stem.to_owned() + ".ben"
+        } else if stem.ends_with(".jsonl") {
+            stem.to_owned()
+        } else {
+            stem.to_owned() + ".jsonl"
         }
     } else if in_file_name.ends_with(".xz") {
         eprintln!(

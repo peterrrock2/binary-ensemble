@@ -123,7 +123,7 @@ fn parse_xencode_stream_flags() {
 fn encode_setup_derives_extensions() {
     assert_eq!(
         encode_setup(Mode::Encode, "samples.jsonl".to_string(), None, true, false).unwrap(),
-        "samples.jsonl.ben"
+        "samples.ben"
     );
     assert_eq!(
         encode_setup(Mode::XEncode, "samples.ben".to_string(), None, true, false).unwrap(),
@@ -144,10 +144,10 @@ fn encode_setup_derives_extensions() {
 
 #[test]
 fn encode_setup_with_graph_derives_bendl_extension() {
-    // JSONL + encode + graph → .bendl
+    // JSONL + encode + graph → .bendl (the `.jsonl` extension is swapped, not stacked)
     assert_eq!(
         encode_setup(Mode::Encode, "samples.jsonl".to_string(), None, true, true).unwrap(),
-        "samples.jsonl.bendl"
+        "samples.bendl"
     );
     // .ben input to x-encode with graph trims the .ben suffix
     assert_eq!(
@@ -195,17 +195,33 @@ fn encode_setup_checks_overwrite() {
 
 #[test]
 fn decode_setup_derives_ben_and_xben_outputs() {
+    // A full decode lands on JSONL, so the bare stem gains a `.jsonl` extension.
     assert_eq!(
         decode_setup("samples.ben".to_string(), None, false, true).unwrap(),
-        "samples"
+        "samples.jsonl"
     );
+    // x-decode stopping at BEN keeps the intermediate `.ben`.
     assert_eq!(
         decode_setup("samples.xben".to_string(), None, false, true).unwrap(),
         "samples.ben"
     );
     assert_eq!(
         decode_setup("samples.xben".to_string(), None, true, true).unwrap(),
-        "samples"
+        "samples.jsonl"
+    );
+}
+
+#[test]
+fn decode_setup_leaves_legacy_stacked_jsonl_names() {
+    // Legacy `.jsonl.ben` / `.jsonl.xben` files already carry `.jsonl`; dropping the BEN-family
+    // extension must not double it.
+    assert_eq!(
+        decode_setup("samples.jsonl.ben".to_string(), None, false, true).unwrap(),
+        "samples.jsonl"
+    );
+    assert_eq!(
+        decode_setup("samples.jsonl.xben".to_string(), None, true, true).unwrap(),
+        "samples.jsonl"
     );
 }
 

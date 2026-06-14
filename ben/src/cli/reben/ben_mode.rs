@@ -1,7 +1,7 @@
 use super::args::Args;
 use super::helpers::{
-    ben_variant_name, ordering_method_name, read_node_permutation_map_file, relabeling_label,
-    to_ben_variant, to_graph_ordering,
+    ben_stem, ben_variant_name, ordering_method_name, read_node_permutation_map_file,
+    relabel_in_place, relabeling_label, to_ben_variant, to_graph_ordering,
 };
 use crate::json::graph::{sort_json_file_by_key, sort_json_file_by_ordering};
 use crate::ops::relabel::{relabel_ben_file, RelabelOptions};
@@ -25,28 +25,15 @@ pub(super) fn run_ben_mode(args: Args) -> Result<(), String> {
     let output_variant = args.output_variant.as_ref().map(to_ben_variant);
 
     if args.map_file.is_none() && args.key.is_none() && args.ordering.is_none() {
+        if args.output_file.is_some() && args.add_suffix {
+            return Err("Provide either --output-file or --add-suffix, not both.".to_string());
+        }
+
         if args.convert_only {
             tracing::info!("Converting BEN file to requested variant.");
         } else {
             tracing::info!("Canonicalizing assignment vectors in ben file.");
         }
-
-        let output_file_name = match args.output_file {
-            Some(name) => name,
-            None => {
-                if let Some(variant) = output_variant {
-                    args.input_file.trim_end_matches(".ben").to_owned()
-                        + format!("_{}.ben", ben_variant_name(variant)).as_str()
-                } else {
-                    args.input_file.trim_end_matches(".jsonl.ben").to_owned()
-                        + "_first_seen_relabeled.jsonl.ben"
-                }
-            }
-        };
-
-        let output_file = File::create(&output_file_name)
-            .map_err(|e| format!("Could not create output file {output_file_name:?}: {e}"))?;
-        let writer = BufWriter::new(output_file);
 
         let options = if args.convert_only {
             RelabelOptions::convert_to(output_variant.expect("checked above"))
@@ -59,8 +46,33 @@ pub(super) fn run_ben_mode(args: Args) -> Result<(), String> {
             }
         }
         .with_max_samples_opt(args.n_items);
-        relabel_ben_file(reader, writer, options)
-            .map_err(|e| format!("BEN relabeling failed: {e}"))?;
+
+        // Default to replacing the input in place; `--add-suffix` restores the historical sibling
+        // name, and `--output-file` writes to an explicit path.
+        let output_file_name = match args.output_file {
+            Some(name) => Some(name),
+            None if args.add_suffix => {
+                let stem = ben_stem(&args.input_file);
+                Some(if args.convert_only {
+                    let variant = output_variant.expect("checked above");
+                    format!("{stem}_{}.ben", ben_variant_name(variant))
+                } else {
+                    format!("{stem}_first_seen_relabeled.ben")
+                })
+            }
+            None => None,
+        };
+
+        match output_file_name {
+            Some(name) => {
+                let output_file = File::create(&name)
+                    .map_err(|e| format!("Could not create output file {name:?}: {e}"))?;
+                let writer = BufWriter::new(output_file);
+                relabel_ben_file(reader, writer, options)
+                    .map_err(|e| format!("BEN relabeling failed: {e}"))?;
+            }
+            None => relabel_in_place(reader, &args.input_file, options)?,
+        }
         return Ok(());
     }
 
@@ -135,8 +147,7 @@ pub(super) fn run_ben_mode(args: Args) -> Result<(), String> {
     let output_file_name = match args.output_file {
         Some(name) => name,
         None => {
-            args.input_file.trim_end_matches(".jsonl.ben").to_owned()
-                + format!("_sorted_by_{}.jsonl.ben", label).as_str()
+            format!("{}_sorted_by_{}.ben", ben_stem(&args.input_file), label)
         }
     };
     let output_file = File::create(&output_file_name)

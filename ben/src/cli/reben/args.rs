@@ -76,6 +76,11 @@ pub(super) struct Args {
     /// Rewrite the BEN stream without canonicalizing or map relabeling.
     #[arg(long)]
     pub convert_only: bool,
+    /// In the canonicalize/convert paths, write a suffixed sibling file (the historical naming)
+    /// instead of replacing the input in place. No effect on the map/key/ordering relabel path,
+    /// which is always suffixed.
+    #[arg(long)]
+    pub add_suffix: bool,
     /// Verbosity level for the program.
     #[arg(short, long)]
     pub verbose: bool,

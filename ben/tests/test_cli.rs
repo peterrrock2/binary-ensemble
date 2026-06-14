@@ -443,7 +443,7 @@ fn ben_cli_supports_ben_to_xben_and_xben_to_ben_paths() {
 fn ben_cli_uses_default_output_names() {
     let temp = TempDir::new("ben-defaults");
     let jsonl_path = temp.path().join("samples.jsonl");
-    let ben_path = temp.path().join("samples.jsonl.ben");
+    let ben_path = temp.path().join("samples.ben");
     let xz_path = temp.path().join("samples.jsonl.xz");
 
     fs::write(&jsonl_path, sample_jsonl()).unwrap();

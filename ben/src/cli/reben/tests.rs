@@ -467,13 +467,13 @@ fn run_ben_mode_map_file_without_output_file_derives_name() {
     ])
     .unwrap();
     let result = run_ben_mode(args);
-    // Derived output: input stripped of ".jsonl.ben" + "_sorted_by_{label}.jsonl.ben"
+    // Derived output: input stem (".jsonl.ben"/".ben" stripped) + "_sorted_by_{label}.ben"
     let derived = input
         .to_str()
         .unwrap()
         .trim_end_matches(".jsonl.ben")
         .to_owned()
-        + "_sorted_by_sort.jsonl.ben";
+        + "_sorted_by_sort.ben";
     let _ = fs::remove_file(&derived);
     for p in [&input, &map_path] {
         let _ = fs::remove_file(p);
@@ -554,23 +554,30 @@ fn read_node_permutation_map_file_rejects_non_integer_value() {
 }
 
 #[test]
-fn run_ben_mode_canonicalize_derives_output_name() {
+fn run_ben_mode_canonicalize_add_suffix_derives_output_name() {
     let input = write_temp_ben("canon.jsonl.ben");
-    let args = Args::try_parse_from(["reben", input.to_str().unwrap(), "--mode", "ben"]).unwrap();
+    let args = Args::try_parse_from([
+        "reben",
+        input.to_str().unwrap(),
+        "--mode",
+        "ben",
+        "--add-suffix",
+    ])
+    .unwrap();
     let result = run_ben_mode(args);
     let derived = input
         .to_str()
         .unwrap()
         .trim_end_matches(".jsonl.ben")
         .to_owned()
-        + "_first_seen_relabeled.jsonl.ben";
+        + "_first_seen_relabeled.ben";
     let _ = fs::remove_file(&derived);
     fs::remove_file(&input).unwrap();
     result.unwrap();
 }
 
 #[test]
-fn run_ben_mode_with_output_variant_derives_name() {
+fn run_ben_mode_with_output_variant_add_suffix_derives_name() {
     let input = write_temp_ben("variant.ben");
     let args = Args::try_parse_from([
         "reben",
@@ -579,6 +586,7 @@ fn run_ben_mode_with_output_variant_derives_name() {
         "ben",
         "--output-variant",
         "standard",
+        "--add-suffix",
     ])
     .unwrap();
     let result = run_ben_mode(args);
@@ -586,6 +594,90 @@ fn run_ben_mode_with_output_variant_derives_name() {
     let _ = fs::remove_file(&derived);
     fs::remove_file(&input).unwrap();
     result.unwrap();
+}
+
+/// Default (no `--output-file`, no `--add-suffix`) canonicalize replaces the input in place: the
+/// input path still holds a decodable BEN and no `_first_seen_relabeled` sibling is created.
+#[test]
+fn run_ben_mode_canonicalize_in_place_default() {
+    use crate::codec::decode::decode_ben_to_jsonl;
+
+    let input = write_temp_ben("canon_in_place.jsonl.ben");
+    let sibling = input
+        .to_str()
+        .unwrap()
+        .trim_end_matches(".jsonl.ben")
+        .to_owned()
+        + "_first_seen_relabeled.ben";
+
+    let args = Args::try_parse_from(["reben", input.to_str().unwrap(), "--mode", "ben"]).unwrap();
+    run_ben_mode(args).unwrap();
+
+    assert!(input.exists(), "input must remain after in-place replace");
+    assert!(
+        !std::path::Path::new(&sibling).exists(),
+        "no suffixed sibling should be created by default"
+    );
+    let bytes = fs::read(&input).unwrap();
+    decode_ben_to_jsonl(bytes.as_slice(), Vec::new()).expect("in-place output must decode");
+
+    fs::remove_file(&input).unwrap();
+}
+
+/// Default convert-only also replaces the input in place rather than writing a `_<variant>.ben`.
+#[test]
+fn run_ben_mode_convert_in_place_default() {
+    use crate::codec::decode::decode_ben_to_jsonl;
+
+    let input = write_temp_ben("convert_in_place.ben");
+    let sibling = input.to_str().unwrap().trim_end_matches(".ben").to_owned() + "_standard.ben";
+
+    let args = Args::try_parse_from([
+        "reben",
+        input.to_str().unwrap(),
+        "--mode",
+        "ben",
+        "--convert-only",
+        "--output-variant",
+        "standard",
+    ])
+    .unwrap();
+    run_ben_mode(args).unwrap();
+
+    assert!(input.exists(), "input must remain after in-place replace");
+    assert!(
+        !std::path::Path::new(&sibling).exists(),
+        "no suffixed sibling should be created by default"
+    );
+    let bytes = fs::read(&input).unwrap();
+    decode_ben_to_jsonl(bytes.as_slice(), Vec::new()).expect("in-place output must decode");
+
+    fs::remove_file(&input).unwrap();
+}
+
+#[test]
+fn parse_add_suffix_flag() {
+    let args =
+        Args::try_parse_from(["reben", "x.ben", "--mode", "ben", "--add-suffix"]).unwrap();
+    assert!(args.add_suffix);
+}
+
+#[test]
+fn run_ben_mode_rejects_output_file_with_add_suffix() {
+    let input = write_temp_ben("conflict.jsonl.ben");
+    let args = Args::try_parse_from([
+        "reben",
+        input.to_str().unwrap(),
+        "--mode",
+        "ben",
+        "--add-suffix",
+        "--output-file",
+        "out.ben",
+    ])
+    .unwrap();
+    let err = run_ben_mode(args).unwrap_err();
+    let _ = fs::remove_file(&input);
+    assert!(err.contains("--output-file or --add-suffix"), "got: {err}");
 }
 
 // =====================================================================
