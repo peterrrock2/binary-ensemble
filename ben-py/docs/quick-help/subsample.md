@@ -15,7 +15,8 @@ How cheap skipping is depends on the stream's [encoding variant](../concepts/var
 `standard` and `mkv_chain` frames state their byte length up front, so the reader hops
 straight over unwanted samples. `twodelta` — the default — stores most samples as deltas, so
 the reader still has to replay the deltas between snapshots to reconstruct the samples you
-keep; skipped samples are cheaper (they're never built into Python lists) but not free. If
+keep. Plain BEN `twodelta` writers insert checkpoint snapshots after at most 50,000 dependent
+delta frames, so replay is bounded by nearby snapshots, but skipped samples are still not free. If
 heavy random access or repeated subsampling is your primary workload, encode with
 `variant="standard"` or `variant="mkv_chain"`.
 ```

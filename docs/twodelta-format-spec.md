@@ -69,6 +69,15 @@ The first frame of any TwoDelta stream is always a snapshot (the anchor). A deco
 reconstructed assignment in hand before it can apply a delta; a stream whose first frame is a delta
 is malformed.
 
+For plain `.ben` streams, this implementation emits a checkpoint snapshot after at most 50,000
+dependent delta frames since the previous snapshot. Any snapshot, whether forced for checkpointing
+or emitted because a transition cannot be represented as a delta, resets the delta-frame counter.
+This does not change the wire layout: a checkpoint is an ordinary snapshot frame. The rule bounds
+random-access replay while preserving high-count frames, which are already cheap for lookup because
+a target sample inside the count range only requires decoding that frame once. Readers MUST NOT rely
+on checkpoints being present in older files; a valid stream may contain only the initial snapshot and
+later representability-fallback snapshots.
+
 Because a delta frame is reconstructed from the previous assignment, TwoDelta frames are **not**
 independently decodable: random access or subsampling requires replaying from the most recent
 snapshot forward. This is the deliberate trade-off the delta encoding makes against the cheap

@@ -157,9 +157,10 @@ Conventions:
 - **Integrity is checked with CRC32C (`crc32c` crate).** That crate was chosen deliberately over
   `crc32fast` (it can't be misconfigured into IEEE CRC-32); the rationale is recorded in
   `ben/Cargo.toml`. Keep integrity checks on payloads and the assignment stream.
-- **Preserve the lazy-decode property of BEN frames** — a frame keeps its raw bytes without eagerly
-  unpacking runs, which is what makes subsample-by-skip and random-access reads fast. Don't
-  introduce a unified frame representation that forces eager bit-unpacking on read.
+- **Preserve the lazy-decode property of BEN frames** — `Standard`/`MkvChain` frames keep raw bytes
+  without eagerly unpacking runs, which is what makes frame-skip subsampling and lookup fast.
+  `TwoDelta` replay is snapshot-bounded and maintains its own incremental state. Don't introduce a
+  unified frame representation that forces eager bit-unpacking on read.
 
 ---
 

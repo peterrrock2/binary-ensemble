@@ -12,7 +12,7 @@ use binary_ensemble::io::reader::{
     DecoderInitError, SubsampleFrameDecoder,
 };
 use binary_ensemble::io::writer::BenStreamWriter;
-use binary_ensemble::ops::extract::extract_assignment_ben;
+use binary_ensemble::ops::extract::{extract_assignment_ben, extract_assignment_ben_seek};
 use binary_ensemble::BenVariant;
 
 use proptest::prelude::*;
@@ -214,6 +214,46 @@ proptest! {
         decode_ben_to_jsonl(ben.as_slice(), &mut out).unwrap();
 
         prop_assert_eq!(out, jsonl);
+    }
+
+    // `extract(i) == seq[i-1]` for every 1-based sample in a TwoDelta stream. Exercises the
+    // incremental `TwoDeltaMaskIndex` replay across long delta chains and mid-stream snapshot
+    // re-anchors, where a desync between the mask index and the running assignment would surface.
+    // `strat_twodelta_seq` also emits repeated assignments (count > 1 frames), covering the
+    // sample-index arithmetic in `extract_assignment_ben`.
+    #[test]
+    fn extract_twodelta_returns_the_correct_sample(seq in strat_twodelta_seq()) {
+        let jsonl = jsonl_from_assignments(&seq);
+        let mut ben = Vec::new();
+        encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::TwoDelta).unwrap();
+
+        for (i, expected) in seq.iter().enumerate() {
+            let extracted = extract_assignment_ben(ben.as_slice(), i + 1).unwrap();
+            prop_assert_eq!(&extracted, expected,
+                "extract(sample_number={}) returned the wrong assignment", i + 1);
+        }
+    }
+
+    // The seek-aware TwoDelta lookup must agree with both the linear replay and the ground truth
+    // for every sample, and error identically when the sample is out of range. This exercises the
+    // byte-level pre-scan and the seek-to-latest-snapshot replay that `ben lookup` relies on.
+    #[test]
+    fn extract_twodelta_seek_matches_plain_and_truth(seq in strat_twodelta_seq()) {
+        let jsonl = jsonl_from_assignments(&seq);
+        let mut ben = Vec::new();
+        encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::TwoDelta).unwrap();
+
+        for (i, expected) in seq.iter().enumerate() {
+            let n = i + 1;
+            let plain = extract_assignment_ben(Cursor::new(&ben), n).unwrap();
+            let seek = extract_assignment_ben_seek(Cursor::new(&ben), n).unwrap();
+            prop_assert_eq!(&plain, expected, "plain extract({}) wrong", n);
+            prop_assert_eq!(&seek, expected, "seek extract({}) wrong", n);
+        }
+
+        let oob = seq.len() + 1;
+        prop_assert!(extract_assignment_ben(Cursor::new(&ben), oob).is_err());
+        prop_assert!(extract_assignment_ben_seek(Cursor::new(&ben), oob).is_err());
     }
 
     // JSONL -> XBEN(Standard) -> BEN -> JSONL Also vary threads & compression level.
@@ -1573,4 +1613,36 @@ fn twodelta_supports_frame_iteration_counting_and_sample_extraction() {
         4
     );
     fs::remove_file(ben_path).unwrap();
+}
+
+// A TwoDelta stream long enough to cross the forced-checkpoint interval must let the seek-aware
+// lookup start its replay from a mid-stream snapshot, returning the same samples as the linear
+// replay around the checkpoint boundary. The proptests above stay below the 50,000-delta interval,
+// so this is the only test that exercises a forced checkpoint through the lookup path.
+#[test]
+fn twodelta_seek_lookup_crosses_forced_checkpoint() {
+    let a = vec![1u16, 1, 2, 2];
+    let b = vec![1u16, 2, 1, 2];
+    let mut assignments = Vec::with_capacity(50_005);
+    assignments.push(a.clone());
+    for i in 0..50_004 {
+        assignments.push(if i % 2 == 0 { b.clone() } else { a.clone() });
+    }
+
+    let mut ben = Vec::new();
+    let jsonl = jsonl_from_assignments(&assignments);
+    encode_jsonl_to_ben(
+        BufReader::new(jsonl.as_slice()),
+        &mut ben,
+        BenVariant::TwoDelta,
+    )
+    .unwrap();
+
+    for &n in &[1usize, 2, 49_999, 50_000, 50_001, 50_002, 50_005] {
+        let expected = &assignments[n - 1];
+        let seek = extract_assignment_ben_seek(Cursor::new(&ben), n).unwrap();
+        let plain = extract_assignment_ben(Cursor::new(&ben), n).unwrap();
+        assert_eq!(&seek, expected, "seek extract({n}) across checkpoint");
+        assert_eq!(&plain, expected, "plain extract({n}) across checkpoint");
+    }
 }

@@ -64,6 +64,7 @@ impl<R: Read> Iterator for BenStreamFrameReader<R> {
             BenStreamInner::Ben {
                 reader,
                 previous_assignment,
+                twodelta_masks,
                 sample_count,
                 spinner,
             } => match variant {
@@ -85,6 +86,7 @@ impl<R: Read> Iterator for BenStreamFrameReader<R> {
                         reader,
                         variant,
                         previous_assignment,
+                        twodelta_masks,
                         sample_count,
                         spinner,
                         silent,

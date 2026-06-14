@@ -2,6 +2,7 @@
 
 pub mod banners;
 pub mod errors;
+pub(crate) mod tags;
 pub use errors::FormatError;
 
 #[cfg(test)]

@@ -18,6 +18,7 @@ use xz2::read::XzDecoder;
 
 use super::errors::DecoderInitError;
 use super::subsample::{MkvRecord, SubsampleFrameDecoder};
+use crate::codec::decode::TwoDeltaMaskIndex;
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::progress::Spinner;
 use crate::BenVariant;
@@ -55,6 +56,7 @@ pub(crate) enum BenStreamInner<R: Read> {
     Ben {
         reader: R,
         previous_assignment: Option<Vec<u16>>,
+        twodelta_masks: Option<TwoDeltaMaskIndex>,
         sample_count: usize,
         spinner: Option<Spinner>,
     },
@@ -90,6 +92,7 @@ impl<R: Read> BenStreamReader<R> {
             inner: BenStreamInner::Ben {
                 reader,
                 previous_assignment: None,
+                twodelta_masks: None,
                 sample_count: 0,
                 spinner: None,
             },
@@ -197,12 +200,14 @@ impl<R: Read> BenStreamReader<R> {
             BenStreamInner::Ben {
                 reader,
                 previous_assignment,
+                twodelta_masks,
                 sample_count,
                 spinner,
             } => ben::for_each_assignment_ben(
                 reader,
                 variant,
                 previous_assignment,
+                twodelta_masks,
                 sample_count,
                 spinner,
                 silent,
@@ -246,12 +251,14 @@ impl<R: Read> Iterator for BenStreamReader<R> {
             BenStreamInner::Ben {
                 reader,
                 previous_assignment,
+                twodelta_masks,
                 sample_count,
                 spinner,
             } => ben::next_record_ben(
                 reader,
                 variant,
                 previous_assignment,
+                twodelta_masks,
                 sample_count,
                 spinner,
                 silent,

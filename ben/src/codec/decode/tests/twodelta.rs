@@ -623,6 +623,26 @@ fn twodelta_ben_first_frame_carries_snapshot_tag() {
 }
 
 #[test]
+fn twodelta_ben_forces_snapshot_after_50000_delta_frames() {
+    let a = vec![1u16, 1, 2, 2];
+    let b = vec![1u16, 2, 1, 2];
+    let mut assignments = Vec::with_capacity(50_002);
+    assignments.push(a.clone());
+    for i in 0..50_001 {
+        assignments.push(if i % 2 == 0 { b.clone() } else { a.clone() });
+    }
+
+    let ben = make_twodelta_ben(&assignments);
+    let tags = collect_twodelta_tags(&ben);
+    assert_eq!(tags[0], BEN_TWODELTA_SNAPSHOT_TAG);
+    assert!(tags[1..=50_000]
+        .iter()
+        .all(|&tag| tag == BEN_TWODELTA_DELTA_TAG));
+    assert_eq!(tags[50_001], BEN_TWODELTA_SNAPSHOT_TAG);
+    assert_eq!(decode_twodelta_ben_to_assignments(&ben), assignments);
+}
+
+#[test]
 fn twodelta_ben_interleaved_swap_multiswap_swap_tags_and_roundtrip() {
     // anchor → 2-swap → 3-id swap (snapshot) → 2-swap. The final delta must decode correctly,
     // proving masks were rebuilt across the mid-stream snapshot.

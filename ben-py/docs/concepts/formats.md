@@ -78,16 +78,17 @@ stacked layers:
    packs every value and length to _exactly_ that many bits — no wasted bytes. The example above
    has a max id of `3` (2 bits) and a max length of `4` (3 bits), so each run costs 5 bits.
 3. **Frames.** Each sample becomes one self-describing frame: a short header (the two bit-widths
-   plus the payload's byte length) followed by the packed payload. Because the header states the
-   byte length up front, a reader can **skip** a sample it doesn't want without unpacking a single
-   payload bit — that's what makes [subsampling](../quick-help/subsample.md) cheap.
+   plus the payload's byte length) followed by the packed payload. For `standard` and `mkv_chain`,
+   that length lets a reader **skip** a sample it doesn't want without unpacking a single payload
+   bit. `twodelta` frames can still be skipped at byte level while scanning, but selected samples
+   must be reconstructed by replaying from the latest snapshot checkpoint.
 4. **Stream.** A 17-byte banner that names the [variant](variants.md), then the frames written
    back-to-back. There's no global index or end marker, so frames can be appended one at a time
    while sampling and read back until the input simply runs out.
 
-The variant only changes the **frame shape** — independent snapshots (`standard`), snapshots plus
-repeat counts (`mkv_chain`), or deltas against the previous sample (`twodelta`). All three ride on
-the same RLE and bit-packing layers underneath.
+The variant changes the **frame shape** — independent snapshots (`standard`), snapshots plus repeat
+counts (`mkv_chain`), or deltas against the previous sample with periodic snapshots (`twodelta`).
+All three ride on the same RLE and bit-packing layers underneath.
 
 ### XBEN: LZMA2 over a byte-aligned rewrite
 

@@ -64,8 +64,10 @@ full-chain _pairwise_ ReCom ensemble, where nearly every accepted move is a two-
 
 The trade-off: a delta frame only makes sense relative to the plan before it, so a reader
 reconstructs a sample by **replaying forward from the most recent snapshot**. That means
-`twodelta` gives up the cheap frame-skip subsampling that `standard` and `mkv_chain` allow — random
-access costs a short replay.
+`twodelta` gives up the cheap frame-skip subsampling that `standard` and `mkv_chain` allow. Plain
+BEN `twodelta` streams include periodic snapshot checkpoints after at most 50,000 dependent delta
+frames, so lookup and replay are bounded by the nearest checkpoint instead of the start of the file,
+but heavy random access still costs more than independent-frame variants.
 
 - **Good for:** ReCom chains (best case) and as a robust default for anything else.
 

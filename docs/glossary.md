@@ -110,7 +110,9 @@ compress multiple layers into one word.
     two district ids exchange positions; no position outside that pair changes, and both ids already
     exist) is delta-encoded; any other transition is stored as a full snapshot frame.
     Identical-consecutive samples are accommodated via repetition counts and a repeat-frame layout,
-    not by the per-frame delta encoder.
+    not by the per-frame delta encoder. Plain-BEN `TwoDelta` writers also emit checkpoint
+    snapshots after at most 50,000 dependent delta frames since the previous snapshot; any snapshot
+    resets that counter.
 - **Variant fitness by sampler**
   - `Standard`: any ensemble; baseline.
   - `MkvChain`: full-chain ensembles (every step including rejections logged). Compresses sample
@@ -177,6 +179,9 @@ listed for reference.
 - **Sample lookup** _(prose)_ / random-access decode
   - Decode just sample N from a BEN file.
   - CLI: `ben lookup -n N`.
+  - For seekable plain `.ben` files, `TwoDelta` lookup scans frame tags/counts to find the latest
+    snapshot before N, seeks there, and replays forward. `Standard` and `MkvChain` can skip raw
+    frames directly.
 - **Subsampling**
   - Iterate over a subset of frames without consuming the whole stream. The umbrella that
     `lookup -n N` is the special case "subsample of size 1."

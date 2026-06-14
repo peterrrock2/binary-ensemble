@@ -26,8 +26,8 @@ pub use path::{
     decode_ben_to_jsonl_path, decode_xben_to_ben_path, decode_xben_to_jsonl_path,
     xz_decompress_path,
 };
-pub(crate) use twodelta::apply_twodelta_runs_to_assignment;
 pub use twodelta::decode_twodelta_frame;
+pub(crate) use twodelta::{apply_twodelta_runs_to_assignment, TwoDeltaMaskIndex};
 pub use xz::{decode_xben_to_ben, xz_decompress};
 
 #[cfg(test)]

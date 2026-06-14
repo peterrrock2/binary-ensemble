@@ -5,10 +5,11 @@
 
 use super::*;
 use crate::codec::encode::encode_jsonl_to_xben;
+use crate::io::writer::BenStreamWriter;
 use crate::BenVariant;
 use serde_json::json;
 use std::error::Error as _;
-use std::io::BufReader;
+use std::io::{BufReader, Cursor};
 
 #[test]
 fn test_extract_assignment_ben() {
@@ -169,6 +170,33 @@ fn test_extract_assignment_xben_roundtrip_and_errors() {
 
     let zero = extract_assignment_xben(xben.as_slice(), 0).unwrap_err();
     assert!(matches!(zero, SampleError::InvalidSampleNumber));
+}
+
+#[test]
+fn extract_assignment_ben_seek_uses_snapshots_without_changing_result() {
+    let assignments = vec![
+        vec![1u16, 1, 2, 2],
+        vec![1u16, 2, 1, 2],
+        vec![3u16, 3, 1, 2],
+        vec![3u16, 3, 2, 1],
+    ];
+    let mut ben = Vec::new();
+    {
+        let mut writer = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
+        for assignment in &assignments {
+            writer.write_assignment(assignment.clone()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    assert_eq!(
+        extract_assignment_ben(Cursor::new(&ben), 4).unwrap(),
+        assignments[3]
+    );
+    assert_eq!(
+        extract_assignment_ben_seek(Cursor::new(&ben), 4).unwrap(),
+        assignments[3]
+    );
 }
 
 #[test]

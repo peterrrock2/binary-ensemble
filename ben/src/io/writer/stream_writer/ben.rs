@@ -10,7 +10,7 @@ use crate::BenVariant;
 
 use super::super::twodelta::{
     classify_transition, pair_has_masks, twodelta_repeat_runs, TransitionKind,
-    BEN_TWODELTA_DELTA_TAG, BEN_TWODELTA_SNAPSHOT_TAG,
+    BEN_TWODELTA_DELTA_TAG, BEN_TWODELTA_SNAPSHOT_TAG, DEFAULT_TWODELTA_SNAPSHOT_INTERVAL,
 };
 
 /// State for the BEN arm. Variant lives here as the single source of truth.
@@ -19,6 +19,7 @@ pub(super) struct BenState<W: Write> {
     pub(super) variant: BenVariant,
     pub(super) previous_assignment: Vec<u16>,
     pub(super) previous_masks: HashMap<u16, Vec<usize>>,
+    pub(super) twodelta_deltas_since_snapshot: usize,
     pub(super) pending_assignment: Option<Vec<u16>>,
     pub(super) pending_count: u16,
 }
@@ -30,6 +31,7 @@ impl<W: Write> BenState<W> {
             variant,
             previous_assignment: Vec::new(),
             previous_masks: HashMap::new(),
+            twodelta_deltas_since_snapshot: 0,
             pending_assignment: None,
             pending_count: 0,
         }
@@ -69,12 +71,14 @@ impl<W: Write> BenState<W> {
                 if self.previous_assignment.is_empty() {
                     // First frame: a snapshot. Seeds the position masks for subsequent deltas.
                     self.write_twodelta_snapshot(assignment, count)?;
+                } else if self.twodelta_deltas_since_snapshot >= DEFAULT_TWODELTA_SNAPSHOT_INTERVAL
+                {
+                    self.write_twodelta_snapshot(assignment, count)?;
                 } else {
                     match classify_transition(&self.previous_assignment, assignment)? {
                         TransitionKind::Repeat => match twodelta_repeat_frame(assignment, count) {
                             Ok(frame) => {
-                                self.writer.write_all(&[BEN_TWODELTA_DELTA_TAG])?;
-                                self.writer.write_all(frame.as_slice())?;
+                                self.write_twodelta_delta_frame(frame)?;
                             }
                             // A pair-projected run longer than u16::MAX cannot be expressed in a
                             // delta-shaped frame (splitting it would require zero-length runs,
@@ -98,8 +102,7 @@ impl<W: Write> BenState<W> {
                                 Some(count),
                             ) {
                                 Ok(frame) => {
-                                    self.writer.write_all(&[BEN_TWODELTA_DELTA_TAG])?;
-                                    self.writer.write_all(frame.as_slice())?;
+                                    self.write_twodelta_delta_frame(frame)?;
                                 }
                                 // Same representability limit as the repeat arm. The failed
                                 // encode leaves `previous_masks` untouched, and the snapshot
@@ -123,9 +126,17 @@ impl<W: Write> BenState<W> {
         Ok(())
     }
 
+    fn write_twodelta_delta_frame(&mut self, frame: BenEncodeFrame) -> io::Result<()> {
+        self.writer.write_all(&[BEN_TWODELTA_DELTA_TAG])?;
+        self.writer.write_all(frame.as_slice())?;
+        self.twodelta_deltas_since_snapshot += 1;
+        Ok(())
+    }
+
     /// Write a snapshot frame (`MkvChain` wire format under the snapshot tag) and (re)seed the
     /// position masks from `assignment` so any following delta frame has a correct baseline.
     fn write_twodelta_snapshot(&mut self, assignment: &[u16], count: u16) -> io::Result<()> {
+        self.twodelta_deltas_since_snapshot = 0;
         self.previous_masks.clear();
         for (idx, &val) in assignment.iter().enumerate() {
             self.previous_masks.entry(val).or_default().push(idx);

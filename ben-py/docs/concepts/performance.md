@@ -101,9 +101,10 @@ can still skip through the decoded stream efficiently.
 
 How much work a skipped sample costs depends on the [encoding variant](variants.md):
 `standard` and `mkv_chain` frames are skipped wholesale without unpacking, while `twodelta`
-(the default) replays the deltas between snapshots, so skipped samples are cheaper but not
-free. Choose `variant="standard"` or `variant="mkv_chain"` at encode time if repeated random
-access is the dominant workload.
+(the default) replays the deltas between snapshots. Plain BEN `twodelta` streams add checkpoint
+snapshots after at most 50,000 dependent delta frames, which bounds replay for seekable lookup and
+long skips, but skipped samples are still not free. Choose `variant="standard"` or
+`variant="mkv_chain"` at encode time if repeated random access is the dominant workload.
 
 ## Practical workflow
 

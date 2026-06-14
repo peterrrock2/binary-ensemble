@@ -2,15 +2,15 @@ use crate::codec::encode::errors::EncodeError;
 use std::collections::HashMap;
 use std::io;
 
-pub(crate) const XBEN_TWODELTA_FULL_TAG: u8 = 0;
-pub(crate) const XBEN_TWODELTA_CHUNK_TAG: u8 = 2;
+pub(crate) use crate::format::tags::{
+    BEN_TWODELTA_DELTA_TAG, BEN_TWODELTA_SNAPSHOT_TAG, XBEN_TWODELTA_CHUNK_TAG,
+    XBEN_TWODELTA_FULL_TAG,
+};
 
-// Per-frame discriminator prepended to every frame of a plain-BEN `TwoDelta` stream. This is a
-// distinct namespace from the XBEN columnar tags above: a BEN stream interleaves self-describing
-// snapshot and delta frames, so the wire format is `[tag u8][body]`. The reader copy of these
-// constants lives in `io::reader::twodelta`; the two must stay in agreement.
-pub(crate) const BEN_TWODELTA_SNAPSHOT_TAG: u8 = 0x00;
-pub(crate) const BEN_TWODELTA_DELTA_TAG: u8 = 0x01;
+/// Maximum number of dependent plain-BEN TwoDelta delta frames emitted after a snapshot before the
+/// writer forces a fresh snapshot. This bounds random-access replay without changing the wire
+/// layout: snapshots are already legal anywhere in a TwoDelta stream.
+pub const DEFAULT_TWODELTA_SNAPSHOT_INTERVAL: usize = 50_000;
 
 /// Default number of delta frames per columnar chunk in XBEN TwoDelta.
 pub const DEFAULT_TWODELTA_CHUNK_SIZE: usize = 10_000;

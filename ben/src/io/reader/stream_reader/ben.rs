@@ -5,6 +5,7 @@ use std::io::{self, Read};
 use byteorder::ReadBytesExt;
 
 use super::zero_count_frame_error;
+use crate::codec::decode::{apply_twodelta_runs_to_assignment, DecodeError, TwoDeltaMaskIndex};
 use crate::codec::BenDecodeFrame;
 use crate::io::reader::subsample::MkvRecord;
 use crate::io::reader::twodelta::{BEN_TWODELTA_DELTA_TAG, BEN_TWODELTA_SNAPSHOT_TAG};
@@ -51,10 +52,45 @@ pub(super) fn pop_frame_from_reader<R: Read>(
     }
 }
 
+fn expand_frame_ben(
+    frame: BenDecodeFrame,
+    stream_variant: BenVariant,
+    previous_assignment: &mut Option<Vec<u16>>,
+    twodelta_masks: &mut Option<TwoDeltaMaskIndex>,
+) -> io::Result<Vec<u16>> {
+    if stream_variant != BenVariant::TwoDelta {
+        return frame.expand(previous_assignment.take());
+    }
+
+    match frame {
+        BenDecodeFrame::TwoDelta {
+            pair, run_lengths, ..
+        } => {
+            let mut assignment = previous_assignment
+                .take()
+                .ok_or_else(|| io::Error::from(DecodeError::TwoDeltaNoAnchorFrame))?;
+            if let Some(index) = twodelta_masks {
+                index.apply_runs(&mut assignment, pair, &run_lengths)?;
+            } else {
+                assignment = apply_twodelta_runs_to_assignment(assignment, pair, &run_lengths)?;
+                *twodelta_masks = Some(TwoDeltaMaskIndex::from_assignment(&assignment));
+            }
+            Ok(assignment)
+        }
+        snapshot => {
+            let assignment = snapshot.expand(None)?;
+            *twodelta_masks = Some(TwoDeltaMaskIndex::from_assignment(&assignment));
+            Ok(assignment)
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(super) fn for_each_assignment_ben<R: Read, F>(
     reader: &mut R,
     variant: BenVariant,
     previous_assignment: &mut Option<Vec<u16>>,
+    twodelta_masks: &mut Option<TwoDeltaMaskIndex>,
     sample_count: &mut usize,
     spinner: &mut Option<Spinner>,
     silent: bool,
@@ -75,7 +111,7 @@ where
             return Err(zero_count_frame_error("BEN"));
         }
 
-        let assignment = frame.expand(previous_assignment.take())?;
+        let assignment = expand_frame_ben(frame, variant, previous_assignment, twodelta_masks)?;
 
         let keep_going = f(&assignment, count)?;
         *previous_assignment = Some(assignment);
@@ -95,6 +131,7 @@ pub(super) fn next_record_ben<R: Read>(
     reader: &mut R,
     variant: BenVariant,
     previous_assignment: &mut Option<Vec<u16>>,
+    twodelta_masks: &mut Option<TwoDeltaMaskIndex>,
     sample_count: &mut usize,
     spinner: &mut Option<Spinner>,
     silent: bool,
@@ -108,7 +145,7 @@ pub(super) fn next_record_ben<R: Read>(
     if count == 0 {
         return Some(Err(zero_count_frame_error("BEN")));
     }
-    let assignment = match frame.expand(previous_assignment.take()) {
+    let assignment = match expand_frame_ben(frame, variant, previous_assignment, twodelta_masks) {
         Ok(a) => a,
         Err(e) => return Some(Err(e)),
     };

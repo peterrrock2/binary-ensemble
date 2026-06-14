@@ -74,7 +74,9 @@ ben lookup small_example.ben -n 4              # prints sample 4: [1, 1, 1, 2, .
 `ben` also has `xdecode` (XBEN straight to JSONL) and general-purpose `xz-compress` /
 `xz-decompress` subcommands. The `--variant` flag selects the frame encoding (`standard`,
 `mkvchain`, or `twodelta`); readers detect the variant automatically, so it is only ever
-specified when encoding.
+specified when encoding. Lookup is fastest on plain `.ben` files: `standard`/`mkvchain`
+frames can be skipped directly, and `twodelta` lookup seeks to the latest snapshot checkpoint
+before replaying deltas.
 
 ### One self-describing file: `bendl`
 

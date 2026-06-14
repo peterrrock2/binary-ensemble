@@ -18,8 +18,9 @@ First stable release of the rewritten Python API.
   transparent xz compression for payloads of 1 KiB or more, and `BendlDecoder.verify()` to
   validate a whole bundle's checksums in one call.
 - **Plain streams** — `BenEncoder` / `BenDecoder` write and iterate plain `.ben`/`.xben`
-  streams, with frame-skipping subsampling (`subsample_indices`, `subsample_range`,
-  `subsample_every`) shared with the bundle decoder.
+  streams, with variant-aware subsampling (`subsample_indices`, `subsample_range`,
+  `subsample_every`) shared with the bundle decoder. `standard` and `mkv_chain` skip whole
+  frames; `twodelta` replays from snapshots.
 - **Whole-file codecs** — `encode_jsonl_to_ben`, `encode_jsonl_to_xben`,
   `encode_ben_to_xben`, and the matching `decode_*` helpers convert complete files
   between JSONL, BEN, and XBEN.
