@@ -9,6 +9,8 @@ use std::io::{self, BufReader, Read};
 use std::path::Path;
 use thiserror::Error;
 
+use crate::BenVariant;
+
 #[derive(Debug, Error)]
 /// Error returned by sample extraction helpers.
 pub enum SampleError {
@@ -60,12 +62,25 @@ pub fn extract_assignment_ben<R: Read>(
 
     let mut current_sample = 1;
     let inner_decoder = BenStreamReader::from_ben(&mut reader).map_err(io::Error::from)?;
-    for record in inner_decoder {
-        let (assignment, count) = record.map_err(SampleError::new_io_error)?;
-        if current_sample == sample_number || current_sample + count as usize > sample_number {
-            return Ok(assignment);
+
+    if inner_decoder.variant() == BenVariant::TwoDelta {
+        for record in inner_decoder {
+            let (assignment, count) = record.map_err(SampleError::new_io_error)?;
+            if current_sample == sample_number || current_sample + count as usize > sample_number {
+                return Ok(assignment);
+            }
+            current_sample += count as usize;
         }
-        current_sample += count as usize;
+    } else {
+        for frame in inner_decoder.into_frames() {
+            let (decode_frame, count) = frame.map_err(SampleError::new_io_error)?;
+            if current_sample == sample_number || current_sample + count as usize > sample_number {
+                return decode_frame
+                    .expand_self_contained()
+                    .map_err(SampleError::new_io_error);
+            }
+            current_sample += count as usize;
+        }
     }
 
     Err(SampleError::SampleNotFound {
