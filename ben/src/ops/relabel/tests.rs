@@ -583,7 +583,7 @@ fn test_relabel_file_rejects_invalid_header() {
     )
     .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-    assert_eq!(err.to_string(), "unrecognized BEN banner (got [110, 111, 116, 32, 97, 32, 118, 97, 108, 105, 100, 32, 98, 97, 110, 110, 101]; expected one of \"STANDARD BEN FILE\", \"MKVCHAIN BEN FILE\", or \"TWODELTA BEN FILE\")");
+    assert_eq!(err.to_string(), "unrecognized BEN banner (got \"not a valid banne\" = [110, 111, 116, 32, 97, 32, 118, 97, 108, 105, 100, 32, 98, 97, 110, 110, 101]; expected one of \"STANDARD BEN FILE\", \"MKVCHAIN BEN FILE\", or \"TWODELTA BEN FILE\"). If the decoded text looks like JSON or plain text, the input is likely not a BEN file.");
 }
 
 #[test]
@@ -595,7 +595,7 @@ fn test_relabel_file_with_map_rejects_invalid_header() {
     )
     .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-    assert_eq!(err.to_string(), "unrecognized BEN banner (got [110, 111, 116, 32, 97, 32, 118, 97, 108, 105, 100, 32, 98, 97, 110, 110, 101]; expected one of \"STANDARD BEN FILE\", \"MKVCHAIN BEN FILE\", or \"TWODELTA BEN FILE\")");
+    assert_eq!(err.to_string(), "unrecognized BEN banner (got \"not a valid banne\" = [110, 111, 116, 32, 97, 32, 118, 97, 108, 105, 100, 32, 98, 97, 110, 110, 101]; expected one of \"STANDARD BEN FILE\", \"MKVCHAIN BEN FILE\", or \"TWODELTA BEN FILE\"). If the decoded text looks like JSON or plain text, the input is likely not a BEN file.");
 }
 
 #[test]

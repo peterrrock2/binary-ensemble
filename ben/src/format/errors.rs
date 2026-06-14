@@ -5,8 +5,11 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum FormatError {
     #[error(
-        "unrecognized BEN banner (got {actual:?}; expected one of \
-         \"STANDARD BEN FILE\", \"MKVCHAIN BEN FILE\", or \"TWODELTA BEN FILE\")"
+        "unrecognized BEN banner (got \"{}\" = {actual:?}; expected one of \
+         \"STANDARD BEN FILE\", \"MKVCHAIN BEN FILE\", or \"TWODELTA BEN FILE\"). \
+         If the decoded text looks like JSON or plain text, the input is likely \
+         not a BEN file.",
+        .actual.escape_ascii()
     )]
     UnknownBanner { actual: Vec<u8> },
 
