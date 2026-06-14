@@ -2,8 +2,8 @@
 //!
 //! Exposes six subcommands:
 //!
-//! - `create`: wrap a `.ben` / `.xben` assignment stream plus optional asset files into a
-//!   finalized `.bendl` file.
+//! - `create`: wrap a `.ben` / `.xben` assignment stream plus optional asset files into a finalized
+//!   `.bendl` file.
 //! - `inspect`: print the header and directory of a `.bendl` file.
 //! - `extract`: copy the embedded stream region or a named asset out of a bundle to disk.
 //! - `append`: add new asset files to an already-finalized bundle without rewriting the stream.

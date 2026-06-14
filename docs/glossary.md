@@ -135,14 +135,16 @@ The workspace ships one Rust library, four CLI binaries, and one Python package 
 bindings.
 
 - **The library crate** — `binary-ensemble` on crates.io (lib name `binary_ensemble`). Contains the
-  codec, I/O, ops, and bundle modules; the four CLI binaries are thin wrappers over `cli::*::run()`.
-- **The CLI tool family** — collective name for the four binaries below. Each owns one architectural
-  role:
-  - **Codec tool** — `ben`. Encode/decode BEN-family streams plus xz wrapping convenience.
-  - **Pipeline tool** — `reben`. Drives the relabel pipeline (decode → transform → re-encode) with
-    canned transforms (first-seen relabel, key-based or topology-based node ordering).
-  - **Bridge tool** — `pcben` (rename pending — currently `pben`). Translates between BEN and the
-    foreign **PCompress** format.
+  codec, I/O, ops, and bundle modules; the two CLI binaries are thin wrappers over `cli::*::run()`.
+- **The CLI tool family** — `ben` and `bendl`. `ben` is a subcommand tree spanning several
+  architectural roles; `bendl` owns the container role:
+  - **Codec role** — `ben encode`/`decode`/`xencode`/`xdecode`. Encode/decode BEN-family streams,
+    plus `ben xz-compress`/`xz-decompress` wrapping convenience.
+  - **Pipeline role** — `ben relabel`/`canonicalize`/`reencode` (and `sort-graph`). Drives the
+    relabel pipeline (decode → transform → re-encode) with canned transforms (first-seen relabel,
+    key-based or topology-based node ordering, variant re-encode).
+  - **Bridge role** — `ben pcompress` (`from-ben` / `to-ben` / `to-xben`). Translates between BEN
+    and the foreign **PCompress** format.
   - **Bundle tool** — `bendl`. Create / inspect / extract / append for `.bendl` containers.
 - **The Python package** — `binary_ensemble` on PyPI. The user-facing Python entry point.
 - **The Python bindings crate** — `ben-py` (cdylib `ben_py_core`). Internal scaffolding; users never
@@ -166,18 +168,18 @@ listed for reference.
 
 - **encode**
   - Produce some BEN-family output from JSONL or another BEN-family input.
-  - CLI: `ben -m encode` (JSONL → BEN), `ben -m x-encode` (BEN → XBEN, or JSONL → XBEN direct).
+  - CLI: `ben encode` (JSONL → BEN), `ben xencode` (JSONL → XBEN, or BEN → XBEN with `--from-ben`).
 - **decode**
   - Produce JSONL from a BEN-family input.
-  - CLI: `ben -m decode` (BEN → JSONL), `ben -m x-decode` (XBEN → BEN, or with `-p` to JSONL).
-- **`x-` prefix**
+  - CLI: `ben decode` (BEN → JSONL, or XBEN → BEN with `--from-xben`), `ben xdecode` (XBEN → JSONL).
+- **`x` prefix**
   - Means "with LZMA2 wrapping." Not a separate verb; a modifier on `encode`/`decode`.
 - **Sample lookup** _(prose)_ / random-access decode
   - Decode just sample N from a BEN file.
-  - CLI: `ben -m read -n N`. The mode is a candidate for a CLI rename in the next major release.
+  - CLI: `ben lookup -n N`.
 - **Subsampling**
   - Iterate over a subset of frames without consuming the whole stream. The umbrella that
-    `read -n N` is the special case "subsample of size 1."
+    `lookup -n N` is the special case "subsample of size 1."
 - **Asset extract** vs **sample-range extract**
   - Two unrelated operations sharing the verb "extract." Always qualify in prose.
   - **Asset extract**: pull a named asset out of a bundle. Code: `extract_asset`. CLI:
@@ -198,7 +200,7 @@ listed for reference.
   - **Never** means extending the assignment stream. If stream-extension is ever wanted, call it
     **rewrite** or **reflow** (the implementation builds a new bundle and copies assets across).
 - **Bridge**
-  - The architectural role of the `pben` tool: a translator between our formats and a foreign format
+  - The architectural role of `ben pcompress`: a translator between our formats and a foreign format
     (PCompress). Distinct from a codec, which is internal.
 
 ## Dual Graphs
@@ -276,8 +278,9 @@ means **district relabeling**.
 - **First-seen relabeling** (or **first-seen district labeling**)
   - The specific district relabeling that renames labels in order of first appearance, starting at
     0\. Replaces the historical "canonicalize_assignment" terminology; code rename pending.
-- **`reben`** as a tool
-  - The CLI that runs the relabel pipeline with one of the canned transforms.
+- **The relabel subcommands**
+  - `ben relabel` / `canonicalize` / `reencode`: the CLI entry points that run the relabel pipeline
+    with one of the canned transforms.
 
 ## Disambiguated Terms
 

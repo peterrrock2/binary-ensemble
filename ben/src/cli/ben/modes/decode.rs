@@ -1,47 +1,36 @@
-//! `ben --mode decode` handler.
+//! `ben decode` handler.
 
-use super::super::args::Args;
+use super::super::args::{DecodeArgs, Globals};
 use super::super::paths::{decode_setup, open_derived_writer, open_reader, open_writer};
 
-use crate::cli::common::{CliError, CliResult};
+use crate::cli::common::CliResult;
 use crate::codec::decode::{decode_ben_to_jsonl, decode_xben_to_ben};
 
-/// Execute the `decode` sub-mode.
-pub(in crate::cli::ben) fn run(args: Args) -> CliResult {
+/// Execute the `decode` subcommand.
+pub(in crate::cli::ben) fn run(args: DecodeArgs, g: &Globals) -> CliResult {
     tracing::info!("Running in decode mode");
 
-    let mut ben_and_xben = args.ben_and_xben;
-    let mut jsonl_and_ben = args.jsonl_and_ben;
-
-    if let Some(file) = args.input_file.as_ref() {
-        if file.ends_with(".ben") {
-            jsonl_and_ben = true;
-        } else if file.ends_with(".xben") {
-            ben_and_xben = true;
-        }
-    }
+    // XBEN input decodes one level to BEN; BEN input decodes to JSONL. Auto-detect from the
+    // extension, falling back to `--from-xben` (the only signal available for stdin input).
+    let from_xben = args.from_xben
+        || args
+            .input_file
+            .as_ref()
+            .is_some_and(|f| f.ends_with(".xben"));
 
     let reader = open_reader(args.input_file.as_deref())?;
     let writer = match args.input_file.as_ref() {
-        Some(file) if !args.print => {
-            let path = decode_setup(
-                file.clone(),
-                args.output_file.clone(),
-                false,
-                args.overwrite,
-            )?;
+        Some(file) if !g.print => {
+            let path = decode_setup(file.clone(), g.output_file.clone(), false, g.overwrite)?;
             open_derived_writer(path)?
         }
-        _ => open_writer(args.output_file.as_deref(), args.print, args.overwrite)?,
+        _ => open_writer(g.output_file.as_deref(), g.print, g.overwrite)?,
     };
 
-    if ben_and_xben {
+    if from_xben {
         decode_xben_to_ben(reader, writer)?;
-        Ok(())
-    } else if jsonl_and_ben {
-        decode_ben_to_jsonl(reader, writer)?;
-        Ok(())
     } else {
-        Err(CliError::other("Unsupported file type(s) for decode mode"))
+        decode_ben_to_jsonl(reader, writer)?;
     }
+    Ok(())
 }

@@ -1,13 +1,12 @@
 # Context
 
-Orientation for anyone (human or agent) landing in the `binary-ensemble` workspace. It explains
-what the project is, how the code is shaped, and the invariants that aren't obvious from any
-single file.
+Orientation for anyone (human or agent) landing in the `binary-ensemble` workspace. It explains what
+the project is, how the code is shaped, and the invariants that aren't obvious from any single file.
 
 ## What this project is
 
-`binary-ensemble` compresses **ensembles of districting plans**. A redistricting sampler
-(MCMC ReCom, SMC, etc.) emits thousands to millions of plans as canonicalized JSONL: one
+`binary-ensemble` compresses **ensembles of districting plans**. A redistricting sampler (MCMC
+ReCom, SMC, etc.) emits thousands to millions of plans as canonicalized JSONL: one
 `{"assignment": [...], "sample": n}` line per draw. Those files are enormous and highly redundant.
 This workspace turns them into compact binary formats and provides the tooling to encode, decode,
 inspect, relabel, and bundle them.
@@ -29,8 +28,8 @@ The formats, in increasing capability:
 changes. The essentials:
 
 - **Plan**: a partition of dual-graph nodes into districts (the mathematical object).
-  **Assignment**: its vector encoding, `Vec<u16>` where index _i_ is
-  the district id of node _i_. One plan has many assignments.
+  **Assignment**: its vector encoding, `Vec<u16>` where index _i_ is the district id of node _i_.
+  One plan has many assignments.
 - **Sample**: `(sample_number, assignment)`. **Ensemble**: an ordered stream of samples from one
   sampler run; the thing every format wraps.
 - **Variant**: `Standard` | `MkvChain` | `TwoDelta`. Fixed per stream by its banner. `Standard`
@@ -47,20 +46,24 @@ The glossary also nails down deliberately-disambiguated words ("header", "extrac
 
 A Cargo workspace with two members:
 
-- **`ben/`**: package `binary-ensemble`, library `binary_ensemble`, plus four thin CLI binaries.
+- **`ben/`**: package `binary-ensemble`, library `binary_ensemble`, plus two thin CLI binaries.
 - **`ben-py/`**: PyO3 bindings (cdylib) published as the `binary_ensemble` Python package. Depends
   on `ben/` by path; the core library has no Python dependency.
 
 ### CLI binaries (`ben/src/bin/*.rs`)
 
-Each is a one-line wrapper over `cli::<tool>::run()`. Each tool owns one role:
+Each is a one-line wrapper over `cli::<tool>::run()`. `ben` is a subcommand tree; `bendl` owns the
+bundle container role:
 
-| Binary  | Role     | Does                                                    |
-| ------- | -------- | ------------------------------------------------------- |
-| `ben`   | codec    | encode/decode BEN/XBEN, plus xz convenience wrapping    |
-| `reben` | pipeline | relabel pipeline: decode → transform → re-encode        |
-| `pcben` | bridge   | translate between BEN and the foreign PCompress format  |
-| `bendl` | bundle   | create / inspect / extract / append `.bendl` containers |
+| Binary | Role | Does | | ------- | -------- |
+------------------------------------------------------------------------- | | `ben` | codec |
+encode/decode BEN/XBEN + xz; relabel/canonicalize/reencode; pcompress bridge | | `bendl` | bundle |
+create / inspect / extract / append `.bendl` containers |
+
+`ben` subcommands: `encode`, `xencode`, `decode`, `xdecode`, `lookup`, `xz-compress`,
+`xz-decompress`, `relabel`, `canonicalize`, `reencode`, `sort-graph`, and `pcompress` (`from-ben` /
+`to-ben` / `to-xben`). The relabel pipeline (decode → transform → re-encode) backs
+`relabel`/`canonicalize`/`reencode`; the PCompress bridge backs `pcompress`.
 
 ### Library modules (`ben/src/`)
 
@@ -88,8 +91,8 @@ flowchart LR
     ben -->|bundle| bendl[".bendl"]
 ```
 
-Decode reverses this. `reben` runs decode → transform → re-encode in one streaming pass. The
-encoding stack has five named layers (bit-packing, RLE, frame, stream, container); see the
+Decode reverses this. The relabel subcommands run decode → transform → re-encode in one streaming
+pass. The encoding stack has five named layers (bit-packing, RLE, frame, stream, container); see the
 glossary's "Encoding Stack" table.
 
 ## Invariants and cross-cutting concerns
@@ -107,16 +110,16 @@ These hold across the codebase and are easy to violate by accident:
   the glossary wins and the code changes.
 - **Streaming, not slurping.** Ensembles are too large to hold in memory.
 - **64-bit only** (enforced with `compile_error!` in `lib.rs`).
-- **Illegal states are unrepresentable where practical**: e.g. `XBenVariant` cannot hold
-  `TwoDelta`, so BEN32-only paths reject it at compile time.
+- **Illegal states are unrepresentable where practical**: e.g. `XBenVariant` cannot hold `TwoDelta`,
+  so BEN32-only paths reject it at compile time.
 
 ## Building and testing
 
 The workspace uses a `Taskfile.yml` (the `task` / `go-task` runner) as the single entry point for
 local workflows. CI runs the lightweight gates (formatting + lints) on every PR; the heavy gates
-(full test suites, big-endian emulation) run on demand via the Actions tab or a
-`/ci-full` / `/ci-endian` PR comment from a collaborator. The wheel-publishing workflow is separate
-and tag-triggered.
+(full test suites, big-endian emulation) run on demand via the Actions tab or a `/ci-full` /
+`/ci-endian` PR comment from a collaborator. The wheel-publishing workflow is separate and
+tag-triggered.
 
 - `task test`: Rust fast suite + `#[ignore]`-gated slow/stress suite + Python `pytest`.
 - `task format`: `cargo fmt --all` + `ruff format`.

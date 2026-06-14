@@ -439,8 +439,8 @@ fn generate_format_stability_fixtures() {
 
 /// The canonical assignments rendered in PCompress's zero-based line format (one JSON array per
 /// line), the input the foreign `pcompress` encoder consumes. District ids are CANONICAL_JSONL's
-/// minus one, so the pcben bridge's one-based shift converts the fixture back to CANONICAL_JSONL
-/// exactly.
+/// minus one, so the `ben pcompress` bridge's one-based shift converts the fixture back to
+/// CANONICAL_JSONL exactly.
 const CANONICAL_PCOMPRESS_INPUT: &str = "\
 [0,0,1,1]
 [0,1,0,1]

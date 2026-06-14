@@ -216,7 +216,10 @@ mod tests {
         // Zero-based labels span 0..=65535, exactly the u16 space, so all 65,536 distinct ids fit:
         // the sorted input relabels to itself, and the assignment and RLE paths agree.
         let assignment: Vec<u16> = (0..=u16::MAX).collect();
-        assert_eq!(first_seen_relabel_assignment(&assignment).unwrap(), assignment);
+        assert_eq!(
+            first_seen_relabel_assignment(&assignment).unwrap(),
+            assignment
+        );
 
         let mut runs: Vec<(u16, u16)> = (0..=u16::MAX).map(|v| (v, 1)).collect();
         first_seen_relabel_rle(&mut runs).unwrap();

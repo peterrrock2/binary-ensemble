@@ -204,9 +204,9 @@ mod tests {
     #[test]
     fn decode_ben_line_rejects_zero_length_run_when_trailing_real_pair_present() {
         // Hand-built frame: mvb=4, mlb=4 (bit_width=8 = one full byte per pair). First byte
-        // 0x10 = (val=1, len=0), a zero-length pair that should not exist. Second byte 0x23 = (val=2,
-        // len=3). The trailing real pair makes the leading zero-length pair "interior", which is
-        // rejected.
+        // 0x10 = (val=1, len=0), a zero-length pair that should not exist. Second byte 0x23 =
+        // (val=2, len=3). The trailing real pair makes the leading zero-length pair
+        // "interior", which is rejected.
         let err =
             decode_ben_line(Cursor::new(&[0x10u8, 0x23u8]), 4, 4, 2).expect_err("must reject");
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);

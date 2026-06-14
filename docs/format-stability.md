@@ -83,8 +83,8 @@ The current `v1.0.0` set covers:
   `flags` and in a custom asset's `asset_flags`. Pins forward-compatible reader behavior: unknown
   bits must be ignored, all known operations still succeed.
 - `interop.pcompress` — the canonical ensemble encoded by the **foreign PCompress
-  implementation** (the `pcompress` crates.io dependency, mggg's real encoder). Pins the pcben
-  interop contract: genuine PCompress bytes must keep converting to BEN that decodes back to
+  implementation** (the `pcompress` crates.io dependency, mggg's real encoder). Pins the
+  `ben pcompress` interop contract: genuine PCompress bytes must keep converting to BEN that decodes back to
   `source.jsonl`. Minted by the focused `generate_pcompress_interop_fixture` regenerator;
   re-minting is legitimate only when the pinned `pcompress` dependency version changes its wire
   format, in a dedicated PR.

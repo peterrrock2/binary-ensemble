@@ -81,7 +81,7 @@ pub fn require_reorder(sort: Option<&str>, key: Option<&str>) -> PyResult<Reorde
 /// Returns `(reordered_graph_bytes, node_permutation_map_bytes)`. The permutation map is a JSON
 /// object carrying the required `node_permutation_old_to_new` field (original zero-based node
 /// positions → new positions) plus an optional `key` or `ordering_method` recording how the order
-/// was produced. The reben file-path fields (`input_file` / `output_file`) are omitted, since the
+/// was produced. The relabel file-path fields (`input_file` / `output_file`) are omitted, since the
 /// Python graph utilities have no such paths.
 pub fn reorder_graph_to_bytes(
     graph_bytes: &[u8],

@@ -19,8 +19,9 @@ what to call a thing, this tells you how to write the code around it.
 The repository is a Cargo workspace (`resolver = "2"`) with two members:
 
 - **`ben/`** — package `binary-ensemble`, library name `binary_ensemble`. Contains the codec, I/O,
-  ops, JSON-graph, format, and CLI logic, plus four thin binaries (`ben`, `reben`, `pcben`, `bendl`)
-  under `ben/src/bin/`.
+  ops, JSON-graph, format, and CLI logic, plus two thin binaries (`ben`, `bendl`) under
+  `ben/src/bin/`. `ben` is a subcommand tree (`encode`, `decode`, `relabel`, `canonicalize`,
+  `reencode`, `sort-graph`, `pcompress`, ...); `bendl` drives the `.bendl` container.
 - **`ben-py/`** — package `ben-py`, cdylib `ben_py_core`. PyO3 bindings that depend on
   `binary-ensemble` by path and are published as the `binary_ensemble` Python package.
 

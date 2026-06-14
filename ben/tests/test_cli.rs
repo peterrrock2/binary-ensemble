@@ -37,8 +37,6 @@ impl Drop for TempDir {
 fn bin_path(name: &str) -> &'static str {
     match name {
         "ben" => env!("CARGO_BIN_EXE_ben"),
-        "pcben" => env!("CARGO_BIN_EXE_pcben"),
-        "reben" => env!("CARGO_BIN_EXE_reben"),
         "bendl" => env!("CARGO_BIN_EXE_bendl"),
         _ => panic!("unknown binary {name}"),
     }
@@ -139,7 +137,7 @@ fn sample_graph() -> &'static str {
 
 #[test]
 fn all_clis_report_help_and_package_version() {
-    for bin in ["ben", "pcben", "reben", "bendl"] {
+    for bin in ["ben", "bendl"] {
         let help = run(bin, &["--help"], Path::new("."));
         assert_success(&help);
         let help_text = String::from_utf8_lossy(&help.stdout);
@@ -166,7 +164,6 @@ fn ben_cli_encode_decode_read_and_x_modes_roundtrip() {
     let encode = run(
         "ben",
         &[
-            "--mode",
             "encode",
             jsonl_path.to_str().unwrap(),
             "--output-file",
@@ -181,7 +178,6 @@ fn ben_cli_encode_decode_read_and_x_modes_roundtrip() {
     let decode = run(
         "ben",
         &[
-            "--mode",
             "decode",
             ben_path.to_str().unwrap(),
             "--output-file",
@@ -196,7 +192,6 @@ fn ben_cli_encode_decode_read_and_x_modes_roundtrip() {
     let read = run(
         "ben",
         &[
-            "--mode",
             "lookup",
             ben_path.to_str().unwrap(),
             "--sample-number",
@@ -211,12 +206,10 @@ fn ben_cli_encode_decode_read_and_x_modes_roundtrip() {
     let xencode = run(
         "ben",
         &[
-            "--mode",
-            "x-encode",
+            "xencode",
             jsonl_path.to_str().unwrap(),
             "--output-file",
             xben_path.to_str().unwrap(),
-            "--jsonl-and-xben",
             "--save-all",
             "--n-cpus",
             "1",
@@ -231,8 +224,7 @@ fn ben_cli_encode_decode_read_and_x_modes_roundtrip() {
     let xdecode = run(
         "ben",
         &[
-            "--mode",
-            "x-decode",
+            "xdecode",
             xben_path.to_str().unwrap(),
             "--output-file",
             xdecoded_path.to_str().unwrap(),
@@ -250,27 +242,20 @@ fn ben_cli_supports_stdin_stdout_workflows() {
 
     let encode = run_stdin_stdout(
         "ben",
-        &["--mode", "encode", "--save-all"],
+        &["encode", "--save-all"],
         temp.path(),
         sample_jsonl().as_bytes(),
     );
     assert_success(&encode);
 
-    let decode = run_stdin_stdout(
-        "ben",
-        &["--mode", "decode", "--jsonl-and-ben"],
-        temp.path(),
-        &encode.stdout,
-    );
+    let decode = run_stdin_stdout("ben", &["decode"], temp.path(), &encode.stdout);
     assert_success(&decode);
     assert_eq!(String::from_utf8(decode.stdout).unwrap(), sample_jsonl());
 
     let xencode_jsonl = run_stdin_stdout(
         "ben",
         &[
-            "--mode",
-            "x-encode",
-            "--jsonl-and-xben",
+            "xencode",
             "--save-all",
             "--n-cpus",
             "1",
@@ -282,12 +267,7 @@ fn ben_cli_supports_stdin_stdout_workflows() {
     );
     assert_success(&xencode_jsonl);
 
-    let xdecode_jsonl = run_stdin_stdout(
-        "ben",
-        &["--mode", "x-decode"],
-        temp.path(),
-        &xencode_jsonl.stdout,
-    );
+    let xdecode_jsonl = run_stdin_stdout("ben", &["xdecode"], temp.path(), &xencode_jsonl.stdout);
     assert_success(&xdecode_jsonl);
     assert_eq!(
         String::from_utf8(xdecode_jsonl.stdout).unwrap(),
@@ -305,9 +285,8 @@ fn ben_cli_supports_stdin_stdout_workflows() {
     let xencode_ben = run_stdin_stdout(
         "ben",
         &[
-            "--mode",
-            "x-encode",
-            "--ben-and-xben",
+            "xencode",
+            "--from-ben",
             "--n-cpus",
             "1",
             "--compression-level",
@@ -320,7 +299,7 @@ fn ben_cli_supports_stdin_stdout_workflows() {
 
     let decode_ben = run_stdin_stdout(
         "ben",
-        &["--mode", "decode", "--ben-and-xben"],
+        &["decode", "--from-xben"],
         temp.path(),
         &xencode_ben.stdout,
     );
@@ -345,7 +324,6 @@ fn ben_cli_xz_roundtrip_and_overwrite_prompt() {
     let compress = run(
         "ben",
         &[
-            "--mode",
             "xz-compress",
             input_path.to_str().unwrap(),
             "--output-file",
@@ -364,7 +342,6 @@ fn ben_cli_xz_roundtrip_and_overwrite_prompt() {
     let decompress = run_with_stdin(
         "ben",
         &[
-            "--mode",
             "xz-decompress",
             xz_path.to_str().unwrap(),
             "--output-file",
@@ -399,8 +376,7 @@ fn ben_cli_supports_ben_to_xben_and_xben_to_ben_paths() {
     let xencode = run(
         "ben",
         &[
-            "--mode",
-            "x-encode",
+            "xencode",
             ben_path.to_str().unwrap(),
             "--output-file",
             xben_path.to_str().unwrap(),
@@ -413,7 +389,6 @@ fn ben_cli_supports_ben_to_xben_and_xben_to_ben_paths() {
     let decode = run(
         "ben",
         &[
-            "--mode",
             "decode",
             xben_path.to_str().unwrap(),
             "--output-file",
@@ -450,29 +425,20 @@ fn ben_cli_uses_default_output_names() {
 
     let encode = run(
         "ben",
-        &[
-            "--mode",
-            "encode",
-            jsonl_path.to_str().unwrap(),
-            "--save-all",
-        ],
+        &["encode", jsonl_path.to_str().unwrap(), "--save-all"],
         temp.path(),
     );
     assert_success(&encode);
     assert!(ben_path.exists());
 
     fs::remove_file(&jsonl_path).unwrap();
-    let decode = run(
-        "ben",
-        &["--mode", "decode", ben_path.to_str().unwrap()],
-        temp.path(),
-    );
+    let decode = run("ben", &["decode", ben_path.to_str().unwrap()], temp.path());
     assert_success(&decode);
     assert_eq!(fs::read_to_string(&jsonl_path).unwrap(), sample_jsonl());
 
     let compress = run(
         "ben",
-        &["--mode", "xz-compress", jsonl_path.to_str().unwrap()],
+        &["xz-compress", jsonl_path.to_str().unwrap()],
         temp.path(),
     );
     assert_success(&compress);
@@ -481,7 +447,7 @@ fn ben_cli_uses_default_output_names() {
     fs::remove_file(&jsonl_path).unwrap();
     let decompress = run(
         "ben",
-        &["--mode", "xz-decompress", xz_path.to_str().unwrap()],
+        &["xz-decompress", xz_path.to_str().unwrap()],
         temp.path(),
     );
     assert_success(&decompress);
@@ -495,63 +461,57 @@ fn ben_cli_reports_expected_error_paths() {
     let bogus_txt = temp.path().join("bogus.txt");
     let bogus_xz = temp.path().join("bogus.data");
     fs::write(&bogus_jsonl, sample_jsonl()).unwrap();
-    fs::write(&bogus_txt, sample_jsonl()).unwrap();
+    // xencode treats a non-.ben input as JSONL, so to force a failure the content must be invalid
+    // JSONL rather than merely an unexpected extension.
+    fs::write(&bogus_txt, "not valid json\n").unwrap();
     fs::write(&bogus_xz, "not xz").unwrap();
 
     let xencode = run(
         "ben",
-        &["--mode", "x-encode", bogus_txt.to_str().unwrap()],
+        &["xencode", bogus_txt.to_str().unwrap()],
         temp.path(),
     );
     assert_failure(&xencode);
-    assert!(String::from_utf8_lossy(&xencode.stderr)
-        .contains("Unsupported file type(s) for xencode mode"));
+    assert!(String::from_utf8_lossy(&xencode.stderr).contains("Error:"));
 
+    // decode now defaults to BEN -> JSONL; a JSONL file has no BEN banner, so it fails to decode.
     let decode = run(
         "ben",
-        &["--mode", "decode", bogus_jsonl.to_str().unwrap()],
+        &["decode", bogus_jsonl.to_str().unwrap()],
         temp.path(),
     );
     assert_failure(&decode);
-    assert!(
-        String::from_utf8_lossy(&decode.stderr).contains("Unsupported file type for decode mode")
-    );
+    assert!(String::from_utf8_lossy(&decode.stderr).contains("Error:"));
 
+    // lookup requires --sample-number; omitting it is a clap parse error.
     let read = run(
         "ben",
-        &["--mode", "lookup", bogus_jsonl.to_str().unwrap()],
+        &["lookup", bogus_jsonl.to_str().unwrap()],
         temp.path(),
     );
     assert_failure(&read);
-    assert!(
-        String::from_utf8_lossy(&read.stderr).contains("Sample number is required in lookup mode")
-    );
+    assert!(String::from_utf8_lossy(&read.stderr).contains("sample-number"));
 
     let xz = run(
         "ben",
-        &["--mode", "xz-decompress", bogus_xz.to_str().unwrap()],
+        &["xz-decompress", bogus_xz.to_str().unwrap()],
         temp.path(),
     );
     assert_failure(&xz);
     assert!(String::from_utf8_lossy(&xz.stderr)
         .contains("Unsupported file type for xz decompress mode"));
 
-    let bad_xben = run_stdin_stdout("ben", &["--mode", "x-decode"], temp.path(), b"not-an-xben");
+    let bad_xben = run_stdin_stdout("ben", &["xdecode"], temp.path(), b"not-an-xben");
     assert_failure(&bad_xben);
     assert!(String::from_utf8_lossy(&bad_xben.stderr).contains("Error:"));
 
-    let bad_decode_ben = run_stdin_stdout(
-        "ben",
-        &["--mode", "decode", "--jsonl-and-ben"],
-        temp.path(),
-        b"not-a-ben",
-    );
+    let bad_decode_ben = run_stdin_stdout("ben", &["decode"], temp.path(), b"not-a-ben");
     assert_failure(&bad_decode_ben);
     assert!(String::from_utf8_lossy(&bad_decode_ben.stderr).contains("Error:"));
 
     let bad_decode_xben = run_stdin_stdout(
         "ben",
-        &["--mode", "decode", "--ben-and-xben"],
+        &["decode", "--from-xben"],
         temp.path(),
         b"not-an-xben",
     );
@@ -589,8 +549,7 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
     let xencode_from_ben = run(
         "ben",
         &[
-            "--mode",
-            "x-encode",
+            "xencode",
             ben_path.to_str().unwrap(),
             "--output-file",
             xben_path.to_str().unwrap(),
@@ -603,7 +562,6 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
     let xz_compress = run(
         "ben",
         &[
-            "--mode",
             "xz-compress",
             jsonl_path.to_str().unwrap(),
             "--output-file",
@@ -618,7 +576,6 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
         run_with_stdin(
             "ben",
             &[
-                "--mode",
                 "encode",
                 jsonl_path.to_str().unwrap(),
                 "--output-file",
@@ -629,20 +586,14 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
         ),
         run_with_stdin(
             "ben",
-            &[
-                "--mode",
-                "encode",
-                "--output-file",
-                occupied.to_str().unwrap(),
-            ],
+            &["encode", "--output-file", occupied.to_str().unwrap()],
             temp.path(),
             sample_jsonl().as_bytes(),
         ),
         run_with_stdin(
             "ben",
             &[
-                "--mode",
-                "x-encode",
+                "xencode",
                 ben_path.to_str().unwrap(),
                 "--output-file",
                 occupied.to_str().unwrap(),
@@ -652,33 +603,20 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
         ),
         run_with_stdin(
             "ben",
-            &[
-                "--mode",
-                "x-encode",
-                "--jsonl-and-xben",
-                "--output-file",
-                occupied.to_str().unwrap(),
-            ],
+            &["xencode", "--output-file", occupied.to_str().unwrap()],
             temp.path(),
             sample_jsonl().as_bytes(),
         ),
         run_with_stdin(
             "ben",
-            &[
-                "--mode",
-                "decode",
-                "--jsonl-and-ben",
-                "--output-file",
-                occupied.to_str().unwrap(),
-            ],
+            &["decode", "--output-file", occupied.to_str().unwrap()],
             temp.path(),
             b"n\n",
         ),
         run_with_stdin(
             "ben",
             &[
-                "--mode",
-                "x-decode",
+                "xdecode",
                 xben_path.to_str().unwrap(),
                 "--output-file",
                 occupied.to_str().unwrap(),
@@ -688,19 +626,13 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
         ),
         run_with_stdin(
             "ben",
-            &[
-                "--mode",
-                "x-decode",
-                "--output-file",
-                occupied.to_str().unwrap(),
-            ],
+            &["xdecode", "--output-file", occupied.to_str().unwrap()],
             temp.path(),
             b"n\n",
         ),
         run_with_stdin(
             "ben",
             &[
-                "--mode",
                 "lookup",
                 ben_path.to_str().unwrap(),
                 "--sample-number",
@@ -714,7 +646,6 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
         run_with_stdin(
             "ben",
             &[
-                "--mode",
                 "xz-compress",
                 jsonl_path.to_str().unwrap(),
                 "--output-file",
@@ -726,7 +657,6 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
         run_with_stdin(
             "ben",
             &[
-                "--mode",
                 "xz-decompress",
                 xz_path.to_str().unwrap(),
                 "--output-file",
@@ -743,8 +673,7 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
     let invalid_ben_to_xben = run(
         "ben",
         &[
-            "--mode",
-            "x-encode",
+            "xencode",
             invalid_ben.to_str().unwrap(),
             "--output-file",
             temp.path().join("bad.xben").to_str().unwrap(),
@@ -755,15 +684,14 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
     assert_failure(&invalid_ben_to_xben);
     assert!(String::from_utf8_lossy(&invalid_ben_to_xben.stderr).contains("Error:"));
 
-    let unsupported_decode = run_stdin_stdout("ben", &["--mode", "decode"], temp.path(), b"");
+    // Empty stdin decodes as BEN by default; with no banner it fails rather than rejecting by type.
+    let unsupported_decode = run_stdin_stdout("ben", &["decode"], temp.path(), b"");
     assert_failure(&unsupported_decode);
-    assert!(String::from_utf8_lossy(&unsupported_decode.stderr)
-        .contains("Unsupported file type(s) for decode mode"));
+    assert!(String::from_utf8_lossy(&unsupported_decode.stderr).contains("Error:"));
 
     let read_too_large = run(
         "ben",
         &[
-            "--mode",
             "lookup",
             ben_path.to_str().unwrap(),
             "--sample-number",
@@ -778,7 +706,6 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
     let invalid_decode_ben = run(
         "ben",
         &[
-            "--mode",
             "decode",
             invalid_ben.to_str().unwrap(),
             "--output-file",
@@ -793,7 +720,6 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
     let invalid_decode_xben = run(
         "ben",
         &[
-            "--mode",
             "decode",
             invalid_xben.to_str().unwrap(),
             "--output-file",
@@ -808,8 +734,7 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
     let invalid_xdecode = run(
         "ben",
         &[
-            "--mode",
-            "x-decode",
+            "xdecode",
             invalid_xben.to_str().unwrap(),
             "--output-file",
             temp.path().join("decoded2.jsonl").to_str().unwrap(),
@@ -823,7 +748,6 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
     let invalid_xz_decompress = run(
         "ben",
         &[
-            "--mode",
             "xz-decompress",
             invalid_xz.to_str().unwrap(),
             "--output-file",
@@ -864,11 +788,10 @@ fn reben_cli_json_and_ben_modes_work() {
     fs::write(&ben_path, ben_bytes).unwrap();
 
     let sort_graph = run(
-        "reben",
+        "ben",
         &[
+            "sort-graph",
             graph_path.to_str().unwrap(),
-            "--mode",
-            "json",
             "--key",
             "GEOID20",
             "--output-file",
@@ -886,12 +809,10 @@ fn reben_cli_json_and_ben_modes_work() {
     assert!(map_path.exists());
 
     let canonicalize = run(
-        "reben",
+        "ben",
         &[
+            "canonicalize",
             ben_path.to_str().unwrap(),
-            "--mode",
-            "ben",
-            "--canonicalize",
             "--output-file",
             canonical_path.to_str().unwrap(),
         ],
@@ -900,11 +821,10 @@ fn reben_cli_json_and_ben_modes_work() {
     assert_success(&canonicalize);
 
     let relabel = run(
-        "reben",
+        "ben",
         &[
+            "relabel",
             ben_path.to_str().unwrap(),
-            "--mode",
-            "ben",
             "--map-file",
             map_path.to_str().unwrap(),
             "--output-file",
@@ -965,11 +885,10 @@ fn reben_cli_rejects_map_referencing_missing_assignment_index() {
     .unwrap();
 
     let relabel = run(
-        "reben",
+        "ben",
         &[
+            "relabel",
             ben_path.to_str().unwrap(),
-            "--mode",
-            "ben",
             "--map-file",
             map_path.to_str().unwrap(),
             "--output-file",
@@ -989,11 +908,10 @@ fn reben_cli_rejects_map_referencing_missing_assignment_index() {
     let malformed_map_path = temp.path().join("malformed_map.json");
     fs::write(&malformed_map_path, r#"{"key":"map"}"#).unwrap();
     let malformed = run(
-        "reben",
+        "ben",
         &[
+            "relabel",
             ben_path.to_str().unwrap(),
-            "--mode",
-            "ben",
             "--map-file",
             malformed_map_path.to_str().unwrap(),
             "--output-file",
@@ -1040,11 +958,10 @@ fn reben_cli_can_limit_ben_relabeling_to_first_n_items() {
     fs::write(&ben_path, ben_bytes).unwrap();
 
     let sort_graph = run(
-        "reben",
+        "ben",
         &[
+            "sort-graph",
             graph_path.to_str().unwrap(),
-            "--mode",
-            "json",
             "--key",
             "GEOID20",
         ],
@@ -1054,12 +971,10 @@ fn reben_cli_can_limit_ben_relabeling_to_first_n_items() {
     assert!(map_path.exists());
 
     let canonicalize = run(
-        "reben",
+        "ben",
         &[
+            "canonicalize",
             ben_path.to_str().unwrap(),
-            "--mode",
-            "ben",
-            "--canonicalize",
             "--n-items",
             "1",
             "--output-file",
@@ -1070,11 +985,10 @@ fn reben_cli_can_limit_ben_relabeling_to_first_n_items() {
     assert_success(&canonicalize);
 
     let relabel = run(
-        "reben",
+        "ben",
         &[
+            "relabel",
             ben_path.to_str().unwrap(),
-            "--mode",
-            "ben",
             "--map-file",
             map_path.to_str().unwrap(),
             "--n-items",
@@ -1136,11 +1050,10 @@ fn reben_cli_supports_twodelta_ben_mode() {
     fs::write(&ben_path, ben_bytes).unwrap();
 
     let sort_graph = run(
-        "reben",
+        "ben",
         &[
+            "sort-graph",
             graph_path.to_str().unwrap(),
-            "--mode",
-            "json",
             "--key",
             "GEOID20",
         ],
@@ -1152,12 +1065,10 @@ fn reben_cli_supports_twodelta_ben_mode() {
     assert!(map_path.exists());
 
     let canonicalize = run(
-        "reben",
+        "ben",
         &[
+            "canonicalize",
             ben_path.to_str().unwrap(),
-            "--mode",
-            "ben",
-            "--canonicalize",
             "--output-file",
             canonical_path.to_str().unwrap(),
         ],
@@ -1166,11 +1077,10 @@ fn reben_cli_supports_twodelta_ben_mode() {
     assert_success(&canonicalize);
 
     let relabel = run(
-        "reben",
+        "ben",
         &[
+            "relabel",
             ben_path.to_str().unwrap(),
-            "--mode",
-            "ben",
             "--map-file",
             map_path.to_str().unwrap(),
             "--output-file",
@@ -1224,14 +1134,12 @@ fn reben_cli_can_convert_between_ben_variants() {
     fs::write(&ben_path, ben_bytes).unwrap();
 
     let to_twodelta = run(
-        "reben",
+        "ben",
         &[
+            "reencode",
             ben_path.to_str().unwrap(),
-            "--mode",
-            "ben",
             "--output-variant",
             "twodelta",
-            "--convert-only",
             "--output-file",
             twodelta_path.to_str().unwrap(),
         ],
@@ -1243,14 +1151,12 @@ fn reben_cli_can_convert_between_ben_variants() {
     assert_eq!(&twodelta_bytes[..17], b"TWODELTA BEN FILE");
 
     let to_mkv = run(
-        "reben",
+        "ben",
         &[
+            "reencode",
             twodelta_path.to_str().unwrap(),
-            "--mode",
-            "ben",
             "--output-variant",
             "mkv-chain",
-            "--convert-only",
             "--output-file",
             mkv_path.to_str().unwrap(),
         ],
@@ -1300,14 +1206,12 @@ fn reben_cli_can_limit_variant_conversion_to_first_n_items() {
     fs::write(&ben_path, ben_bytes).unwrap();
 
     let limited_convert = run(
-        "reben",
+        "ben",
         &[
+            "reencode",
             ben_path.to_str().unwrap(),
-            "--mode",
-            "ben",
             "--output-variant",
             "twodelta",
-            "--convert-only",
             "--n-items",
             "2",
             "--output-file",
@@ -1356,12 +1260,10 @@ fn reben_cli_can_canonicalize_into_a_different_ben_variant() {
     fs::write(&ben_path, ben_bytes).unwrap();
 
     let canonicalize = run(
-        "reben",
+        "ben",
         &[
+            "canonicalize",
             ben_path.to_str().unwrap(),
-            "--mode",
-            "ben",
-            "--canonicalize",
             "--output-variant",
             "twodelta",
             "--output-file",
@@ -1403,11 +1305,10 @@ fn reben_cli_generates_map_from_dual_graph_and_reports_invalid_flag_combinations
     fs::write(&ben_path, ben_bytes).unwrap();
 
     let relabel = run(
-        "reben",
+        "ben",
         &[
+            "relabel",
             ben_path.to_str().unwrap(),
-            "--mode",
-            "ben",
             "--key",
             "GEOID20",
             "--dualgraph",
@@ -1426,11 +1327,10 @@ fn reben_cli_generates_map_from_dual_graph_and_reports_invalid_flag_combinations
     let generated_graph = temp.path().join("dualgraph_sorted_by_GEOID20.json");
     let generated_map = temp.path().join("dualgraph_sorted_by_GEOID20_map.json");
     let both = run(
-        "reben",
+        "ben",
         &[
+            "relabel",
             ben_path.to_str().unwrap(),
-            "--mode",
-            "ben",
             "--key",
             "GEOID20",
             "--dualgraph",
@@ -1445,14 +1345,8 @@ fn reben_cli_generates_map_from_dual_graph_and_reports_invalid_flag_combinations
         .contains("Cannot provide both a map file and a sorting option"));
 
     let missing_dual_graph = run(
-        "reben",
-        &[
-            ben_path.to_str().unwrap(),
-            "--mode",
-            "ben",
-            "--key",
-            "GEOID20",
-        ],
+        "ben",
+        &["relabel", ben_path.to_str().unwrap(), "--key", "GEOID20"],
         temp.path(),
     );
     assert_failure(&missing_dual_graph);
@@ -1474,11 +1368,10 @@ fn reben_cli_supports_rcm_ordering() {
     fs::write(&graph_path, sample_graph()).unwrap();
 
     let rcm = run(
-        "reben",
+        "ben",
         &[
+            "sort-graph",
             graph_path.to_str().unwrap(),
-            "--mode",
-            "json",
             "--ordering",
             "reverse-cuthill-mckee",
             "--output-file",
@@ -1505,11 +1398,10 @@ fn reben_cli_supports_multi_level_cluster_ordering() {
     fs::write(&graph_path, sample_graph()).unwrap();
 
     let mlc = run(
-        "reben",
+        "ben",
         &[
+            "sort-graph",
             graph_path.to_str().unwrap(),
-            "--mode",
-            "json",
             "--ordering",
             "multi-level-cluster",
             "--output-file",
@@ -1543,11 +1435,10 @@ fn pcben_decodes_committed_foreign_pcompress_fixture() {
     let temp = TempDir::new("pcben-interop");
     let ben_path = temp.path().join("interop.ben");
     let pc_to_ben = run(
-        "pcben",
+        "ben",
         &[
-            "--mode",
-            "pc-to-ben",
-            "--input-file",
+            "pcompress",
+            "to-ben",
             fixtures.join("interop.pcompress").to_str().unwrap(),
             "--output-file",
             ben_path.to_str().unwrap(),
@@ -1585,11 +1476,10 @@ fn pben_cli_converts_between_formats() {
     fs::write(&ben_path, ben_bytes).unwrap();
 
     let ben_to_pc = run(
-        "pcben",
+        "ben",
         &[
-            "--mode",
-            "ben-to-pc",
-            "--input-file",
+            "pcompress",
+            "from-ben",
             ben_path.to_str().unwrap(),
             "--output-file",
             pc_path.to_str().unwrap(),
@@ -1600,11 +1490,10 @@ fn pben_cli_converts_between_formats() {
     assert!(pc_path.exists());
 
     let pc_to_ben = run(
-        "pcben",
+        "ben",
         &[
-            "--mode",
-            "pc-to-ben",
-            "--input-file",
+            "pcompress",
+            "to-ben",
             pc_path.to_str().unwrap(),
             "--output-file",
             roundtrip_ben_path.to_str().unwrap(),
@@ -1614,11 +1503,10 @@ fn pben_cli_converts_between_formats() {
     assert_success(&pc_to_ben);
 
     let pc_to_xben = run(
-        "pcben",
+        "ben",
         &[
-            "--mode",
-            "pc-to-xben",
-            "--input-file",
+            "pcompress",
+            "to-xben",
             pc_path.to_str().unwrap(),
             "--output-file",
             xben_path.to_str().unwrap(),
@@ -1639,7 +1527,7 @@ fn pben_cli_converts_between_formats() {
 
     let xdecode = run(
         "ben",
-        &["--mode", "x-decode", xben_path.to_str().unwrap(), "--print"],
+        &["xdecode", xben_path.to_str().unwrap(), "--print"],
         temp.path(),
     );
     assert_success(&xdecode);
@@ -1658,7 +1546,6 @@ fn bendl_cli_create_inspect_extract_append_roundtrip() {
     assert_success(&run(
         "ben",
         &[
-            "--mode",
             "encode",
             jsonl_path.to_str().unwrap(),
             "--output-file",
@@ -1824,7 +1711,6 @@ fn bendl_cli_remove_reclaims_bytes_and_compact_is_stable() {
     assert_success(&run(
         "ben",
         &[
-            "--mode",
             "encode",
             jsonl_path.to_str().unwrap(),
             "--output-file",
@@ -1935,7 +1821,7 @@ fn bendl_cli_remove_reclaims_bytes_and_compact_is_stable() {
 }
 
 // =====================================================================
-// `ben encode --graph` and `ben x-encode --graph`
+// `ben encode --graph` and `ben xencode --graph`
 // =====================================================================
 
 #[test]
@@ -1948,7 +1834,7 @@ fn ben_encode_graph_requires_input_file_not_stdin() {
 
     let out = run(
         "ben",
-        &["--mode", "encode", "--graph", graph_path.to_str().unwrap()],
+        &["encode", "--graph", graph_path.to_str().unwrap()],
         temp.path(),
     );
     assert_failure(&out);
@@ -1972,7 +1858,6 @@ fn ben_encode_graph_rejects_combination_with_print() {
     let out = run(
         "ben",
         &[
-            "--mode",
             "encode",
             jsonl_path.to_str().unwrap(),
             "--graph",
@@ -1991,7 +1876,7 @@ fn ben_encode_graph_rejects_combination_with_print() {
 
 #[test]
 fn ben_encode_graph_happy_path_produces_bendl() {
-    // Happy path for `ben --mode encode --graph`: produces a finalized .bendl whose decoded
+    // Happy path for `ben encode --graph`: produces a finalized .bendl whose decoded
     // stream round-trips the input JSONL and whose graph asset matches the source.
     let temp = TempDir::new("ben-encode-graph-happy");
     let jsonl_path = temp.path().join("samples.jsonl");
@@ -2003,7 +1888,6 @@ fn ben_encode_graph_happy_path_produces_bendl() {
     let encode = run(
         "ben",
         &[
-            "--mode",
             "encode",
             jsonl_path.to_str().unwrap(),
             "--output-file",
@@ -2038,7 +1922,6 @@ fn ben_encode_graph_happy_path_produces_bendl() {
     let decode = run(
         "ben",
         &[
-            "--mode",
             "decode",
             stream_path.to_str().unwrap(),
             "--output-file",
@@ -2080,12 +1963,7 @@ fn ben_xencode_graph_requires_input_file_not_stdin() {
 
     let out = run(
         "ben",
-        &[
-            "--mode",
-            "x-encode",
-            "--graph",
-            graph_path.to_str().unwrap(),
-        ],
+        &["xencode", "--graph", graph_path.to_str().unwrap()],
         temp.path(),
     );
     assert_failure(&out);
@@ -2107,8 +1985,7 @@ fn ben_xencode_graph_rejects_combination_with_print() {
     let out = run(
         "ben",
         &[
-            "--mode",
-            "x-encode",
+            "xencode",
             jsonl_path.to_str().unwrap(),
             "--graph",
             graph_path.to_str().unwrap(),
@@ -2134,12 +2011,11 @@ fn ben_xencode_graph_with_ben_input_round_trips() {
     let jsonl_path = temp.path().join("samples.jsonl");
     fs::write(&jsonl_path, sample_jsonl()).unwrap();
 
-    // Encode JSONL to a BEN file first; this is what we'll feed into --mode x-encode.
+    // Encode JSONL to a BEN file first; this is what we'll feed into xencode.
     let ben_path = temp.path().join("samples.ben");
     let encode_ben = run(
         "ben",
         &[
-            "--mode",
             "encode",
             jsonl_path.to_str().unwrap(),
             "--output-file",
@@ -2158,8 +2034,7 @@ fn ben_xencode_graph_with_ben_input_round_trips() {
     let xencode = run(
         "ben",
         &[
-            "--mode",
-            "x-encode",
+            "xencode",
             ben_path.to_str().unwrap(),
             "--output-file",
             out_path.to_str().unwrap(),
@@ -2192,8 +2067,7 @@ fn ben_xencode_graph_with_ben_input_round_trips() {
     let decode = run(
         "ben",
         &[
-            "--mode",
-            "x-decode",
+            "xdecode",
             recovered_xben.to_str().unwrap(),
             "--output-file",
             decoded_path.to_str().unwrap(),
@@ -2217,7 +2091,6 @@ fn ben_encode_graph_rejects_missing_graph_file() {
     let out = run(
         "ben",
         &[
-            "--mode",
             "encode",
             jsonl_path.to_str().unwrap(),
             "--output-file",
@@ -2245,7 +2118,6 @@ fn ben_encode_graph_refuses_to_overwrite_existing_file_without_flag() {
     let out = run(
         "ben",
         &[
-            "--mode",
             "encode",
             jsonl_path.to_str().unwrap(),
             "--output-file",
@@ -2272,8 +2144,7 @@ fn ben_xencode_graph_happy_path_produces_bendl() {
     let encode = run(
         "ben",
         &[
-            "--mode",
-            "x-encode",
+            "xencode",
             jsonl_path.to_str().unwrap(),
             "--output-file",
             out_path.to_str().unwrap(),
@@ -2307,8 +2178,7 @@ fn ben_xencode_graph_happy_path_produces_bendl() {
     let decode = run(
         "ben",
         &[
-            "--mode",
-            "x-decode",
+            "xdecode",
             stream_path.to_str().unwrap(),
             "--output-file",
             decoded_path.to_str().unwrap(),

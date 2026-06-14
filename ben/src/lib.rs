@@ -13,9 +13,10 @@
 //!
 //! The main CLI tools provided by this crate are:
 //!
-//! - `ben`: A tool for converting JSONL files into BEN files. and for converting between BEN and
-//!   XBEN files.
-//! - `reben`: A tool for relabeling BEN files to improve compression ratios.
+//! - `ben`: A subcommand tree for converting between JSONL, BEN, and XBEN (`encode`/`decode`/
+//!   `xencode`/`xdecode`), random-access `lookup`, relabeling to improve compression
+//!   (`relabel`/`canonicalize`/`reencode`/`sort-graph`), and `pcompress` conversion.
+//! - `bendl`: A tool for creating, inspecting, and extracting `.bendl` bundle containers.
 
 #[cfg(not(target_pointer_width = "64"))]
 compile_error!("binary-ensemble requires a 64-bit target");

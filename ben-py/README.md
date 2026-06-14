@@ -119,7 +119,7 @@ Full docs are at **[binary-ensemble.readthedocs.io](https://binary-ensemble.read
 
 ## Command-line tools
 
-The same engine ships as the `ben`, `reben`, `bendl`, and `pcben` CLI tools via Cargo:
+The same engine ships as the `ben` and `bendl` CLI tools via Cargo:
 
 ```bash
 cargo install binary-ensemble

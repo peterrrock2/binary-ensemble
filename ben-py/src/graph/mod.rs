@@ -1,4 +1,4 @@
-//! Python bindings for graph reordering utilities (the reben orderings).
+//! Python bindings for graph reordering utilities (the `ben relabel` orderings).
 
 pub mod helpers;
 mod py_funcs;

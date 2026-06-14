@@ -1,8 +1,7 @@
-//! Per-mode handlers for the `ben` CLI.
+//! Encode/decode handlers for the `ben` CLI.
 //!
-//! The dispatcher in `super::run` matches on the parsed `Mode` enum and forwards to one of these
-//! handlers. Splitting one handler per file keeps each mode under ~40 lines and makes them
-//! individually testable.
+//! The dispatcher in `super::run` matches on the parsed `Command` and forwards to one of these
+//! handlers. Splitting one handler per file keeps each mode small and individually testable.
 
 pub(super) mod decode;
 pub(super) mod encode;

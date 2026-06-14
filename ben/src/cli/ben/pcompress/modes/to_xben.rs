@@ -1,7 +1,7 @@
-//! `pcben --mode pc-to-xben` handler.
+//! `ben pcompress to-xben` handler: PCOMPRESS -> XBEN.
 
-use super::super::args::{Args, Mode};
-use super::super::paths::resolved_output_path;
+use super::super::super::args::{Globals, PcompressIoArgs};
+use super::super::paths::{resolved_output_path, PcDirection};
 use super::super::translate::assignment_encode_xben;
 
 use crate::cli::common::{CliError, CliResult};
@@ -9,8 +9,8 @@ use pipe::pipe;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read};
 
-/// Execute the `pc-to-xben` sub-mode.
-pub(in crate::cli::pcben) fn run(args: Args) -> CliResult {
+/// Execute the `to-xben` direction.
+pub(in crate::cli::ben::pcompress) fn run(args: PcompressIoArgs, g: &Globals) -> CliResult {
     tracing::info!("Converting PCOMPRESS to XBEN");
 
     let mut pcompress_reader: BufReader<Box<dyn Read + Send>> = match args.input_file.as_ref() {
@@ -19,10 +19,10 @@ pub(in crate::cli::pcben) fn run(args: Args) -> CliResult {
     };
 
     let mut ben_writer: BufWriter<Box<dyn io::Write>> = match resolved_output_path(
-        Mode::PcToXben,
+        PcDirection::ToXben,
         args.input_file.as_deref(),
-        args.output_file.as_deref(),
-        args.overwrite,
+        g.output_file.as_deref(),
+        g.overwrite,
     )? {
         Some(file) => BufWriter::new(Box::new(File::create(file)?)),
         None => BufWriter::new(Box::new(io::stdout())),

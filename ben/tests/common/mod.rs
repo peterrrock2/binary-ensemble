@@ -17,8 +17,6 @@ pub use binary_ensemble::test_utils::{
 pub fn binary_path(name: &str) -> &'static str {
     match name {
         "ben" => env!("CARGO_BIN_EXE_ben"),
-        "pcben" => env!("CARGO_BIN_EXE_pcben"),
-        "reben" => env!("CARGO_BIN_EXE_reben"),
         "bendl" => env!("CARGO_BIN_EXE_bendl"),
         _ => panic!("unknown binary {name}"),
     }

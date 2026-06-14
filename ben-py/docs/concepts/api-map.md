@@ -7,8 +7,8 @@ Knowing which module owns which job makes the whole surface easy to navigate.
 | ----------------------------- | --------------------------- | --------------------------------------------------- |
 | {mod}`binary_ensemble.bundle` | `bendl`                     | Creating, reading, and transforming `.bendl` files  |
 | {mod}`binary_ensemble.stream` | `ben`                       | Reading and writing plain `.ben`/`.xben` streams    |
-| {mod}`binary_ensemble.codec`  | `ben` (encode/decode modes) | Whole-file conversions between JSONL, BEN, and XBEN |
-| {mod}`binary_ensemble.graph`  | `reben` (orderings)         | Reordering a dual graph before encoding             |
+| {mod}`binary_ensemble.codec`  | `ben encode` / `decode`     | Whole-file conversions between JSONL, BEN, and XBEN |
+| {mod}`binary_ensemble.graph`  | `ben relabel` / `sort-graph` | Reordering a dual graph before encoding             |
 
 Everything is also re-exported at the top level, so `from binary_ensemble import BendlEncoder`
 works.

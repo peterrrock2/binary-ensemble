@@ -15,7 +15,7 @@ use petgraph::graph::NodeIndex;
 use petgraph::{Directed, Undirected};
 use petxgraph::PetxGraph;
 
-/// Topology-based graph ordering methods supported by `reben`.
+/// Topology-based graph ordering methods supported by `ben relabel` / `sort-graph`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GraphOrderingMethod {
     /// Order nodes using recursive multilevel clustering.

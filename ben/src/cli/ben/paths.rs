@@ -1,4 +1,3 @@
-use super::args::Mode;
 use crate::cli::common::check_overwrite;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Result, Write};
@@ -7,22 +6,29 @@ use std::path::Path;
 pub(super) type DynReader = Box<dyn io::BufRead>;
 pub(super) type DynWriter = Box<dyn Write>;
 
+/// The bare-stream target of an encode, before the `--graph` bundle override.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) enum EncodeTarget {
+    Ben,
+    Xben,
+}
+
 /// Derive the output path for encode-style CLI modes.
 ///
 /// # Arguments
 ///
-/// * `mode` - The encode-oriented CLI mode being executed.
+/// * `target` - Whether the encode produces BEN or XBEN.
 /// * `input_file_name` - The input file path supplied by the user.
 /// * `output_file_name` - An optional explicit output path.
 /// * `overwrite` - Whether to skip overwrite prompting.
 /// * `with_graph` - When true, the output is a `.bendl` file instead of a bare `.ben`/`.xben`
-///   stream, so the derived extension is `.bendl` regardless of `mode`.
+///   stream, so the derived extension is `.bendl` regardless of `target`.
 ///
 /// # Returns
 ///
 /// Returns the resolved output path.
 pub(super) fn encode_setup(
-    mode: Mode,
+    target: EncodeTarget,
     input_file_name: String,
     output_file_name: Option<String>,
     overwrite: bool,
@@ -30,12 +36,10 @@ pub(super) fn encode_setup(
 ) -> Result<String> {
     let extension = if with_graph {
         ".bendl"
-    } else if mode == Mode::XEncode {
+    } else if target == EncodeTarget::Xben {
         ".xben"
-    } else if mode == Mode::Encode {
-        ".ben"
     } else {
-        ".xz"
+        ".ben"
     };
 
     let out_file_name = match output_file_name {

@@ -1,4 +1,4 @@
-"""Graph reordering utilities (the reben orderings).
+"""Graph reordering utilities used by ``ben sort-graph`` and bundle relabeling.
 
 Reordering a dual graph before building a chain (or a bundle) can dramatically improve BEN/XBEN
 compression. Each function takes a graph (a live ``networkx.Graph``, or adjacency-format JSON

@@ -1,53 +1,60 @@
-use super::args::{Args, Mode};
-use super::paths::{derive_output_path, resolved_output_path};
+//! Tests for the `ben pcompress` subcommand. Ported from the former `pcben` CLI.
+
+use super::super::args::{Cli, Command, PcompressDirection};
+use super::paths::{derive_output_path, resolved_output_path, PcDirection};
 use super::translate::{assignment_decode_ben, assignment_encode_ben, assignment_encode_xben};
 use crate::codec::decode::{decode_ben_to_jsonl, decode_xben_to_jsonl};
 use crate::codec::encode::encode_jsonl_to_ben;
 use crate::BenVariant;
-use clap::{CommandFactory, Parser};
+use clap::Parser;
 use std::io::{self, BufReader, Cursor};
 
 #[test]
-fn clap_metadata_uses_package_version() {
-    let mut command = Args::command();
-    let help = command.render_long_help().to_string();
-
-    assert_eq!(command.get_version(), Some(env!("CARGO_PKG_VERSION")));
-    assert!(help.contains("PCOMPRESS"));
-    assert!(help.contains("--mode"));
-}
-
-#[test]
-fn parse_pc_to_xben_args() {
-    let args = Args::try_parse_from([
-        "pcben",
-        "--mode",
-        "pc-to-xben",
-        "--input-file",
-        "input.pc",
+fn parse_to_xben_args() {
+    let cli = Cli::try_parse_from([
+        "ben",
+        "pcompress",
+        "to-xben",
         "--output-file",
         "output.xben",
         "--verbose",
+        "input.pc",
     ])
     .unwrap();
 
-    assert_eq!(args.mode, Mode::PcToXben);
-    assert_eq!(args.input_file.as_deref(), Some("input.pc"));
-    assert_eq!(args.output_file.as_deref(), Some("output.xben"));
-    assert!(args.verbose);
+    assert_eq!(cli.globals.output_file.as_deref(), Some("output.xben"));
+    assert!(cli.globals.verbose);
+    match cli.command {
+        Command::Pcompress(p) => match p.direction {
+            PcompressDirection::ToXben(io) => {
+                assert_eq!(io.input_file.as_deref(), Some("input.pc"))
+            }
+            other => panic!("expected to-xben, got {other:?}"),
+        },
+        other => panic!("expected pcompress, got {other:?}"),
+    }
 }
 
 #[test]
 fn derive_output_path_replaces_expected_suffixes() {
     assert_eq!(
-        derive_output_path(Mode::BenToPc, "plans.ben"),
+        derive_output_path(PcDirection::FromBen, "plans.ben"),
         "plans.pcompress"
     );
     assert_eq!(
-        derive_output_path(Mode::PcToBen, "plans.pcompress"),
+        derive_output_path(PcDirection::ToBen, "plans.pcompress"),
         "plans.ben"
     );
-    assert_eq!(derive_output_path(Mode::PcToXben, "plans.pc"), "plans.xben");
+    assert_eq!(
+        derive_output_path(PcDirection::ToXben, "plans.pc"),
+        "plans.xben"
+    );
+}
+
+#[test]
+fn resolved_output_path_returns_none_when_both_paths_absent() {
+    let result = resolved_output_path(PcDirection::FromBen, None, None, false).unwrap();
+    assert!(result.is_none());
 }
 
 #[test]
@@ -80,8 +87,6 @@ fn assignment_encode_ben_offsets_values_and_writes_ben() {
 
 #[test]
 fn assignment_decode_ben_rejects_district_id_zero() {
-    // BEN ids are one-based in the PCOMPRESS convention; id 0 has no zero-based counterpart.
-    // Saturating it onto 0 would silently alias districts 0 and 1.
     let jsonl = br#"{"assignment":[0,1,1],"sample":1}
 "#;
     let mut ben = Vec::new();
@@ -95,7 +100,6 @@ fn assignment_decode_ben_rejects_district_id_zero() {
 
 #[test]
 fn assignment_encode_ben_rejects_district_id_65535() {
-    // Zero-based id 65535 has no one-based u16 counterpart; wrapping would silently map it to 0.
     let input = b"[0,65535]\n";
     let mut ben = Vec::new();
     let err = assignment_encode_ben(BufReader::new(&input[..]), &mut ben).unwrap_err();
@@ -122,15 +126,7 @@ fn assignment_encode_xben_rejects_malformed_line_without_panicking() {
 }
 
 #[test]
-fn resolved_output_path_returns_none_when_both_paths_absent() {
-    // When neither output_file nor input_file is given, stdout mode: Ok(None).
-    let result = resolved_output_path(Mode::BenToPc, None, None, false).unwrap();
-    assert!(result.is_none());
-}
-
-#[test]
 fn assignment_decode_ben_propagates_read_error() {
-    // assignment_decode_ben propagates I/O errors from the BEN reader.
     struct AlwaysErrors;
     impl io::Read for AlwaysErrors {
         fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
@@ -159,8 +155,6 @@ fn assignment_encode_xben_offsets_values_and_writes_xben() {
 
 #[test]
 fn assignment_decode_ben_iterator_error_propagates() {
-    // Provides a valid BEN banner so BenStreamReader::from_ben succeeds, then returns a non-EOF
-    // error on the next read so the iterator fires the Err(e) => return Err(e) arm (line 204).
     use crate::format::banners::STANDARD_BEN_BANNER;
     use std::io::Read;
 

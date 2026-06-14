@@ -37,7 +37,7 @@ fn format_invalid_file_format(header: &[u8]) -> String {
         format!(
             "Invalid file format: Compressed header detected (hex: {}). \
              This reader expects an uncompressed .ben file. \
-             Decompress this file using the BEN cli `ben -m decode <file_name>.xben` tool \
+             Decompress this file using the BEN cli `ben decode <file_name>.xben` tool \
              or the `decode_xben_to_ben` function in this library.",
             to_hex(header)
         )

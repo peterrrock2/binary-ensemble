@@ -37,10 +37,8 @@ The byte-level layouts are specified in [`docs/`](./docs):
 | Component               | What it does                                                                                                                                                                         |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [`ben/`](./ben)         | The Rust crate ([`binary-ensemble` on crates.io](https://crates.io/crates/binary-ensemble)) and the CLI tools below                                                                  |
-| `ben` (CLI)             | Encode/decode between JSONL, BEN, and XBEN; random-access sample lookup                                                                                                              |
-| `reben` (CLI)           | Relabel and reorder ensembles so they compress dramatically better                                                                                                                   |
+| `ben` (CLI)             | Encode/decode between JSONL, BEN, and XBEN; random-access lookup; relabel/canonicalize/reencode to compress better; convert to/from [PCompress](https://github.com/mggg/pcompress)   |
 | `bendl` (CLI)           | Create, inspect, extract from, and append assets to `.bendl` files                                                                                                                   |
-| `pcben` (CLI)           | Convert between BEN and [PCompress](https://github.com/mggg/pcompress) formats                                                                                                       |
 | [`ben-py/`](./ben-py)   | The Python package ([`binary-ensemble` on PyPI](https://pypi.org/project/binary-ensemble/)) — full docs at [binary-ensemble.readthedocs.io](https://binary-ensemble.readthedocs.io/) |
 | [`docs/`](./docs)       | Format specifications, stability policy, and project glossary                                                                                                                        |
 | [`example/`](./example) | Small sample files used throughout this README                                                                                                                                       |
@@ -48,7 +46,7 @@ The byte-level layouts are specified in [`docs/`](./docs):
 
 ## Install
 
-Command-line tools (installs `ben`, `reben`, `bendl`, and `pcben`):
+Command-line tools (installs `ben` and `bendl`):
 
 ```bash
 cargo install binary-ensemble    # from crates.io
@@ -66,15 +64,15 @@ pip install binary-ensemble
 Using [`example/small_example.jsonl`](./example/small_example.jsonl):
 
 ```bash
-ben -m encode small_example.jsonl              # -> small_example.ben
-ben -m x-encode small_example.ben              # -> small_example.xben
-ben -m decode small_example.xben -w            # XBEN -> BEN (one layer down)
-ben -m decode small_example.ben -o roundtrip.jsonl  # BEN -> JSONL
-ben -m lookup -n 4 small_example.ben           # prints sample 4: [1, 1, 1, 2, ...]
+ben encode small_example.jsonl                 # -> small_example.ben
+ben xencode small_example.ben                  # -> small_example.xben
+ben decode small_example.xben -w               # XBEN -> BEN (one layer down)
+ben decode small_example.ben -o roundtrip.jsonl     # BEN -> JSONL
+ben lookup small_example.ben -n 4              # prints sample 4: [1, 1, 1, 2, ...]
 ```
 
-`ben` also has `x-decode` (XBEN straight to JSONL) and general-purpose `xz-compress` /
-`xz-decompress` modes. The `--variant` flag selects the frame encoding (`standard`,
+`ben` also has `xdecode` (XBEN straight to JSONL) and general-purpose `xz-compress` /
+`xz-decompress` subcommands. The `--variant` flag selects the frame encoding (`standard`,
 `mkvchain`, or `twodelta`); readers detect the variant automatically, so it is only ever
 specified when encoding.
 
@@ -94,29 +92,29 @@ bendl extract run.bendl --stream -o extracted.ben
 `create` and `append` also take `--graph` and `--node-permutation-map` for the standardized
 assets. Asset payloads are checksummed (CRC32C) and xz-compressed on disk by default.
 
-## Making files smaller: `reben`
+## Making files smaller: relabeling
 
 BEN's core compression is run-length encoding, so anything that produces longer runs of the
-same district id shrinks the files dramatically. `reben` provides the two big levers:
+same district id shrinks the files dramatically. `ben` provides the two big levers:
 
-1. **First-seen relabeling.** `[2,2,3,3,1,1]` and `[0,0,1,1,2,2]` are the same partition
-   with different labels, but the XBEN compressor cannot know that. Renumbering districts in
-   order of first appearance (starting at 0) makes equivalent plans encode identically:
+1. **First-seen relabeling (`ben canonicalize`).** `[2,2,3,3,1,1]` and `[0,0,1,1,2,2]` are
+   the same partition with different labels, but the XBEN compressor cannot know that.
+   Renumbering districts in order of first appearance (starting at 0) makes equivalent plans
+   encode identically:
 
    ```bash
-   reben -m ben 100k_CO_chain.jsonl.ben --canonicalize
+   ben canonicalize 100k_CO_chain.jsonl.ben
    # rewrites 100k_CO_chain.jsonl.ben in place
-   # (without --canonicalize, reben rewrites preserving labels verbatim;
-   #  pass --output-file to write elsewhere, or --add-suffix for
+   # (pass --output-file to write elsewhere, or --add-suffix for
    #  100k_CO_chain_first_seen_relabeled.ben)
    ```
 
-2. **Node reordering.** Nearby geographic units tend to share a district, so sorting the
-   dual graph's nodes by a geographic key (or a topology-based ordering via `--ordering mlc`
-   / `--ordering rcm`) turns each plan into a handful of long runs:
+2. **Node reordering (`ben relabel`).** Nearby geographic units tend to share a district, so
+   sorting the dual graph's nodes by a geographic key (or a topology-based ordering via
+   `--ordering mlc` / `--ordering rcm`) turns each plan into a handful of long runs:
 
    ```bash
-   reben -m ben -d CO_small.json -k GEOID20 -o 100k_CO_chain_sorted.ben 100k_CO_chain.jsonl.ben
+   ben relabel 100k_CO_chain.jsonl.ben -d CO_small.json -k GEOID20 -o 100k_CO_chain_sorted.ben
    # -> 100k_CO_chain_sorted.ben              (the rewritten ensemble)
    # -> CO_small_sorted_by_GEOID20.json       (the reordered dual graph)
    # -> CO_small_sorted_by_GEOID20_map.json   (the reversible permutation map)
@@ -125,9 +123,11 @@ same district id shrinks the files dramatically. `reben` provides the two big le
    Without `-o`/`--output-file` the relabeled ensemble lands at
    `100k_CO_chain_sorted_by_GEOID20.ben` next to the input.
 
+To switch BEN variant without relabeling, use `ben reencode --output-variant <variant>`.
+
 On the Colorado example ([`example/CO_small.json`](./example/CO_small.json), with the
 100k-plan ensemble in [`example/100k_CO_chain.jsonl.xben`](./example/100k_CO_chain.jsonl.xben)),
-this takes the BEN file from ~7 GB to ~550 MB, and the final `ben -m x-encode` brings it to
+this takes the BEN file from ~7 GB to ~550 MB, and the final `ben xencode` brings it to
 ~6 MB.
 
 **A note on speed:** XBEN _decoding_ is fast — a large file extracts in minutes. High-ratio
@@ -181,8 +181,8 @@ intermediate form (BEN32, one `(value, length)` pair per 4 bytes) that LZMA2 can
 — one frame at a time, so memory stays flat. This is also why first-seen relabeling helps:
 structurally identical plans become byte-identical, and LZMA2 collapses them.
 
-The `pcben` tool converts between BEN and PCompress (`pcben -m ben-to-pc / pc-to-ben /
-pc-to-xben -i <file>`), so ensembles can move between the two ecosystems.
+The `ben pcompress` subcommand converts between BEN and PCompress (`ben pcompress from-ben /
+to-ben / to-xben <file>`), so ensembles can move between the two ecosystems.
 
 ## Assumptions and limitations
 

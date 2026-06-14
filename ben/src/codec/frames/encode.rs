@@ -236,8 +236,8 @@ impl BenEncodeFrame {
     ///
     /// - `max_len_bit_count` is outside `1..=16`;
     /// - the payload contains an interior zero run length; the encoder never emits zero-length
-    ///   runs, so only the final byte's zero padding may form zero slots, and silently dropping
-    ///   one would shift the alternation parity of every later run;
+    ///   runs, so only the final byte's zero padding may form zero slots, and silently dropping one
+    ///   would shift the alternation parity of every later run;
     /// - the payload length is not `ceil(runs * width / 8)` for the recovered run count.
     pub fn try_from_parts(
         pair: (u16, u16),

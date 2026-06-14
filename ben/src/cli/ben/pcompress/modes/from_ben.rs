@@ -1,7 +1,7 @@
-//! `pcben --mode ben-to-pc` handler.
+//! `ben pcompress from-ben` handler: BEN -> PCOMPRESS.
 
-use super::super::args::{Args, Mode};
-use super::super::paths::resolved_output_path;
+use super::super::super::args::{Globals, PcompressIoArgs};
+use super::super::paths::{resolved_output_path, PcDirection};
 use super::super::translate::assignment_decode_ben;
 
 use crate::cli::common::CliResult;
@@ -9,8 +9,8 @@ use pipe::pipe;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read};
 
-/// Execute the `ben-to-pc` sub-mode.
-pub(in crate::cli::pcben) fn run(args: Args) -> CliResult {
+/// Execute the `from-ben` direction.
+pub(in crate::cli::ben::pcompress) fn run(args: PcompressIoArgs, g: &Globals) -> CliResult {
     tracing::info!("Converting BEN to PCOMPRESS");
 
     let ben_reader: Box<dyn Read + Send> = match args.input_file.as_ref() {
@@ -19,10 +19,10 @@ pub(in crate::cli::pcben) fn run(args: Args) -> CliResult {
     };
 
     let mut pcompress_writer: BufWriter<Box<dyn io::Write>> = match resolved_output_path(
-        Mode::BenToPc,
+        PcDirection::FromBen,
         args.input_file.as_deref(),
-        args.output_file.as_deref(),
-        args.overwrite,
+        g.output_file.as_deref(),
+        g.overwrite,
     )? {
         Some(file) => BufWriter::new(Box::new(File::create(file)?)),
         None => BufWriter::new(Box::new(io::stdout())),

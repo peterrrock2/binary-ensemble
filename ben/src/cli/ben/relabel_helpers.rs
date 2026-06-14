@@ -1,4 +1,7 @@
-use super::args::{BenCliVariant, OrderingMethod};
+//! Shared helpers for the relabel/canonicalize/reencode/sort-graph subcommands.
+
+use super::args::OrderingMethod;
+use crate::cli::common::check_overwrite;
 use crate::json::graph::GraphOrderingMethod;
 use crate::ops::relabel::{relabel_ben_file, RelabelOptions};
 use crate::BenVariant;
@@ -77,15 +80,6 @@ pub(super) fn ben_variant_name(variant: BenVariant) -> &'static str {
     }
 }
 
-/// Convert a CLI BEN variant to the library's `BenVariant` type.
-pub(super) fn to_ben_variant(variant: &BenCliVariant) -> BenVariant {
-    match variant {
-        BenCliVariant::Standard => BenVariant::Standard,
-        BenCliVariant::MkvChain => BenVariant::MkvChain,
-        BenCliVariant::TwoDelta => BenVariant::TwoDelta,
-    }
-}
-
 /// Strip a trailing `.jsonl.ben` or `.ben` extension, leaving the bare stem for output naming.
 pub(super) fn ben_stem(name: &str) -> &str {
     name.strip_suffix(".jsonl.ben")
@@ -105,7 +99,7 @@ fn temp_sibling_path(target: &str) -> String {
         .unwrap_or(0);
     let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
     format!(
-        "{target}.reben-tmp-{}-{nonce:016x}-{seq:x}",
+        "{target}.ben-tmp-{}-{nonce:016x}-{seq:x}",
         std::process::id()
     )
 }
@@ -138,6 +132,42 @@ pub(super) fn relabel_in_place<R: Read>(
             let _ = fs::remove_file(&tmp_path);
             Err(format!("BEN relabeling failed: {e}"))
         }
+    }
+}
+
+/// Resolve a BEN-rewrite destination three ways and run the relabel: an explicit `--output-file`,
+/// an `--add-suffix` derived sibling, or in-place replacement of the input (the default). Shared by
+/// the canonicalize and reencode paths, which both rewrite BEN-in/BEN-out with no permutation map.
+pub(super) fn write_or_in_place<R: Read>(
+    reader: R,
+    input_file: &str,
+    output_file: Option<String>,
+    add_suffix: bool,
+    overwrite: bool,
+    derived_suffix_name: impl FnOnce() -> String,
+    options: RelabelOptions,
+) -> Result<(), String> {
+    if output_file.is_some() && add_suffix {
+        return Err("Provide either --output-file or --add-suffix, not both.".to_string());
+    }
+
+    let destination = match output_file {
+        Some(name) => Some(name),
+        None if add_suffix => Some(derived_suffix_name()),
+        None => None,
+    };
+
+    match destination {
+        Some(name) => {
+            check_overwrite(&name, overwrite)
+                .map_err(|e| format!("Could not use output file {name:?}: {e}"))?;
+            let file = File::create(&name)
+                .map_err(|e| format!("Could not create output file {name:?}: {e}"))?;
+            let writer = BufWriter::new(file);
+            relabel_ben_file(reader, writer, options)
+                .map_err(|e| format!("BEN relabeling failed: {e}"))
+        }
+        None => relabel_in_place(reader, input_file, options),
     }
 }
 

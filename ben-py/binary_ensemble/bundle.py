@@ -494,7 +494,7 @@ def relabel_bundle(
     Reorders the embedded ``graph.json``, rewrites every assignment into the new node order, and
     writes a fresh bundle storing the reordered graph and a ``node_permutation_map.json`` (so the
     reordering is reversible). Metadata and custom assets are preserved. This is the bundle-level
-    form of the CLI's ``reben`` ordering flow, typically run to shrink a bundle before an XBEN
+    form of the CLI's ``ben relabel`` ordering flow, typically run to shrink a bundle before an XBEN
     recompress.
 
     Only BEN bundles are supported (relabel before compressing to XBEN); the source must carry a

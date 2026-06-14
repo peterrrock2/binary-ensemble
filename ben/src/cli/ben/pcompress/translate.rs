@@ -1,7 +1,7 @@
-//! BEN ↔ PCOMPRESS assignment translation helpers.
+//! BEN <-> PCOMPRESS assignment translation helpers.
 //!
 //! PCOMPRESS uses zero-based district ids; BEN uses one-based. These helpers bridge the two
-//! conventions so the per-mode handlers can be kept short.
+//! conventions so the per-direction handlers can be kept short.
 
 use crate::io::reader::BenStreamReader;
 use crate::io::writer::BenStreamWriter;
