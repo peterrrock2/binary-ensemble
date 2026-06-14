@@ -59,8 +59,9 @@ fn resolved_output_path_returns_none_when_both_paths_absent() {
 
 #[test]
 fn assignment_decode_ben_writes_json_lines() {
-    let jsonl = br#"{"assignment":[1,1,2],"sample":1}
-{"assignment":[2,3,3],"sample":2}
+    // BEN and PCOMPRESS are both zero-based, so ids transcode unchanged.
+    let jsonl = br#"{"assignment":[0,0,1],"sample":1}
+{"assignment":[1,2,2],"sample":2}
 "#;
     let mut ben = Vec::new();
     encode_jsonl_to_ben(BufReader::new(&jsonl[..]), &mut ben, BenVariant::Standard).unwrap();
@@ -72,7 +73,7 @@ fn assignment_decode_ben_writes_json_lines() {
 }
 
 #[test]
-fn assignment_encode_ben_offsets_values_and_writes_ben() {
+fn assignment_encode_ben_writes_ben_unchanged() {
     let input = b"[0,0,1]\n[1,1,2]\n";
     let mut ben = Vec::new();
     assignment_encode_ben(BufReader::new(&input[..]), &mut ben).unwrap();
@@ -81,30 +82,34 @@ fn assignment_encode_ben_offsets_values_and_writes_ben() {
     decode_ben_to_jsonl(Cursor::new(ben), &mut out).unwrap();
 
     let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains(r#""assignment":[0,0,1]"#));
     assert!(rendered.contains(r#""assignment":[1,1,2]"#));
-    assert!(rendered.contains(r#""assignment":[2,2,3]"#));
 }
 
 #[test]
-fn assignment_decode_ben_rejects_district_id_zero() {
-    let jsonl = br#"{"assignment":[0,1,1],"sample":1}
+fn assignment_decode_ben_passes_through_id_zero_and_max() {
+    // Both id 0 and id 65535 transcode straight through now that there is no ±1 shift.
+    let jsonl = br#"{"assignment":[0,65535,1],"sample":1}
 "#;
     let mut ben = Vec::new();
     encode_jsonl_to_ben(BufReader::new(&jsonl[..]), &mut ben, BenVariant::Standard).unwrap();
 
     let mut out = Vec::new();
-    let err = assignment_decode_ben(Cursor::new(ben), &mut out).unwrap_err();
-    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-    assert!(err.to_string().contains("district id 0"));
+    assignment_decode_ben(Cursor::new(ben), &mut out).unwrap();
+    assert_eq!(String::from_utf8(out).unwrap(), "[0,65535,1]\n");
 }
 
 #[test]
-fn assignment_encode_ben_rejects_district_id_65535() {
+fn assignment_encode_ben_accepts_id_65535() {
     let input = b"[0,65535]\n";
     let mut ben = Vec::new();
-    let err = assignment_encode_ben(BufReader::new(&input[..]), &mut ben).unwrap_err();
-    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-    assert!(err.to_string().contains("65535"));
+    assignment_encode_ben(BufReader::new(&input[..]), &mut ben).unwrap();
+
+    let mut out = Vec::new();
+    decode_ben_to_jsonl(Cursor::new(ben), &mut out).unwrap();
+    assert!(String::from_utf8(out)
+        .unwrap()
+        .contains(r#""assignment":[0,65535]"#));
 }
 
 #[test]
@@ -139,7 +144,7 @@ fn assignment_decode_ben_propagates_read_error() {
 }
 
 #[test]
-fn assignment_encode_xben_offsets_values_and_writes_xben() {
+fn assignment_encode_xben_writes_xben_unchanged() {
     let input = b"[0,1,1]\n[2,2,0]\n";
 
     let mut xben = Vec::new();
@@ -149,8 +154,8 @@ fn assignment_encode_xben_offsets_values_and_writes_xben() {
     decode_xben_to_jsonl(Cursor::new(xben), &mut out).unwrap();
 
     let rendered = String::from_utf8(out).unwrap();
-    assert!(rendered.contains(r#""assignment":[1,2,2]"#));
-    assert!(rendered.contains(r#""assignment":[3,3,1]"#));
+    assert!(rendered.contains(r#""assignment":[0,1,1]"#));
+    assert!(rendered.contains(r#""assignment":[2,2,0]"#));
 }
 
 #[test]

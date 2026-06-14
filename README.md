@@ -182,7 +182,8 @@ intermediate form (BEN32, one `(value, length)` pair per 4 bytes) that LZMA2 can
 structurally identical plans become byte-identical, and LZMA2 collapses them.
 
 The `ben pcompress` subcommand converts between BEN and PCompress (`ben pcompress from-ben /
-to-ben / to-xben <file>`), so ensembles can move between the two ecosystems.
+to-ben / to-xben <file>`), so ensembles can move between the two ecosystems. Both formats use
+0-based district ids, so ids transcode unchanged.
 
 ## Assumptions and limitations
 

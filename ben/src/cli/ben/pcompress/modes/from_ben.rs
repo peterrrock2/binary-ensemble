@@ -4,7 +4,7 @@ use super::super::super::args::{Globals, PcompressIoArgs};
 use super::super::paths::{resolved_output_path, PcDirection};
 use super::super::translate::assignment_decode_ben;
 
-use crate::cli::common::CliResult;
+use crate::cli::common::{CliError, CliResult};
 use pipe::pipe;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read};
@@ -30,11 +30,15 @@ pub(in crate::cli::ben::pcompress) fn run(args: PcompressIoArgs, g: &Globals) ->
 
     let (pipe_reader, pipe_writer) = pipe();
 
-    let _ = std::thread::spawn(move || -> io::Result<()> {
-        assignment_decode_ben(ben_reader, pipe_writer)
-    });
+    let decode_thread = std::thread::spawn(move || assignment_decode_ben(ben_reader, pipe_writer));
 
     let mut buf_pipe_reader = BufReader::new(pipe_reader);
     pcompress::encode::encode(&mut buf_pipe_reader, &mut pcompress_writer, false);
-    Ok(())
+
+    // Surface a translation failure (e.g. malformed BEN input) rather than letting the closed pipe
+    // end the encode quietly with a truncated output file.
+    match decode_thread.join() {
+        Ok(result) => result.map_err(CliError::from),
+        Err(_) => Err(CliError::other("BEN-to-PCOMPRESS decode thread panicked")),
+    }
 }

@@ -1423,14 +1423,36 @@ fn reben_cli_supports_multi_level_cluster_ordering() {
 fn pcben_decodes_committed_foreign_pcompress_fixture() {
     // `interop.pcompress` was minted by the real PCompress implementation (the `pcompress`
     // crates.io dependency), so this pins the foreign-format interop contract: bytes produced by
-    // genuine PCompress must keep converting to BEN that decodes back to the canonical JSONL.
-    // The expected output is the committed `source.jsonl`, whose one-based ids are the fixture's
-    // zero-based ids shifted by the bridge.
+    // genuine PCompress must keep converting to a BEN that decodes back to the canonical ensemble.
+    // Both formats are zero-based, so the bridge transcodes ids unchanged; the committed
+    // `source.jsonl` is the one-based canonical ensemble, so the expected decode is its ids minus
+    // one.
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
         .join("v1.0.0");
-    let expected = fs::read_to_string(fixtures.join("source.jsonl")).unwrap();
+
+    fn assignments(jsonl: &str) -> Vec<Vec<i64>> {
+        jsonl
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(|line| {
+                let value: Value = serde_json::from_str(line).unwrap();
+                value["assignment"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|id| id.as_i64().unwrap())
+                    .collect()
+            })
+            .collect()
+    }
+
+    let source = fs::read_to_string(fixtures.join("source.jsonl")).unwrap();
+    let expected: Vec<Vec<i64>> = assignments(&source)
+        .into_iter()
+        .map(|row| row.into_iter().map(|id| id - 1).collect())
+        .collect();
 
     let temp = TempDir::new("pcben-interop");
     let ben_path = temp.path().join("interop.ben");
@@ -1449,9 +1471,9 @@ fn pcben_decodes_committed_foreign_pcompress_fixture() {
 
     let mut jsonl = Vec::new();
     decode_ben_to_jsonl(fs::File::open(&ben_path).unwrap(), &mut jsonl).unwrap();
+    let decoded = assignments(&String::from_utf8(jsonl).unwrap());
     assert_eq!(
-        String::from_utf8(jsonl).unwrap(),
-        expected,
+        decoded, expected,
         "foreign pcompress fixture no longer converts to the canonical ensemble"
     );
 }
@@ -1533,6 +1555,59 @@ fn pben_cli_converts_between_formats() {
     assert_success(&xdecode);
     let printed = String::from_utf8_lossy(&xdecode.stdout);
     assert!(printed.contains(r#""assignment":[2,2,3]"#));
+}
+
+#[test]
+fn pcompress_round_trips_zero_based_ben() {
+    // A canonicalized BEN is 0-based; the bridge transcodes ids unchanged, so id 0 round-trips
+    // through PCOMPRESS and back with no flag and no error.
+    let temp = TempDir::new("pcompress-zero-based");
+    let ben_path = temp.path().join("zero.ben");
+
+    let mut ben_bytes = Vec::new();
+    encode_jsonl_to_ben(
+        BufReader::new(b"{\"assignment\":[0,0,1],\"sample\":1}\n".as_slice()),
+        &mut ben_bytes,
+        BenVariant::Standard,
+    )
+    .unwrap();
+    fs::write(&ben_path, &ben_bytes).unwrap();
+
+    let pc_path = temp.path().join("zero.pcompress");
+    let from_ben = run(
+        "ben",
+        &[
+            "pcompress",
+            "from-ben",
+            ben_path.to_str().unwrap(),
+            "-o",
+            pc_path.to_str().unwrap(),
+            "-w",
+        ],
+        temp.path(),
+    );
+    assert_success(&from_ben);
+
+    let rt_ben = temp.path().join("zero_rt.ben");
+    let to_ben = run(
+        "ben",
+        &[
+            "pcompress",
+            "to-ben",
+            pc_path.to_str().unwrap(),
+            "-o",
+            rt_ben.to_str().unwrap(),
+            "-w",
+        ],
+        temp.path(),
+    );
+    assert_success(&to_ben);
+
+    let mut jsonl = Vec::new();
+    decode_ben_to_jsonl(fs::File::open(&rt_ben).unwrap(), &mut jsonl).unwrap();
+    assert!(String::from_utf8(jsonl)
+        .unwrap()
+        .contains(r#""assignment":[0,0,1]"#));
 }
 
 #[test]
