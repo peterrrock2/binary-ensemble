@@ -176,6 +176,11 @@ tasks:
       PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
     vars:
       FUZZ_SECONDS: '{{.FUZZ_SECONDS | default "60"}}'
+      # cargo-fuzz defaults --target to the triple it was *built* for. CI's prebuilt cargo-fuzz
+      # (taiki-e/install-action) is musl-static, which has no std under the gnu nightly and is
+      # incompatible with the address sanitizer (crt-static). Pin to the rustc host triple.
+      HOST_TRIPLE:
+        sh: "rustc -vV | sed -n 's/^host: //p'"
     cmds:
       # Seed every corpus from the committed wire-format fixtures so the fuzzer starts from
       # valid structures instead of rediscovering the banners byte by byte.
@@ -184,10 +189,10 @@ tasks:
       - cp ben/tests/fixtures/v1.0.0/*.ben fuzz/corpus/xben_body/
       - cp ben/tests/fixtures/v1.0.0/*.xben fuzz/corpus/xben_container/
       - cp ben/tests/fixtures/v1.0.0/*.bendl fuzz/corpus/bendl_reader/
-      - cargo +nightly fuzz run ben_reader -- -max_total_time={{.FUZZ_SECONDS}}
-      - cargo +nightly fuzz run xben_body -- -max_total_time={{.FUZZ_SECONDS}}
-      - cargo +nightly fuzz run xben_container -- -max_total_time={{.FUZZ_SECONDS}}
-      - cargo +nightly fuzz run bendl_reader -- -max_total_time={{.FUZZ_SECONDS}}
+      - cargo +nightly fuzz run ben_reader --target {{.HOST_TRIPLE}} -- -max_total_time={{.FUZZ_SECONDS}}
+      - cargo +nightly fuzz run xben_body --target {{.HOST_TRIPLE}} -- -max_total_time={{.FUZZ_SECONDS}}
+      - cargo +nightly fuzz run xben_container --target {{.HOST_TRIPLE}} -- -max_total_time={{.FUZZ_SECONDS}}
+      - cargo +nightly fuzz run bendl_reader --target {{.HOST_TRIPLE}} -- -max_total_time={{.FUZZ_SECONDS}}
 
   ensure-be-target:
     desc: Install the big-endian (s390x) std target if it is not already available
