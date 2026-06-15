@@ -365,18 +365,21 @@ impl PyBendlDecoder {
         Ok(out)
     }
 
-    /// Verify the bundle's integrity checksums without decoding anything.
+    /// Verify the bundle's integrity: asset and stream checksums, plus the header sample count.
     ///
-    /// Scans the raw on-disk bytes of every asset and of the assignment stream and compares
-    /// them against the CRC32C checksums recorded when the bundle was written. Iterating or
-    /// subsampling a decoder reads the stream *without* checking these checksums (partial
-    /// reads cannot prove a whole-stream checksum), so call this when integrity matters,
-    /// e.g. after downloading a bundle or before an important run.
+    /// Scans the raw on-disk bytes of every asset and of the assignment stream and compares them
+    /// against the CRC32C checksums recorded when the bundle was written, then walks the stream's
+    /// frame boundaries to confirm the decoded sample count matches the (unchecksummed) header
+    /// `sample_count`. Iterating or subsampling a decoder reads the stream *without* checking the
+    /// checksums (partial reads cannot prove a whole-stream checksum) and trusts the header count
+    /// for finalized bundles, so call this when integrity matters, e.g. after downloading a bundle
+    /// or before an important run.
     ///
     /// Raises:
     ///     Exception: If any asset checksum or the stream checksum does not match the on-disk
-    ///         bytes, or if the bundle is unfinalized (an unfinalized bundle's stream checksum
-    ///         is not authoritative).
+    ///         bytes, if the header sample_count disagrees with the decoded stream, or if the
+    ///         bundle is unfinalized (an unfinalized bundle's stream checksum and sample count are
+    ///         not authoritative).
     ///
     /// Example:
     ///     >>> dec = BendlDecoder("ensemble.bendl")
@@ -394,6 +397,12 @@ impl PyBendlDecoder {
             })?;
             reader.verify_stream_checksum().map_err(|e| {
                 PyException::new_err(format!("Bundle stream verification failed: {e}"))
+            })?;
+            // The header is unchecksummed, so cross-check its sample_count against the decoded
+            // stream: count_samples()/len()/subsample bounds trust the header for finalized
+            // bundles.
+            reader.verify_sample_count().map_err(|e| {
+                PyException::new_err(format!("Bundle sample-count verification failed: {e}"))
             })?;
             Ok(())
         })

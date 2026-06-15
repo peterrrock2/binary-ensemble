@@ -788,6 +788,52 @@ def test_finalized_bundle_with_inflated_stream_len_survives_open(
     assert len(extracted.read_bytes()) <= old_stream_len + 10_000
 
 
+def test_finalized_bundle_iteration_rejects_overlong_stream_len(tmp_path: Path) -> None:
+    # A finalized bundle whose declared stream_len overruns the file but ends on a frame boundary
+    # must surface an error when iterated, not yield a silent truncated prefix. The stream is placed
+    # last (directory before it) so the overrun runs straight off EOF on a frame boundary, mirroring
+    # the Rust `build_bundle_with_overlong_stream_len` fixture.
+    samples = [[1, 2, 3], [4, 5, 6]]
+    stream = _ben_bytes_for(samples, tmp_path)
+    directory = _pack_directory([])
+    directory_offset = HEADER_SIZE
+    stream_offset = directory_offset + len(directory)
+    header = _pack_header(
+        complete=COMPLETE_YES,
+        assignment_format=ASSIGNMENT_FORMAT_BEN,
+        directory_offset=directory_offset,
+        directory_len=len(directory),
+        stream_offset=stream_offset,
+        stream_len=len(stream) + 64,  # claim 64 bytes past EOF
+        sample_count=len(samples),
+        flags=HEADER_FLAG_STREAM_CHECKSUM,
+        stream_checksum=_crc32c(stream),
+    )
+    path = _write_bundle(tmp_path / "overlong_iter.bendl", header + directory + stream)
+    dec = BendlDecoder(path)
+    assert dec.is_complete()
+    with pytest.raises(Exception, match="declared stream_len"):
+        list(dec)
+
+
+def test_verify_rejects_corrupt_header_sample_count(tmp_path: Path) -> None:
+    # The 64-byte header is unchecksummed, so a flipped sample_count would otherwise pass verify()
+    # while skewing len()/count_samples()/subsample bounds. verify() now cross-checks the header
+    # count against the decoded stream. sample_count lives at header bytes 56..64 (little-endian).
+    samples = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    bundle = bytearray(
+        build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
+    )
+    assert struct.unpack_from("<q", bundle, 56)[0] == len(samples)
+    struct.pack_into("<q", bundle, 56, len(samples) + 7)  # claim more samples than the stream holds
+    path = _write_bundle(tmp_path / "bad_count.bendl", bytes(bundle))
+    dec = BendlDecoder(path)
+    # The stream payload itself is intact, so the asset/stream CRCs still pass; only the
+    # sample-count cross-check catches the corruption.
+    with pytest.raises(Exception, match="sample_count"):
+        dec.verify()
+
+
 # ---------------------------------------------------------------------------
 # Interleaving / idempotence
 # ---------------------------------------------------------------------------

@@ -1,10 +1,10 @@
 //! Binding for relabeling a `.bendl` file: reorder its dual graph and rewrite the embedded BEN
 //! assignment stream into the new node order, producing a fresh bundle.
 //!
-//! This is the bundle-level form of the CLI's `ben relabel` ordering flow. The reordered `graph.json` and
-//! a `node_permutation_map.json` are stored as canonical assets so the reordering stays reversible;
-//! every other asset (metadata, custom blobs) is carried over by decoded payload, name, type, and
-//! JSON flag.
+//! This is the bundle-level form of the CLI's `ben relabel` ordering flow. The reordered
+//! `graph.json` and a `node_permutation_map.json` are stored as canonical assets so the reordering
+//! stays reversible; every other asset (metadata, custom blobs) is carried over by decoded payload,
+//! name, type, and JSON flag.
 
 use crate::common::{add_preserved, map_bundle_err, PreservedAsset, TempOutput};
 use crate::graph::helpers::{reorder_graph_to_bytes, require_reorder};

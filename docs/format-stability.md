@@ -59,12 +59,9 @@ Both cases should land in a dedicated PR whose title makes the intent explicit (
 `fixtures: add v2.0.0 stability set`). Running the generator over an already-populated directory in
 any other context is a bug.
 
-A second `#[ignore]` regenerator, `regenerate_twodelta_fixtures`, re-mints **only** the `twodelta.*`
-fixtures (and their source). `TwoDelta` is unreleased, so it qualifies for option 2 above — its wire
-format may change and its fixtures may be re-minted in place — but every released
-Standard/MkvChain/BENDL fixture must stay byte-for-byte identical. The focused regenerator exists so
-re-minting TwoDelta cannot touch the released set; after running it, confirm `git status` shows only
-`twodelta.ben`/`twodelta.xben` (and `source_twodelta.jsonl`) changed.
+`TwoDelta` is a released, stable variant: its `twodelta.*` fixtures are part of the frozen set,
+minted by `generate_format_stability_fixtures` alongside every other variant, and bound by the same
+contract above. Its wire format does not change within a major version.
 
 ## Inventory
 

@@ -1,6 +1,7 @@
 use super::types::{DecoderMode, DynIter, StreamSource};
 use crate::common::open_input;
 use binary_ensemble::io::bundle::format::BENDL_MAGIC;
+use binary_ensemble::io::bundle::ExactLen;
 use binary_ensemble::io::reader::{
     build_frame_iter, build_frame_iter_from_reader, count_samples_from_file,
     count_samples_from_frame_iter, BenStreamReader, BenWireFormat, FrameIter,
@@ -113,23 +114,53 @@ where
     }
 }
 
+/// A bundle stream region bounded by [`ExactLen`], with its short-range EOF remapped to a hard
+/// decode error.
+///
+/// `ExactLen` reports a backing range shorter than the declared `stream_len` as `UnexpectedEof`,
+/// but the BEN/XBEN frame decoders treat an `UnexpectedEof` at a frame boundary as a clean end of
+/// stream. A `.bendl` whose `stream_len` overruns the file but ends on a frame boundary would
+/// therefore iterate as a silent truncated prefix. Remapping the short range to `InvalidData`
+/// forces the decoder to surface it. The Rust bundle API catches the same case through its CRC
+/// check; Python iteration/subsample is non-verifying by design, so it needs this explicit guard.
+struct StrictStreamRegion<R: Read> {
+    inner: ExactLen<R>,
+}
+
+impl<R: Read> Read for StrictStreamRegion<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.inner.read(buf) {
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "bundle assignment stream is shorter than its declared stream_len \
+                 (truncated or corrupt bundle)",
+            )),
+            other => other,
+        }
+    }
+}
+
 /// Create a `Read`-only handle bounded to a bundle's assignment stream region.
 ///
 /// The cached `stream_offset`/`stream_len` are only meaningful for the file the decoder
-/// originally opened, so the reopen refuses when the file at `path` has changed identity.
+/// originally opened, so the reopen refuses when the file at `path` has changed identity. The range
+/// is bounded with [`StrictStreamRegion`] so a `stream_len` that overruns the file is rejected
+/// rather than silently truncating iteration.
 fn open_bundle_stream_reader(
     path: &Path,
     identity: &FileIdentity,
     stream_offset: u64,
     stream_len: u64,
-) -> PyResult<io::Take<BufReader<File>>> {
+) -> PyResult<StrictStreamRegion<BufReader<File>>> {
     identity.ensure_unchanged(path, "iterate the bundle stream")?;
     let file = File::open(path)
         .map_err(|e| PyIOError::new_err(format!("Failed to open {}: {e}", path.display())))?;
     let mut buf = BufReader::new(file);
     buf.seek(SeekFrom::Start(stream_offset))
         .map_err(|e| PyIOError::new_err(format!("Failed to seek into bundle stream: {e}")))?;
-    Ok(buf.take(stream_len))
+    Ok(StrictStreamRegion {
+        inner: ExactLen::bounded(buf, stream_len),
+    })
 }
 
 /// Build a fresh assignment iterator for the given source.
