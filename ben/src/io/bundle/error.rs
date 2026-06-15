@@ -114,6 +114,13 @@ pub enum BendlReadError {
     /// payload, malformed assignment stream, etc.).
     #[error("decode error: {0}")]
     Decode(io::Error),
+
+    /// The finalized header's `sample_count` disagrees with the number of samples actually decoded
+    /// from the stream. The header is unauthenticated, so a corrupt or malicious header can claim
+    /// a count the stream does not back; `verify_sample_count` rescans and rejects the
+    /// mismatch.
+    #[error("header sample_count ({header}) does not match the decoded stream ({actual})")]
+    SampleCountMismatch { header: i64, actual: usize },
 }
 
 impl From<io::Error> for BendlReadError {

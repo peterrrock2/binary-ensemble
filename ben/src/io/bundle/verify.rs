@@ -96,6 +96,15 @@ impl<R: Read> ExactLen<R> {
             flag,
         }
     }
+
+    /// Bound a reader to an exact byte length with a private short-range flag.
+    ///
+    /// For callers that want the exact-length guarantee but do not wrap a codec with a
+    /// [`ShortRangeAwareReader`] above the bound, so they have no use for a shared flag. A backing
+    /// range shorter than `declared` still surfaces as `UnexpectedEof`.
+    pub fn bounded(inner: R, declared: u64) -> Self {
+        Self::new(inner, declared, ShortRangeFlag::new())
+    }
 }
 
 impl<R: Read> Read for ExactLen<R> {

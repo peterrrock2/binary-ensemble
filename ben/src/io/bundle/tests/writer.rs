@@ -576,6 +576,85 @@ fn bundle_ben_stream_round_trips_through_assignment_reader() {
 }
 
 #[test]
+fn verify_sample_count_accepts_correct_and_rejects_corrupt_header() {
+    let samples: Vec<Vec<u16>> = vec![
+        vec![0, 0, 1, 1, 2, 2],
+        vec![0, 1, 1, 1, 2, 2],
+        vec![1, 1, 1, 1, 2, 2],
+    ];
+
+    let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    let mut session = writer.into_stream_session().unwrap();
+    {
+        let mut ben = BenStreamWriter::for_ben(&mut session, BenVariant::Standard).unwrap();
+        for s in &samples {
+            ben.write_assignment(s.clone()).unwrap();
+        }
+        ben.finish().unwrap();
+    }
+    let writer = session.finish_into_writer(samples.len() as i64);
+    let buf = writer.finish().unwrap().into_inner();
+
+    // Honest header: the cross-check passes.
+    let mut reader = BendlReader::open(Cursor::new(buf.clone())).unwrap();
+    reader.verify_sample_count().unwrap();
+
+    // Flip the header sample_count (bytes 56..64, little-endian) to a count the stream cannot back.
+    let mut corrupt = buf;
+    corrupt[56..64].copy_from_slice(&(samples.len() as i64 + 5).to_le_bytes());
+    let mut reader = BendlReader::open(Cursor::new(corrupt)).unwrap();
+    // The stream payload is intact, so the stream CRC still passes; only the sample-count
+    // cross-check catches the corrupt header.
+    reader.verify_stream_checksum().unwrap();
+    match reader.verify_sample_count() {
+        Err(BendlReadError::SampleCountMismatch { header, actual }) => {
+            assert_eq!(header, samples.len() as i64 + 5);
+            assert_eq!(actual, samples.len());
+        }
+        other => panic!("expected SampleCountMismatch, got {other:?}"),
+    }
+}
+
+#[test]
+fn verify_sample_count_rejects_overlong_stream_len_even_when_prefix_count_matches() {
+    // Standalone hazard: an overlong stream_len whose actual prefix still decodes to exactly the
+    // header's sample_count must not pass. The frame reader treats a frame-boundary EOF as a clean
+    // end, so without the short-range flag check the prefix count would spuriously match.
+    let samples: Vec<Vec<u16>> = vec![vec![0, 0, 1, 1], vec![0, 1, 0, 1], vec![1, 1, 1, 1]];
+
+    let writer = BendlWriter::new(make_buffer(), AssignmentFormat::Ben).unwrap();
+    let mut session = writer.into_stream_session().unwrap();
+    {
+        let mut ben = BenStreamWriter::for_ben(&mut session, BenVariant::Standard).unwrap();
+        for s in &samples {
+            ben.write_assignment(s.clone()).unwrap();
+        }
+        ben.finish().unwrap();
+    }
+    let writer = session.finish_into_writer(samples.len() as i64);
+    let buf = writer.finish().unwrap().into_inner();
+
+    // Drop the trailing directory so the stream sits at EOF, then inflate stream_len past EOF while
+    // leaving the (honest, matching) sample_count alone and clearing the directory pointer so
+    // open() still succeeds.
+    let directory_offset = u64::from_le_bytes(buf[24..32].try_into().unwrap()) as usize;
+    let mut corrupt = buf[..directory_offset].to_vec();
+    let real_stream_len = u64::from_le_bytes(corrupt[48..56].try_into().unwrap());
+    corrupt[24..32].copy_from_slice(&0u64.to_le_bytes()); // directory_offset = 0
+    corrupt[32..40].copy_from_slice(&0u64.to_le_bytes()); // directory_len = 0
+    corrupt[48..56].copy_from_slice(&(real_stream_len + 50).to_le_bytes()); // overlong stream_len
+
+    let mut reader = BendlReader::open(Cursor::new(corrupt)).unwrap();
+    // sample_count is unchanged and equals the real prefix count, so the bug would pass here.
+    match reader.verify_sample_count() {
+        Err(BendlReadError::Io(e)) => {
+            assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof)
+        }
+        other => panic!("expected short-range UnexpectedEof, got {other:?}"),
+    }
+}
+
+#[test]
 fn bundle_xben_stream_round_trips_through_assignment_reader() {
     use crate::BenVariant;
 

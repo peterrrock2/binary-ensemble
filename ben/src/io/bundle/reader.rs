@@ -30,8 +30,8 @@ use super::format::{
     BendlHeader, ASSET_FLAG_XZ,
 };
 use super::verify::{
-    scan_range_crc32c, CrcTeeReader, ExactLen, ShortRangeAwareReader, ShortRangeFlag,
-    ShortRangeMarker, VerifyingReader,
+    scan_range_crc32c, short_range_eof, CrcTeeReader, ExactLen, ShortRangeAwareReader,
+    ShortRangeFlag, ShortRangeMarker, VerifyingReader,
 };
 use crate::io::reader::{BenStreamReader, BenWireFormat};
 
@@ -275,6 +275,66 @@ impl<R: Read + Seek> BendlReader<R> {
                 computed,
                 expected,
             }));
+        }
+        Ok(())
+    }
+
+    /// Decode the assignment stream and confirm its sample count matches the finalized header's
+    /// `sample_count`.
+    ///
+    /// The 64-byte header is not covered by any checksum, so `verify_stream_checksum` proves the
+    /// stream payload is intact but says nothing about the header's `sample_count`. A corrupt or
+    /// malicious header can therefore claim a count the stream does not back, which would silently
+    /// skew `len()` / `count_samples()` and the subsample bounds (all of which trust the header for
+    /// finalized bundles). This walks frame boundaries (no full assignment expansion) and rejects a
+    /// mismatch.
+    ///
+    /// Returns `Err(BundleIncomplete)` for unfinalized bundles, whose `sample_count` is not
+    /// authoritative.
+    pub fn verify_sample_count(&mut self) -> Result<(), BendlReadError> {
+        if !self.header.is_finalized() {
+            return Err(BendlReadError::Checksum(ChecksumError::BundleIncomplete {
+                target: ChecksumTarget::Stream,
+            }));
+        }
+        let expected = self.header.sample_count;
+        let (offset, len) = self.assignment_stream_range()?;
+        // An empty stream carries no banner to decode; the count must be exactly zero.
+        if len == 0 {
+            return if expected == 0 {
+                Ok(())
+            } else {
+                Err(BendlReadError::SampleCountMismatch {
+                    header: expected,
+                    actual: 0,
+                })
+            };
+        }
+        let format = self.assignment_format().ok_or(BendlReadError::Format(
+            BendlFormatError::UnknownAssignmentFormat(self.header.assignment_format),
+        ))?;
+        self.inner.seek(SeekFrom::Start(offset))?;
+        let short_flag = ShortRangeFlag::new();
+        let raw = ExactLen::new(&mut self.inner, len, short_flag.clone());
+        let reader = match format {
+            AssignmentFormat::Ben => BenStreamReader::from_ben(raw),
+            AssignmentFormat::Xben => BenStreamReader::from_xben(raw),
+        }
+        .map_err(BendlReadError::DecoderInit)?;
+        let actual = reader.count_samples().map_err(BendlReadError::Decode)?;
+        // The frame readers treat an `UnexpectedEof` at a frame boundary as a clean end, so a
+        // stream that runs out before its declared `stream_len` yields a prefix count that
+        // could spuriously match `expected`. The shared short-range flag distinguishes that
+        // truncation from a genuine EOF, so the standalone method is sound without first
+        // calling `verify_stream_checksum`.
+        if short_flag.get() {
+            return Err(BendlReadError::Io(short_range_eof()));
+        }
+        if actual as i64 != expected {
+            return Err(BendlReadError::SampleCountMismatch {
+                header: expected,
+                actual,
+            });
         }
         Ok(())
     }

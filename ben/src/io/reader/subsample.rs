@@ -205,8 +205,7 @@ pub fn build_frame_iter(file_path: &PathBuf, format: BenWireFormat) -> io::Resul
 ///
 /// This is the reader-driven variant of [`build_frame_iter`], useful when the caller needs to
 /// iterate frames over a sub-region of a file (e.g. the assignment stream embedded in a `.bendl`
-/// bundle, wrapped in a [`std::io::Read::take`] guard) without re-opening the file from offset
-/// zero.
+/// bundle, wrapped in a bounded-length guard) without re-opening the file from offset zero.
 pub fn build_frame_iter_from_reader<R: Read + Send + 'static>(
     reader: R,
     format: BenWireFormat,
