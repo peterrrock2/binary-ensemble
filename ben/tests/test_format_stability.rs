@@ -30,6 +30,7 @@ use binary_ensemble::io::bundle::format::{
 };
 use binary_ensemble::io::bundle::reader::BendlReader;
 use binary_ensemble::io::bundle::writer::{AddAssetOptions, BendlWriter};
+use binary_ensemble::test_utils::{BendlBytes, HeaderField};
 use binary_ensemble::BenVariant;
 
 /// Canonical JSONL used to mint every codec fixture. Chosen to exercise both Standard and
@@ -57,7 +58,11 @@ const TWODELTA_CANONICAL_JSONL: &str = "\
 
 /// Graph JSON committed as the `graph.json` asset inside the BENDL fixtures. Tiny but
 /// representative of a real adjacency-style graph.
-const CANONICAL_GRAPH_JSON: &str = "{\"nodes\":4,\"edges\":[[0,1],[1,2],[2,3],[3,0]]}";
+// A 64-node cycle graph. Large and repetitive enough that the writer's xz pass beats raw storage
+// (514 -> ~236 bytes), so the graph asset in flags_set.bendl genuinely carries the ASSET_FLAG_XZ
+// bit. A tiny graph would be stored raw, since xz cannot shrink a few dozen bytes below the
+// container overhead.
+const CANONICAL_GRAPH_JSON: &str = "{\"nodes\":64,\"edges\":[[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10,11],[11,12],[12,13],[13,14],[14,15],[15,16],[16,17],[17,18],[18,19],[19,20],[20,21],[21,22],[22,23],[23,24],[24,25],[25,26],[26,27],[27,28],[28,29],[29,30],[30,31],[31,32],[32,33],[33,34],[34,35],[35,36],[36,37],[37,38],[38,39],[39,40],[40,41],[41,42],[42,43],[43,44],[44,45],[45,46],[46,47],[47,48],[48,49],[49,50],[50,51],[51,52],[52,53],[53,54],[54,55],[55,56],[56,57],[57,58],[58,59],[59,60],[60,61],[61,62],[62,63],[63,0]]}";
 
 /// Metadata JSON committed as the `metadata.json` asset inside the BENDL fixtures.
 const CANONICAL_METADATA_JSON: &str =
@@ -139,9 +144,10 @@ fn twodelta_xben_v1_0_0_round_trips() {
 #[test]
 fn flags_set_bendl_v1_0_0_decodes_all_assets_and_stream() {
     // Bundle minted with every currently-defined flag bit set: header has
-    // HEADER_FLAG_STREAM_CHECKSUM; an xz+json+checksum graph asset is present; a json+checksum
-    // metadata asset is present. The reader must verify both assets and the stream cleanly, and
-    // the decoded stream must round-trip back to the canonical JSONL.
+    // HEADER_FLAG_STREAM_CHECKSUM and the mandatory header-checksum tail; an xz+json+checksum
+    // graph asset is present; a json+checksum metadata asset is present. The reader must verify
+    // both assets and the stream cleanly, and the decoded stream must round-trip back to the
+    // canonical JSONL.
     let bytes = read_fixture("flags_set.bendl");
     let mut reader = BendlReader::open(Cursor::new(bytes)).expect("open bundle");
 
@@ -336,12 +342,15 @@ fn mint_flags_set_bendl() -> Vec<u8> {
 
 /// Returns a copy of `bytes` with reserved bits set on both the header flags and the custom
 /// asset's asset_flags. Used to mint the `unknown_flags.bendl` fixture from a known-good bundle.
-fn flip_unknown_flag_bits(mut bytes: Vec<u8>) -> Vec<u8> {
-    // 1. Set bit 1 of the header flags (offset 16..20). Bit 0 is HEADER_FLAG_STREAM_CHECKSUM; bit 1
-    //    is currently reserved.
-    let mut header_flags = u32::from_le_bytes(bytes[16..20].try_into().unwrap());
-    header_flags |= 1 << 1;
-    bytes[16..20].copy_from_slice(&header_flags.to_le_bytes());
+fn flip_unknown_flag_bits(bytes: Vec<u8>) -> Vec<u8> {
+    // 1. Set header bit 1, an unknown header bit (bit 0 is the stream checksum), and re-stamp the
+    //    header CRC. The flags field lives inside the CRC-covered [0, 64) region, so flipping it
+    //    without re-CRC would trip the header-checksum gate when the appender below reopens the
+    //    bundle. The `with_header_u64` setter re-stamps for us.
+    let header_flags = u32::from_le_bytes(bytes[16..20].try_into().unwrap());
+    let bytes = BendlBytes::new(bytes)
+        .with_header_u64(HeaderField::Flags, (header_flags | (1 << 1)) as u64)
+        .into_bytes();
 
     // 2. Add a custom asset entry's asset_flags reserved bit. Since the writer-minted bundle does
     //    not include a custom asset, append one to the directory before flipping. Rather than

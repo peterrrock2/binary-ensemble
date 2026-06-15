@@ -5,7 +5,9 @@ use super::extract::run_extract;
 use super::helpers::format_from_path;
 use super::inspect::run_inspect;
 use crate::codec::encode::encode_jsonl_to_ben;
-use crate::io::bundle::format::AssignmentFormat;
+use crate::io::bundle::format::{
+    AssignmentFormat, BendlHeader, HEADER_SIZE, HEADER_WITH_TAIL_SIZE,
+};
 use crate::io::bundle::{BendlReader, BendlWriter};
 use crate::test_utils::{sample_bendl_bytes, unique_path};
 use clap::Parser;
@@ -19,6 +21,14 @@ fn write_temp_bendl(name: &str, format: AssignmentFormat) -> PathBuf {
     let buf = sample_bendl_bytes(b"STANDARD BEN FILE\x00fake", format);
     std::fs::write(&path, &buf).unwrap();
     path
+}
+
+fn stamp_bendl_header(bytes: &mut [u8], header: &BendlHeader) {
+    let header_bytes = header.to_bytes();
+    bytes[..HEADER_SIZE].copy_from_slice(&header_bytes);
+    let crc = crc32c::crc32c(&header_bytes);
+    bytes[HEADER_SIZE..HEADER_SIZE + 4].copy_from_slice(&crc.to_le_bytes());
+    bytes[HEADER_SIZE + 4..HEADER_WITH_TAIL_SIZE].fill(0);
 }
 
 #[test]
@@ -220,25 +230,31 @@ fn run_create_with_graph_raw_flag() {
 #[test]
 fn run_inspect_unknown_format_and_no_sample_count() {
     use crate::io::bundle::format::{
-        BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, FINALIZED_NO, HEADER_SIZE,
+        BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, FINALIZED_NO,
     };
 
     // Build a header with an unknown assignment format byte and finalized=0 so sample_count()
     // returns None.
-    let mut header = [0u8; HEADER_SIZE];
-    header[0..8].copy_from_slice(&BENDL_MAGIC);
-    header[8..10].copy_from_slice(&BENDL_MAJOR_VERSION.to_le_bytes());
-    header[10..12].copy_from_slice(&BENDL_MINOR_VERSION.to_le_bytes());
-    header[12] = FINALIZED_NO;
-    header[13] = 0xFF; // unknown format byte
-                       // stream_offset = HEADER_SIZE, stream_len = 0, sample_count = -1
-    let stream_offset = HEADER_SIZE as u64;
-    header[40..48].copy_from_slice(&stream_offset.to_le_bytes());
-    let sample_count: i64 = -1;
-    header[56..64].copy_from_slice(&sample_count.to_le_bytes());
+    let header = BendlHeader {
+        magic: BENDL_MAGIC,
+        major_version: BENDL_MAJOR_VERSION,
+        minor_version: BENDL_MINOR_VERSION,
+        finalized: FINALIZED_NO,
+        assignment_format: 0xFF,
+        alignment_padding: 0,
+        flags: 0,
+        stream_checksum: 0,
+        directory_offset: 0,
+        directory_len: 0,
+        stream_offset: HEADER_WITH_TAIL_SIZE as u64,
+        stream_len: 0,
+        sample_count: -1,
+    };
+    let mut bytes = vec![0u8; HEADER_WITH_TAIL_SIZE];
+    stamp_bendl_header(&mut bytes, &header);
 
     let path = unique_path("inspect_unknown.bendl");
-    std::fs::write(&path, header).unwrap();
+    std::fs::write(&path, bytes).unwrap();
     run_inspect(InspectArgs {
         input: path.clone(),
     })
@@ -515,7 +531,7 @@ fn run_extract_stream_writes_raw_assignment_bytes() {
 
 #[test]
 fn run_extract_stream_allows_unfinalized_when_requested() {
-    use crate::io::bundle::format::{AssignmentFormat, BendlHeader, FINALIZED_NO, HEADER_SIZE};
+    use crate::io::bundle::format::FINALIZED_NO;
 
     let known_stream = b"STANDARD BEN FILE\x00partial stream bytes";
     let header = BendlHeader {
@@ -529,11 +545,12 @@ fn run_extract_stream_allows_unfinalized_when_requested() {
         stream_checksum: 0,
         directory_offset: 0,
         directory_len: 0,
-        stream_offset: HEADER_SIZE as u64,
+        stream_offset: HEADER_WITH_TAIL_SIZE as u64,
         stream_len: 0,
         sample_count: -1,
     };
-    let mut buf = Vec::from(header.to_bytes());
+    let mut buf = vec![0u8; HEADER_WITH_TAIL_SIZE];
+    stamp_bendl_header(&mut buf, &header);
     buf.extend_from_slice(known_stream);
 
     let bendl = unique_path("extract_unfinalized_stream.bendl");
@@ -598,13 +615,12 @@ fn run_inspect_displays_asset_with_no_flags_as_dash() {
     // bitmap has no known bits set. Reaching it requires hand-building a directory entry with
     // asset_flags=0 (the library writer always sets ASSET_FLAG_CHECKSUM).
     use crate::io::bundle::format::{
-        encode_directory, BendlDirectoryEntry, BendlHeader, ASSET_TYPE_CUSTOM, BENDL_MAGIC,
-        BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM,
-        HEADER_SIZE,
+        encode_directory, BendlDirectoryEntry, ASSET_TYPE_CUSTOM, BENDL_MAGIC, BENDL_MAJOR_VERSION,
+        BENDL_MINOR_VERSION, FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM,
     };
 
     let payload = b"raw bytes";
-    let mut bytes = vec![0u8; HEADER_SIZE];
+    let mut bytes = vec![0u8; HEADER_WITH_TAIL_SIZE];
     let payload_offset = bytes.len() as u64;
     bytes.extend_from_slice(payload);
 
@@ -631,11 +647,11 @@ fn run_inspect_displays_asset_with_no_flags_as_dash() {
         stream_checksum: 0,
         directory_offset,
         directory_len: directory.len() as u64,
-        stream_offset: HEADER_SIZE as u64,
+        stream_offset: HEADER_WITH_TAIL_SIZE as u64,
         stream_len: 0,
         sample_count: 0,
     };
-    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    stamp_bendl_header(&mut bytes, &header);
 
     let bendl = unique_path("inspect_flagless.bendl");
     std::fs::write(&bendl, &bytes).unwrap();

@@ -128,7 +128,8 @@ compress multiple layers into one word.
 - **`.ben`** — a layer-3 stream stored on disk, no outer wrapping.
 - **`.xben`** — a `.ben` stream's content (BEN32 intermediate for `Standard`/`MkvChain`, columnar
   for `TwoDelta`) wrapped in LZMA2.
-- **`.bendl`** — a bundle: bundle header + asset payloads + assignment stream + trailing directory.
+- **`.bendl`** — a bundle: bundle header (plus its 8-byte integrity tail) + asset payloads +
+  assignment stream + trailing directory.
 - **Container** is the umbrella term for any of these on-disk files.
 
 ## Tools and Packages

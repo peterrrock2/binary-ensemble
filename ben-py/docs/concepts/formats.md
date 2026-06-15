@@ -119,7 +119,8 @@ the embedded assignment stream, then a directory table at the end:
 
 - The **header** records which stream format is embedded (BEN or XBEN), where the stream lives, the
   expanded **sample count** (so counting an ensemble is an O(1) header read, not a full scan), and a
-  CRC32C checksum over the stream bytes.
+  CRC32C checksum over the stream bytes. The header also carries a CRC32C over its own bytes,
+  verified when the bundle is opened, so a corrupt header is rejected rather than trusted.
 - The **directory table** indexes every asset — the dual graph, the node permutation map, the
   metadata, and any custom assets — by offset and length, each with its own CRC32C. A reader can
   pull out just the graph without scanning the file, and verify it before trusting it

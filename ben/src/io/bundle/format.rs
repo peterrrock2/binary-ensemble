@@ -33,12 +33,23 @@ pub const FINALIZED_YES: u8 = 1;
 
 /// Header flag bit 0: the `stream_checksum` field contains a valid CRC32C over the on-disk
 /// assignment stream bytes (`stream_offset..stream_offset + stream_len`). For XBEN streams the CRC
-/// covers the compressed bytes, not the decompressed content. Bits 1..31 are reserved; writers set
-/// them to zero.
+/// covers the compressed bytes, not the decompressed content. Bits 1..31 are reserved and writers
+/// set them to zero.
 ///
 /// Library writers always set this flag and write a valid checksum. The clear-flag state exists
 /// only for adversarial reader fixtures and partial-recovery flows.
 pub const HEADER_FLAG_STREAM_CHECKSUM: u32 = 1 << 0;
+
+/// Byte width of the integrity tail that always follows the 64-byte header: the CRC32C
+/// ([`HEADER_CHECKSUM_LEN`]) followed by reserved-zero bytes.
+pub const HEADER_TAIL_SIZE: usize = 8;
+
+/// On-disk byte width of the header CRC32C, stored at the start of the integrity tail.
+pub const HEADER_CHECKSUM_LEN: usize = 4;
+
+/// Total on-disk size of the header plus its integrity tail. Writers place the first data object at
+/// an offset >= this value, so the tail never has to displace payloads.
+pub const HEADER_WITH_TAIL_SIZE: usize = HEADER_SIZE + HEADER_TAIL_SIZE;
 
 // =====================================================================
 // Assignment format identifiers
@@ -342,6 +353,48 @@ impl BendlHeader {
     }
 }
 
+/// Write `header` at the current position and follow it with the 8-byte integrity tail: the CRC32C
+/// over the exact 64 header bytes, then reserved zeros.
+///
+/// This is the single writer/patch path for a header so no call site can serialize the header
+/// without refreshing its CRC. The CRC is taken over the same buffer that is written, so the stored
+/// value can never disagree with the bytes on disk. The 72-byte header+tail fits in the first
+/// 512-byte sector, preserving the single-sector write atomicity an in-place header patch relies
+/// on.
+pub fn write_header_with_tail<W: Write>(writer: &mut W, header: &BendlHeader) -> io::Result<()> {
+    let bytes = header.to_bytes();
+    writer.write_all(&bytes)?;
+    let mut tail = [0u8; HEADER_TAIL_SIZE];
+    tail[..HEADER_CHECKSUM_LEN].copy_from_slice(&crc32c::crc32c(&bytes).to_le_bytes());
+    writer.write_all(&tail)?;
+    Ok(())
+}
+
+/// Read a 64-byte header and verify the mandatory 8-byte integrity tail before returning:
+/// recompute the CRC32C over `[0, HEADER_SIZE)` and reject a mismatch, and reject non-zero reserved
+/// tail bytes.
+///
+/// This is the canonical header-CRC gate. `BendlReader::open` and `BendlAppender::open` both route
+/// through it, so neither trusts any header offset (`directory_offset`, `stream_offset`, ...) until
+/// the header bytes are authenticated.
+pub fn read_header_and_verify<R: Read>(reader: &mut R) -> Result<BendlHeader, BendlFormatError> {
+    let mut buf = [0u8; HEADER_SIZE];
+    reader.read_exact(&mut buf)?;
+    let header = BendlHeader::from_bytes(&buf)?;
+    let mut tail = [0u8; HEADER_TAIL_SIZE];
+    reader.read_exact(&mut tail)?;
+    let expected = u32::from_le_bytes(tail[..HEADER_CHECKSUM_LEN].try_into().unwrap());
+    let computed = crc32c::crc32c(&buf);
+    if computed != expected {
+        return Err(BendlFormatError::HeaderChecksumMismatch { computed, expected });
+    }
+    let reserved: [u8; 4] = tail[HEADER_CHECKSUM_LEN..].try_into().unwrap();
+    if reserved != [0u8; 4] {
+        return Err(BendlFormatError::HeaderTailReservedNonZero { bytes: reserved });
+    }
+    Ok(header)
+}
+
 // =====================================================================
 // Directory entry
 // =====================================================================
@@ -606,6 +659,24 @@ pub enum BendlFormatError {
         flag_set: bool,
         /// The trailing-checksum length the entry actually declared.
         checksum_len: u32,
+    },
+
+    /// The CRC32C recomputed over the 64 header bytes did not match the value stored in the
+    /// mandatory integrity tail. Indicates a corrupt or malformed header.
+    #[error("header checksum mismatch: computed {computed:#010x}, expected {expected:#010x}")]
+    HeaderChecksumMismatch {
+        /// CRC32C recomputed over `[0, HEADER_SIZE)`.
+        computed: u32,
+        /// CRC32C stored in the header tail.
+        expected: u32,
+    },
+
+    /// The reserved tail bytes after the CRC were not all zero. The header CRC does not cover
+    /// them, so this check keeps the reserved region deterministic.
+    #[error("header tail reserved bytes are non-zero: {bytes:02X?}")]
+    HeaderTailReservedNonZero {
+        /// The reserved bytes as found on disk.
+        bytes: [u8; 4],
     },
 
     /// An I/O error occurred while reading or writing the format layer.

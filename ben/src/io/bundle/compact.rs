@@ -29,7 +29,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::format::{
-    encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlHeader, HEADER_SIZE,
+    encode_directory, write_header_with_tail, AssignmentFormat, BendlDirectoryEntry, BendlHeader,
+    HEADER_WITH_TAIL_SIZE,
 };
 use super::reader::{validate_entry_extents, BendlReader};
 use super::writer::{BendlWriteError, BendlWriter};
@@ -166,8 +167,9 @@ pub(super) struct PlannedTail {
 /// Decide whether the tail-rewrite strategy applies and, if so, plan it.
 ///
 /// Applicable iff the prefix `[0, stream_end)` is fully live: the pre-stream assets tile
-/// `[HEADER_SIZE, stream_offset)` exactly and every other live payload sits at or beyond the
-/// stream end. Returns `None` when dead bytes exist before the stream end (full rewrite needed).
+/// `[HEADER_WITH_TAIL_SIZE, stream_offset)` exactly and every other live payload sits at or beyond
+/// the stream end. Returns `None` when dead bytes exist before the stream end (full rewrite
+/// needed).
 pub(super) fn plan_tail(
     header: &BendlHeader,
     entries: &[BendlDirectoryEntry],
@@ -190,10 +192,10 @@ pub(super) fn plan_tail(
         }
     }
 
-    // The prefix must be exactly tiled: header, then pre-stream payloads back-to-back, then the
-    // stream. Any gap means pre-stream dead space, which only a full rewrite can reclaim.
+    // The prefix must be exactly tiled: header+tail, then pre-stream payloads back-to-back, then
+    // the stream. Any gap means pre-stream dead space, which only a full rewrite can reclaim.
     pre.sort_by_key(|e| e.payload_offset);
-    let mut cursor = HEADER_SIZE as u64;
+    let mut cursor = HEADER_WITH_TAIL_SIZE as u64;
     for entry in &pre {
         if entry.payload_offset != cursor {
             return Ok(None);
@@ -270,7 +272,9 @@ fn patch_header(
     header.directory_offset = directory_offset;
     header.directory_len = directory_len;
     file.seek(SeekFrom::Start(0))?;
-    header.write_to(file)?;
+    // Refresh the mandatory header CRC. The 72-byte header+tail stays within sector 0, so this is
+    // still a single-sector atomic patch.
+    write_header_with_tail(file, header)?;
     file.sync_data()
 }
 

@@ -398,9 +398,9 @@ impl PyBendlDecoder {
             reader.verify_stream_checksum().map_err(|e| {
                 PyException::new_err(format!("Bundle stream verification failed: {e}"))
             })?;
-            // The header is unchecksummed, so cross-check its sample_count against the decoded
-            // stream: count_samples()/len()/subsample bounds trust the header for finalized
-            // bundles.
+            // The header CRC proves the header bytes are intact, but not that sample_count matches
+            // the actual stream content. So cross-check sample_count against the decoded stream,
+            // which count_samples()/len()/subsample bounds trust for finalized bundles.
             reader.verify_sample_count().map_err(|e| {
                 PyException::new_err(format!("Bundle sample-count verification failed: {e}"))
             })?;

@@ -143,15 +143,15 @@ fn header_accepts_nonzero_alignment_padding() {
 
 #[test]
 fn header_accepts_reserved_flag_bits() {
-    // Bits 1..31 of the header `flags` field are reserved in v1.0.0; readers must ignore them
+    // Bits 1..31 of the header `flags` field are reserved in v1.0.0; parsers must preserve them
     // (i.e., open the header cleanly and surface the full u32 value to callers, who in turn must
-    // only act on bit 0).
+    // only act on defined bits).
     let mut bytes = BendlHeader::provisional(AssignmentFormat::Ben, 64).to_bytes();
-    let reserved_bits: u32 = 0xFFFF_FFFE;
-    bytes[16..20].copy_from_slice(&reserved_bits.to_le_bytes());
+    let flags: u32 = 0xFFFF_FFFE;
+    bytes[16..20].copy_from_slice(&flags.to_le_bytes());
     let decoded = BendlHeader::from_bytes(&bytes).expect("reserved flag bits should read");
-    assert_eq!(decoded.flags, reserved_bits);
-    // has_stream_checksum() only inspects bit 0; reserved bits must not flip that.
+    assert_eq!(decoded.flags, flags);
+    // has_stream_checksum() only inspects bit 0; other bits must not flip that.
     assert!(!decoded.has_stream_checksum());
 }
 

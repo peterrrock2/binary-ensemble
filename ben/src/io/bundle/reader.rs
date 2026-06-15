@@ -26,8 +26,8 @@ use xz2::read::XzDecoder;
 
 use super::error::{BendlReadError, ChecksumError, ChecksumTarget};
 use super::format::{
-    read_directory, standardized_name_for, AssignmentFormat, BendlDirectoryEntry, BendlFormatError,
-    BendlHeader, ASSET_FLAG_XZ,
+    read_directory, read_header_and_verify, standardized_name_for, AssignmentFormat,
+    BendlDirectoryEntry, BendlFormatError, BendlHeader, ASSET_FLAG_XZ,
 };
 use super::verify::{
     scan_range_crc32c, short_range_eof, CrcTeeReader, ExactLen, ShortRangeAwareReader,
@@ -60,7 +60,8 @@ impl<R: Read + Seek> BendlReader<R> {
     /// before reading asset or stream bytes.
     pub fn open(mut inner: R) -> Result<Self, BendlFormatError> {
         inner.seek(SeekFrom::Start(0))?;
-        let header = BendlHeader::read_from(&mut inner)?;
+        // Verify the header CRC before trusting any header offset below.
+        let header = read_header_and_verify(&mut inner)?;
 
         let directory = if header.directory_offset != 0 && header.directory_len != 0 {
             inner.seek(SeekFrom::Start(header.directory_offset))?;

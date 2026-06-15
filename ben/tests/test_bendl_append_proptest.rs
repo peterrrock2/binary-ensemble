@@ -23,6 +23,7 @@ use binary_ensemble::io::bundle::writer::{
     AddAssetOptions, BendlAppender, BendlWriteError, BendlWriter,
 };
 use binary_ensemble::io::bundle::BendlReader;
+use binary_ensemble::test_utils::BendlBytes;
 use proptest::prelude::*;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
@@ -543,6 +544,9 @@ fn compact_rejects_unfinalized_bundle() {
     let mut bytes = build_seed_bundle();
     assert_eq!(bytes[12], 1);
     bytes[12] = 0;
+    // The seed is a flagged bundle, so re-stamp the header CRC after poking the finalized byte;
+    // otherwise open would reject the stale CRC before the finalized check we want to exercise.
+    let bytes = BendlBytes::new(bytes).restamp_header_crc().into_bytes();
 
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     assert!(matches!(
@@ -600,9 +604,10 @@ fn in_place_compaction_picks_tail_rewrite_and_never_touches_the_stream() {
     );
     let compacted = std::fs::read(&path).unwrap();
     assert!(compacted.len() + 4096 <= bloated.len());
-    // Everything between the (re-patched) header and the stream end is byte-identical: the
-    // pre-stream assets and the stream itself were never read or moved.
-    let header_len = 64;
+    // Everything between the (re-patched) header+tail and the stream end is byte-identical: the
+    // pre-stream assets and the stream itself were never read or moved. The 8-byte header-checksum
+    // tail at [64, 72) is excluded because its CRC legitimately changes with the new directory.
+    let header_len = 72;
     assert_eq!(
         &compacted[header_len..stream_end as usize],
         &bloated[header_len..stream_end as usize]

@@ -7,7 +7,7 @@ use crate::io::bundle::format::{
     ASSET_FLAG_CHECKSUM, ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH,
     ASSET_TYPE_METADATA, ASSET_TYPE_NODE_PERMUTATION_MAP, BENDL_MAGIC, BENDL_MAJOR_VERSION,
     BENDL_MINOR_VERSION, FINALIZED_NO, FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
-    MAX_DIRECTORY_ENTRIES,
+    HEADER_WITH_TAIL_SIZE, MAX_DIRECTORY_ENTRIES,
 };
 use crate::io::bundle::reader::{
     validate_directory_entries, validate_entry_extents, BendlReader, BundleValidationError,
@@ -21,6 +21,14 @@ fn with_crc(mut entry: BendlDirectoryEntry, payload: &[u8]) -> BendlDirectoryEnt
     entry.asset_flags |= ASSET_FLAG_CHECKSUM;
     entry.checksum = Some(crc32c::crc32c(payload).to_le_bytes().to_vec());
     entry
+}
+
+fn stamp_header(bytes: &mut [u8], header: &BendlHeader) {
+    let header_bytes = header.to_bytes();
+    bytes[..HEADER_SIZE].copy_from_slice(&header_bytes);
+    let crc = crc32c::crc32c(&header_bytes);
+    bytes[HEADER_SIZE..HEADER_SIZE + 4].copy_from_slice(&crc.to_le_bytes());
+    bytes[HEADER_SIZE + 4..HEADER_WITH_TAIL_SIZE].fill(0);
 }
 
 /// Build a complete in-memory finalized bundle with two assets: an xz-compressed `graph.json` and a
@@ -38,13 +46,14 @@ fn build_finalized_bundle() -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
 
     // Layout:
     //   [0 .. 64) header
-    //   [64 .. 64+len(compressed_graph)) graph payload
+    //   [64 .. 72) header integrity tail
+    //   [72 .. 72+len(compressed_graph)) graph payload
     //   [... .. ...+len(custom_blob)) custom payload
     //   [stream_offset .. stream_offset+len(fake_stream)) stream
     //   [directory_offset .. EOF) directory
     let mut bundle = Vec::new();
     // Reserve space for header; fill later.
-    bundle.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
+    bundle.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
 
     let graph_offset = bundle.len() as u64;
     bundle.extend_from_slice(&compressed_graph);
@@ -103,7 +112,7 @@ fn build_finalized_bundle() -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
         stream_len,
         sample_count: 42,
     };
-    bundle[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    stamp_header(&mut bundle, &header);
 
     (bundle, graph_json, custom_blob, fake_stream)
 }
@@ -176,11 +185,12 @@ fn incomplete_bundle_reports_no_directory_and_stream_runs_to_eof() {
         stream_checksum: 0,
         directory_offset: 0,
         directory_len: 0,
-        stream_offset: HEADER_SIZE as u64,
+        stream_offset: HEADER_WITH_TAIL_SIZE as u64,
         stream_len: 0,
         sample_count: -1,
     };
-    bytes.extend_from_slice(&header.to_bytes());
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
+    stamp_header(&mut bytes, &header);
     bytes.extend_from_slice(&fake_stream);
 
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
@@ -189,7 +199,7 @@ fn incomplete_bundle_reports_no_directory_and_stream_runs_to_eof() {
     assert!(reader.assets().is_empty());
 
     let (offset, len) = reader.assignment_stream_range().unwrap();
-    assert_eq!(offset, HEADER_SIZE as u64);
+    assert_eq!(offset, HEADER_WITH_TAIL_SIZE as u64);
     assert_eq!(len, fake_stream.len() as u64);
 
     let mut buf = Vec::new();
@@ -203,7 +213,7 @@ fn incomplete_bundle_reports_no_directory_and_stream_runs_to_eof() {
 
 #[test]
 fn open_rejects_malformed_magic() {
-    let mut bytes = vec![0u8; HEADER_SIZE];
+    let mut bytes = vec![0u8; HEADER_WITH_TAIL_SIZE];
     bytes[0..8].copy_from_slice(b"NOPENOPE");
     match BendlReader::open(Cursor::new(bytes)) {
         Err(BendlFormatError::InvalidMagic(_)) => {}
@@ -264,7 +274,7 @@ fn validate_directory_catches_wrong_canonical_name() {
 /// validation pitfalls. Useful as a base that tests can mutate byte-by-byte.
 fn build_basic_finalized_bundle() -> Vec<u8> {
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
 
     // One raw metadata asset right after the header.
     let metadata_payload = br#"{"k":"v"}"#.to_vec();
@@ -309,7 +319,7 @@ fn build_basic_finalized_bundle() -> Vec<u8> {
         stream_len,
         sample_count: 0,
     };
-    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    stamp_header(&mut bytes, &header);
     bytes
 }
 
@@ -487,12 +497,13 @@ fn incomplete_bundle_sample_count_is_none_even_if_header_value_is_nonzero() {
         stream_checksum: 0,
         directory_offset: 0,
         directory_len: 0,
-        stream_offset: HEADER_SIZE as u64,
+        stream_offset: HEADER_WITH_TAIL_SIZE as u64,
         stream_len: 0,
         sample_count: 999_999, // lie, but header is "incomplete"
     };
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&header.to_bytes());
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
+    stamp_header(&mut bytes, &header);
     let reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     assert!(!reader.is_finalized());
     assert_eq!(reader.sample_count(), None);
@@ -505,6 +516,8 @@ fn unknown_assignment_format_reports_none_on_typed_getter() {
     let mut bytes = build_basic_finalized_bundle();
     // assignment_format byte is at offset 13 in the header.
     bytes[13] = 42;
+    let header = BendlHeader::from_bytes(bytes[..HEADER_SIZE].try_into().unwrap()).unwrap();
+    stamp_header(&mut bytes, &header);
     let reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     assert_eq!(reader.assignment_format(), None);
     // The header still parses and the directory is still available.
@@ -515,6 +528,8 @@ fn unknown_assignment_format_reports_none_on_typed_getter() {
 fn open_assignment_reader_rejects_unknown_assignment_format() {
     let mut bytes = build_basic_finalized_bundle();
     bytes[13] = 42; // corrupt assignment format byte
+    let header = BendlHeader::from_bytes(bytes[..HEADER_SIZE].try_into().unwrap()).unwrap();
+    stamp_header(&mut bytes, &header);
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     match reader.open_assignment_reader() {
         Err(BendlReadError::Format(BendlFormatError::UnknownAssignmentFormat(42))) => {}
@@ -537,18 +552,19 @@ fn incomplete_bundle_stream_range_runs_to_eof_without_directory() {
         stream_checksum: 0,
         directory_offset: 0,
         directory_len: 0,
-        stream_offset: HEADER_SIZE as u64,
+        stream_offset: HEADER_WITH_TAIL_SIZE as u64,
         stream_len: 0,
         sample_count: -1,
     };
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&header.to_bytes());
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
+    stamp_header(&mut bytes, &header);
     bytes.extend_from_slice(&fake_stream);
     let eof = bytes.len() as u64;
 
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let (off, len) = reader.assignment_stream_range().unwrap();
-    assert_eq!(off, HEADER_SIZE as u64);
+    assert_eq!(off, HEADER_WITH_TAIL_SIZE as u64);
     assert_eq!(off + len, eof);
 }
 
@@ -644,7 +660,7 @@ fn stress_many_custom_assets_round_trip() {
     const N: usize = 200;
 
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
 
     let mut entries = Vec::with_capacity(N);
     let mut expected = Vec::with_capacity(N);
@@ -690,7 +706,7 @@ fn stress_many_custom_assets_round_trip() {
         stream_len,
         sample_count: 0,
     };
-    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    stamp_header(&mut bytes, &header);
 
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     assert_eq!(reader.assets().len(), N);
@@ -709,7 +725,7 @@ fn xz_flagged_asset_with_corrupt_payload_surfaces_io_error() {
     // Hand-build a bundle with a single asset flagged ASSET_FLAG_XZ whose payload bytes are not a
     // valid xz container. `asset_bytes` must surface an io::Error rather than panicking.
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
 
     let bad_payload = vec![0xFFu8, 0xFE, 0xFD, 0xFC, 0xFB];
     let payload_offset = bytes.len() as u64;
@@ -746,7 +762,7 @@ fn xz_flagged_asset_with_corrupt_payload_surfaces_io_error() {
         stream_len: 0,
         sample_count: 0,
     };
-    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    stamp_header(&mut bytes, &header);
 
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let entry = reader.find_asset_by_name("broken.xz").cloned().unwrap();
@@ -761,7 +777,7 @@ fn assignment_stream_reader_unverified_errors_when_stream_len_runs_past_eof() {
     // io::ErrorKind::UnexpectedEof rather than silently return a short slice.
     let fake_stream = b"STANDARD BEN FILE\x00\x01tiny".to_vec();
     let actual_len = fake_stream.len() as u64;
-    let directory_offset = HEADER_SIZE as u64 + actual_len;
+    let directory_offset = HEADER_WITH_TAIL_SIZE as u64 + actual_len;
     let entries: Vec<BendlDirectoryEntry> = Vec::new();
     let directory_bytes = encode_directory(&entries).unwrap();
     let header = BendlHeader {
@@ -775,12 +791,13 @@ fn assignment_stream_reader_unverified_errors_when_stream_len_runs_past_eof() {
         stream_checksum: 0,
         directory_offset,
         directory_len: directory_bytes.len() as u64,
-        stream_offset: HEADER_SIZE as u64,
+        stream_offset: HEADER_WITH_TAIL_SIZE as u64,
         stream_len: actual_len * 10, // claim ten times the actual length
         sample_count: 0,
     };
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&header.to_bytes());
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
+    stamp_header(&mut bytes, &header);
     bytes.extend_from_slice(&fake_stream);
     bytes.extend_from_slice(&directory_bytes);
 
@@ -800,7 +817,7 @@ fn incomplete_bundle_with_nonzero_directory_offset_uses_it_as_stream_end() {
     // directory_offset, not EOF.
     let fake_stream = b"STANDARD BEN FILE\x00partial".to_vec();
     let fake_dir = b"some-directory-bytes";
-    let stream_start = HEADER_SIZE as u64;
+    let stream_start = HEADER_WITH_TAIL_SIZE as u64;
     let dir_offset = stream_start + fake_stream.len() as u64;
 
     let header = BendlHeader {
@@ -819,7 +836,8 @@ fn incomplete_bundle_with_nonzero_directory_offset_uses_it_as_stream_end() {
         sample_count: -1,
     };
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&header.to_bytes());
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
+    stamp_header(&mut bytes, &header);
     bytes.extend_from_slice(&fake_stream);
     bytes.extend_from_slice(fake_dir);
 
@@ -869,7 +887,7 @@ use crate::io::bundle::error::{BendlReadError, ChecksumError, ChecksumTarget};
 /// Returns `(bundle_bytes, asset_name, directory_offset, payload_offset)` for hand-patching tests.
 fn make_single_asset_bundle(name: &str, payload: &[u8]) -> (Vec<u8>, String, u64, u64) {
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
 
     let payload_offset = bytes.len() as u64;
     bytes.extend_from_slice(payload);
@@ -905,7 +923,7 @@ fn make_single_asset_bundle(name: &str, payload: &[u8]) -> (Vec<u8>, String, u64
         stream_len: 0,
         sample_count: 0,
     };
-    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    stamp_header(&mut bytes, &header);
     (bytes, name.to_string(), directory_offset, payload_offset)
 }
 
@@ -918,7 +936,7 @@ fn make_single_xz_asset_bundle(name: &str, payload: &[u8]) -> (Vec<u8>, String, 
     let compressed = encoder.finish().unwrap();
 
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
 
     let payload_offset = bytes.len() as u64;
     bytes.extend_from_slice(&compressed);
@@ -954,7 +972,7 @@ fn make_single_xz_asset_bundle(name: &str, payload: &[u8]) -> (Vec<u8>, String, 
         stream_len: 0,
         sample_count: 0,
     };
-    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    stamp_header(&mut bytes, &header);
     (
         bytes,
         name.to_string(),
@@ -1053,7 +1071,7 @@ fn verify_asset_checksum_returns_unavailable_when_flag_clear() {
     // Hand-build a foreign bundle whose entry has the flag clear.
     let payload = b"orphan".to_vec();
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
     let payload_offset = bytes.len() as u64;
     bytes.extend_from_slice(&payload);
     let stream_offset = bytes.len() as u64;
@@ -1083,7 +1101,7 @@ fn verify_asset_checksum_returns_unavailable_when_flag_clear() {
         stream_len: 0,
         sample_count: 0,
     };
-    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    stamp_header(&mut bytes, &header);
 
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let entry = reader.find_asset_by_name("noflag").cloned().unwrap();
@@ -1181,7 +1199,7 @@ fn asset_bytes_returns_unavailable_when_flag_clear() {
     // Same hand-built foreign bundle as in the verifier test.
     let payload = b"orphan".to_vec();
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
     let payload_offset = bytes.len() as u64;
     bytes.extend_from_slice(&payload);
     let directory_offset = bytes.len() as u64;
@@ -1210,7 +1228,7 @@ fn asset_bytes_returns_unavailable_when_flag_clear() {
         stream_len: 0,
         sample_count: 0,
     };
-    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    stamp_header(&mut bytes, &header);
 
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let entry = reader.find_asset_by_name("noflag").cloned().unwrap();
@@ -1266,7 +1284,7 @@ fn verify_all_asset_checksums_reports_first_mismatch_in_directory_order() {
     let p1 = b"first".to_vec();
     let p2 = b"second".to_vec();
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
     let off1 = bytes.len() as u64;
     bytes.extend_from_slice(&p1);
     let off2 = bytes.len() as u64;
@@ -1312,7 +1330,7 @@ fn verify_all_asset_checksums_reports_first_mismatch_in_directory_order() {
         stream_len: 0,
         sample_count: 0,
     };
-    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    stamp_header(&mut bytes, &header);
     // Corrupt both payloads.
     bytes[off1 as usize] ^= 0x01;
     bytes[off2 as usize] ^= 0x01;
@@ -1366,7 +1384,7 @@ fn crc32c_polynomial_pin_against_known_vectors() {
 fn make_unflagged_stream_bundle() -> Vec<u8> {
     let fake_stream = b"hello stream".to_vec();
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
     let stream_offset = bytes.len() as u64;
     bytes.extend_from_slice(&fake_stream);
     let directory_offset = bytes.len() as u64;
@@ -1387,7 +1405,7 @@ fn make_unflagged_stream_bundle() -> Vec<u8> {
         stream_len: fake_stream.len() as u64,
         sample_count: 0,
     };
-    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    stamp_header(&mut bytes, &header);
     bytes
 }
 
@@ -1431,12 +1449,12 @@ fn assignment_stream_reader_returns_bundle_incomplete_for_unfinalized() {
         stream_checksum: 0,
         directory_offset: 0,
         directory_len: 0,
-        stream_offset: HEADER_SIZE as u64,
+        stream_offset: HEADER_WITH_TAIL_SIZE as u64,
         stream_len: 0,
         sample_count: -1,
     };
-    let mut bytes = vec![0u8; HEADER_SIZE];
-    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    let mut bytes = vec![0u8; HEADER_WITH_TAIL_SIZE];
+    stamp_header(&mut bytes, &header);
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let err = match reader.assignment_stream_reader() {
         Err(e) => e,
@@ -1466,12 +1484,12 @@ fn open_assignment_reader_returns_bundle_incomplete_for_unfinalized() {
         stream_checksum: 0,
         directory_offset: 0,
         directory_len: 0,
-        stream_offset: HEADER_SIZE as u64,
+        stream_offset: HEADER_WITH_TAIL_SIZE as u64,
         stream_len: 0,
         sample_count: -1,
     };
-    let mut bytes = vec![0u8; HEADER_SIZE];
-    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    let mut bytes = vec![0u8; HEADER_WITH_TAIL_SIZE];
+    stamp_header(&mut bytes, &header);
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     match reader.open_assignment_reader() {
         Err(BendlReadError::Checksum(ChecksumError::BundleIncomplete {
@@ -1621,12 +1639,12 @@ fn verify_stream_checksum_returns_bundle_incomplete_for_unfinalized() {
         stream_checksum: 0,
         directory_offset: 0,
         directory_len: 0,
-        stream_offset: HEADER_SIZE as u64,
+        stream_offset: HEADER_WITH_TAIL_SIZE as u64,
         stream_len: 0,
         sample_count: -1,
     };
-    let mut bytes = vec![0u8; HEADER_SIZE];
-    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    let mut bytes = vec![0u8; HEADER_WITH_TAIL_SIZE];
+    stamp_header(&mut bytes, &header);
     let mut reader = BendlReader::open(Cursor::new(bytes)).unwrap();
     let err = reader.verify_stream_checksum().unwrap_err();
     assert!(
@@ -1663,7 +1681,7 @@ fn build_bundle_with_overlong_stream_len() -> Vec<u8> {
     let fake_stream = b"STANDARD BEN FILE\x00\x01".to_vec();
     let actual_stream_len = fake_stream.len() as u64;
     let directory = encode_directory(&[]).unwrap();
-    let directory_offset = HEADER_SIZE as u64;
+    let directory_offset = HEADER_WITH_TAIL_SIZE as u64;
     let stream_offset = directory_offset + directory.len() as u64;
 
     let header = BendlHeader {
@@ -1683,7 +1701,8 @@ fn build_bundle_with_overlong_stream_len() -> Vec<u8> {
     };
 
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&header.to_bytes());
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
+    stamp_header(&mut bytes, &header);
     bytes.extend_from_slice(&directory);
     bytes.extend_from_slice(&fake_stream);
     bytes
@@ -1748,7 +1767,7 @@ fn asset_bytes_returns_unexpected_eof_for_xz_asset_with_overlong_payload_len() {
     encoder.write_all(&raw_payload).unwrap();
     encoder.finish().unwrap();
 
-    let directory_offset = HEADER_SIZE as u64;
+    let directory_offset = HEADER_WITH_TAIL_SIZE as u64;
     let placeholder_payload_offset = 0u64;
     let placeholder_entries = vec![with_crc(
         BendlDirectoryEntry {
@@ -1789,13 +1808,14 @@ fn asset_bytes_returns_unexpected_eof_for_xz_asset_with_overlong_payload_len() {
         stream_checksum: 0,
         directory_offset,
         directory_len: directory.len() as u64,
-        stream_offset: HEADER_SIZE as u64,
+        stream_offset: HEADER_WITH_TAIL_SIZE as u64,
         stream_len: 0,
         sample_count: 0,
     };
 
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&header.to_bytes());
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
+    stamp_header(&mut bytes, &header);
     bytes.extend_from_slice(&directory);
     bytes.extend_from_slice(&compressed);
 
@@ -1873,7 +1893,7 @@ fn open_assignment_reader_returns_unexpected_eof_when_banner_falls_in_short_rang
     // the 17-byte banner needs.
     let stream_bytes = b"STAN".to_vec();
     let directory = encode_directory(&[]).unwrap();
-    let directory_offset = HEADER_SIZE as u64;
+    let directory_offset = HEADER_WITH_TAIL_SIZE as u64;
     let stream_offset = directory_offset + directory.len() as u64;
     let header = BendlHeader {
         magic: BENDL_MAGIC,
@@ -1891,7 +1911,8 @@ fn open_assignment_reader_returns_unexpected_eof_when_banner_falls_in_short_rang
         sample_count: 0,
     };
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&header.to_bytes());
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
+    stamp_header(&mut bytes, &header);
     bytes.extend_from_slice(&directory);
     bytes.extend_from_slice(&stream_bytes);
 
@@ -1921,7 +1942,7 @@ fn asset_with_unknown_flag_bit_opens_and_verifies_checksum() {
     let payload = b"asset bytes with reserved bit".to_vec();
 
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
     let payload_offset = bytes.len() as u64;
     bytes.extend_from_slice(&payload);
 
@@ -1949,11 +1970,11 @@ fn asset_with_unknown_flag_bit_opens_and_verifies_checksum() {
         stream_checksum: 0,
         directory_offset,
         directory_len: directory.len() as u64,
-        stream_offset: HEADER_SIZE as u64,
+        stream_offset: HEADER_WITH_TAIL_SIZE as u64,
         stream_len: 0,
         sample_count: 0,
     };
-    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    stamp_header(&mut bytes, &header);
 
     let mut reader = BendlReader::open(Cursor::new(bytes)).expect("open succeeds");
     let entry = reader.find_asset_by_name("custom.bin").cloned().unwrap();

@@ -13,7 +13,9 @@ use serde_json::json;
 use std::ops::Range;
 
 use crate::codec::encode::encode_jsonl_to_ben;
-use crate::io::bundle::format::{AssignmentFormat, DIRECTORY_ENTRY_HEADER_SIZE};
+use crate::io::bundle::format::{
+    AssignmentFormat, DIRECTORY_ENTRY_HEADER_SIZE, HEADER_SIZE, HEADER_WITH_TAIL_SIZE,
+};
 use crate::io::bundle::BendlWriter;
 use crate::BenVariant;
 
@@ -191,7 +193,26 @@ impl BendlBytes {
         let range = field.range();
         let width = range.len();
         self.bytes[range].copy_from_slice(&value.to_le_bytes()[..width]);
+        self.restamp_header_crc_tail();
         self
+    }
+
+    /// Recompute the mandatory header CRC tail in place, returning `self` for chaining. Use after
+    /// poking raw header bytes (outside the [`HeaderField`] setters, which already re-stamp) so the
+    /// bundle still passes the open-time header-checksum gate.
+    pub fn restamp_header_crc(mut self) -> Self {
+        self.restamp_header_crc_tail();
+        self
+    }
+
+    /// Recompute the header CRC over `[0, 64)` into the tail at `[64, 68)`, so a header-field patch
+    /// leaves a bundle that still passes the open-time gate and the test can probe the patched
+    /// field's own behavior. Truncated adversarial fixtures without the full tail are left as-is.
+    fn restamp_header_crc_tail(&mut self) {
+        if self.bytes.len() >= HEADER_WITH_TAIL_SIZE {
+            let crc = crc32c::crc32c(&self.bytes[..HEADER_SIZE]);
+            self.bytes[HEADER_SIZE..HEADER_SIZE + 4].copy_from_slice(&crc.to_le_bytes());
+        }
     }
 
     /// The directory's leading `u32` entry count.

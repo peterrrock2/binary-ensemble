@@ -7,7 +7,7 @@ use crate::io::bundle::format::{
     encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlFormatError, BendlHeader,
     ASSET_FLAG_CHECKSUM, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, ASSET_TYPE_METADATA,
     BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION, DEFAULT_XZ_PRESET, FINALIZED_NO,
-    FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
+    FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE, HEADER_WITH_TAIL_SIZE,
 };
 use crate::io::bundle::reader::BendlReader;
 use crate::io::bundle::writer::{AddAssetOptions, BendlAppender, BendlWriteError, BendlWriter};
@@ -420,12 +420,14 @@ fn append_rejects_incomplete_bundle() {
         stream_checksum: 0,
         directory_offset: 0,
         directory_len: 0,
-        stream_offset: HEADER_SIZE as u64,
+        stream_offset: HEADER_WITH_TAIL_SIZE as u64,
         stream_len: 0,
         sample_count: -1,
     };
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&header.to_bytes());
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
+    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    restamp_header_crc(&mut bytes);
     bytes.extend_from_slice(b"STANDARD BEN FILE\x00fake");
 
     match BendlAppender::open(Cursor::new(bytes)) {
@@ -449,12 +451,14 @@ fn append_rejects_finalized_bundle_with_zero_directory() {
         stream_checksum: 0,
         directory_offset: 0,
         directory_len: 0,
-        stream_offset: HEADER_SIZE as u64,
+        stream_offset: HEADER_WITH_TAIL_SIZE as u64,
         stream_len: 0,
         sample_count: 0,
     };
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&header.to_bytes());
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
+    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    restamp_header_crc(&mut bytes);
 
     match BendlAppender::open(Cursor::new(bytes)) {
         Err(BendlWriteError::BundleIncomplete) => {}
@@ -602,6 +606,7 @@ fn verify_sample_count_accepts_correct_and_rejects_corrupt_header() {
     // Flip the header sample_count (bytes 56..64, little-endian) to a count the stream cannot back.
     let mut corrupt = buf;
     corrupt[56..64].copy_from_slice(&(samples.len() as i64 + 5).to_le_bytes());
+    restamp_header_crc(&mut corrupt);
     let mut reader = BendlReader::open(Cursor::new(corrupt)).unwrap();
     // The stream payload is intact, so the stream CRC still passes; only the sample-count
     // cross-check catches the corrupt header.
@@ -643,6 +648,7 @@ fn verify_sample_count_rejects_overlong_stream_len_even_when_prefix_count_matche
     corrupt[24..32].copy_from_slice(&0u64.to_le_bytes()); // directory_offset = 0
     corrupt[32..40].copy_from_slice(&0u64.to_le_bytes()); // directory_len = 0
     corrupt[48..56].copy_from_slice(&(real_stream_len + 50).to_le_bytes()); // overlong stream_len
+    restamp_header_crc(&mut corrupt);
 
     let mut reader = BendlReader::open(Cursor::new(corrupt)).unwrap();
     // sample_count is unchanged and equals the real prefix count, so the bug would pass here.
@@ -1461,6 +1467,7 @@ fn appender_rejects_bundle_with_trailing_directory_bytes() {
     let old_len = u64::from_le_bytes(bundle[32..40].try_into().unwrap());
     let patched = (old_len + 4).to_le_bytes();
     bundle[32..40].copy_from_slice(&patched);
+    restamp_header_crc(&mut bundle);
 
     match BendlAppender::open(Cursor::new(bundle)) {
         Err(BendlWriteError::Format(BendlFormatError::TrailingDirectoryBytes { .. })) => {}
@@ -1523,7 +1530,10 @@ fn dropped_stream_session_persists_recoverable_stream_offset_after_assets() {
             .add_custom_asset("asset.bin", asset, AddAssetOptions::defaults().raw())
             .unwrap();
         let mut session = writer.into_stream_session().unwrap();
-        assert_eq!(session.start_offset(), (HEADER_SIZE + asset.len()) as u64);
+        assert_eq!(
+            session.start_offset(),
+            (HEADER_WITH_TAIL_SIZE + asset.len()) as u64
+        );
         session.write_all(stream).unwrap();
         drop(session);
     }
@@ -1532,7 +1542,7 @@ fn dropped_stream_session_persists_recoverable_stream_offset_after_assets() {
     assert!(!reader.is_finalized());
     assert_eq!(
         reader.header().stream_offset,
-        (HEADER_SIZE + asset.len()) as u64
+        (HEADER_WITH_TAIL_SIZE + asset.len()) as u64
     );
 
     let mut recovered = Vec::new();
@@ -1628,9 +1638,21 @@ fn make_ben_stream_bundle(count: usize) -> (Vec<u8>, Vec<Vec<u16>>) {
     (buf, samples)
 }
 
-/// Corrupt the stored `stream_checksum` field in-place by flipping a byte at header offset 20.
+/// Recompute the header CRC over `[0, 64)` and rewrite the tail at `[64, 68)`. A test that
+/// deliberately mutates header bytes calls this so the bundle still passes the header-checksum gate
+/// in `open`, letting the test exercise a downstream check. Mirrors what the writer does on
+/// finalize.
+fn restamp_header_crc(bytes: &mut [u8]) {
+    let crc = crc32c::crc32c(&bytes[..HEADER_SIZE]);
+    bytes[HEADER_SIZE..HEADER_SIZE + 4].copy_from_slice(&crc.to_le_bytes());
+}
+
+/// Corrupt the stored `stream_checksum` field in-place by flipping a byte at header offset 20, then
+/// re-stamp the header CRC so the corruption is observable only through the stream-checksum check
+/// rather than being rejected up front by the header-checksum gate.
 fn corrupt_stream_checksum(bytes: &mut [u8]) {
     bytes[20] ^= 0xFF;
+    restamp_header_crc(bytes);
 }
 
 /// Flip a byte in the stream payload to corrupt the stream contents without changing its length.
@@ -1898,7 +1920,7 @@ fn bundle_with_reserved_asset_flag_bit() -> (Vec<u8>, u16) {
     const RESERVED_BIT_7: u16 = 1 << 7;
     let payload = b"forward-compat asset".to_vec();
     let mut bytes = Vec::new();
-    bytes.extend(std::iter::repeat_n(0u8, HEADER_SIZE));
+    bytes.extend(std::iter::repeat_n(0u8, HEADER_WITH_TAIL_SIZE));
     let payload_offset = bytes.len() as u64;
     bytes.extend_from_slice(&payload);
 
@@ -1926,11 +1948,12 @@ fn bundle_with_reserved_asset_flag_bit() -> (Vec<u8>, u16) {
         stream_checksum: 0,
         directory_offset,
         directory_len: directory.len() as u64,
-        stream_offset: HEADER_SIZE as u64,
+        stream_offset: HEADER_WITH_TAIL_SIZE as u64,
         stream_len: 0,
         sample_count: 0,
     };
     bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    restamp_header_crc(&mut bytes);
     (bytes, RESERVED_BIT_7)
 }
 
@@ -2073,8 +2096,8 @@ fn stream_session_start_offset_returns_recorded_value() {
         )
         .unwrap();
     let session = writer.into_stream_session().unwrap();
-    // Header is 64 bytes; one 6-byte asset payload follows → start_offset = 70.
-    assert_eq!(session.start_offset(), HEADER_SIZE as u64 + 6);
+    // Header+tail is 72 bytes; one 6-byte asset payload follows → start_offset = 78.
+    assert_eq!(session.start_offset(), HEADER_WITH_TAIL_SIZE as u64 + 6);
 }
 
 #[test]
@@ -2095,7 +2118,7 @@ fn writer_failed_asset_write_does_not_poison_registry() {
 
     impl Write for FailOnceAfterHeader {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            if !self.failed && self.inner.position() >= HEADER_SIZE as u64 {
+            if !self.failed && self.inner.position() >= HEADER_WITH_TAIL_SIZE as u64 {
                 self.failed = true;
                 return Err(std::io::Error::other("simulated payload write failure"));
             }
@@ -2494,4 +2517,88 @@ fn probe_still_compresses_large_compressible_payloads() {
     assert_ne!(entry.asset_flags & ASSET_FLAG_XZ, 0);
     assert!(entry.payload_len < payload.len() as u64 / 10);
     assert_eq!(reader.asset_bytes(&entry).unwrap(), payload);
+}
+
+// ── Header-checksum integrity tail ────────────────────────────────
+
+#[test]
+fn writer_writes_valid_header_tail_and_zero_reserved() {
+    let (buf, _) = make_ben_stream_bundle(3);
+    let reader = BendlReader::open(Cursor::new(buf.clone())).unwrap();
+    // The first data object sits past the reserved tail, so the tail never displaces a payload.
+    assert!(reader.header().stream_offset >= HEADER_WITH_TAIL_SIZE as u64);
+    // The stored CRC matches a recompute over [0, 64), and the reserved bytes are zero.
+    let stored = u32::from_le_bytes(buf[HEADER_SIZE..HEADER_SIZE + 4].try_into().unwrap());
+    assert_eq!(stored, crc32c::crc32c(&buf[..HEADER_SIZE]));
+    assert_eq!(&buf[HEADER_SIZE + 4..HEADER_WITH_TAIL_SIZE], &[0u8; 4]);
+}
+
+#[test]
+fn open_rejects_any_single_byte_header_flip() {
+    // Every byte the CRC protects (minor version through sample_count) is caught. Magic `[0, 8)`
+    // and major_version `[8, 10)` fail earlier with their own dedicated errors, so skip.
+    let (buf, _) = make_ben_stream_bundle(3);
+    for i in 10..HEADER_SIZE {
+        let mut corrupt = buf.clone();
+        corrupt[i] ^= 0xFF;
+        match BendlReader::open(Cursor::new(corrupt)).map(|_| ()) {
+            Err(BendlFormatError::HeaderChecksumMismatch { .. }) => {}
+            other => panic!("offset {i}: unexpected {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn open_rejects_corrupt_crc_tail_bytes() {
+    let (mut buf, _) = make_ben_stream_bundle(3);
+    buf[HEADER_SIZE] ^= 0xFF; // corrupt the stored CRC itself
+    match BendlReader::open(Cursor::new(buf)).map(|_| ()) {
+        Err(BendlFormatError::HeaderChecksumMismatch { .. }) => {}
+        other => panic!("expected HeaderChecksumMismatch, got {other:?}"),
+    }
+}
+
+#[test]
+fn open_rejects_nonzero_reserved_tail_bytes() {
+    // The CRC over `[0, 64)` is left intact, so only the explicit reserved-zero check can catch
+    // this.
+    let (mut buf, _) = make_ben_stream_bundle(3);
+    buf[HEADER_SIZE + 4] = 0x01;
+    match BendlReader::open(Cursor::new(buf)).map(|_| ()) {
+        Err(BendlFormatError::HeaderTailReservedNonZero { .. }) => {}
+        other => panic!("expected HeaderTailReservedNonZero, got {other:?}"),
+    }
+}
+
+#[test]
+fn appender_open_rejects_corrupt_header_before_trusting_offsets() {
+    let (mut buf, _) = build_base_bundle();
+    buf[40] ^= 0xFF; // corrupt stream_offset, a header field, without re-stamping the CRC
+    match BendlAppender::open(Cursor::new(buf)).map(|_| ()) {
+        Err(BendlWriteError::Format(BendlFormatError::HeaderChecksumMismatch { .. })) => {}
+        other => panic!("expected Format(HeaderChecksumMismatch), got {other:?}"),
+    }
+}
+
+#[test]
+fn append_refreshes_header_crc_and_post_append_flip_is_rejected() {
+    let (buf, _) = build_base_bundle();
+    let mut appender = BendlAppender::open(Cursor::new(buf)).unwrap();
+    appender
+        .add_custom_asset("extra.bin", b"hello", AddAssetOptions::defaults().raw())
+        .unwrap();
+    let appended = appender.commit().unwrap().into_inner();
+
+    // The commit relocated the directory and refreshed the header CRC, so the reopen verifies.
+    let stored = u32::from_le_bytes(appended[HEADER_SIZE..HEADER_SIZE + 4].try_into().unwrap());
+    assert_eq!(stored, crc32c::crc32c(&appended[..HEADER_SIZE]));
+    BendlReader::open(Cursor::new(appended.clone())).unwrap();
+
+    // Flipping a header byte afterward without re-stamping is rejected on the next open.
+    let mut corrupt = appended;
+    corrupt[24] ^= 0xFF; // directory_offset
+    match BendlReader::open(Cursor::new(corrupt)).map(|_| ()) {
+        Err(BendlFormatError::HeaderChecksumMismatch { .. }) => {}
+        other => panic!("expected HeaderChecksumMismatch, got {other:?}"),
+    }
 }

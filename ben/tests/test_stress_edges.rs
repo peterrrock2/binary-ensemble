@@ -10,7 +10,7 @@ use binary_ensemble::format::banners::{
 use binary_ensemble::io::bundle::format::{
     encode_directory, AssignmentFormat, BendlDirectoryEntry, BendlFormatError, BendlHeader,
     ASSET_TYPE_CUSTOM, ASSET_TYPE_GRAPH, BENDL_MAGIC, BENDL_MAJOR_VERSION, BENDL_MINOR_VERSION,
-    FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
+    FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE, HEADER_WITH_TAIL_SIZE,
 };
 use binary_ensemble::io::bundle::writer::{AddAssetOptions, BendlAppender, BendlWriter};
 use binary_ensemble::io::bundle::{BendlReadError, BendlReader, ChecksumError, ChecksumTarget};
@@ -39,7 +39,7 @@ fn minimal_bendl_with_entries(
     entries: Vec<BendlDirectoryEntry>,
     directory_len_adjustment: i64,
 ) -> Vec<u8> {
-    let mut bytes = vec![0u8; HEADER_SIZE];
+    let mut bytes = vec![0u8; HEADER_WITH_TAIL_SIZE];
     let directory_offset = bytes.len() as u64;
     let mut directory = encode_directory(&entries).unwrap();
     if directory_len_adjustment > 0 {
@@ -62,7 +62,10 @@ fn minimal_bendl_with_entries(
         stream_len: 0,
         sample_count: 0,
     };
-    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    let header_bytes = header.to_bytes();
+    bytes[..HEADER_SIZE].copy_from_slice(&header_bytes);
+    let crc = crc32c::crc32c(&header_bytes);
+    bytes[HEADER_SIZE..HEADER_SIZE + 4].copy_from_slice(&crc.to_le_bytes());
     bytes
 }
 
@@ -434,7 +437,7 @@ fn bendl_open_rejects_malformed_directory_invariants() {
             asset_type: ASSET_TYPE_CUSTOM,
             asset_flags: 0,
             name: "dup.bin".to_string(),
-            payload_offset: HEADER_SIZE as u64,
+            payload_offset: HEADER_WITH_TAIL_SIZE as u64,
             payload_len: 0,
             checksum: None,
         },
@@ -442,7 +445,7 @@ fn bendl_open_rejects_malformed_directory_invariants() {
             asset_type: ASSET_TYPE_CUSTOM,
             asset_flags: 0,
             name: "dup.bin".to_string(),
-            payload_offset: HEADER_SIZE as u64,
+            payload_offset: HEADER_WITH_TAIL_SIZE as u64,
             payload_len: 0,
             checksum: None,
         },
@@ -456,7 +459,7 @@ fn bendl_open_rejects_malformed_directory_invariants() {
         asset_type: ASSET_TYPE_GRAPH,
         asset_flags: 0,
         name: "not_graph.json".to_string(),
-        payload_offset: HEADER_SIZE as u64,
+        payload_offset: HEADER_WITH_TAIL_SIZE as u64,
         payload_len: 0,
         checksum: None,
     }];
@@ -470,7 +473,7 @@ fn bendl_open_rejects_directory_len_mismatches() {
         asset_type: ASSET_TYPE_CUSTOM,
         asset_flags: 0,
         name: "ok.bin".to_string(),
-        payload_offset: HEADER_SIZE as u64,
+        payload_offset: HEADER_WITH_TAIL_SIZE as u64,
         payload_len: 0,
         checksum: None,
     }];
@@ -987,7 +990,7 @@ fn bendl_open_rejects_name_len_longer_than_remaining_directory_bytes() {
         asset_type: ASSET_TYPE_CUSTOM,
         asset_flags: 0,
         name: "ab".to_string(),
-        payload_offset: HEADER_SIZE as u64,
+        payload_offset: HEADER_WITH_TAIL_SIZE as u64,
         payload_len: 0,
         checksum: None,
     }];

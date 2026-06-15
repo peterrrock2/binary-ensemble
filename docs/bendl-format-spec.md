@@ -42,6 +42,7 @@ A `.bendl` file is laid out as:
 
 ```text
 [Fixed Header]
+[Header Checksum Tail]
 [Asset Payloads]
 [Assignment Stream]
 [Directory Table]
@@ -112,6 +113,25 @@ Total: 64 bytes. All multi-byte integers are little-endian.
   flows; verified reader APIs return `Unavailable` when this flag is clear.
 
 Bits 1–31 are reserved. Unrecognized flag bits must be ignored by readers.
+
+## Header Checksum Tail
+
+An 8-byte integrity tail immediately follows the 64-byte header in every `.bendl` file, occupying
+bytes `[64, 72)`:
+
+```text
+offset  size  field
+64      4     header_checksum   CRC32C (Castagnoli) over the 64 header bytes [0, 64)
+68      4     reserved          must be zero
+```
+
+The header CRC covers only `[0, 64)`: it authenticates every header field (flags, offsets, lengths,
+`sample_count`), but not itself and not the reserved bytes. Writers zero the reserved bytes; a
+verifying reader rejects non-zero reserved bytes, which is what keeps the region deterministic.
+
+Writers reserve these 8 bytes before the first data object, so the first asset or stream payload
+begins at an offset ≥ 72. All data is located by explicit offsets (`stream_offset`,
+`directory_offset`, per-asset `payload_offset`).
 
 ## Directory Table
 
@@ -255,6 +275,8 @@ Writers are expected to use this sequence:
    - `finalized = 0`
    - `stream_len = 0`
    - `sample_count = -1`
+1. Write the 8-byte header-checksum tail at `[64, 72)`, so the first asset payload begins at an
+   offset ≥ 72.
 1. Write all asset payloads.
 1. Record `stream_offset`.
 1. Write the assignment stream.
@@ -264,10 +286,11 @@ Writers are expected to use this sequence:
    - compute final `stream_len`
    - compute final `sample_count`
    - record final `directory_offset` and `directory_len`
-   - seek back to patch the header
    - set `finalized = 1`
+   - seek back to write the header, then write the header CRC over `[0, 64)` into the tail at
+     `[64, 68)` with the reserved bytes zeroed
 
-If writing is interrupted before step 7, the file remains an incomplete bundle.
+If writing is interrupted before the final header patch, the file remains an incomplete bundle.
 
 ## Reader Rules
 
@@ -275,6 +298,9 @@ Readers must:
 
 1. Validate `magic` and supported `major_version`. Higher `minor_version` values are accepted.
 1. Read the fixed header.
+1. Read the 8-byte tail, recompute the CRC32C over `[0, 64)` and reject a mismatch, and reject
+   non-zero reserved bytes. Do this before trusting any header offset (`directory_offset`,
+   `stream_offset`, ...).
 1. Read the authoritative directory table identified by `directory_offset` and `directory_len`.
    Reject a declared `entry_count` above `MAX_DIRECTORY_ENTRIES` (256) before allocating, and reject
    any bytes left over in the directory region after the declared entries.

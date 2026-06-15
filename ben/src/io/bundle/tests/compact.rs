@@ -6,6 +6,7 @@ use super::writer::build_base_bundle;
 use crate::io::bundle::compact::{
     compact_bundle_in_place, plan_tail, remove_assets_in_place, stage_tail, Compaction,
 };
+use crate::io::bundle::format::HEADER_WITH_TAIL_SIZE;
 use crate::io::bundle::reader::BendlReader;
 use crate::io::bundle::writer::{AddAssetOptions, BendlAppender};
 
@@ -316,6 +317,26 @@ fn full_rewrite_preserves_file_permissions() {
     );
     let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o7777;
     assert_eq!(mode, 0o640);
+}
+
+#[test]
+fn full_rewrite_output_has_valid_header_crc() {
+    // Removing a pre-stream asset leaves dead space before the stream end, forcing the temp-file
+    // full rewrite through BendlWriter. Its output must carry a tail whose CRC validates over
+    // [0, 64), with zeroed reserved bytes.
+    let (bytes, _) = build_base_bundle();
+    let tmp = temp_bundle(&bytes, "full-rewrite-crc");
+    let path = tmp.0.clone();
+    assert_eq!(
+        remove_assets_in_place(&path, &["metadata.json"]).unwrap(),
+        Compaction::FullRewrite
+    );
+    let out = fs::read(&path).unwrap();
+    let reader = BendlReader::open(BufReader::new(File::open(&path).unwrap())).unwrap();
+    assert!(reader.header().stream_offset >= HEADER_WITH_TAIL_SIZE as u64);
+    let stored = u32::from_le_bytes(out[64..68].try_into().unwrap());
+    assert_eq!(stored, crc32c::crc32c(&out[..64]));
+    assert_eq!(&out[68..72], &[0u8; 4]);
 }
 
 #[test]

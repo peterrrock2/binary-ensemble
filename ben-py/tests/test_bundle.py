@@ -33,6 +33,8 @@ BENDL_MAGIC = b"BENDL\x00\x00\x01"
 BENDL_MAJOR_VERSION = 1
 BENDL_MINOR_VERSION = 0
 HEADER_SIZE = 64
+HEADER_TAIL_SIZE = 8
+HEADER_WITH_TAIL_SIZE = HEADER_SIZE + HEADER_TAIL_SIZE
 
 COMPLETE_NO = 0
 COMPLETE_YES = 1
@@ -100,6 +102,21 @@ def _pack_header(
         stream_len,
         sample_count,
     )
+
+
+def _header_tail(header: bytes) -> bytes:
+    if len(header) != HEADER_SIZE:
+        raise ValueError("header must be 64 bytes")
+    return struct.pack("<I", _crc32c(header)) + b"\x00" * 4
+
+
+def _stamp_header(buf: bytearray, header: bytes) -> None:
+    buf[:HEADER_SIZE] = header
+    buf[HEADER_SIZE:HEADER_WITH_TAIL_SIZE] = _header_tail(header)
+
+
+def _restamp_header_tail(buf: bytearray) -> None:
+    buf[HEADER_SIZE:HEADER_WITH_TAIL_SIZE] = _header_tail(bytes(buf[:HEADER_SIZE]))
 
 
 def _pack_directory_entry(
@@ -180,7 +197,7 @@ def build_bundle(
 ) -> bytes:
     assets = list(assets)
     buf = bytearray()
-    buf.extend(b"\x00" * HEADER_SIZE)
+    buf.extend(b"\x00" * HEADER_WITH_TAIL_SIZE)
 
     encoded_assets: List[Tuple[int, int, bytes]] = []
     for asset in assets:
@@ -232,7 +249,7 @@ def build_bundle(
         flags=header_flags,
         stream_checksum=stream_checksum,
     )
-    buf[:HEADER_SIZE] = header
+    _stamp_header(buf, header)
     return bytes(buf)
 
 
@@ -334,7 +351,7 @@ def test_bundle_round_trip_ben_with_assets(tmp_path: Path) -> None:
     assert "xz" in by_name["graph.json"]["flags"]
     assert by_name["notes.bin"]["flags"] == ["checksum"]
     for entry in dec.list_assets():
-        assert entry["offset"] >= HEADER_SIZE
+        assert entry["offset"] >= HEADER_WITH_TAIL_SIZE
 
     assert dec.read_asset_bytes("graph.json") == graph_json
     assert dec.read_asset_bytes("notes.bin") == custom_blob
@@ -670,6 +687,7 @@ def test_open_rejects_trailing_directory_bytes(tmp_path: Path) -> None:
     )
     directory_len = struct.unpack_from("<Q", bundle, 32)[0]
     struct.pack_into("<Q", bundle, 32, directory_len + 1)
+    _restamp_header_tail(bundle)
     bundle.append(0)
     path = _write_bundle(tmp_path / "trailing.bendl", bytes(bundle))
     with pytest.raises(Exception, match="trailing byte"):
@@ -679,6 +697,7 @@ def test_open_rejects_trailing_directory_bytes(tmp_path: Path) -> None:
 def test_unknown_assignment_format_rejected(tmp_path: Path) -> None:
     bundle = bytearray(build_bundle(stream_bytes=b"", sample_count=0))
     bundle[13] = 99
+    _restamp_header_tail(bundle)
     path = _write_bundle(tmp_path / "wtfmt.bendl", bytes(bundle))
     with pytest.raises(Exception, match="unrecognized assignment_format"):
         BendlDecoder(path)
@@ -720,11 +739,11 @@ def _incomplete_bundle(stream_bytes: bytes, stream_len: int = 0) -> bytes:
         assignment_format=ASSIGNMENT_FORMAT_BEN,
         directory_offset=0,
         directory_len=0,
-        stream_offset=HEADER_SIZE,
+        stream_offset=HEADER_WITH_TAIL_SIZE,
         stream_len=stream_len,
         sample_count=-1,
     )
-    return header + stream_bytes
+    return header + _header_tail(header) + stream_bytes
 
 
 def test_incomplete_bundle_scans_for_sample_count(tmp_path: Path) -> None:
@@ -776,6 +795,7 @@ def test_finalized_bundle_with_inflated_stream_len_survives_open(
     )
     old_stream_len = struct.unpack_from("<Q", bundle, 48)[0]
     struct.pack_into("<Q", bundle, 48, old_stream_len + 10_000)
+    _restamp_header_tail(bundle)
     path = _write_bundle(tmp_path / "liar.bendl", bytes(bundle))
     dec = BendlDecoder(path)
     assert dec.is_complete()
@@ -796,7 +816,7 @@ def test_finalized_bundle_iteration_rejects_overlong_stream_len(tmp_path: Path) 
     samples = [[1, 2, 3], [4, 5, 6]]
     stream = _ben_bytes_for(samples, tmp_path)
     directory = _pack_directory([])
-    directory_offset = HEADER_SIZE
+    directory_offset = HEADER_WITH_TAIL_SIZE
     stream_offset = directory_offset + len(directory)
     header = _pack_header(
         complete=COMPLETE_YES,
@@ -809,7 +829,9 @@ def test_finalized_bundle_iteration_rejects_overlong_stream_len(tmp_path: Path) 
         flags=HEADER_FLAG_STREAM_CHECKSUM,
         stream_checksum=_crc32c(stream),
     )
-    path = _write_bundle(tmp_path / "overlong_iter.bendl", header + directory + stream)
+    path = _write_bundle(
+        tmp_path / "overlong_iter.bendl", header + _header_tail(header) + directory + stream
+    )
     dec = BendlDecoder(path)
     assert dec.is_complete()
     with pytest.raises(Exception, match="declared stream_len"):
@@ -817,15 +839,15 @@ def test_finalized_bundle_iteration_rejects_overlong_stream_len(tmp_path: Path) 
 
 
 def test_verify_rejects_corrupt_header_sample_count(tmp_path: Path) -> None:
-    # The 64-byte header is unchecksummed, so a flipped sample_count would otherwise pass verify()
-    # while skewing len()/count_samples()/subsample bounds. verify() now cross-checks the header
-    # count against the decoded stream. sample_count lives at header bytes 56..64 (little-endian).
+    # Re-stamp after changing sample_count to simulate a self-consistent but semantically wrong
+    # header. verify() still cross-checks the header count against the decoded stream.
     samples = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
     bundle = bytearray(
         build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
     )
     assert struct.unpack_from("<q", bundle, 56)[0] == len(samples)
     struct.pack_into("<q", bundle, 56, len(samples) + 7)  # claim more samples than the stream holds
+    _restamp_header_tail(bundle)
     path = _write_bundle(tmp_path / "bad_count.bendl", bytes(bundle))
     dec = BendlDecoder(path)
     # The stream payload itself is intact, so the asset/stream CRCs still pass; only the

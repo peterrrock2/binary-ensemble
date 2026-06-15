@@ -73,16 +73,18 @@ The current `v1.0.0` set covers:
   repeat, a >2-district transition that forces a mid-stream snapshot, and a delta rebased onto it.
 - `standard.xben`, `mkvchain.xben`, `twodelta.xben` — one XBEN file per variant.
 - `flags_set.bendl` — a BENDL bundle with every currently-defined header and asset flag bit set on
-  at least one object: header `HEADER_FLAG_STREAM_CHECKSUM`; a graph asset flagged
-  `ASSET_FLAG_JSON | ASSET_FLAG_XZ | ASSET_FLAG_CHECKSUM`; a metadata asset flagged
-  `ASSET_FLAG_JSON | ASSET_FLAG_CHECKSUM`; an XBEN assignment stream.
-- `unknown_flags.bendl` — a derivative of `flags_set.bendl` with reserved bits set in the header
-  `flags` and in a custom asset's `asset_flags`. Pins forward-compatible reader behavior: unknown
-  bits must be ignored, all known operations still succeed.
+  at least one object: header `HEADER_FLAG_STREAM_CHECKSUM` plus the mandatory 8-byte
+  header-checksum tail; a graph asset flagged `ASSET_FLAG_JSON | ASSET_FLAG_XZ |
+ASSET_FLAG_CHECKSUM`; a metadata asset flagged `ASSET_FLAG_JSON | ASSET_FLAG_CHECKSUM`; an XBEN
+  assignment stream.
+- `unknown_flags.bendl` — a derivative of `flags_set.bendl` with a reserved bit set in the header
+  `flags` (bit 1, since only bit 0 is currently defined) and in a custom asset's `asset_flags`
+  (bit 7). Pins forward-compatible reader behavior: unknown bits must be ignored while the header
+  checksum still validates and all known operations succeed.
 - `interop.pcompress` — the canonical ensemble encoded by the **foreign PCompress
   implementation** (the `pcompress` crates.io dependency, mggg's real encoder). Pins the
-  `ben pcompress` interop contract: genuine PCompress bytes must keep converting to BEN that decodes back to
-  `source.jsonl`. Minted by the focused `generate_pcompress_interop_fixture` regenerator;
+  `ben pcompress` interop contract: genuine PCompress bytes must keep converting to BEN that decodes
+  back to `source.jsonl`. Minted by the focused `generate_pcompress_interop_fixture` regenerator;
   re-minting is legitimate only when the pinned `pcompress` dependency version changes its wire
   format, in a dedicated PR.
 - `source.jsonl`, `source_twodelta.jsonl`, `source_graph.json`, `source_metadata.json` —

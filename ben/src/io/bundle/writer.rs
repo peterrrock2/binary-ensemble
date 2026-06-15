@@ -58,9 +58,10 @@ impl<T> SyncData for Cursor<T> {
 
 use super::format::{
     asset_type_for_standardized_name, default_compresses, encode_directory, read_directory,
-    standardized_name_for, AssignmentFormat, BendlDirectoryEntry, BendlFormatError, BendlHeader,
-    KnownAssetKind, ASSET_FLAG_CHECKSUM, ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM,
-    DEFAULT_XZ_PRESET, FINALIZED_YES, HEADER_FLAG_STREAM_CHECKSUM, HEADER_SIZE,
+    read_header_and_verify, standardized_name_for, write_header_with_tail, AssignmentFormat,
+    BendlDirectoryEntry, BendlFormatError, BendlHeader, KnownAssetKind, ASSET_FLAG_CHECKSUM,
+    ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, DEFAULT_XZ_PRESET, FINALIZED_YES,
+    HEADER_FLAG_STREAM_CHECKSUM, HEADER_WITH_TAIL_SIZE,
 };
 
 /// Options passed alongside each [`BendlWriter::add_asset`] call.
@@ -305,10 +306,11 @@ impl<W: Write + Seek> BendlWriter<W> {
     /// assets added before then push the stream out as expected.
     pub fn new(mut inner: W, assignment_format: AssignmentFormat) -> io::Result<Self> {
         inner.seek(SeekFrom::Start(0))?;
-        // stream_offset in the provisional header is patched at into_stream_session time; start it
-        // just after the header.
-        let header = BendlHeader::provisional(assignment_format, HEADER_SIZE as u64);
-        header.write_to(&mut inner)?;
+        // Write the provisional header plus mandatory 8-byte integrity tail at [64, 72): the first
+        // object starts at >= 72, so the tail never has to displace payloads. stream_offset is
+        // patched from the real stream position later, but start it past the reserved tail.
+        let header = BendlHeader::provisional(assignment_format, HEADER_WITH_TAIL_SIZE as u64);
+        write_header_with_tail(&mut inner, &header)?;
 
         Ok(BendlWriter {
             inner,
@@ -469,7 +471,7 @@ impl<W: Write + Seek> BendlWriter<W> {
         let stream_offset = self.inner.stream_position()?;
         self.header.stream_offset = stream_offset;
         self.inner.seek(SeekFrom::Start(0))?;
-        self.header.write_to(&mut self.inner)?;
+        write_header_with_tail(&mut self.inner, &self.header)?;
         self.inner.flush()?;
         self.inner.seek(SeekFrom::Start(stream_offset))?;
 
@@ -520,7 +522,7 @@ impl<W: Write + Seek> BendlWriter<W> {
         self.header.sample_count = sample_count;
         self.header.finalized = FINALIZED_YES;
         self.inner.seek(SeekFrom::Start(0))?;
-        self.header.write_to(&mut self.inner)?;
+        write_header_with_tail(&mut self.inner, &self.header)?;
 
         // Flush explicitly; some writers (files) are not flushed on drop.
         self.inner.flush()?;
@@ -754,7 +756,8 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
     pub fn open(mut inner: W) -> Result<Self, BendlWriteError> {
         let file_len = inner.seek(SeekFrom::End(0))?;
         inner.seek(SeekFrom::Start(0))?;
-        let header = BendlHeader::read_from(&mut inner).map_err(BendlWriteError::Format)?;
+        // Verify the header CRC before trusting directory_offset below.
+        let header = read_header_and_verify(&mut inner).map_err(BendlWriteError::Format)?;
         if !header.is_finalized() {
             return Err(BendlWriteError::BundleIncomplete);
         }
@@ -975,7 +978,8 @@ impl<W: Read + Write + Seek> BendlAppender<W> {
         self.header.directory_offset = new_directory_offset;
         self.header.directory_len = new_directory_len;
         self.inner.seek(SeekFrom::Start(0))?;
-        self.header.write_to(&mut self.inner)?;
+        // Refresh the mandatory header CRC as part of the in-place header patch.
+        write_header_with_tail(&mut self.inner, &self.header)?;
         self.inner.flush()?;
         self.inner.sync_data()?;
 
