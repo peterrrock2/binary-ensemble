@@ -43,10 +43,10 @@ const CANONICAL_JSONL: &str = "\
 {\"assignment\":[2,2,2,1],\"sample\":5}
 ";
 
-/// Canonical JSONL used to mint the `TwoDelta` fixtures only. `TwoDelta` is unreleased, so it gets
-/// its own source that deliberately exercises mixed snapshot/delta framing: an anchor snapshot, a
-/// 2-swap delta, a repeat (count), a **>2-district transition** that forces a mid-stream snapshot,
-/// and a 2-swap delta rebased onto that snapshot.
+/// Canonical JSONL used to mint the `TwoDelta` fixtures. They get their own source that
+/// deliberately exercises mixed snapshot/delta framing: an anchor snapshot, a 2-swap delta, a
+/// repeat (count), a **>2-district transition** that forces a mid-stream snapshot, and a 2-swap
+/// delta rebased onto that snapshot.
 const TWODELTA_CANONICAL_JSONL: &str = "\
 {\"assignment\":[1,1,2,2],\"sample\":1}
 {\"assignment\":[1,2,1,2],\"sample\":2}
@@ -464,25 +464,4 @@ fn generate_pcompress_interop_fixture() {
     write_fixture("interop.pcompress", &out);
 
     eprintln!("Wrote interop.pcompress to {:?}", fixtures_dir());
-}
-
-#[test]
-#[ignore = "regenerates only the (unreleased) TwoDelta fixtures; never run as part of normal CI"]
-fn regenerate_twodelta_fixtures() {
-    // `TwoDelta` is unreleased, so its wire format may change and its fixtures may be re-minted in
-    // place (the "committed before any release shipped" escape hatch in
-    // `docs/format-stability.md`). This regenerator touches *only* the TwoDelta fixtures and
-    // their source, leaving every released Standard/MkvChain/BENDL fixture byte-for-byte
-    // untouched.
-    write_fixture(
-        "twodelta.ben",
-        &mint_ben(BenVariant::TwoDelta, TWODELTA_CANONICAL_JSONL),
-    );
-    write_fixture(
-        "twodelta.xben",
-        &mint_xben(BenVariant::TwoDelta, TWODELTA_CANONICAL_JSONL),
-    );
-    write_fixture("source_twodelta.jsonl", TWODELTA_CANONICAL_JSONL.as_bytes());
-
-    eprintln!("Re-minted TwoDelta fixtures in {:?}", fixtures_dir());
 }

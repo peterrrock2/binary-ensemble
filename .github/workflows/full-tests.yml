@@ -98,7 +98,6 @@ jobs:
         run: >-
           cargo test -- --ignored
           --skip generate_format_stability_fixtures
-          --skip regenerate_twodelta_fixtures
           --skip generate_pcompress_interop_fixture
 
   python-tests:

@@ -1,10 +1,12 @@
 name: CI
 
-# Lightweight quality gates on every PR: formatting and lints for both languages. The heavier
-# gates (full test suite, big-endian emulation) live in full-tests.yml and run on demand — either
-# from the Actions tab or via a `/ci-full` / `/ci-endian` PR comment.
+# Quality gates on every PR: formatting, lints, and the fast test suites for both languages. The
+# heavier gates (the `#[ignore]`-gated stress suite, big-endian emulation, fuzzing) live in
+# full-tests.yml and run on demand: from the Actions tab or via a `/ci-full` / `/ci-endian` /
+# `/ci-fuzz` PR comment.
 #
-# These mirror `task format` / `task lint`; keep the two in sync.
+# These mirror `task format` / `task lint` / `task test-rust-fast` / `task test-python`; keep them in
+# sync.
 
 on:
   pull_request:
@@ -45,3 +47,31 @@ jobs:
       - name: ruff check
         working-directory: ben-py
         run: uvx ruff check .
+
+  rust-test:
+    name: rust tests (fast)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test
+        run: cargo test
+
+  python-test:
+    name: python tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v5
+      - name: sync environment
+        working-directory: ben-py
+        run: uv sync --all-groups
+      - name: build extension
+        working-directory: ben-py
+        run: uv run maturin develop
+      - name: pytest
+        working-directory: ben-py
+        run: uv run pytest tests/
