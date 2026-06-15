@@ -47,6 +47,10 @@ pub const HEADER_TAIL_SIZE: usize = 8;
 /// On-disk byte width of the header CRC32C, stored at the start of the integrity tail.
 pub const HEADER_CHECKSUM_LEN: usize = 4;
 
+/// Byte width of the reserved-zero region after the CRC in the integrity tail. Derived so the tail
+/// layout is governed entirely by [`HEADER_TAIL_SIZE`] and [`HEADER_CHECKSUM_LEN`].
+pub const HEADER_TAIL_RESERVED_LEN: usize = HEADER_TAIL_SIZE - HEADER_CHECKSUM_LEN;
+
 /// Total on-disk size of the header plus its integrity tail. Writers place the first data object at
 /// an offset >= this value, so the tail never has to displace payloads.
 pub const HEADER_WITH_TAIL_SIZE: usize = HEADER_SIZE + HEADER_TAIL_SIZE;
@@ -340,16 +344,15 @@ impl BendlHeader {
         })
     }
 
-    /// Read and parse a fixed header from a `Read` source.
+    /// Parse a fixed 64-byte header from a `Read` source **without** reading or verifying the
+    /// integrity tail. [`read_header_and_verify`] is the gated path every production reader uses;
+    /// this raw primitive exists for tests and tools that only need the header fields. There is no
+    /// matching raw `write_to`: [`write_header_with_tail`] is the only header serializer, so a
+    /// header can never reach disk without its CRC.
     pub fn read_from<R: Read>(reader: &mut R) -> Result<Self, BendlFormatError> {
         let mut buf = [0u8; HEADER_SIZE];
         reader.read_exact(&mut buf)?;
         Self::from_bytes(&buf)
-    }
-
-    /// Write the header to a `Write` sink.
-    pub fn write_to<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        writer.write_all(&self.to_bytes())
     }
 }
 
@@ -388,8 +391,8 @@ pub fn read_header_and_verify<R: Read>(reader: &mut R) -> Result<BendlHeader, Be
     if computed != expected {
         return Err(BendlFormatError::HeaderChecksumMismatch { computed, expected });
     }
-    let reserved: [u8; 4] = tail[HEADER_CHECKSUM_LEN..].try_into().unwrap();
-    if reserved != [0u8; 4] {
+    let reserved: [u8; HEADER_TAIL_RESERVED_LEN] = tail[HEADER_CHECKSUM_LEN..].try_into().unwrap();
+    if reserved != [0u8; HEADER_TAIL_RESERVED_LEN] {
         return Err(BendlFormatError::HeaderTailReservedNonZero { bytes: reserved });
     }
     Ok(header)
@@ -676,7 +679,7 @@ pub enum BendlFormatError {
     #[error("header tail reserved bytes are non-zero: {bytes:02X?}")]
     HeaderTailReservedNonZero {
         /// The reserved bytes as found on disk.
-        bytes: [u8; 4],
+        bytes: [u8; HEADER_TAIL_RESERVED_LEN],
     },
 
     /// An I/O error occurred while reading or writing the format layer.

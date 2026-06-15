@@ -5,11 +5,9 @@ use super::extract::run_extract;
 use super::helpers::format_from_path;
 use super::inspect::run_inspect;
 use crate::codec::encode::encode_jsonl_to_ben;
-use crate::io::bundle::format::{
-    AssignmentFormat, BendlHeader, HEADER_SIZE, HEADER_WITH_TAIL_SIZE,
-};
+use crate::io::bundle::format::{AssignmentFormat, BendlHeader, HEADER_WITH_TAIL_SIZE};
 use crate::io::bundle::{BendlReader, BendlWriter};
-use crate::test_utils::{sample_bendl_bytes, unique_path};
+use crate::test_utils::{sample_bendl_bytes, stamp_header, unique_path};
 use clap::Parser;
 use std::io::{BufReader, Cursor, Write};
 use std::path::PathBuf;
@@ -21,14 +19,6 @@ fn write_temp_bendl(name: &str, format: AssignmentFormat) -> PathBuf {
     let buf = sample_bendl_bytes(b"STANDARD BEN FILE\x00fake", format);
     std::fs::write(&path, &buf).unwrap();
     path
-}
-
-fn stamp_bendl_header(bytes: &mut [u8], header: &BendlHeader) {
-    let header_bytes = header.to_bytes();
-    bytes[..HEADER_SIZE].copy_from_slice(&header_bytes);
-    let crc = crc32c::crc32c(&header_bytes);
-    bytes[HEADER_SIZE..HEADER_SIZE + 4].copy_from_slice(&crc.to_le_bytes());
-    bytes[HEADER_SIZE + 4..HEADER_WITH_TAIL_SIZE].fill(0);
 }
 
 #[test]
@@ -251,7 +241,7 @@ fn run_inspect_unknown_format_and_no_sample_count() {
         sample_count: -1,
     };
     let mut bytes = vec![0u8; HEADER_WITH_TAIL_SIZE];
-    stamp_bendl_header(&mut bytes, &header);
+    stamp_header(&mut bytes, &header);
 
     let path = unique_path("inspect_unknown.bendl");
     std::fs::write(&path, bytes).unwrap();
@@ -550,7 +540,7 @@ fn run_extract_stream_allows_unfinalized_when_requested() {
         sample_count: -1,
     };
     let mut buf = vec![0u8; HEADER_WITH_TAIL_SIZE];
-    stamp_bendl_header(&mut buf, &header);
+    stamp_header(&mut buf, &header);
     buf.extend_from_slice(known_stream);
 
     let bendl = unique_path("extract_unfinalized_stream.bendl");
@@ -651,7 +641,7 @@ fn run_inspect_displays_asset_with_no_flags_as_dash() {
         stream_len: 0,
         sample_count: 0,
     };
-    stamp_bendl_header(&mut bytes, &header);
+    stamp_header(&mut bytes, &header);
 
     let bendl = unique_path("inspect_flagless.bendl");
     std::fs::write(&bendl, &bytes).unwrap();

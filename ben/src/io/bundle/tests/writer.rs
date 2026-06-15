@@ -13,6 +13,7 @@ use crate::io::bundle::reader::BendlReader;
 use crate::io::bundle::writer::{AddAssetOptions, BendlAppender, BendlWriteError, BendlWriter};
 use crate::io::reader::BenWireFormat;
 use crate::io::writer::BenStreamWriter;
+use crate::test_utils::restamp_header_crc;
 use crate::BenVariant;
 
 /// Repetitive adjacency-style JSON big enough that xz genuinely beats raw storage (the writer
@@ -1636,15 +1637,6 @@ fn make_ben_stream_bundle(count: usize) -> (Vec<u8>, Vec<Vec<u16>>) {
     let writer = session.finish_into_writer(count as i64);
     let buf = writer.finish().unwrap().into_inner();
     (buf, samples)
-}
-
-/// Recompute the header CRC over `[0, 64)` and rewrite the tail at `[64, 68)`. A test that
-/// deliberately mutates header bytes calls this so the bundle still passes the header-checksum gate
-/// in `open`, letting the test exercise a downstream check. Mirrors what the writer does on
-/// finalize.
-fn restamp_header_crc(bytes: &mut [u8]) {
-    let crc = crc32c::crc32c(&bytes[..HEADER_SIZE]);
-    bytes[HEADER_SIZE..HEADER_SIZE + 4].copy_from_slice(&crc.to_le_bytes());
 }
 
 /// Corrupt the stored `stream_checksum` field in-place by flipping a byte at header offset 20, then

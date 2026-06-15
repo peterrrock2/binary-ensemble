@@ -14,7 +14,8 @@ use std::ops::Range;
 
 use crate::codec::encode::encode_jsonl_to_ben;
 use crate::io::bundle::format::{
-    AssignmentFormat, DIRECTORY_ENTRY_HEADER_SIZE, HEADER_SIZE, HEADER_WITH_TAIL_SIZE,
+    AssignmentFormat, BendlHeader, DIRECTORY_ENTRY_HEADER_SIZE, HEADER_CHECKSUM_LEN, HEADER_SIZE,
+    HEADER_WITH_TAIL_SIZE,
 };
 use crate::io::bundle::BendlWriter;
 use crate::BenVariant;
@@ -72,6 +73,27 @@ pub fn sample_bendl_bytes(stream: &[u8], format: AssignmentFormat) -> Vec<u8> {
         writer.finish().unwrap();
     }
     buf
+}
+
+/// Recompute the mandatory header CRC over `[0, HEADER_SIZE)` into the integrity tail, in place.
+/// Use after poking raw header bytes (the [`BendlBytes`] field setters call this for you) so the
+/// bundle still passes the open-time header-checksum gate. A buffer too short to hold the full tail
+/// is left unchanged. This is the test layer's single definition of a valid header tail, mirroring
+/// the writer's `write_header_with_tail`.
+pub fn restamp_header_crc(bytes: &mut [u8]) {
+    if bytes.len() >= HEADER_WITH_TAIL_SIZE {
+        let crc = crc32c::crc32c(&bytes[..HEADER_SIZE]);
+        bytes[HEADER_SIZE..HEADER_SIZE + HEADER_CHECKSUM_LEN].copy_from_slice(&crc.to_le_bytes());
+    }
+}
+
+/// Serialize `header` into `bytes[..HEADER_SIZE]`, stamp the header CRC into the tail, and zero the
+/// reserved tail bytes: the in-memory equivalent of the writer's `write_header_with_tail`, for
+/// tests that assemble a bundle buffer by hand. `bytes` must be at least `HEADER_WITH_TAIL_SIZE`.
+pub fn stamp_header(bytes: &mut [u8], header: &BendlHeader) {
+    bytes[..HEADER_SIZE].copy_from_slice(&header.to_bytes());
+    restamp_header_crc(bytes);
+    bytes[HEADER_SIZE + HEADER_CHECKSUM_LEN..HEADER_WITH_TAIL_SIZE].fill(0);
 }
 
 /// A field of the fixed `.bendl` header, identified by name rather than by raw byte offset.
@@ -197,22 +219,20 @@ impl BendlBytes {
         self
     }
 
-    /// Recompute the mandatory header CRC tail in place, returning `self` for chaining. Use after
-    /// poking raw header bytes (outside the [`HeaderField`] setters, which already re-stamp) so the
-    /// bundle still passes the open-time header-checksum gate.
+    /// Recompute the header CRC tail in place, returning `self` for chaining. Use after poking raw
+    /// header bytes (outside the [`HeaderField`] setters, which already re-stamp) so the bundle
+    /// still passes the open-time header-checksum gate.
     pub fn restamp_header_crc(mut self) -> Self {
         self.restamp_header_crc_tail();
         self
     }
 
-    /// Recompute the header CRC over `[0, 64)` into the tail at `[64, 68)`, so a header-field patch
-    /// leaves a bundle that still passes the open-time gate and the test can probe the patched
-    /// field's own behavior. Truncated adversarial fixtures without the full tail are left as-is.
+    /// Recompute the header CRC over `[0, 64)` into the tail, so a header-field patch leaves a
+    /// bundle that still passes the open-time gate and the test can probe the patched field's own
+    /// behavior. Delegates to the shared [`restamp_header_crc`] so the test layer keeps one
+    /// definition of a valid header tail; truncated fixtures without the full tail are left as-is.
     fn restamp_header_crc_tail(&mut self) {
-        if self.bytes.len() >= HEADER_WITH_TAIL_SIZE {
-            let crc = crc32c::crc32c(&self.bytes[..HEADER_SIZE]);
-            self.bytes[HEADER_SIZE..HEADER_SIZE + 4].copy_from_slice(&crc.to_le_bytes());
-        }
+        restamp_header_crc(&mut self.bytes);
     }
 
     /// The directory's leading `u32` entry count.

@@ -12,6 +12,7 @@ use crate::io::bundle::format::{
 use crate::io::bundle::reader::{
     validate_directory_entries, validate_entry_extents, BendlReader, BundleValidationError,
 };
+use crate::test_utils::stamp_header;
 
 /// Stamp a valid CRC32C and `ASSET_FLAG_CHECKSUM` onto a hand-built directory entry whose on-disk
 /// payload bytes are `payload`. Use this in test fixtures so the entry round-trips through the
@@ -21,14 +22,6 @@ fn with_crc(mut entry: BendlDirectoryEntry, payload: &[u8]) -> BendlDirectoryEnt
     entry.asset_flags |= ASSET_FLAG_CHECKSUM;
     entry.checksum = Some(crc32c::crc32c(payload).to_le_bytes().to_vec());
     entry
-}
-
-fn stamp_header(bytes: &mut [u8], header: &BendlHeader) {
-    let header_bytes = header.to_bytes();
-    bytes[..HEADER_SIZE].copy_from_slice(&header_bytes);
-    let crc = crc32c::crc32c(&header_bytes);
-    bytes[HEADER_SIZE..HEADER_SIZE + 4].copy_from_slice(&crc.to_le_bytes());
-    bytes[HEADER_SIZE + 4..HEADER_WITH_TAIL_SIZE].fill(0);
 }
 
 /// Build a complete in-memory finalized bundle with two assets: an xz-compressed `graph.json` and a
