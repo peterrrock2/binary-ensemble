@@ -52,6 +52,18 @@ pub(super) fn pop_frame_from_overflow(
 /// overflow bytes the frame consumed, and its repetition count.
 type PoppedTwoDeltaFrame = (Vec<(u16, u16)>, usize, u16);
 
+/// A chunk's accumulated `total_runs` is a sum of up to ~4.3 billion `u32`-derived run counts from
+/// an untrusted stream, so on a corrupt or malicious chunk it can wrap `usize` even on a 64-bit
+/// target. A wrapped `total_len` would then slip past the bounds check and panic on an out-of-range
+/// index, so a wrap is reported as `InvalidData` instead. (Single `u32 * small constant` lengths
+/// elsewhere can't overflow a 64-bit `usize`, which this build assumes, so they stay plain.)
+fn twodelta_len_overflow() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        "XBEN TwoDelta chunk: run-count total overflowed usize",
+    )
+}
+
 /// Try to extract one complete TwoDelta frame from the buffered overflow.
 fn pop_twodelta_frame_from_overflow(overflow: &[u8]) -> Option<io::Result<PoppedTwoDeltaFrame>> {
     let tag = *overflow.first()?;
@@ -62,8 +74,8 @@ fn pop_twodelta_frame_from_overflow(overflow: &[u8]) -> Option<io::Result<Popped
             }
             let run_count =
                 u32::from_be_bytes([overflow[1], overflow[2], overflow[3], overflow[4]]) as usize;
-            let payload_len = run_count * 4;
-            let total_len = 1 + 4 + payload_len + 2;
+            // tag (1) + run_count field (4) + run_count * 4 payload bytes + trailing count (2).
+            let total_len = 1 + 4 + run_count * 4 + 2;
             if overflow.len() < total_len {
                 return None;
             }
@@ -111,15 +123,16 @@ fn pop_twodelta_frame_from_overflow(overflow: &[u8]) -> Option<io::Result<Popped
 
 /// Try to parse a columnar TwoDelta chunk from the overflow buffer.
 ///
-/// If the overflow starts with the chunk tag and contains enough bytes for the full chunk, all
-/// frames are decoded and pushed onto `chunk_queue`. Returns `true` on success, `false` when the
-/// overflow is incomplete.
-fn try_parse_twodelta_chunk<R: Read>(inner: &mut XBenInner<R>) -> bool {
+/// Returns `Some(Ok(()))` when a full chunk was decoded and pushed onto `chunk_queue`,
+/// `Some(Err(..))` on a corrupt chunk (length arithmetic that would wrap, or a zero-length run),
+/// and `None` when the overflow does not start with the chunk tag or does not yet hold the whole
+/// chunk.
+fn try_parse_twodelta_chunk<R: Read>(inner: &mut XBenInner<R>) -> Option<io::Result<()>> {
     if inner.overflow.first() != Some(&XBEN_TWODELTA_CHUNK_TAG) {
-        return false;
+        return None;
     }
     if inner.overflow.len() < 5 {
-        return false;
+        return None;
     }
 
     let n_frames = u32::from_be_bytes([
@@ -129,18 +142,20 @@ fn try_parse_twodelta_chunk<R: Read>(inner: &mut XBenInner<R>) -> bool {
         inner.overflow[4],
     ]) as usize;
 
+    // Each frame contributes a 4-byte pair, a 2-byte count, and a 4-byte run count to the fixed
+    // region. These are single `u32 * small constant` products, which cannot overflow a 64-bit
+    // usize.
     let header_len: usize = 5;
     let pairs_len = n_frames * 4;
     let counts_len = n_frames * 2;
     let run_counts_len = n_frames * 4;
     let fixed_len = header_len + pairs_len + counts_len + run_counts_len;
-
     if inner.overflow.len() < fixed_len {
-        return false;
+        return None;
     }
 
     let run_counts_start = header_len + pairs_len + counts_len;
-    let mut total_runs = 0usize;
+    let mut total_runs: usize = 0;
     let mut run_counts = Vec::with_capacity(n_frames);
     for i in 0..n_frames {
         let offset = run_counts_start + i * 4;
@@ -151,19 +166,32 @@ fn try_parse_twodelta_chunk<R: Read>(inner: &mut XBenInner<R>) -> bool {
             inner.overflow[offset + 3],
         ]) as usize;
         run_counts.push(rc);
-        total_runs += rc;
+        // `total_runs` sums up to ~4.3 billion u32 values, so this is the one place the length math
+        // can wrap a 64-bit usize; a wrap here would make `total_len` small and panic below.
+        total_runs = match total_runs.checked_add(rc) {
+            Some(t) => t,
+            None => return Some(Err(twodelta_len_overflow())),
+        };
     }
 
-    let run_data_len = total_runs * 2;
-    let total_len = fixed_len + run_data_len;
+    let total_len = match total_runs
+        .checked_mul(2)
+        .and_then(|run_data| run_data.checked_add(fixed_len))
+    {
+        Some(n) => n,
+        None => return Some(Err(twodelta_len_overflow())),
+    };
     if inner.overflow.len() < total_len {
-        return false;
+        return None;
     }
 
     let pairs_start = header_len;
     let counts_start = pairs_start + pairs_len;
     let run_data_start = run_counts_start + run_counts_len;
 
+    // Decode every frame into a local buffer first, so a corrupt run length leaves `chunk_queue`
+    // untouched rather than half-populated.
+    let mut parsed = Vec::with_capacity(n_frames);
     let mut run_cursor = run_data_start;
     for (i, &rc) in run_counts.iter().enumerate() {
         let po = pairs_start + i * 4;
@@ -176,18 +204,28 @@ fn try_parse_twodelta_chunk<R: Read>(inner: &mut XBenInner<R>) -> bool {
 
         let mut run_lengths = Vec::with_capacity(rc);
         for _ in 0..rc {
-            run_lengths.push(u16::from_be_bytes([
-                inner.overflow[run_cursor],
-                inner.overflow[run_cursor + 1],
-            ]));
+            let len =
+                u16::from_be_bytes([inner.overflow[run_cursor], inner.overflow[run_cursor + 1]]);
+            // Match the full-frame path: reject a zero-length run at parse time rather than
+            // deferring it to `apply_twodelta_runs_to_assignment`.
+            if len == 0 {
+                return Some(Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "XBEN TwoDelta chunk frame contains a zero-length run",
+                )));
+            }
+            run_lengths.push(len);
             run_cursor += 2;
         }
 
-        inner.chunk_queue.push_back((pair, run_lengths, count));
+        parsed.push((pair, run_lengths, count));
     }
 
+    for frame in parsed {
+        inner.chunk_queue.push_back(frame);
+    }
     inner.overflow.drain(..total_len);
-    true
+    Some(Ok(()))
 }
 
 /// Decode one raw ben32 frame from an XBEN stream into a full assignment vector.
@@ -246,8 +284,10 @@ pub(super) fn next_record_xben<R: Read>(
                     });
                 }
 
-                if try_parse_twodelta_chunk(inner) {
-                    continue;
+                match try_parse_twodelta_chunk(inner) {
+                    Some(Ok(())) => continue,
+                    Some(Err(e)) => return Some(Err(e)),
+                    None => {}
                 }
 
                 if let Some(parsed) = pop_twodelta_frame_from_overflow(&inner.overflow) {
@@ -328,4 +368,92 @@ pub(super) fn count_samples_xben<R: Read>(
         total += cnt as usize;
     }
     Ok(total)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{pop_twodelta_frame_from_overflow, try_parse_twodelta_chunk};
+    use crate::io::reader::stream_reader::XBenInner;
+    use crate::io::reader::twodelta::{XBEN_TWODELTA_CHUNK_TAG, XBEN_TWODELTA_FULL_TAG};
+    use std::collections::VecDeque;
+    use std::io::{BufReader, Cursor, ErrorKind};
+    use xz2::read::XzDecoder;
+
+    fn inner_with_overflow(overflow: Vec<u8>) -> XBenInner<Cursor<Vec<u8>>> {
+        // The xz reader is never touched: every test pre-fills `overflow` with the whole chunk.
+        XBenInner {
+            xz: BufReader::new(XzDecoder::new(Cursor::new(Vec::new()))),
+            overflow,
+            buf: vec![0u8; 64].into_boxed_slice(),
+            previous_assignment: None,
+            chunk_queue: VecDeque::new(),
+        }
+    }
+
+    /// Build the columnar bytes for a TwoDelta chunk from `(pair, count, run_lengths)` frames.
+    fn build_chunk(frames: &[((u16, u16), u16, Vec<u16>)]) -> Vec<u8> {
+        let mut v = vec![XBEN_TWODELTA_CHUNK_TAG];
+        v.extend_from_slice(&(frames.len() as u32).to_be_bytes());
+        for ((a, b), _, _) in frames {
+            v.extend_from_slice(&a.to_be_bytes());
+            v.extend_from_slice(&b.to_be_bytes());
+        }
+        for (_, count, _) in frames {
+            v.extend_from_slice(&count.to_be_bytes());
+        }
+        for (_, _, runs) in frames {
+            v.extend_from_slice(&(runs.len() as u32).to_be_bytes());
+        }
+        for (_, _, runs) in frames {
+            for &r in runs {
+                v.extend_from_slice(&r.to_be_bytes());
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn try_parse_twodelta_chunk_decodes_valid_chunk() {
+        let overflow = build_chunk(&[((1u16, 2u16), 1u16, vec![3u16, 4u16])]);
+        let mut inner = inner_with_overflow(overflow);
+        assert!(matches!(try_parse_twodelta_chunk(&mut inner), Some(Ok(()))));
+        assert_eq!(inner.chunk_queue.len(), 1);
+        assert_eq!(inner.chunk_queue[0], ((1u16, 2u16), vec![3u16, 4u16], 1u16));
+        assert!(
+            inner.overflow.is_empty(),
+            "the whole chunk should be drained"
+        );
+    }
+
+    #[test]
+    fn try_parse_twodelta_chunk_rejects_zero_run() {
+        // A single zero-length run must be rejected at parse, and must leave `chunk_queue` empty
+        // (the decode is transactional).
+        let overflow = build_chunk(&[((1u16, 2u16), 1u16, vec![0u16])]);
+        let mut inner = inner_with_overflow(overflow);
+        match try_parse_twodelta_chunk(&mut inner) {
+            Some(Err(e)) => assert_eq!(e.kind(), ErrorKind::InvalidData),
+            other => panic!("expected InvalidData error, got {other:?}"),
+        }
+        assert!(inner.chunk_queue.is_empty());
+    }
+
+    #[test]
+    fn try_parse_twodelta_chunk_huge_n_frames_is_incomplete_not_a_panic() {
+        // n_frames = u32::MAX makes the fixed region enormous; with only a few bytes buffered the
+        // parser must report "incomplete" without allocating or panicking on the length arithmetic.
+        let mut overflow = vec![XBEN_TWODELTA_CHUNK_TAG];
+        overflow.extend_from_slice(&u32::MAX.to_be_bytes());
+        overflow.extend_from_slice(&[0u8; 4]);
+        let mut inner = inner_with_overflow(overflow);
+        assert!(try_parse_twodelta_chunk(&mut inner).is_none());
+    }
+
+    #[test]
+    fn pop_twodelta_full_frame_huge_run_count_is_incomplete_not_a_panic() {
+        let mut overflow = vec![XBEN_TWODELTA_FULL_TAG];
+        overflow.extend_from_slice(&u32::MAX.to_be_bytes());
+        overflow.extend_from_slice(&[0u8; 4]);
+        assert!(pop_twodelta_frame_from_overflow(&overflow).is_none());
+    }
 }

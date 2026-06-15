@@ -12,7 +12,7 @@ use binary_ensemble::io::bundle::{BendlReader, BendlWriter};
 use pyo3::exceptions::{PyException, PyIOError};
 use pyo3::prelude::*;
 use std::fs::File;
-use std::io::{BufReader, Cursor, Read, Write};
+use std::io::BufReader;
 use std::path::PathBuf;
 
 /// Recompress the BEN stream of the bundle at `in_file` to XBEN, writing a new bundle at
@@ -79,24 +79,6 @@ fn recompress_bundle_impl(in_file: PathBuf, out_file: PathBuf, overwrite: bool) 
         });
     }
 
-    // Recompress the BEN stream to XBEN bytes (skipped for an empty stream, which has no banner).
-    let xben_bytes = if empty {
-        Vec::new()
-    } else {
-        let mut ben_bytes = Vec::new();
-        let mut stream = reader
-            .assignment_stream_reader()
-            .map_err(|e| PyException::new_err(format!("Failed to open stream region: {e}")))?;
-        stream
-            .read_to_end(&mut ben_bytes)
-            .map_err(|e| PyIOError::new_err(format!("Failed to read BEN stream: {e}")))?;
-        let mut out = Vec::new();
-        encode_ben_to_xben(Cursor::new(ben_bytes), &mut out, None, None, None, None).map_err(
-            |e| PyException::new_err(format!("Failed to recompress BEN stream to XBEN: {e}")),
-        )?;
-        out
-    };
-
     // Build the new XBEN bundle.
     let (guard, buf) = TempOutput::create(&out_file, overwrite)?;
     let mut writer = BendlWriter::new(buf, AssignmentFormat::Xben)
@@ -105,13 +87,21 @@ fn recompress_bundle_impl(in_file: PathBuf, out_file: PathBuf, overwrite: bool) 
         add_preserved(&mut writer, asset).map_err(map_bundle_err)?;
     }
 
+    // An empty stream has no banner to re-encode, so finalize the assets-only bundle directly.
     let out = if empty {
         writer.finish().map_err(map_bundle_err)?
     } else {
+        // Re-encode the BEN stream straight into the XBEN session, frame by frame, instead of
+        // buffering the whole (potentially multi-GB) stream and its XBEN form in memory. Driving
+        // the verified source reader to EOF also checks the source stream CRC as a side
+        // effect.
         let mut session = writer.into_stream_session().map_err(map_bundle_err)?;
-        session
-            .write_all(&xben_bytes)
-            .map_err(|e| PyIOError::new_err(format!("Failed to write XBEN stream: {e}")))?;
+        let stream = reader
+            .assignment_stream_reader()
+            .map_err(|e| PyException::new_err(format!("Failed to open stream region: {e}")))?;
+        encode_ben_to_xben(BufReader::new(stream), &mut session, None, None, None, None).map_err(
+            |e| PyException::new_err(format!("Failed to recompress BEN stream to XBEN: {e}")),
+        )?;
         let writer = session.finish_into_writer(sample_count);
         writer.finish().map_err(map_bundle_err)?
     };

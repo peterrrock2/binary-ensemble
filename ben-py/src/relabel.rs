@@ -18,7 +18,7 @@ use pyo3::exceptions::{PyException, PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Cursor, Read, Write};
+use std::io::BufReader;
 use std::path::PathBuf;
 
 /// Invert a stored `node_permutation_old_to_new` object into the dense `new -> old` map that
@@ -152,21 +152,6 @@ fn relabel_bundle_impl(
         });
     }
 
-    // Read the BEN stream and relabel it into the new node order.
-    let mut ben_bytes = Vec::new();
-    reader
-        .assignment_stream_reader()
-        .map_err(|e| PyException::new_err(format!("Failed to open stream region: {e}")))?
-        .read_to_end(&mut ben_bytes)
-        .map_err(|e| PyIOError::new_err(format!("Failed to read BEN stream: {e}")))?;
-    let mut relabeled = Vec::new();
-    relabel_ben_file(
-        Cursor::new(ben_bytes),
-        &mut relabeled,
-        RelabelOptions::node_permutation(new_to_old),
-    )
-    .map_err(|e| PyException::new_err(format!("Failed to relabel BEN stream: {e}")))?;
-
     // Write the new bundle: reordered graph + permutation map (canonical), then the rest.
     let (guard, buf) = TempOutput::create(&out_file, overwrite)?;
     let mut writer = BendlWriter::new(buf, AssignmentFormat::Ben)
@@ -189,10 +174,19 @@ fn relabel_bundle_impl(
         add_preserved(&mut writer, asset).map_err(map_bundle_err)?;
     }
 
+    // Relabel the BEN stream straight from the source into the new session, frame by frame, instead
+    // of buffering the whole (potentially multi-GB) stream in memory. Driving the verified source
+    // reader to EOF also checks the source stream CRC as a side effect.
     let mut session = writer.into_stream_session().map_err(map_bundle_err)?;
-    session
-        .write_all(&relabeled)
-        .map_err(|e| PyIOError::new_err(format!("Failed to write relabeled stream: {e}")))?;
+    let stream = reader
+        .assignment_stream_reader()
+        .map_err(|e| PyException::new_err(format!("Failed to open stream region: {e}")))?;
+    relabel_ben_file(
+        BufReader::new(stream),
+        &mut session,
+        RelabelOptions::node_permutation(new_to_old),
+    )
+    .map_err(|e| PyException::new_err(format!("Failed to relabel BEN stream: {e}")))?;
     let writer = session.finish_into_writer(sample_count);
     let out = writer.finish().map_err(map_bundle_err)?;
     guard.commit_writer(out)?;
