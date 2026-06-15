@@ -2,7 +2,7 @@
 
 The **docs are the single source of truth**. The sample data the recipes read
 (``ensemble.bendl``, ``plans.jsonl``, ``chain.ben`` / ``chain.xben``, ``gerrymandria.json``)
-is created by the "Sample data" snippet in ``docs/how-to/index.md`` (marked
+is created by the "Sample data" snippet in ``docs/quick-help/index.md`` (marked
 ``<!-- docs-test: setup -->``) which is shown to readers *and* run by this test. This runner
 contains no fixture-creation logic and no per-page knowledge: it discovers the docs, runs the
 setup snippet(s), then runs each page's blocks. Editing the docs never requires editing this

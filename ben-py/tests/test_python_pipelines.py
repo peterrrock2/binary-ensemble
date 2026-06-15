@@ -406,7 +406,7 @@ def test_codec_helpers_reject_same_path_missing_input_and_bad_json(
 ) -> None:
     src = tmp_path / "src.jsonl"
     write_jsonl([[1, 1, 2]], src)
-    with pytest.raises(OSError, match="must differ"):
+    with pytest.raises(ValueError, match="must differ"):
         encode_jsonl_to_ben(src, src, overwrite=True, variant="standard")
     with pytest.raises(OSError, match="does not exist"):
         encode_jsonl_to_ben(tmp_path / "missing.jsonl", tmp_path / "o.ben", overwrite=True)
@@ -421,7 +421,7 @@ def test_encode_ben_to_xben_error_paths(tmp_path: Path) -> None:
         encode_ben_to_xben(tmp_path / "missing.ben", tmp_path / "o.xben", overwrite=True)
     bad_ben = tmp_path / "bad.ben"
     bad_ben.write_bytes(b"garbage")
-    with pytest.raises(OSError, match="must differ"):
+    with pytest.raises(ValueError, match="must differ"):
         encode_ben_to_xben(bad_ben, bad_ben, overwrite=True)
     with pytest.raises(OSError, match="Failed to convert BEN to XBEN"):
         encode_ben_to_xben(bad_ben, tmp_path / "o.xben", overwrite=True)
@@ -438,7 +438,7 @@ def test_decode_helpers_error_paths(tmp_path: Path) -> None:
     bad_xben.write_bytes(b"garbage")
     with pytest.raises(OSError, match="Failed to convert XBEN to BEN"):
         decode_xben_to_ben(bad_xben, tmp_path / "o.ben", overwrite=True)
-    with pytest.raises(OSError, match="must differ"):
+    with pytest.raises(ValueError, match="must differ"):
         decode_xben_to_jsonl(bad_xben, bad_xben, overwrite=True)
     src = tmp_path / "src.jsonl"
     write_jsonl([[1, 2, 3]], src)

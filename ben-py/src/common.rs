@@ -77,7 +77,9 @@ pub fn parse_variant(variant: Option<&str>) -> PyResult<BenVariant> {
 
 pub fn validate_input_output_paths(in_file: &PathBuf, out_file: &PathBuf) -> PyResult<()> {
     if in_file == out_file {
-        return Err(PyIOError::new_err("Input and output paths must differ."));
+        // A path collision is a bad-argument error, not an I/O failure. (In-place transforms that
+        // intentionally support `src == dest` route through a temp file instead of this helper.)
+        return Err(PyValueError::new_err("Input and output paths must differ."));
     }
     if !in_file.exists() {
         return Err(PyIOError::new_err(format!(

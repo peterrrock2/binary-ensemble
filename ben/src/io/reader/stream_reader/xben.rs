@@ -34,6 +34,11 @@ pub(super) fn pop_frame_from_overflow(
         if overflow.len() < 6 {
             return None;
         }
+        // MkvChain records are `[4-byte-aligned ben32 body + 4-byte zero sentinel] + 2-byte
+        // repetition count`. The trailing 2-byte count shifts each subsequent record off the 4-byte
+        // ben32 grid, so a sentinel can begin at any even offset; the scan must step by 2, not 4,
+        // to find them all. A false 4-zero window at an off-grid offset would require a
+        // zero-count run, which is rejected upstream.
         for i in (3..overflow.len().saturating_sub(2)).step_by(2) {
             if overflow[i - 3..=i] == [0, 0, 0, 0] {
                 let count_hi = overflow[i + 1];

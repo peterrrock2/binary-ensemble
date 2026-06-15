@@ -151,7 +151,10 @@ class BendlEncoder:
         file_path (StrPath): Output path for the new bundle (``str`` or ``os.PathLike``, e.g.
             ``pathlib.Path``). Must not exist unless ``overwrite=True``.
         overwrite (bool, optional): Replace an existing file at ``file_path``. Default is
-            ``False``.
+            ``False``. Unlike the one-shot transforms, this truncates the existing file when the
+            encoder opens it, so an interrupted write leaves a truncated, unfinalized bundle
+            (recoverable with ``allow_unfinalized``) rather than the original file. Write to a
+            fresh path and rename if the existing file is precious.
 
     Raises:
         OSError: If ``file_path`` exists and ``overwrite`` is ``False``, or it cannot be created.

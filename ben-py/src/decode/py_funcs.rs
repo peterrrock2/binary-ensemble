@@ -19,6 +19,7 @@ use std::path::PathBuf;
 ///
 /// Raises:
 ///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``, or the conversion fails.
+///     ValueError: If ``in_file`` and ``out_file`` are the same path.
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
@@ -60,6 +61,7 @@ pub fn decode_xben_to_ben(
 ///
 /// Raises:
 ///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``, or the conversion fails.
+///     ValueError: If ``in_file`` and ``out_file`` are the same path.
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]
@@ -101,6 +103,7 @@ pub fn decode_xben_to_jsonl(
 ///
 /// Raises:
 ///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``, or the conversion fails.
+///     ValueError: If ``in_file`` and ``out_file`` are the same path.
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False)")]

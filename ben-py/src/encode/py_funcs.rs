@@ -28,6 +28,7 @@ use std::path::PathBuf;
 ///
 /// Raises:
 ///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``, or the conversion fails.
+///     ValueError: If ``in_file`` and ``out_file`` are the same path.
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false, n_threads=None, compression_level=None, xz_block_size=None))]
 #[pyo3(
@@ -85,7 +86,8 @@ pub fn encode_ben_to_xben(
 ///
 /// Raises:
 ///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``, or the conversion fails.
-///     ValueError: If ``variant`` is not a recognized variant name.
+///     ValueError: If ``variant`` is not a recognized variant name, or ``in_file`` and
+///         ``out_file`` are the same path.
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false, variant="twodelta"))]
 #[pyo3(text_signature = "(in_file, out_file, overwrite=False, variant='twodelta')")]
@@ -139,7 +141,8 @@ pub fn encode_jsonl_to_ben(
 ///
 /// Raises:
 ///     OSError: If ``out_file`` exists and ``overwrite`` is ``False``, or the conversion fails.
-///     ValueError: If ``variant`` is not a recognized variant name.
+///     ValueError: If ``variant`` is not a recognized variant name, or ``in_file`` and
+///         ``out_file`` are the same path.
 #[pyfunction]
 #[pyo3(signature = (in_file, out_file, overwrite=false, variant="twodelta", n_threads=None, compression_level=None, xz_block_size=None))]
 #[pyo3(
