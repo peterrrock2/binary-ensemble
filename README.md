@@ -9,9 +9,9 @@ mostly long runs of the same district id and consecutive plans barely differ. BE
 compression format and toolkit built for exactly this data. It was built as an analogue to
 [PCompress](https://github.com/mggg/pcompress) and interoperates with it.
 
-> A real 100k-plan ensemble on Colorado's ~140k census blocks is **27 GB** as JSONL.
-> Relabeled and sorted by `GEOID20` it becomes a **~550 MB** BEN file, and then a **~6 MB**
-> XBEN file — over a **4500× reduction**, fully lossless.
+> A real 50k-plan ensemble on Colorado's ~140k census blocks is **13.5 GB** as JSONL.
+> Relabeled and sorted by `GEOID20` it becomes a **~280 MB** BEN file, and then a **5.6 MB**
+> XBEN file — over a **2,400× reduction**, fully lossless.
 
 The expected input is canonicalized JSONL, one plan per line:
 
@@ -105,10 +105,10 @@ same district id shrinks the files dramatically. `ben` provides the two big leve
    encode identically:
 
    ```bash
-   ben canonicalize 100k_CO_chain.jsonl.ben
-   # rewrites 100k_CO_chain.jsonl.ben in place
+   ben canonicalize 50k_CO_chain.ben
+   # rewrites 50k_CO_chain.ben in place
    # (pass --output-file to write elsewhere, or --add-suffix for
-   #  100k_CO_chain_first_seen_relabeled.ben)
+   #  50k_CO_chain_first_seen_relabeled.ben)
    ```
 
 2. **Node reordering (`ben relabel`).** Nearby geographic units tend to share a district, so
@@ -116,21 +116,21 @@ same district id shrinks the files dramatically. `ben` provides the two big leve
    `--ordering mlc` / `--ordering rcm`) turns each plan into a handful of long runs:
 
    ```bash
-   ben relabel 100k_CO_chain.jsonl.ben -d CO_small.json -k GEOID20 -o 100k_CO_chain_sorted.ben
-   # -> 100k_CO_chain_sorted.ben              (the rewritten ensemble)
+   ben relabel 50k_CO_chain.ben -d CO_small.json -k GEOID20 -o 50k_CO_chain_sorted.ben
+   # -> 50k_CO_chain_sorted.ben               (the rewritten ensemble)
    # -> CO_small_sorted_by_GEOID20.json       (the reordered dual graph)
    # -> CO_small_sorted_by_GEOID20_map.json   (the reversible permutation map)
    ```
 
    Without `-o`/`--output-file` the relabeled ensemble lands at
-   `100k_CO_chain_sorted_by_GEOID20.ben` next to the input.
+   `50k_CO_chain_sorted_by_GEOID20.ben` next to the input.
 
 To switch BEN variant without relabeling, use `ben reencode --output-variant <variant>`.
 
 On the Colorado example ([`example/CO_small.json`](./example/CO_small.json), with the
-100k-plan ensemble in [`example/100k_CO_chain.jsonl.xben`](./example/100k_CO_chain.jsonl.xben)),
-this takes the BEN file from ~7 GB to ~550 MB, and the final `ben xencode` brings it to
-~6 MB.
+50k-plan ensemble in [`example/50k_CO_chain.xben`](./example/50k_CO_chain.xben)),
+this takes the BEN file from ~3.6 GB to ~280 MB, and the final `ben xencode` brings it to
+5.6 MB.
 
 **A note on speed:** XBEN _decoding_ is fast — a large file extracts in minutes. High-ratio
 XBEN _encoding_ is slow (an hour or more for block-level ensembles; ~10 minutes for VTD-level

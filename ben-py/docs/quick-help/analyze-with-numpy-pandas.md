@@ -25,7 +25,7 @@ print(ensemble.shape)        # (120, 64): one row per sample, one column per nod
 ```{admonition} Will it fit?
 :class: warning
 The array costs `n_samples × n_nodes × 2` bytes at `uint16`. A 10,000-plan ensemble on a
-10,000-node graph is a comfortable 200 MB — but 100k plans on 140k census blocks is 28 GB.
+10,000-node graph is a comfortable 200 MB — but 50k plans on 140k census blocks is 14 GB.
 For ensembles that big, [subsample](subsample.md) before stacking, or use the streaming
 pattern at the end of this page.
 ```

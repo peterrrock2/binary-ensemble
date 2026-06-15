@@ -17,9 +17,9 @@ the whole thing.
 `binary-ensemble` is the Python interface to the
 [binary-ensemble](https://crates.io/crates/binary-ensemble) Rust library.
 
-> A real 100k-plan ensemble on Colorado's ~140k census blocks is **27 GB** as JSONL.
-> Reordered by `GEOID20` it compresses to a **~550 MB** BEN stream, and then to a **~6 MB**
-> XBEN file — over a **4500× reduction**, fully lossless.
+> A real 50k-plan ensemble on Colorado's ~140k census blocks is **13.5 GB** as JSONL.
+> Reordered by `GEOID20` it compresses to a **~280 MB** BEN stream, and then to a **5.6 MB**
+> XBEN file — over a **2,400× reduction**, fully lossless.
 
 ## Install
 

@@ -10,14 +10,14 @@ frames. This is the format you _work_ with — it supports reading any sample, r
 ensemble, and [subsampling](../quick-help/subsample.md) without decompressing everything.
 
 - **Fast** to write and read.
-- Already much smaller than JSONL (the Colorado example: 27 GB → ~550 MB).
+- Already much smaller than JSONL (the Colorado example: 13.5 GB → ~280 MB).
 - The format the `BenEncoder` / `BenDecoder` stream classes produce and consume.
 
 ## `.xben` — the storage format
 
 A BEN stream wrapped in [LZMA2](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm).
 LZMA2 exploits the repetition _across_ plans that bit-packing alone can't reach, taking the
-Colorado example from ~550 MB down to ~6 MB.
+Colorado example from ~280 MB down to 5.6 MB.
 
 ```{admonition} XBEN is for storage and transfer, not active work
 :class: important

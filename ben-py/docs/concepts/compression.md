@@ -102,8 +102,8 @@ recompress, where every byte saved in BEN is amplified.
 
 ```{admonition} This is where the headline number comes from
 :class: tip
-The Colorado example: 100k plans on ~140k census blocks is **27 GB** of JSONL. Reordered by
-`GEOID20`, the BEN stream is **~550 MB**; compressed to XBEN it's **~6 MB** — over **4500×**
+The Colorado example: 50k plans on ~140k census blocks is **13.5 GB** of JSONL. Reordered by
+`GEOID20`, the BEN stream is **~280 MB**; compressed to XBEN it's **5.6 MB** — over **2,400×**
 smaller. Without the reorder, the same XBEN is far larger.
 ```
 

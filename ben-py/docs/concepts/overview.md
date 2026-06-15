@@ -15,8 +15,8 @@ line:
 ...
 ```
 
-This is simple and portable, but it does not scale. A 100,000-plan ensemble on Colorado's
-~140,000 census blocks is **27 GB** of JSONL. Most of that is redundancy: each assignment
+This is simple and portable, but it does not scale. A 50,000-plan ensemble on Colorado's
+~140,000 census blocks is **13.5 GB** of JSONL. Most of that is redundancy: each assignment
 is mostly long runs of the same district id, and consecutive plans differ only slightly.
 
 ## What BEN does
@@ -36,8 +36,8 @@ plans.
 
 ```{admonition} The headline result
 :class: tip
-That 27 GB Colorado JSONL ensemble, reordered by `GEOID20`, becomes a **~550 MB** BEN stream,
-and then a **~6 MB** XBEN file — a **>4500×** reduction, completely lossless. The biggest
+That 13.5 GB Colorado JSONL ensemble, reordered by `GEOID20`, becomes a **~280 MB** BEN stream,
+and then a **5.6 MB** XBEN file — a **>2,400×** reduction, completely lossless. The biggest
 single lever is *node reordering*; see [Why reordering shrinks files](compression.md).
 ```
 
