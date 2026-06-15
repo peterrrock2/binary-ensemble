@@ -64,7 +64,9 @@ pub fn extract_assignment_ben<R: Read>(
     }
 
     let mut current_sample = 1;
-    let mut inner_decoder = BenStreamReader::from_ben(&mut reader).map_err(io::Error::from)?;
+    let mut inner_decoder = BenStreamReader::from_ben(&mut reader)
+        .map_err(io::Error::from)?
+        .silent(true);
 
     if inner_decoder.variant() == BenVariant::TwoDelta {
         let mut found = None;
@@ -127,7 +129,9 @@ pub fn extract_assignment_ben_seek<R: Read + Seek>(
     reader.seek(SeekFrom::Start(snapshot_offset))?;
 
     let mut prefixed = Cursor::new(TWODELTA_BEN_BANNER.as_slice()).chain(&mut reader);
-    let mut decoder = BenStreamReader::from_ben(&mut prefixed).map_err(io::Error::from)?;
+    let mut decoder = BenStreamReader::from_ben(&mut prefixed)
+        .map_err(io::Error::from)?
+        .silent(true);
     let mut current_sample = snapshot_sample;
     let mut found = None;
     decoder

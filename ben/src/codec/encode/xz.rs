@@ -2,6 +2,7 @@ use crate::codec::encode::errors::EncodeError;
 use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::format::FormatError;
 use crate::io::writer::BenStreamWriter;
+use crate::progress::Spinner;
 use std::io::{self, BufRead, Cursor, Read, Result, Write};
 use xz2::stream::{MtStreamBuilder, Stream};
 use xz2::write::XzEncoder;
@@ -159,6 +160,10 @@ pub fn encode_ben_to_xben<R: BufRead, W: Write>(
     })?;
     let mut ben_encoder = BenStreamWriter::for_xben_with_encoder(encoder, variant, chunk_size)?;
     ben_encoder.ingest_ben_stream(Cursor::new(check_buffer).chain(reader))?;
+
+    // The final XZ block is compressed on `finish`; surface an indeterminate spinner so the wait
+    // after the input is consumed has visible feedback.
+    let _ = Spinner::message("Finalizing");
     ben_encoder.finish()?;
     Ok(())
 }

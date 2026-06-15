@@ -59,7 +59,11 @@ pub fn encode_jsonl_to_xben<R: BufRead, W: Write>(
 
         ben_encoder.write_json_value(data)?;
     }
+    drop(spinner);
 
+    // The final XZ block is compressed on `finish`, which can take a while with no per-line
+    // feedback; show an indeterminate spinner so the user knows work is still happening.
+    let _ = Spinner::message("Finalizing");
     ben_encoder.finish()?;
     Ok(())
 }

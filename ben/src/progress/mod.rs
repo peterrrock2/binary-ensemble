@@ -39,11 +39,27 @@ impl Spinner {
     ///
     /// A [`Spinner`] that may or may not have an active indicatif bar.
     pub fn new(prefix: &'static str) -> Self {
+        Self::with_template(format!("{{spinner}} {prefix}: {{pos}}"))
+    }
+
+    /// Build a message-only spinner for an indeterminate step with no running counter, e.g. a final
+    /// compression flush or a single random-access lookup. Returns a no-op spinner when `--quiet`
+    /// is set or when stderr is not a TTY.
+    ///
+    /// # Arguments
+    ///
+    /// * `prefix` - The label shown next to the spinner, e.g. `"Finalizing"`.
+    pub fn message(prefix: &'static str) -> Self {
+        Self::with_template(format!("{{spinner}} {prefix}"))
+    }
+
+    /// Shared construction: a live spinner rendering `template`, or a no-op stub when `--quiet` is
+    /// set or stderr is not a TTY.
+    fn with_template(template: String) -> Self {
         if crate::cli::common::is_quiet() || !std::io::stderr().is_terminal() {
             return Self { bar: None };
         }
 
-        let template = format!("{{spinner}} {prefix}: {{pos}}");
         let style = ProgressStyle::with_template(&template)
             .unwrap_or_else(|_| ProgressStyle::default_spinner());
 
