@@ -29,7 +29,7 @@ use std::io::{self, Cursor, Read, Write};
 pub enum RelabelTransform {
     /// Pass each assignment through unchanged.
     Identity,
-    /// Rewrite labels in first-appearance order, starting at 1.
+    /// Rewrite labels in first-appearance order, starting at 0.
     FirstSeen,
     /// Reorder elements according to a `new_idx -> old_idx` map.
     NodePermutation(HashMap<usize, usize>),

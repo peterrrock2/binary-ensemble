@@ -283,12 +283,11 @@ impl<R: Read + Seek> BendlReader<R> {
     /// Decode the assignment stream and confirm its sample count matches the finalized header's
     /// `sample_count`.
     ///
-    /// The 64-byte header is not covered by any checksum, so `verify_stream_checksum` proves the
-    /// stream payload is intact but says nothing about the header's `sample_count`. A corrupt or
-    /// malicious header can therefore claim a count the stream does not back, which would silently
-    /// skew `len()` / `count_samples()` and the subsample bounds (all of which trust the header for
-    /// finalized bundles). This walks frame boundaries (no full assignment expansion) and rejects a
-    /// mismatch.
+    /// The header CRC proves the header bytes are intact, but not that `sample_count` matches the
+    /// actual stream content. A self-consistent but semantically wrong header can claim a count the
+    /// stream does not back, which would silently skew `len()` / `count_samples()` and the
+    /// subsample bounds (all of which trust the header for finalized bundles). This walks frame
+    /// boundaries (no full assignment expansion) and rejects a mismatch.
     ///
     /// Returns `Err(BundleIncomplete)` for unfinalized bundles, whose `sample_count` is not
     /// authoritative.

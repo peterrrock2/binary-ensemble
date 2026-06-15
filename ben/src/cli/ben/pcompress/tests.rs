@@ -1,12 +1,15 @@
 //! Tests for the `ben pcompress` subcommand. Ported from the former `pcben` CLI.
 
-use super::super::args::{Cli, Command, PcompressDirection};
+use super::super::args::{Cli, Command, Globals, PcompressArgs, PcompressDirection};
 use super::paths::{derive_output_path, resolved_output_path, PcDirection};
+use super::run;
 use super::translate::{assignment_decode_ben, assignment_encode_ben, assignment_encode_xben};
 use crate::codec::decode::{decode_ben_to_jsonl, decode_xben_to_jsonl};
 use crate::codec::encode::encode_jsonl_to_ben;
+use crate::test_utils::unique_path;
 use crate::BenVariant;
 use clap::Parser;
+use std::fs;
 use std::io::{self, BufReader, Cursor};
 
 #[test]
@@ -55,6 +58,65 @@ fn derive_output_path_replaces_expected_suffixes() {
 fn resolved_output_path_returns_none_when_both_paths_absent() {
     let result = resolved_output_path(PcDirection::FromBen, None, None, false).unwrap();
     assert!(result.is_none());
+}
+
+fn malformed_pcompress_fixture(name: &str) -> std::path::PathBuf {
+    let path = unique_path(name);
+    // This starts with one mapping entry and then a `u16::MAX` flush marker. The foreign decoder
+    // resizes its first mapping to one element, then panics indexing slot 1 while flushing. The CLI
+    // must surface that producer failure instead of treating the pipe EOF as success.
+    fs::write(&path, b"\x00\x00\xff\xff\x00\x01").unwrap();
+    path
+}
+
+#[test]
+fn to_ben_surfaces_malformed_pcompress_decode_panic() {
+    let input = malformed_pcompress_fixture("bad-to-ben.pcompress");
+    let output = unique_path("bad-to-ben.ben");
+    let args = PcompressArgs {
+        direction: PcompressDirection::ToBen(super::super::args::PcompressIoArgs {
+            input_file: Some(input.to_string_lossy().into_owned()),
+        }),
+    };
+    let globals = Globals {
+        output_file: Some(output.to_string_lossy().into_owned()),
+        overwrite: true,
+        ..Default::default()
+    };
+
+    let err = run(args, &globals).unwrap_err();
+    assert!(
+        err.to_string().contains("decode thread panicked"),
+        "got: {err}"
+    );
+
+    let _ = fs::remove_file(input);
+    let _ = fs::remove_file(output);
+}
+
+#[test]
+fn to_xben_surfaces_malformed_pcompress_decode_panic() {
+    let input = malformed_pcompress_fixture("bad-to-xben.pcompress");
+    let output = unique_path("bad-to-xben.xben");
+    let args = PcompressArgs {
+        direction: PcompressDirection::ToXben(super::super::args::PcompressIoArgs {
+            input_file: Some(input.to_string_lossy().into_owned()),
+        }),
+    };
+    let globals = Globals {
+        output_file: Some(output.to_string_lossy().into_owned()),
+        overwrite: true,
+        ..Default::default()
+    };
+
+    let err = run(args, &globals).unwrap_err();
+    assert!(
+        err.to_string().contains("decode thread panicked"),
+        "got: {err}"
+    );
+
+    let _ = fs::remove_file(input);
+    let _ = fs::remove_file(output);
 }
 
 #[test]

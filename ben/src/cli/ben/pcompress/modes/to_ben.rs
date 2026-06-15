@@ -31,10 +31,18 @@ pub(in crate::cli::ben::pcompress) fn run(args: PcompressIoArgs, g: &Globals) ->
     let (pipe_reader, pipe_writer) = pipe();
     let mut buf_pipe_writer = BufWriter::new(pipe_writer);
 
-    let _ = std::thread::spawn(move || {
+    let decode_thread = std::thread::spawn(move || {
         pcompress::decode::decode(&mut pcompress_reader, &mut buf_pipe_writer, 0, false)
     });
 
     let mut buf_pipe_reader = BufReader::new(pipe_reader);
-    assignment_encode_ben(&mut buf_pipe_reader, &mut ben_writer).map_err(CliError::from)
+    let encode_result = assignment_encode_ben(&mut buf_pipe_reader, &mut ben_writer);
+
+    // `pcompress::decode::decode` panics on some malformed inputs. The pipe reader can still see a
+    // clean EOF and emit a prefix BEN stream, so the producer thread must be joined even when the
+    // foreground encode appears successful.
+    match decode_thread.join() {
+        Ok(()) => encode_result.map_err(CliError::from),
+        Err(_) => Err(CliError::other("PCOMPRESS-to-BEN decode thread panicked")),
+    }
 }
