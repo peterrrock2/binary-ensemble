@@ -1,6 +1,6 @@
 [package]
 name = "binary-ensemble"
-version = "0.3.0"
+version.workspace = true
 edition = "2021"
 authors = ["Peter Rock <peter.r.rock2@gmail.com>"]
 exclude = ["example/"]
@@ -12,14 +12,27 @@ repository = "https://github.com/peterrrock2/binary-ensemble"
 description = "A CLI tool for working with and compressing ensembles of districting plans"
 
 [lib]
-name = "ben"
+name = "binary_ensemble"
 
 [dependencies]
 byteorder = "1.5.0"
 clap = { version = "^4.5.2", features = ["derive"] }
+# CRC32C (Castagnoli polynomial) integrity checks on bendl payloads and the
+# assignment stream. The `crc32c` crate is single-purpose, hardware-accelerated
+# on SSE 4.2 / ARMv8 crypto extensions, and cannot be accidentally configured
+# to compute IEEE CRC-32 (unlike `crc32fast`, whose CRC32C path lives behind a
+# feature flag). 
+crc32c = "0.6"
+indicatif = "0.17"
 pcompress = "1.0.7"
+petgraph = "0.8.3"
 pipe = "0.4.0"
+rustworkx-core = "0.17.1"
+serde = {version = "1.0.228", features = ["derive"]}
 serde_json = "^1.0.107"
+thiserror = "2.0.18"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
 xz2 = "0.1.7"
 
 

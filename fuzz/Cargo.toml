@@ -1,0 +1,46 @@
+[package]
+name = "binary-ensemble-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.binary-ensemble]
+path = "../ben"
+
+[[bin]]
+name = "ben_reader"
+path = "fuzz_targets/ben_reader.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xben_body"
+path = "fuzz_targets/xben_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xben_container"
+path = "fuzz_targets/xben_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bendl_reader"
+path = "fuzz_targets/bendl_reader.rs"
+test = false
+doc = false
+bench = false
+
+# Standalone: deliberately not a member of the parent workspace (cargo-fuzz convention; the
+# parent Cargo.toml excludes `fuzz/`).
+[workspace]

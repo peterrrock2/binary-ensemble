@@ -9,10 +9,13 @@ build:
 python:
   install:
     - method: pip
-      path: ./pyben
+      path: ./ben-py
       extra_requirements:
         - docs
 
 sphinx:
   builder: dirhtml
-  configuration: pyben/docs/conf.py
+  configuration: ben-py/docs/conf.py
+  # Notebook execution stays off here (NB_EXECUTION_MODE defaults to "off"), so the
+  # hosted build renders the committed notebook outputs. CI executes the notebooks.
+  fail_on_warning: true

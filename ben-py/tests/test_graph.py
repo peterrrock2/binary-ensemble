@@ -1,0 +1,105 @@
+"""Tests for the standalone ``binary_ensemble.graph`` reordering utilities."""
+
+from __future__ import annotations
+
+
+import pytest
+
+from binary_ensemble import graph as g
+from helpers import EXAMPLE_GRAPH, example_graph as _graph, example_node_count as _n
+
+
+def _check_consistent(reordered, pmap, n):
+    # reordered is a live NetworkX graph.
+    assert reordered.number_of_nodes() == n
+    mapping = pmap["node_permutation_old_to_new"]
+    assert len(mapping) == n
+    # old->new is a bijection over [0, n).
+    assert sorted(int(k) for k in mapping) == list(range(n))
+    assert sorted(mapping.values()) == list(range(n))
+
+
+def test_reorder_rcm() -> None:
+    n = _n()
+    reordered, pmap = g.reorder(_graph(), "rcm")
+    _check_consistent(reordered, pmap, n)
+    assert pmap["ordering_method"] == "reverse-cuthill-mckee"
+    assert pmap["key"] is None
+
+
+def test_reorder_mlc() -> None:
+    n = _n()
+    reordered, pmap = g.reorder_multi_level_cluster(_graph())
+    _check_consistent(reordered, pmap, n)
+    assert pmap["ordering_method"] == "multi-level-cluster"
+
+
+def test_reorder_reverse_cuthill_mckee_helper() -> None:
+    n = _n()
+    reordered, pmap = g.reorder_reverse_cuthill_mckee(_graph())
+    _check_consistent(reordered, pmap, n)
+    assert pmap["ordering_method"] == "reverse-cuthill-mckee"
+
+
+def test_reorder_by_key_id() -> None:
+    n = _n()
+    reordered, pmap = g.reorder_by_key(_graph(), "id")
+    _check_consistent(reordered, pmap, n)
+    assert pmap["key"] == "id"
+    assert pmap["ordering_method"] is None
+
+
+def test_reorder_sort_key_with_attribute() -> None:
+    n = _n()
+    reordered, pmap = g.reorder(_graph(), sort="key", key="county")
+    _check_consistent(reordered, pmap, n)
+    assert pmap["key"] == "county"
+    assert pmap["ordering_method"] is None
+
+
+def test_reorder_sort_key_requires_key() -> None:
+    with pytest.raises(ValueError, match="sort='key' requires key"):
+        g.reorder(_graph(), sort="key")
+
+
+def test_reorder_key_without_sort_key_raises() -> None:
+    with pytest.raises(ValueError, match="only valid with sort='key'"):
+        g.reorder(_graph(), sort="mlc", key="county")
+
+
+def test_reorder_unknown_sort_raises() -> None:
+    with pytest.raises(ValueError, match="unknown sort"):
+        g.reorder(_graph(), sort="county")  # a key must go through sort="key"
+
+
+def test_reorder_none_sort_raises() -> None:
+    with pytest.raises(ValueError, match="nothing to reorder"):
+        g.reorder(_graph(), sort=None)
+
+
+def test_reorder_accepts_bytes_and_path() -> None:
+    n = _n()
+    raw = EXAMPLE_GRAPH.read_bytes()
+    r1, p1 = g.reorder(raw, "rcm")
+    r2, p2 = g.reorder(str(EXAMPLE_GRAPH), "rcm")
+    _check_consistent(r1, p1, n)
+    # path and bytes inputs agree (NetworkX graphs compare by identity, so check
+    # node order and the permutation map instead).
+    assert list(r1.nodes) == list(r2.nodes)
+    assert p1 == p2
+
+
+def test_reorder_rejects_unparseable_graph() -> None:
+    # Garbage bytes are refused up front by the input validation (before the reorder ever
+    # runs), with a message naming the actual problem.
+    with pytest.raises(ValueError, match="not valid JSON"):
+        g.reorder(b"not valid json at all", "rcm")
+
+
+def test_reorder_accepts_live_networkx_graph() -> None:
+    import networkx as nx
+
+    live = nx.readwrite.json_graph.adjacency_graph(_graph())
+    reordered, pmap = g.reorder(live, "rcm")
+    _check_consistent(reordered, pmap, live.number_of_nodes())
+    assert pmap["ordering_method"] == "reverse-cuthill-mckee"

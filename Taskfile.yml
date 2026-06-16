@@ -1,0 +1,567 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: "3"
+
+vars:
+  CARGO_BIN: "{{.HOME}}/.cargo/bin"
+  LOCAL_BIN: "{{.HOME}}/.local/bin"
+  LLVM_BIN: "{{.HOME}}/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/bin"
+  COV_TARGET_DIR: "{{.ROOT_DIR}}/target/llvm-cov-target"
+  BEN_PY_TEST_PATHS: "tests/"
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task: help
+
+  help:
+    desc: List available tasks
+    silent: true
+    cmds:
+      - "command -v go-task >/dev/null 2>&1 && go-task --list-all || task --list-all"
+
+  ensure-rust-linux: &ensure-rust-unix
+    desc: Install Rust if it is not already available
+    internal: true
+    silent: true
+    status:
+      - command -v rustc
+    cmds:
+      - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+
+  ensure-rust-darwin: *ensure-rust-unix
+
+  ensure-rust-windows:
+    desc: Install Rust if it is not already available
+    internal: true
+    silent: true
+    status:
+      - where rustc
+    cmds:
+      - powershell -ExecutionPolicy ByPass -Command "irm https://win.rustup.rs/x86_64 | iex"
+
+  ensure-uv-linux: &ensure-uv-unix
+    desc: Install uv if it is not already available
+    internal: true
+    silent: true
+    status:
+      - command -v uv
+    cmds:
+      - curl -LsSf https://astral.sh/uv/install.sh | sh
+
+  ensure-uv-darwin: *ensure-uv-unix
+
+  ensure-uv-windows:
+    desc: Install uv if it is not already available
+    internal: true
+    silent: true
+    status:
+      - where uv
+    cmds:
+      - powershell -ExecutionPolicy ByPass -Command "irm https://astral.sh/uv/install.ps1 | iex"
+
+  ensure-toolchain:
+    desc: Ensure Rust and uv are installed
+    silent: true
+    deps:
+      - ensure-rust-{{OS}}
+      - ensure-uv-{{OS}}
+
+  ben-py-sync:
+    desc: Sync the ben-py development environment
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    dir: ben-py
+    cmds:
+      - uv sync --all-groups
+
+  ben-py-develop:
+    desc: Build the editable ben-py extension
+    silent: true
+    deps:
+      - ben-py-sync
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    dir: ben-py
+    cmds:
+      - uv run maturin develop
+
+  release:
+    desc: Build a release wheel for ben-py
+    silent: true
+    deps:
+      - ben-py-sync
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    dir: ben-py
+    cmds:
+      - uv run maturin build --release
+
+  test-rust-fast:
+    desc: Run the default Rust test suite (excludes #[ignore] tests)
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cargo test
+
+  test-rust-slow:
+    desc: Run only the `#[ignore]`-gated slow / stress Rust tests
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      # The fixture regenerators are #[ignore]d so they never run by accident — including here.
+      # Running them rewrites the committed wire-format fixtures (see docs/format-stability.md),
+      # so they must only ever be invoked by name in a dedicated fixtures PR.
+      - >-
+        cargo test -- --ignored
+        --skip generate_format_stability_fixtures
+        --skip generate_pcompress_interop_fixture
+
+  test-rust:
+    desc: Run Rust tests for the workspace (fast suite plus #[ignore]-gated stress tests)
+    silent: true
+    cmds:
+      - task: test-rust-fast
+      - task: test-rust-slow
+
+  test-python:
+    desc: Run the ben-py Python tests
+    silent: true
+    deps:
+      - ben-py-develop
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    dir: ben-py
+    cmds:
+      - uv run pytest {{.CLI_ARGS | default .BEN_PY_TEST_PATHS}}
+
+  test:
+    desc: Run Rust and Python tests
+    silent: true
+    cmds:
+      - task: test-rust
+      - task: test-python
+
+  ensure-cargo-fuzz:
+    desc: Install the `cargo-fuzz` runner if it is not already available
+    internal: true
+    silent: true
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    status:
+      - command -v cargo-fuzz
+    cmds:
+      - cargo install cargo-fuzz --locked
+
+  fuzz:
+    desc: >-
+      Time-boxed coverage-guided fuzzing of the read surfaces (libFuzzer via cargo-fuzz; requires
+      the nightly toolchain). Explores compound multi-byte corruptions that the exhaustive
+      single-byte mutation harness cannot reach. FUZZ_SECONDS bounds each target (default 60).
+    silent: true
+    deps:
+      - ensure-toolchain
+      - ensure-cargo-fuzz
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    vars:
+      FUZZ_SECONDS: '{{.FUZZ_SECONDS | default "60"}}'
+      # cargo-fuzz defaults --target to the triple it was *built* for. CI's prebuilt cargo-fuzz
+      # (taiki-e/install-action) is musl-static, which has no std under the gnu nightly and is
+      # incompatible with the address sanitizer (crt-static). Pin to the rustc host triple.
+      HOST_TRIPLE:
+        sh: "rustc -vV | sed -n 's/^host: //p'"
+    cmds:
+      # Seed every corpus from the committed wire-format fixtures so the fuzzer starts from
+      # valid structures instead of rediscovering the banners byte by byte.
+      - mkdir -p fuzz/corpus/ben_reader fuzz/corpus/xben_body fuzz/corpus/xben_container fuzz/corpus/bendl_reader
+      - cp ben/tests/fixtures/v1.0.0/*.ben fuzz/corpus/ben_reader/
+      - cp ben/tests/fixtures/v1.0.0/*.ben fuzz/corpus/xben_body/
+      - cp ben/tests/fixtures/v1.0.0/*.xben fuzz/corpus/xben_container/
+      - cp ben/tests/fixtures/v1.0.0/*.bendl fuzz/corpus/bendl_reader/
+      - cargo +nightly fuzz run ben_reader --target {{.HOST_TRIPLE}} -- -max_total_time={{.FUZZ_SECONDS}}
+      - cargo +nightly fuzz run xben_body --target {{.HOST_TRIPLE}} -- -max_total_time={{.FUZZ_SECONDS}}
+      - cargo +nightly fuzz run xben_container --target {{.HOST_TRIPLE}} -- -max_total_time={{.FUZZ_SECONDS}}
+      - cargo +nightly fuzz run bendl_reader --target {{.HOST_TRIPLE}} -- -max_total_time={{.FUZZ_SECONDS}}
+
+  ensure-be-target:
+    desc: Install the big-endian (s390x) std target if it is not already available
+    internal: true
+    silent: true
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    status:
+      - rustup target list --installed | grep -q '^s390x-unknown-linux-gnu$'
+    cmds:
+      - rustup target add s390x-unknown-linux-gnu
+
+  ensure-cross:
+    desc: Install the `cross` cross-compilation runner if it is not already available
+    internal: true
+    silent: true
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    status:
+      - command -v cross
+    cmds:
+      - cargo install cross --locked
+
+  check-endian:
+    desc: >-
+      Type-check the ben crate (including tests) for a big-endian target. No Docker needed;
+      catches compile-level endianness regressions only — `task test-endian` is the real gate.
+    silent: true
+    deps:
+      - ensure-toolchain
+      - ensure-be-target
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cargo check -p binary-ensemble --all-targets --target s390x-unknown-linux-gnu
+
+  test-big-endian:
+    desc: >-
+      Run the full ben test suite on a big-endian target (s390x) under QEMU via `cross`.
+      Requires Docker (or Podman). The format-stability fixtures decoding here is what proves
+      the wire codecs are endian-correct.
+    silent: true
+    deps:
+      - ensure-toolchain
+      - ensure-cross
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cross test -p binary-ensemble --target s390x-unknown-linux-gnu
+
+  test-little-endian:
+    desc: >-
+      Run the full ben test suite on a little-endian target (x86_64) via `cross`. Redundant on
+      an x86/ARM host (the native suite already covers it) but keeps `task test-endian`
+      host-independent. Requires Docker (or Podman).
+    silent: true
+    deps:
+      - ensure-toolchain
+      - ensure-cross
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cross test -p binary-ensemble --target x86_64-unknown-linux-gnu
+
+  test-endian:
+    desc: >-
+      Run the ben test suite on one big-endian and one little-endian target, so wire-format
+      endianness is proven regardless of the development machine
+    silent: true
+    cmds:
+      - task: test-big-endian
+      - task: test-little-endian
+
+  format-rust:
+    desc: Format Rust code
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cargo fmt --all
+
+  format-python:
+    desc: Format ben-py Python code
+    silent: true
+    deps:
+      - ben-py-sync
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    dir: ben-py
+    cmds:
+      - uv run ruff format .
+
+  format:
+    desc: Format Rust and Python code
+    silent: true
+    cmds:
+      - task: format-rust
+      - task: format-python
+
+  lint-rust:
+    desc: Lint Rust code (clippy over every workspace target, warnings denied)
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cargo clippy --workspace --all-targets -- -D warnings
+
+  lint-python:
+    desc: Lint ben-py Python code
+    silent: true
+    deps:
+      - ben-py-sync
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    dir: ben-py
+    cmds:
+      - uv run ruff check .
+
+  typecheck-python:
+    desc: >-
+      Two-stage type check of the ben-py package, stubs, and type aliases: ty for the
+      fast first pass, then pyright for the thorough one. tests/typing_assertions.py
+      pins the public signatures from the consumer side — assert_type for positives,
+      type-ignore comments for calls that must NOT type-check (kept honest by
+      pyright's reportUnnecessaryTypeIgnoreComment).
+    silent: true
+    deps:
+      - ben-py-sync
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    dir: ben-py
+    cmds:
+      - uv run ty check binary_ensemble tests/typing_assertions.py
+      - uv run pyright binary_ensemble tests/typing_assertions.py
+
+  lint:
+    desc: Run linters
+    silent: true
+    cmds:
+      - task: lint-rust
+      - task: lint-python
+      - task: typecheck-python
+
+  coverage-ben:
+    desc: Run Rust coverage for the ben crate
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cargo llvm-cov --package binary-ensemble --summary-only --ignore-filename-regex '(^|/)bin/'
+
+  coverage-ben-py:
+    desc: Run Python-driven Rust coverage for ben-py
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cargo llvm-cov clean --workspace
+      - >-
+        bash -lc 'if [ -d "{{.ROOT_DIR}}/target" ]; then
+          find "{{.ROOT_DIR}}/target" -maxdepth 1 -name "*.profraw" -delete;
+        fi;
+        if [ -d "{{.COV_TARGET_DIR}}" ]; then
+          find "{{.COV_TARGET_DIR}}" -maxdepth 1 -name "*.profraw" -delete;
+        fi'
+      - cargo llvm-cov -p ben-py --no-report
+      - >-
+        bash -lc 'eval "$(cargo llvm-cov show-env --sh)";
+        export CARGO_TARGET_DIR="{{.COV_TARGET_DIR}}";
+        cd "{{.ROOT_DIR}}/ben-py";
+        uv run maturin develop --target-dir "{{.COV_TARGET_DIR}}";
+        uv run pytest {{.CLI_ARGS | default .BEN_PY_TEST_PATHS}}'
+      - >-
+        {{.LLVM_BIN}}/llvm-profdata merge -sparse
+        {{.ROOT_DIR}}/target/*.profraw
+        {{.COV_TARGET_DIR}}/*.profraw
+        -o /tmp/ben-py.profdata
+      - >-
+        {{.LLVM_BIN}}/llvm-cov report
+        {{.ROOT_DIR}}/ben-py/binary_ensemble/_core.abi3.so
+        -instr-profile=/tmp/ben-py.profdata
+        --ignore-filename-regex='/.cargo/registry|/rustc/|^/mnt/.*/ben/src/'
+
+  coverage-ben-py-html:
+    desc: Generate an HTML Rust coverage report for ben-py at /tmp/ben-py-coverage.html
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+    cmds:
+      - cargo llvm-cov clean --workspace
+      - >-
+        bash -lc 'if [ -d "{{.ROOT_DIR}}/target" ]; then
+          find "{{.ROOT_DIR}}/target" -maxdepth 1 -name "*.profraw" -delete;
+        fi;
+        if [ -d "{{.COV_TARGET_DIR}}" ]; then
+          find "{{.COV_TARGET_DIR}}" -maxdepth 1 -name "*.profraw" -delete;
+        fi'
+      - cargo llvm-cov -p ben-py --no-report
+      - >-
+        bash -lc 'eval "$(cargo llvm-cov show-env --sh)";
+        export CARGO_TARGET_DIR="{{.COV_TARGET_DIR}}";
+        cd "{{.ROOT_DIR}}/ben-py";
+        uv run maturin develop --target-dir "{{.COV_TARGET_DIR}}";
+        uv run pytest {{.CLI_ARGS | default .BEN_PY_TEST_PATHS}}'
+      - >-
+        {{.LLVM_BIN}}/llvm-profdata merge -sparse
+        {{.ROOT_DIR}}/target/*.profraw
+        {{.COV_TARGET_DIR}}/*.profraw
+        -o /tmp/ben-py.profdata
+      - >-
+        bash -lc '{{.LLVM_BIN}}/llvm-cov show {{.ROOT_DIR}}/ben-py/binary_ensemble/_core.abi3.so
+        -instr-profile=/tmp/ben-py.profdata
+        --ignore-filename-regex='\"'\"'/.cargo/registry|/rustc/|^/mnt/.*/ben/src/'\"'\"'
+        --format=html > /tmp/ben-py-coverage.html'
+
+  coverage-summary:
+    desc: Run ben and ben-py coverage and print both reports plus a combined summary table
+    silent: true
+    deps:
+      - ensure-toolchain
+    env:
+      PATH: '{{.CARGO_BIN}}:{{.LOCAL_BIN}}:{{env "PATH"}}'
+      TERM: xterm-256color
+      CLICOLOR_FORCE: "1"
+    cmds:
+      - >-
+        bash -lc '
+        set -euo pipefail;
+        ben_report_file=/tmp/ben-coverage-report.txt;
+        ben_py_report_file=/tmp/ben-py-coverage-report.txt;
+        clean_cov_artifacts() {
+          cargo llvm-cov clean --workspace >/dev/null;
+          if [ -d "{{.ROOT_DIR}}/target" ]; then
+            find "{{.ROOT_DIR}}/target" -maxdepth 1 -name "*.profraw" -delete;
+          fi;
+          if [ -d "{{.COV_TARGET_DIR}}" ]; then
+            find "{{.COV_TARGET_DIR}}" -maxdepth 1 -name "*.profraw" -delete;
+          fi;
+        };
+
+        clean_cov_artifacts;
+        cargo llvm-cov --color always --package binary-ensemble --summary-only --ignore-filename-regex '"'"'(^|/)bin/'"'"' > "$ben_report_file";
+        ben_total="$(awk '"'"'$1=="TOTAL"{print $10}'"'"' "$ben_report_file")";
+
+        clean_cov_artifacts;
+        cargo llvm-cov -p ben-py --no-report >/dev/null;
+        eval "$(cargo llvm-cov show-env --sh)";
+        export CARGO_TARGET_DIR="{{.COV_TARGET_DIR}}";
+        cd "{{.ROOT_DIR}}/ben-py";
+        uv run maturin develop --target-dir "{{.COV_TARGET_DIR}}" >/dev/null;
+        pytest_status=0;
+        uv run pytest {{.CLI_ARGS | default .BEN_PY_TEST_PATHS}} >/tmp/ben-py-pytest.log || pytest_status="$?";
+        cd "{{.ROOT_DIR}}";
+        {{.LLVM_BIN}}/llvm-profdata merge -sparse target/*.profraw {{.COV_TARGET_DIR}}/*.profraw -o /tmp/ben-py.profdata >/dev/null;
+        {{.LLVM_BIN}}/llvm-cov report {{.ROOT_DIR}}/ben-py/binary_ensemble/_core.abi3.so -instr-profile=/tmp/ben-py.profdata --ignore-filename-regex='"'"'/.cargo/registry|/rustc/|^/mnt/.*/ben/src/'"'"' > "$ben_py_report_file";
+        ben_py_total="$(awk '"'"'$1=="TOTAL"{print $10}'"'"' "$ben_py_report_file")";
+
+        printf "\n%s\n\n" "BEN COVERAGE";
+        cat "$ben_report_file";
+        printf "\n%s\n\n" "BEN-PY COVERAGE";
+        cat "$ben_py_report_file";
+        printf "\n%-10s %-10s\n" "Target" "Lines";
+        printf "%-10s %-10s\n" "ben" "${ben_total:-n/a}";
+        printf "%-10s %-10s\n" "ben-py" "${ben_py_total:-n/a}";
+        if [ "$pytest_status" -ne 0 ]; then
+          printf "\nben-py pytest failed with exit status %s; see /tmp/ben-py-pytest.log\n" "$pytest_status";
+          exit "$pytest_status";
+        fi;
+        '
+
+  docs:
+    desc: Build the Python docs site (renders committed notebook outputs)
+    dir: ben-py
+    cmds:
+      # -E -a forces a full rebuild (re-read all sources, rewrite every page). Needed
+      # because the palette/switcher state and asset cache-busters are injected by conf.py
+      # and don't invalidate Sphinx's incremental cache — an incremental build would serve
+      # stale inline JS / cached CSS (e.g. the switcher reappearing after DOCS_SWITCHER changes).
+      - uv run --extra docs sphinx-build -E -a -W -b dirhtml docs docs/_build
+      - 'echo "Docs built -> ben-py/docs/_build/index.html"'
+
+  docs-refresh-notebooks:
+    desc: >-
+      Re-execute the tutorial notebooks in place, refreshing the committed outputs the
+      docs site renders. Run after editing any notebook code cell.
+    dir: ben-py
+    cmds:
+      - >-
+        uv run --extra docs --extra docs-exec python docs/_refresh_notebooks.py
+        docs/user/using_bendl.ipynb docs/user/using_ben_py.ipynb
+
+  docs-exec:
+    desc: Build the docs and execute every tutorial notebook (CI-equivalent)
+    dir: ben-py
+    env:
+      NB_EXECUTION_MODE: cache
+    cmds:
+      - uv run --extra docs --extra docs-exec sphinx-build -W -b dirhtml docs docs/_build
+
+  docs-serve:
+    desc: Serve the docs at http://localhost:8000, live-rebuilding on every change
+    dir: ben-py
+    cmds:
+      # sphinx-autobuild watches the docs source and rebuilds + reloads the browser on
+      # save. Editing conf.py (palettes, Pygments styles) triggers a full rebuild. The
+      # generated pygments-themes.css lives under docs/_generated, which conf.py rewrites
+      # each build — ignore it (and the build/cache dirs) so the watcher doesn't loop.
+      # `-a` rewrites every output page on each rebuild so the baked-in sidebar/toctree
+      # stays fresh after a nav edit; without it, unchanged pages (e.g. the notebooks)
+      # keep a stale sidebar in a different order than the page you just edited.
+      - >-
+        uv run --extra docs sphinx-autobuild -a -b dirhtml docs docs/_build
+        --ignore "*/_generated/*" --ignore "*/_build/*" --ignore "*/.jupyter_cache/*"
+        --port 8000 --open-browser
+
+  docs-test:
+    desc: Execute every Python code block in the Markdown docs
+    dir: ben-py
+    cmds:
+      - uv run pytest tests/test_docs_snippets.py
+
+  docs-linkcheck:
+    desc: Check external links in the Python docs
+    dir: ben-py
+    cmds:
+      - uv run --extra docs sphinx-build -b linkcheck docs docs/_build/linkcheck
+
+  clean-linux: &clean-unix
+    desc: Clean build artifacts
+    internal: true
+    silent: true
+    cmds:
+      - cargo clean
+      - rm -rf ben-py/target ben-py/dist ben-py/binary_ensemble.egg-info ben-py/src/ben-py.c
+      - rm -rf ben-py/binary_ensemble/*abi3.so ben-py/binary_ensemble/*.pyd
+      - rm -rf ben-py/.venv
+      - find . -type d -name "__pycache__" -exec rm -rf {} +
+      - rm -rf ben-py/docs/_build ben-py/docs/jupyter_execute ben-py/docs/_generated ben-py/docs/user/example_data
+
+  clean-darwin: *clean-unix
+
+  clean-windows:
+    desc: Clean build artifacts
+    internal: true
+    silent: true
+    cmds:
+      - cargo clean
+      - cmd /c "if exist ben-py\\target rmdir /s /q ben-py\\target"
+      - cmd /c "if exist ben-py\\dist rmdir /s /q ben-py\\dist"
+      - cmd /c "if exist ben-py\\binary_ensemble.egg-info rmdir /s /q ben-py\\binary_ensemble.egg-info"
+      - cmd /c "if exist ben-py\\.venv rmdir /s /q ben-py\\.venv"
+      - powershell -NoProfile -Command "Get-ChildItem -Path . -Directory -Filter __pycache__ -Recurse | Remove-Item -Recurse -Force"
+      - cmd /c "if exist ben-py\\docs\\_build rmdir /s /q ben-py\\docs\\_build"
+      - cmd /c "if exist ben-py\\docs\\jupyter_execute rmdir /s /q ben-py\\docs\\jupyter_execute"
+      - cmd /c "if exist ben-py\\docs\\_generated rmdir /s /q ben-py\\docs\\_generated"
+      - cmd /c "if exist ben-py\\docs\\user\\example_data rmdir /s /q ben-py\\docs\\user\\example_data"
+
+  clean:
+    desc: Clean build artifacts
+    silent: true
+    cmds:
+      - task: clean-{{OS}}

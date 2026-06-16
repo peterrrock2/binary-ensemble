@@ -1,0 +1,993 @@
+//! Write-side API for `.bendl` files.
+//!
+//! [`BendlWriter`] produces finalized bundles with the on-disk layout
+//!
+//! ```text
+//! [header] [asset payloads] [assignment stream] [directory]
+//! ```
+//!
+//! The writer operates in three logical phases, expressed via owned typestate transitions:
+//!
+//! 1. **asset phase**: the caller invokes [`BendlWriter::add_asset`] zero or more times. Each call
+//!    writes the (optionally xz-compressed) payload to the file and records its absolute offset and
+//!    length in an in-memory entry list.
+//! 2. **stream phase**: the caller invokes [`BendlWriter::into_stream_session`] to consume the
+//!    writer and obtain a [`BendlStreamSession`] that owns the underlying writer and implements
+//!    `Write`. When the stream is complete the caller calls
+//!    [`BendlStreamSession::finish_into_writer`] to recover the [`BendlWriter`] in the
+//!    `StreamWritten` state.
+//! 3. **finalize phase**: [`BendlWriter::finish`] writes the trailing directory and patches the
+//!    header.
+//!
+//! The writer requires `Write + Seek` because the header is written provisionally at construction
+//! and patched on finalization with the stream checksum, stream length, sample count, directory
+//! offset, directory length, and `finalized` flag.
+
+use std::collections::HashSet;
+use std::fs::File;
+use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
+
+use thiserror::Error;
+use xz2::write::XzEncoder;
+
+/// A write sink that can order its writes durably: everything written before a
+/// [`sync_data`](SyncData::sync_data) call must reach stable storage before anything written
+/// after it takes effect. Backing files map this to [`File::sync_data`]; in-memory sinks are
+/// trivially ordered and no-op.
+///
+/// [`BendlAppender::commit`] requires this because it mutates an existing good bundle in place:
+/// without a barrier between writing the new directory and patching the header, OS writeback may
+/// persist the patched header first, and a power loss would leave it pointing at unwritten bytes
+/// with the old directory pointer already gone.
+pub trait SyncData {
+    /// Flush buffers and force every earlier write to stable storage.
+    fn sync_data(&mut self) -> io::Result<()>;
+}
+
+impl SyncData for File {
+    fn sync_data(&mut self) -> io::Result<()> {
+        File::sync_data(self)
+    }
+}
+
+impl<T> SyncData for Cursor<T> {
+    fn sync_data(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+use super::format::{
+    asset_type_for_standardized_name, default_compresses, encode_directory, read_directory,
+    read_header_and_verify, standardized_name_for, write_header_with_tail, AssignmentFormat,
+    BendlDirectoryEntry, BendlFormatError, BendlHeader, KnownAssetKind, ASSET_FLAG_CHECKSUM,
+    ASSET_FLAG_JSON, ASSET_FLAG_XZ, ASSET_TYPE_CUSTOM, DEFAULT_XZ_PRESET, FINALIZED_YES,
+    HEADER_FLAG_STREAM_CHECKSUM, HEADER_WITH_TAIL_SIZE,
+};
+
+/// Options passed alongside each [`BendlWriter::add_asset`] call.
+///
+/// There is no "checksum opt-in/opt-out" knob: every asset written through the library carries a
+/// CRC32C of its on-disk payload bytes, computed automatically by the writer. A future
+/// recovery/debug writer that needs to emit unchecked assets must be an explicitly named
+/// `*_unverified` API and excluded from normal write paths.
+#[derive(Debug, Clone, Default)]
+pub struct AddAssetOptions {
+    /// Compression override. `None` means "follow the default policy for this asset type";
+    /// `Some(true)` forces xz compression; `Some(false)` forces a raw payload.
+    pub compress: Option<bool>,
+    /// Whether the decoded payload is UTF-8 JSON. Adds the [`ASSET_FLAG_JSON`] bit to the entry's
+    /// flags.
+    pub is_json: bool,
+    /// xz preset (0–9) used when this asset is compressed. `None` follows
+    /// [`DEFAULT_XZ_PRESET`]. Values above 9 are rejected when the asset is added.
+    pub compression_level: Option<u32>,
+}
+
+impl AddAssetOptions {
+    /// Sentinel "use the default policy with no extras" options.
+    pub fn defaults() -> Self {
+        Self::default()
+    }
+
+    /// Flag a payload as UTF-8 JSON.
+    pub fn json(mut self) -> Self {
+        self.is_json = true;
+        self
+    }
+
+    /// Force xz compression regardless of the default policy.
+    pub fn compress(mut self) -> Self {
+        self.compress = Some(true);
+        self
+    }
+
+    /// Force the writer to store the payload raw even if the default policy would compress it.
+    pub fn raw(mut self) -> Self {
+        self.compress = Some(false);
+        self
+    }
+
+    /// Choose the xz preset (0–9) used when this asset is compressed. Decompression speed is
+    /// essentially flat across presets, so the level only trades one-time write CPU against
+    /// permanent file size.
+    pub fn compression_level(mut self, level: u32) -> Self {
+        self.compression_level = Some(level);
+        self
+    }
+}
+
+/// Resolve and validate an [`AddAssetOptions`] compression level against the xz preset range.
+fn resolve_compression_level(options: &AddAssetOptions) -> io::Result<u32> {
+    match options.compression_level {
+        None => Ok(DEFAULT_XZ_PRESET),
+        Some(level) if level <= 9 => Ok(level),
+        Some(level) => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("xz compression level must be between 0 and 9, got {level}"),
+        )),
+    }
+}
+
+/// An asset payload prepared for on-disk storage: the (optionally xz-compressed) bytes, the
+/// directory-entry flags describing them, and the CRC32C over those exact bytes.
+struct EncodedAsset {
+    bytes: Vec<u8>,
+    asset_flags: u16,
+    checksum: Vec<u8>,
+}
+
+/// Payload size at which compression is probed on a prefix before committing to a full pass.
+const COMPRESSION_PROBE_THRESHOLD: usize = 4 * 1024 * 1024;
+/// Prefix length the probe compresses.
+const COMPRESSION_PROBE_SAMPLE: usize = 256 * 1024;
+
+fn xz_compress_bytes(bytes: &[u8], level: u32) -> io::Result<Vec<u8>> {
+    let mut encoder = XzEncoder::new(Vec::new(), level);
+    encoder.write_all(bytes)?;
+    encoder.finish()
+}
+
+/// Compress (if requested), checksum, and assemble the directory-entry flags for one asset payload.
+///
+/// This is the single encode path shared by [`BendlWriter::add_asset`] and
+/// [`BendlAppender::commit`], so the create and append routes cannot drift on compression, flag
+/// assembly, or CRC coverage. It is pure (in-memory), so a failure leaves any backing file
+/// untouched. The CRC32C covers the on-disk bytes (the compressed bytes when xz is applied), so
+/// verification happens before decompression (see [`ASSET_FLAG_CHECKSUM`]).
+fn encode_asset_payload(
+    payload: Vec<u8>,
+    compress: bool,
+    level: u32,
+    is_json: bool,
+) -> io::Result<EncodedAsset> {
+    // Keep the compressed form only when it actually wins: small or already-compressed payloads
+    // can come out larger, and every future read of such an asset would pay a pointless
+    // decompression. The flag always describes the stored bytes.
+    let mut compress = compress;
+    if compress && payload.len() >= COMPRESSION_PROBE_THRESHOLD {
+        // Skip the full pass when a compressed prefix barely shrinks; large already-compressed
+        // blobs (zips, GeoPackages) would otherwise burn a long xz pass just to be stored raw
+        // by the size comparison below. A wrong skip costs only a missed size win, never a
+        // worse-than-raw stored form.
+        let sample = &payload[..COMPRESSION_PROBE_SAMPLE];
+        let probe = xz_compress_bytes(sample, level)?;
+        if probe.len() * 100 >= sample.len() * 95 {
+            compress = false;
+        }
+    }
+    let mut compressed = None;
+    if compress {
+        let candidate = xz_compress_bytes(&payload, level)?;
+        if candidate.len() < payload.len() {
+            compressed = Some(candidate);
+        }
+    }
+    let stored_compressed = compressed.is_some();
+    let bytes = compressed.unwrap_or(payload);
+
+    let mut asset_flags: u16 = ASSET_FLAG_CHECKSUM;
+    if is_json {
+        asset_flags |= ASSET_FLAG_JSON;
+    }
+    if stored_compressed {
+        asset_flags |= ASSET_FLAG_XZ;
+    }
+
+    let checksum = crc32c::crc32c(&bytes).to_le_bytes().to_vec();
+    Ok(EncodedAsset {
+        bytes,
+        asset_flags,
+        checksum,
+    })
+}
+
+/// Tracks the asset names and singleton asset-types already claimed in a bundle, and enforces the
+/// canonical-name + uniqueness rules shared by the create and append paths.
+///
+/// [`Self::claim`] validates fully before mutating, so a rejected asset never leaves the registry
+/// in a half-updated state.
+#[derive(Default)]
+struct AssetNameRegistry {
+    names: HashSet<String>,
+    singleton_types: HashSet<u16>,
+}
+
+impl AssetNameRegistry {
+    /// An empty registry, for a fresh bundle.
+    fn new() -> Self {
+        Self::default()
+    }
+
+    /// Seed a registry from the directory entries of an existing finalized bundle (append path).
+    fn from_entries(entries: &[BendlDirectoryEntry]) -> Self {
+        let mut registry = Self::new();
+        for entry in entries {
+            registry.names.insert(entry.name.clone());
+            if standardized_name_for(entry.asset_type).is_some() {
+                registry.singleton_types.insert(entry.asset_type);
+            }
+        }
+        registry
+    }
+
+    /// Validate the canonical-name and uniqueness rules for a candidate asset **without** mutating
+    /// state. A known singleton type must use its standardized name and may appear only once; a
+    /// standardized name may only be claimed by its owning type (so a custom asset can never
+    /// shadow `metadata.json` and silently vanish from the type-keyed canonical getters); every
+    /// asset name must be unique.
+    fn check(&self, asset_type: u16, name: &str) -> Result<(), BendlWriteError> {
+        if let Some(canonical) = standardized_name_for(asset_type) {
+            if name != canonical {
+                return Err(BendlWriteError::WrongCanonicalName {
+                    asset_type,
+                    expected: canonical.to_string(),
+                    found: name.to_string(),
+                });
+            }
+            if self.singleton_types.contains(&asset_type) {
+                return Err(BendlWriteError::DuplicateSingletonType(asset_type));
+            }
+        } else if let Some(reserved_type) = asset_type_for_standardized_name(name) {
+            return Err(BendlWriteError::ReservedAssetName {
+                name: name.to_string(),
+                reserved_type,
+            });
+        }
+        if self.names.contains(name) {
+            return Err(BendlWriteError::DuplicateName(name.to_string()));
+        }
+        Ok(())
+    }
+
+    /// Validate via [`Self::check`] and, on success, reserve the name and (for singleton types) the
+    /// asset-type so subsequent claims see it as taken.
+    fn claim(&mut self, asset_type: u16, name: &str) -> Result<(), BendlWriteError> {
+        self.check(asset_type, name)?;
+        self.names.insert(name.to_string());
+        if standardized_name_for(asset_type).is_some() {
+            self.singleton_types.insert(asset_type);
+        }
+        Ok(())
+    }
+
+    /// Release a name (and any singleton-type claim) after its entry is removed, so the name can
+    /// be reused by a subsequent claim in the same session.
+    fn release(&mut self, asset_type: u16, name: &str) {
+        self.names.remove(name);
+        self.singleton_types.remove(&asset_type);
+    }
+}
+
+/// Writer for a single `.bendl` file.
+pub struct BendlWriter<W: Write + Seek> {
+    inner: W,
+    header: BendlHeader,
+    entries: Vec<BendlDirectoryEntry>,
+    registry: AssetNameRegistry,
+    state: WriterState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WriterState {
+    /// No assets have been written yet, but the provisional header is already in place and the
+    /// writer is positioned just after it.
+    Assets,
+    /// A stream session has been finished and the writer is ready for [`BendlWriter::finish`]. The
+    /// streaming phase itself is expressed in the type system via [`BendlStreamSession`] and is
+    /// therefore not observable in this enum.
+    StreamWritten { stream_len: u64, sample_count: i64 },
+}
+
+impl<W: Write + Seek> BendlWriter<W> {
+    /// Create a new writer by writing a provisional header at offset 0.
+    ///
+    /// The assignment stream begins immediately after the asset payload region;
+    /// [`BendlWriter::into_stream_session`] computes the exact offset when it is called, so
+    /// assets added before then push the stream out as expected.
+    pub fn new(mut inner: W, assignment_format: AssignmentFormat) -> io::Result<Self> {
+        inner.seek(SeekFrom::Start(0))?;
+        // Write the provisional header plus mandatory 8-byte integrity tail at [64, 72): the first
+        // object starts at >= 72, so the tail never has to displace payloads. stream_offset is
+        // patched from the real stream position later, but start it past the reserved tail.
+        let header = BendlHeader::provisional(assignment_format, HEADER_WITH_TAIL_SIZE as u64);
+        write_header_with_tail(&mut inner, &header)?;
+
+        Ok(BendlWriter {
+            inner,
+            header,
+            entries: Vec::new(),
+            registry: AssetNameRegistry::new(),
+            state: WriterState::Assets,
+        })
+    }
+
+    /// Add an asset to the bundle.
+    ///
+    /// The payload is written to the file immediately at the current position (right after the
+    /// previous asset, or right after the header if this is the first asset). Its absolute offset
+    /// and length are recorded in the in-memory directory entry list.
+    ///
+    /// This method enforces the canonical-name and uniqueness rules **before** writing any bytes,
+    /// so a rejected asset leaves the file untouched.
+    pub fn add_asset(
+        &mut self,
+        asset_type: u16,
+        name: &str,
+        payload: &[u8],
+        options: AddAssetOptions,
+    ) -> Result<(), BendlWriteError> {
+        if self.state != WriterState::Assets {
+            return Err(BendlWriteError::AssetsAfterStream);
+        }
+
+        // Validate before any expensive work, but do not reserve the name/type until the fallible
+        // encoding and write have both succeeded. A failed compression or write should not poison
+        // the in-memory registry and make a retry look like a duplicate.
+        self.registry.check(asset_type, name)?;
+
+        let compress = options
+            .compress
+            .unwrap_or_else(|| default_compresses(asset_type, payload.len()));
+        let level = resolve_compression_level(&options)?;
+        let encoded = encode_asset_payload(payload.to_vec(), compress, level, options.is_json)?;
+
+        let payload_offset = self.inner.stream_position()?;
+        self.inner.write_all(&encoded.bytes)?;
+
+        self.registry.claim(asset_type, name)?;
+        self.entries.push(BendlDirectoryEntry {
+            asset_type,
+            asset_flags: encoded.asset_flags,
+            name: name.to_string(),
+            payload_offset,
+            payload_len: encoded.bytes.len() as u64,
+            checksum: Some(encoded.checksum),
+        });
+
+        Ok(())
+    }
+
+    /// Copy an already-encoded asset verbatim: `stored` is the on-disk payload form (compressed
+    /// or raw, exactly as another bundle stored it), and `asset_flags` / `checksum` carry over
+    /// unchanged so the bytes remain verifiable against their original CRC. The usual naming
+    /// rules still apply.
+    ///
+    /// This is how whole-bundle rewrites (compaction) preserve assets without decoding and
+    /// re-encoding them; new payloads belong in [`Self::add_asset`].
+    pub fn add_stored_asset(
+        &mut self,
+        asset_type: u16,
+        name: &str,
+        asset_flags: u16,
+        checksum: Option<Vec<u8>>,
+        stored: &[u8],
+    ) -> Result<(), BendlWriteError> {
+        if self.state != WriterState::Assets {
+            return Err(BendlWriteError::AssetsAfterStream);
+        }
+        self.registry.check(asset_type, name)?;
+
+        let payload_offset = self.inner.stream_position()?;
+        self.inner.write_all(stored)?;
+
+        self.registry.claim(asset_type, name)?;
+        self.entries.push(BendlDirectoryEntry {
+            asset_type,
+            asset_flags,
+            name: name.to_string(),
+            payload_offset,
+            payload_len: stored.len() as u64,
+            checksum,
+        });
+
+        Ok(())
+    }
+
+    /// Convenience wrapper around [`add_asset`] for JSON-encoded assets.
+    pub fn add_json_asset(
+        &mut self,
+        asset_type: u16,
+        name: &str,
+        payload: &[u8],
+    ) -> Result<(), BendlWriteError> {
+        self.add_asset(
+            asset_type,
+            name,
+            payload,
+            AddAssetOptions::defaults().json(),
+        )
+    }
+
+    /// Add one of the known singleton assets, using its reserved asset-type integer and
+    /// standardized name automatically.
+    pub fn add_known_asset(
+        &mut self,
+        kind: KnownAssetKind,
+        payload: &[u8],
+        options: AddAssetOptions,
+    ) -> Result<(), BendlWriteError> {
+        self.add_asset(
+            kind.asset_type(),
+            kind.standardized_name(),
+            payload,
+            options,
+        )
+    }
+
+    /// Add a custom (writer-named) asset. The asset-type is set to [`ASSET_TYPE_CUSTOM`]
+    /// automatically.
+    pub fn add_custom_asset(
+        &mut self,
+        name: &str,
+        payload: &[u8],
+        options: AddAssetOptions,
+    ) -> Result<(), BendlWriteError> {
+        self.add_asset(ASSET_TYPE_CUSTOM, name, payload, options)
+    }
+
+    /// Consume the writer and transition into the stream phase.
+    ///
+    /// The returned [`BendlStreamSession`] owns the underlying writer and implements `Write`, so it
+    /// can be plumbed into a [`crate::io::writer::BenStreamWriter`] (or written to directly). When
+    /// the stream is complete the caller calls [`BendlStreamSession::finish_into_writer`] to
+    /// recover ownership of a [`BendlWriter`] in the `StreamWritten` state, ready for
+    /// [`BendlWriter::finish`].
+    ///
+    /// Returns [`BendlWriteError::WrongState`] when called on a writer that has already produced a
+    /// stream (e.g. via a prior `finish_into_writer`); this guard prevents a second
+    /// `into_stream_session` from silently overwriting `header.stream_offset` and corrupting the
+    /// bundle.
+    pub fn into_stream_session(mut self) -> Result<BendlStreamSession<W>, BendlWriteError> {
+        match self.state {
+            WriterState::Assets => {}
+            WriterState::StreamWritten { .. } => {
+                return Err(BendlWriteError::WrongState {
+                    expected: "Assets",
+                    found: "StreamWritten",
+                });
+            }
+        }
+
+        let stream_offset = self.inner.stream_position()?;
+        self.header.stream_offset = stream_offset;
+        self.inner.seek(SeekFrom::Start(0))?;
+        write_header_with_tail(&mut self.inner, &self.header)?;
+        self.inner.flush()?;
+        self.inner.seek(SeekFrom::Start(stream_offset))?;
+
+        Ok(BendlStreamSession {
+            inner: Some(self.inner),
+            parent: Some(ParentState {
+                header: self.header,
+                entries: self.entries,
+                registry: self.registry,
+            }),
+            start_offset: stream_offset,
+            bytes_written: 0,
+            hasher: 0,
+        })
+    }
+
+    /// Write the trailing directory, patch the header, and return the underlying writer.
+    pub fn finish(mut self) -> Result<W, BendlWriteError> {
+        let (stream_len, sample_count) = match self.state {
+            WriterState::StreamWritten {
+                stream_len,
+                sample_count,
+            } => (stream_len, sample_count),
+            WriterState::Assets => {
+                // No stream written; treat as empty stream located just after the asset region.
+                let stream_offset = self.inner.stream_position()?;
+                self.header.stream_offset = stream_offset;
+                // CRC32C of an empty byte sequence is 0x00000000.
+                self.header.stream_checksum = 0;
+                self.header.flags |= HEADER_FLAG_STREAM_CHECKSUM;
+                (0, 0)
+            }
+        };
+
+        let directory_offset = self.header.stream_offset + stream_len;
+        self.inner.seek(SeekFrom::Start(directory_offset))?;
+
+        let directory_bytes = encode_directory(&self.entries).map_err(BendlWriteError::Format)?;
+        self.inner
+            .write_all(&directory_bytes)
+            .map_err(BendlWriteError::Io)?;
+
+        let directory_len = directory_bytes.len() as u64;
+
+        self.header.directory_offset = directory_offset;
+        self.header.directory_len = directory_len;
+        self.header.stream_len = stream_len;
+        self.header.sample_count = sample_count;
+        self.header.finalized = FINALIZED_YES;
+        self.inner.seek(SeekFrom::Start(0))?;
+        write_header_with_tail(&mut self.inner, &self.header)?;
+
+        // Flush explicitly; some writers (files) are not flushed on drop.
+        self.inner.flush()?;
+
+        Ok(self.inner)
+    }
+}
+
+/// Internal state of a [`BendlWriter`] that has been temporarily moved into a
+/// [`BendlStreamSession`]. Stored as a single struct so `finish_into_writer` can rebuild the writer
+/// with one move.
+struct ParentState {
+    header: BendlHeader,
+    entries: Vec<BendlDirectoryEntry>,
+    registry: AssetNameRegistry,
+}
+
+/// Owned stream-phase session. Holds the underlying writer and the parent [`BendlWriter`]'s
+/// in-memory state across the streaming phase, implements `Write` so it can be plumbed into a
+/// [`crate::io::writer::BenStreamWriter`], and exposes [`Self::finish_into_writer`] to hand
+/// ownership back as a [`BendlWriter`] in the `StreamWritten` state.
+///
+/// `inner` and `parent` are wrapped in `Option` so `finish_into_writer` can `take()` them without
+/// partial-moving out of a `Drop` type. The [`Drop`] impl emits a `tracing::warn!` if the session
+/// is dropped without `finish_into_writer`, since that leaves the bundle on disk unfinalized.
+pub struct BendlStreamSession<W: Write + Seek> {
+    inner: Option<W>,
+    parent: Option<ParentState>,
+    start_offset: u64,
+    bytes_written: u64,
+    hasher: u32,
+}
+
+impl<W: Write + Seek> BendlStreamSession<W> {
+    /// Number of bytes written into the stream region so far.
+    pub fn bytes_written(&self) -> u64 {
+        self.bytes_written
+    }
+
+    /// Offset (in the underlying writer) at which the stream region began, recorded at
+    /// session-construction time.
+    pub fn start_offset(&self) -> u64 {
+        self.start_offset
+    }
+
+    /// End the stream phase and return ownership of a [`BendlWriter`] in the `StreamWritten` state,
+    /// ready for [`BendlWriter::finish`].
+    ///
+    /// Infallible: the body performs no I/O.
+    pub fn finish_into_writer(mut self, sample_count: i64) -> BendlWriter<W> {
+        let inner = self.inner.take().expect("session has not been finished");
+        let mut parent = self.parent.take().expect("session has not been finished");
+
+        // Patch the stream checksum into the in-memory header so BendlWriter::finish can write it
+        // to disk in a single header patch pass.
+        parent.header.stream_checksum = self.hasher;
+        parent.header.flags |= HEADER_FLAG_STREAM_CHECKSUM;
+
+        BendlWriter {
+            inner,
+            header: parent.header,
+            entries: parent.entries,
+            registry: parent.registry,
+            state: WriterState::StreamWritten {
+                stream_len: self.bytes_written,
+                sample_count,
+            },
+        }
+    }
+}
+
+impl<W: Write + Seek> Write for BendlStreamSession<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let inner = self.inner.as_mut().expect("session has not been finished");
+        let n = inner.write(buf)?;
+        if n > 0 {
+            self.bytes_written += n as u64;
+            self.hasher = crc32c::crc32c_append(self.hasher, &buf[..n]);
+        }
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner
+            .as_mut()
+            .expect("session has not been finished")
+            .flush()
+    }
+}
+
+impl<W: Write + Seek> Drop for BendlStreamSession<W> {
+    fn drop(&mut self) {
+        if self.inner.is_some() {
+            tracing::warn!(
+                "BendlStreamSession dropped without finish_into_writer; \
+                 bundle on disk is unfinalized"
+            );
+        }
+    }
+}
+
+/// Errors produced by the bundle writer.
+#[derive(Debug, Error)]
+pub enum BendlWriteError {
+    /// A new asset's name collides with an existing one.
+    #[error("duplicate asset name: {0:?}")]
+    DuplicateName(String),
+
+    /// A custom asset tried to claim a standardized singleton name. Readers look canonical
+    /// assets up by type, so a custom asset under a standardized name would be invisible to
+    /// them while still occupying the name.
+    #[error(
+        "asset name {name:?} is reserved for asset type {reserved_type}; write it with the \
+         typed add (add_metadata / add_graph / the known-asset writer API) instead"
+    )]
+    ReservedAssetName {
+        /// The standardized name that was claimed.
+        name: String,
+        /// The singleton asset type that owns the name.
+        reserved_type: u16,
+    },
+
+    /// A removal named an asset that does not exist in the bundle's directory.
+    #[error("no asset named {0:?} in bundle")]
+    UnknownAssetName(String),
+
+    /// A second singleton asset of this type was requested.
+    #[error("duplicate singleton asset type: {0}")]
+    DuplicateSingletonType(u16),
+
+    /// A singleton asset was added under the wrong standardized name.
+    #[error("asset type {asset_type} must use standardized name {expected:?}, got {found:?}")]
+    WrongCanonicalName {
+        /// The asset type whose standardized name was violated.
+        asset_type: u16,
+        /// The standardized name the caller should have used.
+        expected: String,
+        /// The name the caller actually provided.
+        found: String,
+    },
+
+    /// An asset was added after the stream phase began.
+    #[error("cannot add assets after the stream region has been opened")]
+    AssetsAfterStream,
+
+    /// The operation requires a finalized bundle (append, compact, remove).
+    #[error("bundle is not finalized (header finalized != 1)")]
+    BundleIncomplete,
+
+    /// The writer was asked to perform an operation in the wrong state.
+    #[error("writer is in state {found}, expected {expected}")]
+    WrongState {
+        /// The state the operation expected.
+        expected: &'static str,
+        /// The state the writer was actually in.
+        found: &'static str,
+    },
+
+    /// A format-layer error escaped while encoding the directory table.
+    #[error(transparent)]
+    Format(#[from] BendlFormatError),
+
+    /// An underlying I/O error.
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
+// =====================================================================
+// Append path
+// =====================================================================
+
+/// Post-finalize appender that grows an existing `.bendl` file with new assets without rewriting
+/// the assignment stream.
+///
+/// The workflow is:
+///
+/// 1. [`BendlAppender::open`] opens a finalized bundle and loads its directory into memory.
+/// 2. [`BendlAppender::add_asset`] (or [`BendlAppender::add_json_asset`]) validates and buffers
+///    each new asset. Validation happens up front, so duplicate singletons or names are rejected
+///    **before** any file mutation, and a rejected add_asset leaves the file unchanged.
+/// 3. [`BendlAppender::commit`] compresses the buffered assets (if any), appends the new asset
+///    payloads after the old EOF, writes a new directory, and patches the header. The old directory
+///    is left in place as orphaned bytes until a future compact/rewrite operation; this keeps the
+///    old header valid until the final header patch.
+///
+/// A [`BendlAppender`] that is dropped without calling `commit` leaves the underlying file
+/// unchanged.
+pub struct BendlAppender<W: Read + Write + Seek> {
+    inner: W,
+    header: BendlHeader,
+    existing_entries: Vec<BendlDirectoryEntry>,
+    pending: Vec<PendingAsset>,
+    /// Names and singleton types claimed by the existing directory plus any pending adds. Seeded
+    /// from the existing entries at open time, then extended as each pending asset is enqueued
+    /// (and shrunk by removals, so a removed name can be re-added in the same session).
+    registry: AssetNameRegistry,
+    /// Whether any existing entry was removed; forces a directory rewrite on commit even when
+    /// nothing was added.
+    removed_any: bool,
+}
+
+/// An asset queued for append but not yet written to disk.
+struct PendingAsset {
+    asset_type: u16,
+    name: String,
+    /// Raw payload bytes as provided by the caller.
+    raw_payload: Vec<u8>,
+    /// Resolved compression decision: `true` means compress, `false` means raw.
+    compress: bool,
+    /// Resolved xz preset for the compression pass.
+    level: u32,
+    is_json: bool,
+}
+
+/// A pending asset whose payload has been encoded in memory and is ready to be written to disk.
+///
+/// Output of the pure, in-memory compression phase of [`BendlAppender::commit`]; carries
+/// everything the file-mutation phase needs to write the payload and its directory entry.
+struct PreparedAppendAsset {
+    asset_type: u16,
+    asset_name: String,
+    encoded_asset: EncodedAsset,
+}
+
+impl<W: Read + Write + Seek> BendlAppender<W> {
+    /// Open a finalized bundle for append.
+    ///
+    /// Returns [`BendlWriteError::BundleIncomplete`] if the header's `finalized` flag is not set;
+    /// append is unsafe on an unfinalized bundle because the stream region has no authoritative
+    /// end.
+    pub fn open(mut inner: W) -> Result<Self, BendlWriteError> {
+        let file_len = inner.seek(SeekFrom::End(0))?;
+        inner.seek(SeekFrom::Start(0))?;
+        // Verify the header CRC before trusting directory_offset below.
+        let header = read_header_and_verify(&mut inner).map_err(BendlWriteError::Format)?;
+        if !header.is_finalized() {
+            return Err(BendlWriteError::BundleIncomplete);
+        }
+        if header.directory_offset == 0 || header.directory_len == 0 {
+            return Err(BendlWriteError::BundleIncomplete);
+        }
+
+        inner.seek(SeekFrom::Start(header.directory_offset))?;
+        let mut bounded = (&mut inner).take(header.directory_len);
+        let existing_entries = read_directory(&mut bounded).map_err(BendlWriteError::Format)?;
+        let remaining = bounded.limit();
+        if remaining != 0 {
+            return Err(BendlWriteError::Format(
+                BendlFormatError::TrailingDirectoryBytes { remaining },
+            ));
+        }
+        super::reader::validate_directory_entries(&existing_entries).map_err(|e| {
+            BendlWriteError::Format(BendlFormatError::MalformedDirectory(e.to_string()))
+        })?;
+        super::reader::validate_entry_extents(&existing_entries, file_len).map_err(|e| {
+            BendlWriteError::Format(BendlFormatError::MalformedDirectory(e.to_string()))
+        })?;
+
+        let registry = AssetNameRegistry::from_entries(&existing_entries);
+
+        Ok(BendlAppender {
+            inner,
+            header,
+            existing_entries,
+            pending: Vec::new(),
+            registry,
+            removed_any: false,
+        })
+    }
+
+    /// Remove the named asset from the bundle's directory.
+    ///
+    /// Only the directory entry is dropped: the payload bytes remain in the file as unreferenced
+    /// dead space until the next whole-bundle rewrite (e.g. a recompression) compacts them.
+    /// Readers navigate solely via directory offsets, so the gap is invisible to them. The name
+    /// (and any singleton-type claim) becomes reusable by a subsequent add in the same session,
+    /// which makes remove-then-add the way to replace an asset's payload (canonical assets must
+    /// be re-added through the typed APIs; a custom asset under a standardized name is refused).
+    ///
+    /// Removal targets *committed* entries only; it does not touch assets enqueued with
+    /// [`Self::add_asset`] but not yet committed.
+    pub fn remove_asset(&mut self, name: &str) -> Result<(), BendlWriteError> {
+        let Some(pos) = self.existing_entries.iter().position(|e| e.name == name) else {
+            return Err(BendlWriteError::UnknownAssetName(name.to_string()));
+        };
+        let entry = self.existing_entries.remove(pos);
+        self.registry.release(entry.asset_type, &entry.name);
+        self.removed_any = true;
+        Ok(())
+    }
+
+    /// Enqueue a new asset for append.
+    ///
+    /// This validates the new asset against both the loaded directory and any previously-enqueued
+    /// pending assets. If validation fails, the pending list is unchanged and no bytes have been
+    /// written to the file.
+    pub fn add_asset(
+        &mut self,
+        asset_type: u16,
+        name: &str,
+        payload: &[u8],
+        options: AddAssetOptions,
+    ) -> Result<(), BendlWriteError> {
+        // Validate the options before the registry claim and the claim before buffering, so a
+        // rejected add reserves nothing and a retry is clean.
+        let level = resolve_compression_level(&options)?;
+        let compress = options
+            .compress
+            .unwrap_or_else(|| default_compresses(asset_type, payload.len()));
+        self.registry.claim(asset_type, name)?;
+
+        self.pending.push(PendingAsset {
+            asset_type,
+            name: name.to_string(),
+            raw_payload: payload.to_vec(),
+            compress,
+            level,
+            is_json: options.is_json,
+        });
+        Ok(())
+    }
+
+    /// Convenience wrapper around [`add_asset`] for JSON-encoded assets.
+    pub fn add_json_asset(
+        &mut self,
+        asset_type: u16,
+        name: &str,
+        payload: &[u8],
+    ) -> Result<(), BendlWriteError> {
+        self.add_asset(
+            asset_type,
+            name,
+            payload,
+            AddAssetOptions::defaults().json(),
+        )
+    }
+
+    /// Append one of the known singleton assets, using its reserved asset-type integer and
+    /// standardized name automatically.
+    pub fn add_known_asset(
+        &mut self,
+        kind: KnownAssetKind,
+        payload: &[u8],
+        options: AddAssetOptions,
+    ) -> Result<(), BendlWriteError> {
+        self.add_asset(
+            kind.asset_type(),
+            kind.standardized_name(),
+            payload,
+            options,
+        )
+    }
+
+    /// Append a custom (writer-named) asset. The asset-type is set to [`ASSET_TYPE_CUSTOM`]
+    /// automatically.
+    pub fn add_custom_asset(
+        &mut self,
+        name: &str,
+        payload: &[u8],
+        options: AddAssetOptions,
+    ) -> Result<(), BendlWriteError> {
+        self.add_asset(ASSET_TYPE_CUSTOM, name, payload, options)
+    }
+
+    /// Phase 1 of [`Self::commit`]: drain the pending queue and encode each payload through the
+    /// shared encode path, entirely in memory. A failure here returns before any byte is written
+    /// and leaves the bundle untouched.
+    fn prepare_pending_assets(&mut self) -> Result<Vec<PreparedAppendAsset>, BendlWriteError> {
+        let mut prepared = Vec::with_capacity(self.pending.len());
+        for asset in self.pending.drain(..) {
+            let encoded_asset = encode_asset_payload(
+                asset.raw_payload,
+                asset.compress,
+                asset.level,
+                asset.is_json,
+            )?;
+            prepared.push(PreparedAppendAsset {
+                asset_type: asset.asset_type,
+                asset_name: asset.name,
+                encoded_asset,
+            });
+        }
+        Ok(prepared)
+    }
+
+    /// Commit all pending appends.
+    ///
+    /// This compresses any buffered payloads that need it (entirely in memory), then performs the
+    /// file mutation in one append-only burst: seek to old EOF, write new payloads, write a new
+    /// directory, and patch the header.
+    ///
+    /// If compression fails, the file is left unchanged. The mutation is ordered durably: the new
+    /// payloads and directory are synced to stable storage before the header is patched to point
+    /// at them, and the patched header is synced before `commit` returns, so a crash or power
+    /// loss at any point leaves either the previous bundle (with at most trailing orphaned bytes)
+    /// or the fully appended one.
+    pub fn commit(mut self) -> Result<W, BendlWriteError>
+    where
+        W: SyncData,
+    {
+        if self.pending.is_empty() && !self.removed_any {
+            return Ok(self.inner);
+        }
+
+        // Phase 1: encode pending payloads in memory; a failure here leaves the file untouched.
+        let encoded = self.prepare_pending_assets()?;
+
+        // Phase 2: append-only file mutation. Until the final header patch, the old header still
+        // points at the old directory, which remains intact.
+        let old_directory_end = self
+            .header
+            .directory_offset
+            .checked_add(self.header.directory_len)
+            .ok_or_else(|| {
+                BendlWriteError::Io(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "directory_offset + directory_len overflowed while appending",
+                ))
+            })?;
+
+        self.inner.seek(SeekFrom::Start(old_directory_end))?;
+
+        let mut new_entries: Vec<BendlDirectoryEntry> =
+            Vec::with_capacity(self.existing_entries.len() + encoded.len());
+        new_entries.extend(self.existing_entries.iter().cloned());
+
+        for prepared in encoded {
+            let enc = prepared.encoded_asset;
+            let payload_offset = self.inner.stream_position()?;
+            self.inner.write_all(&enc.bytes)?;
+            new_entries.push(BendlDirectoryEntry {
+                asset_type: prepared.asset_type,
+                asset_flags: enc.asset_flags,
+                name: prepared.asset_name,
+                payload_offset,
+                payload_len: enc.bytes.len() as u64,
+                checksum: Some(enc.checksum),
+            });
+        }
+
+        let new_directory_offset = self.inner.stream_position()?;
+        let directory_bytes = encode_directory(&new_entries).map_err(BendlWriteError::Format)?;
+        self.inner.write_all(&directory_bytes)?;
+        let new_directory_len = directory_bytes.len() as u64;
+
+        // The new tail must be durable before the header can reference it: OS writeback is free
+        // to reorder, and a power loss that persisted the patched header before the directory
+        // bytes would leave it pointing at garbage with the old directory pointer already gone.
+        self.inner.flush()?;
+        self.inner.sync_data()?;
+
+        // Patch the header, and sync so a returned commit is durable.
+        self.header.directory_offset = new_directory_offset;
+        self.header.directory_len = new_directory_len;
+        self.inner.seek(SeekFrom::Start(0))?;
+        // Refresh the mandatory header CRC as part of the in-place header patch.
+        write_header_with_tail(&mut self.inner, &self.header)?;
+        self.inner.flush()?;
+        self.inner.sync_data()?;
+
+        Ok(self.inner)
+    }
+
+    /// Release the underlying reader without committing any pending appends. The file is unchanged.
+    pub fn abort(self) -> W {
+        self.inner
+    }
+}

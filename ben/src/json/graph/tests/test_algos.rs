@@ -1,0 +1,576 @@
+use super::super::*;
+use serde_json::Value;
+
+fn path_graph_json() -> &'static [u8] {
+    br#"{
+        "nodes": [
+            {"id": 0},
+            {"id": 1},
+            {"id": 2},
+            {"id": 3}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 0}, {"id": 2}],
+            [{"id": 1}, {"id": 3}],
+            [{"id": 2}]
+        ]
+    }"#
+}
+
+#[test]
+fn test_relabel_small_file() {
+    let input = r#"{
+    "adjacency": [
+        [ { "id": 3 }, { "id": 1 } ],
+        [ { "id": 0 }, { "id": 4 }, { "id": 2 } ],
+        [ { "id": 1 }, { "id": 5 } ],
+        [ { "id": 0 }, { "id": 6 }, { "id": 4 } ],
+        [ { "id": 1 }, { "id": 3 }, { "id": 7 }, { "id": 5 } ],
+        [ { "id": 2 }, { "id": 4 }, { "id": 8 } ],
+        [ { "id": 3 }, { "id": 7 } ],
+        [ { "id": 4 }, { "id": 6 }, { "id": 8 } ],
+        [ { "id": 5 }, { "id": 7 } ]
+    ],
+    "directed": false,
+    "graph": [],
+    "multigraph": false,
+    "nodes": [
+        {
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "GEOID20": "20258288005",
+            "id": 0
+        },
+        {
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "GEOID20": "20258288004",
+            "id": 1
+        },
+        {
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "GEOID20": "20258288003",
+            "id": 2
+        },
+        {
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "GEOID20": "20258288006",
+            "id": 3
+        },
+        {
+            "TOTPOP": 1,
+            "boundary_nodes": false,
+            "boundary_perim": 0,
+            "GEOID20": "20258288001",
+            "id": 4
+        },
+        {
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "GEOID20": "20258288002",
+            "id": 5
+        },
+        {
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "GEOID20": "20258288007",
+            "id": 6
+        },
+        {
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "GEOID20": "20258288008",
+            "id": 7
+        },
+        {
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "GEOID20": "20258288009",
+            "id": 8
+        }
+    ]
+}
+"#;
+
+    let reader = input.as_bytes();
+
+    let mut output = Vec::new();
+    let writer = &mut output;
+
+    let key = "GEOID20";
+
+    let _ = sort_json_file_by_key(reader, writer, key).unwrap();
+
+    let expected_output = r#"{
+    "adjacency": [
+        [ { "id": 3 }, { "id": 5 }, { "id": 7 }, { "id": 1 } ],
+        [ { "id": 2 }, { "id": 0 }, { "id": 8 } ], [ { "id": 3 }, { "id": 1 } ],
+        [ { "id": 4 }, { "id": 0 }, { "id": 2 } ],
+        [ { "id": 5 }, { "id": 3 } ],
+        [ { "id": 4 }, { "id": 6 }, { "id": 0 } ],
+        [ { "id": 5 }, { "id": 7 } ],
+        [ { "id": 0 }, { "id": 6 }, { "id": 8 } ],
+        [ { "id": 1 }, { "id": 7 } ]
+    ],
+    "directed": false,
+    "graph": [],
+    "multigraph": false,
+    "nodes": [
+        {
+            "GEOID20": "20258288001",
+            "TOTPOP": 1,
+            "boundary_nodes": false,
+            "boundary_perim": 0,
+            "id": 0
+        },
+        {
+            "GEOID20": "20258288002",
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "id": 1
+        },
+        {
+            "GEOID20": "20258288003",
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "id": 2
+        },
+        {
+            "GEOID20": "20258288004",
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "id": 3
+        },
+        {
+            "GEOID20": "20258288005",
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "id": 4
+        },
+        {
+            "GEOID20": "20258288006",
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "id": 5
+        },
+        {
+            "GEOID20": "20258288007",
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "id": 6
+        },
+        {
+            "GEOID20": "20258288008",
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "id": 7
+        },
+        {
+            "GEOID20": "20258288009",
+            "TOTPOP": 1,
+            "boundary_nodes": true,
+            "boundary_perim": 1,
+            "id": 8
+        }
+    ]
+}
+"#;
+
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+    let expected_output_json: Value = serde_json::from_str(expected_output).unwrap();
+
+    assert_eq!(output_json, expected_output_json);
+}
+
+#[test]
+fn test_sort_json_file_by_numeric_key() {
+    let input = r#"{
+        "nodes": [
+            {"id": 0, "rank": 20},
+            {"id": 1, "rank": 5},
+            {"id": 2, "rank": 10}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 0}, {"id": 2}],
+            [{"id": 1}]
+        ]
+    }"#;
+
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_key(input.as_bytes(), &mut output, "rank").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(mapping.get(&1), Some(&0));
+    assert_eq!(mapping.get(&2), Some(&1));
+    assert_eq!(mapping.get(&0), Some(&2));
+    assert_eq!(output_json["nodes"][0]["rank"], 5);
+    assert_eq!(output_json["nodes"][1]["rank"], 10);
+    assert_eq!(output_json["nodes"][2]["rank"], 20);
+}
+
+#[test]
+fn test_sort_json_file_by_key_with_non_numeric_values() {
+    let input = r#"{
+        "nodes": [
+            {"id": 0, "key": {"nested": true}},
+            {"id": 1, "key": "abc"},
+            {"id": 2, "key": 7}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 2}],
+            [{"id": 0}]
+        ]
+    }"#;
+
+    let mut output = Vec::new();
+    sort_json_file_by_key(input.as_bytes(), &mut output, "key").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(output_json["nodes"][0]["key"], 7);
+    assert_eq!(output_json["nodes"][1]["key"], "abc");
+    assert_eq!(
+        output_json["nodes"][2]["key"],
+        serde_json::json!({"nested": true})
+    );
+}
+
+#[test]
+fn test_sort_json_file_by_key_err_string_vs_number_branch() {
+    let input = r#"{
+        "nodes": [
+            {"id": 0, "key": "zzz"},
+            {"id": 1, "key": 3}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 0}]
+        ]
+    }"#;
+
+    let mut output = Vec::new();
+    sort_json_file_by_key(input.as_bytes(), &mut output, "key").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(output_json["nodes"][0]["key"], 3);
+    assert_eq!(output_json["nodes"][1]["key"], "zzz");
+}
+
+#[test]
+fn test_sort_json_file_by_key_without_nodes_or_edges() {
+    let input = br#"{"graph": [], "directed": false}"#;
+    let mut output = Vec::new();
+
+    let mapping = sort_json_file_by_key(&input[..], &mut output, "unused").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert!(mapping.is_empty());
+    assert_eq!(output_json["graph"], serde_json::json!([]));
+    assert_eq!(output_json["directed"], false);
+}
+
+#[test]
+fn test_sort_json_file_by_reverse_cuthill_mckee() {
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_ordering(
+        path_graph_json(),
+        &mut output,
+        GraphOrderingMethod::ReverseCuthillMckee,
+    )
+    .unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(mapping.get(&3), Some(&0));
+    assert_eq!(mapping.get(&2), Some(&1));
+    assert_eq!(mapping.get(&1), Some(&2));
+    assert_eq!(mapping.get(&0), Some(&3));
+    assert_eq!(output_json["adjacency"][0][0]["id"], 1);
+}
+
+#[test]
+fn test_sort_json_file_by_multi_level_cluster() {
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_ordering(
+        path_graph_json(),
+        &mut output,
+        GraphOrderingMethod::MultiLevelCluster,
+    )
+    .unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    let positions = [mapping[&0], mapping[&1], mapping[&2], mapping[&3]];
+    let mut sorted = positions;
+    sorted.sort_unstable();
+    assert_eq!(sorted, [0, 1, 2, 3]);
+    assert_eq!(output_json["nodes"].as_array().unwrap().len(), 4);
+}
+
+#[test]
+fn test_sort_by_ordering_directed_rcm() {
+    let input = r#"{
+        "directed": true,
+        "nodes": [
+            {"id": 0},
+            {"id": 1},
+            {"id": 2}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 2}],
+            [{"id": 0}]
+        ]
+    }"#;
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_ordering(
+        input.as_bytes(),
+        &mut output,
+        GraphOrderingMethod::ReverseCuthillMckee,
+    )
+    .unwrap();
+    assert_eq!(mapping.len(), 3);
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(output_json["nodes"].as_array().unwrap().len(), 3);
+    assert_eq!(output_json["directed"], true);
+}
+
+#[test]
+fn test_sort_by_ordering_directed_mlc() {
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_ordering(
+        path_graph_json(),
+        &mut output,
+        GraphOrderingMethod::MultiLevelCluster,
+    )
+    .unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(output_json["nodes"].as_array().unwrap().len(), 4);
+    assert!(!mapping.is_empty());
+}
+
+#[test]
+fn test_sort_by_key_directed_graph() {
+    let input = r#"{
+        "directed": true,
+        "nodes": [
+            {"id": 0, "label": "c"},
+            {"id": 1, "label": "a"},
+            {"id": 2, "label": "b"}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 2}],
+            [{"id": 0}]
+        ]
+    }"#;
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_key(input.as_bytes(), &mut output, "label").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(output_json["nodes"].as_array().unwrap().len(), 3);
+    assert_eq!(output_json["directed"], true);
+    assert_eq!(output_json["nodes"][0]["label"], "a");
+    assert_eq!(output_json["nodes"][1]["label"], "b");
+    assert_eq!(output_json["nodes"][2]["label"], "c");
+    assert_eq!(mapping[&1], 0);
+    assert_eq!(mapping[&2], 1);
+    assert_eq!(mapping[&0], 2);
+}
+
+#[test]
+fn test_sort_json_file_by_key_id() {
+    let input = r#"{
+        "nodes": [
+            {"id": 2},
+            {"id": 0},
+            {"id": 1}
+        ],
+        "adjacency": [
+            [{"id": 0}],
+            [{"id": 1}],
+            [{"id": 2}]
+        ]
+    }"#;
+
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_key(input.as_bytes(), &mut output, "id").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(output_json["nodes"][0]["id"], 0);
+    assert_eq!(output_json["nodes"][1]["id"], 1);
+    assert_eq!(output_json["nodes"][2]["id"], 2);
+    // Map keys are original positions (0=id2, 1=id0, 2=id1), values are new positions.
+    assert_eq!(mapping[&0], 2); // pos 0 (id=2) → new pos 2
+    assert_eq!(mapping[&1], 0); // pos 1 (id=0) → new pos 0
+    assert_eq!(mapping[&2], 1); // pos 2 (id=1) → new pos 1
+}
+
+#[test]
+fn test_sort_json_file_by_key_mixed_numeric_and_string() {
+    let input = r#"{
+        "nodes": [
+            {"id": 0, "key": 42},
+            {"id": 1, "key": "alpha"},
+            {"id": 2, "key": 7}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 2}],
+            [{"id": 0}]
+        ]
+    }"#;
+
+    let mut output = Vec::new();
+    sort_json_file_by_key(input.as_bytes(), &mut output, "key").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    // Numeric values come first (7 < 42), then string "alpha"
+    assert_eq!(output_json["nodes"][0]["key"], 7);
+    assert_eq!(output_json["nodes"][1]["key"], 42);
+    assert_eq!(output_json["nodes"][2]["key"], "alpha");
+}
+
+#[test]
+fn test_sort_json_file_by_key_missing_attribute_uses_null() {
+    // When a node lacks the sort key, compare_attr_values receives None which maps to the string
+    // "null" for comparison purposes.
+    let input = r#"{
+        "nodes": [
+            {"id": 0, "rank": 5},
+            {"id": 1},
+            {"id": 2, "rank": 3}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 0}, {"id": 2}],
+            [{"id": 1}]
+        ]
+    }"#;
+
+    let mut output = Vec::new();
+    sort_json_file_by_key(input.as_bytes(), &mut output, "rank").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    // Numeric values (3, 5) sort first; the node missing "rank" sorts as "null" (string).
+    assert_eq!(output_json["nodes"][0]["rank"], 3);
+    assert_eq!(output_json["nodes"][1]["rank"], 5);
+    // The node without "rank" is last (string "null" > numeric).
+    assert!(output_json["nodes"][2].get("rank").is_none());
+}
+
+#[test]
+fn test_mlc_with_isolated_node() {
+    // A graph containing an isolated node (no edges) triggers the single-node-component early
+    // return in mlc_component.
+    let input = r#"{
+        "nodes": [
+            {"id": 0},
+            {"id": 1},
+            {"id": 2},
+            {"id": 3}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 0}],
+            [],
+            []
+        ]
+    }"#;
+
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_ordering(
+        input.as_bytes(),
+        &mut output,
+        GraphOrderingMethod::MultiLevelCluster,
+    )
+    .unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(output_json["nodes"].as_array().unwrap().len(), 4);
+    assert_eq!(mapping.len(), 4);
+    // Every original node appears exactly once in the mapping.
+    let mut positions: Vec<usize> = mapping.values().copied().collect();
+    positions.sort();
+    assert_eq!(positions, vec![0, 1, 2, 3]);
+}
+
+#[test]
+fn test_sort_json_file_by_key_fips_string_ids() {
+    // Node IDs are FIPS codes stored as JSON strings ("360191010003" etc.). The mapping must use
+    // original positions (0-indexed) as keys, not the raw FIPS values, so that downstream BEN
+    // relabeling can index correctly.
+    let input = r#"{
+        "nodes": [
+            {"id": "360191010003", "rank": 30},
+            {"id": "360191010001", "rank": 10},
+            {"id": "360191010002", "rank": 20}
+        ],
+        "adjacency": [
+            [{"id": "360191010001"}],
+            [{"id": "360191010002"}],
+            [{"id": "360191010003"}]
+        ]
+    }"#;
+
+    let mut output = Vec::new();
+    let mapping = sort_json_file_by_key(input.as_bytes(), &mut output, "rank").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    // After sorting by rank: pos1(rank=10) → 0, pos2(rank=20) → 1, pos0(rank=30) → 2.
+    assert_eq!(output_json["nodes"][0]["rank"], 10);
+    assert_eq!(output_json["nodes"][1]["rank"], 20);
+    assert_eq!(output_json["nodes"][2]["rank"], 30);
+    // Map keys are original positions (not FIPS codes).
+    assert_eq!(mapping[&0], 2); // pos 0 (rank=30) → new pos 2
+    assert_eq!(mapping[&1], 0); // pos 1 (rank=10) → new pos 0
+    assert_eq!(mapping[&2], 1); // pos 2 (rank=20) → new pos 1
+                                // All new positions 0..N-1 are valid BEN array indices.
+    let mut new_positions: Vec<usize> = mapping.values().copied().collect();
+    new_positions.sort();
+    assert_eq!(new_positions, vec![0, 1, 2]);
+}
+
+#[test]
+fn test_sort_json_file_by_key_float_sort_values() {
+    // Sort key values are JSON floats; they should sort numerically, not as strings (e.g. 1.5 <
+    // 10.0, not "1.5" < "10.0" would also hold, but 2.5 < 10.0 would break lexicographically as
+    // "10.0" < "2.5").
+    let input = r#"{
+        "nodes": [
+            {"id": 0, "score": 10.0},
+            {"id": 1, "score": 2.5},
+            {"id": 2, "score": 1.5}
+        ],
+        "adjacency": [
+            [{"id": 1}],
+            [{"id": 2}],
+            [{"id": 0}]
+        ]
+    }"#;
+
+    let mut output = Vec::new();
+    sort_json_file_by_key(input.as_bytes(), &mut output, "score").unwrap();
+    let output_json: Value = serde_json::from_slice(&output).unwrap();
+
+    // Numeric order: 1.5 < 2.5 < 10.0 (lexicographic "10.0" < "2.5" would be wrong).
+    assert_eq!(output_json["nodes"][0]["score"], 1.5);
+    assert_eq!(output_json["nodes"][1]["score"], 2.5);
+    assert_eq!(output_json["nodes"][2]["score"], 10.0);
+}

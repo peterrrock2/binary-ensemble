@@ -8,3 +8,4 @@ demo
 
 __pycache__
 *.so
+/ben-py/docs/code-theme-preview.md

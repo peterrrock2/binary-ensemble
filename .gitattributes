@@ -1,1 +1,2 @@
 example/100k_CO_chain.jsonl.xben filter=lfs diff=lfs merge=lfs -text
+example/50k_CO_chain.xben filter=lfs diff=lfs merge=lfs -text

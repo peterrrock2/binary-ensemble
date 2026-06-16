@@ -2,12 +2,16 @@
 resolver = "2"
 members = [
   "ben",
-  "pyben",
+  "ben-py",
 ]
 
 exclude = [
   "dev_files/*",
   "example/*",
+  "fuzz",
   "tests/*",
   "TODO.md",
 ]
+
+[workspace.package]
+version = "1.0.0"
