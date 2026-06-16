@@ -26,14 +26,16 @@ def main() -> None:
         ben = tmp_path / "out.ben"
         back = tmp_path / "round.jsonl"
 
-        src.write_text(
-            "".join(json.dumps(line, separators=(",", ":")) + "\n" for line in LINES)
-        )
+        # Write bytes directly so the fixture is byte-identical to the LF JSONL the library emits.
+        # Python's text-mode write translates "\n" to the platform line ending (CRLF on Windows),
+        # which would break the byte-level round-trip comparison below.
+        payload = "".join(json.dumps(line, separators=(",", ":")) + "\n" for line in LINES)
+        src.write_bytes(payload.encode("utf-8"))
         be.encode_jsonl_to_ben(src, ben, overwrite=True, variant="standard")
         be.decode_ben_to_jsonl(ben, back, overwrite=True)
 
         assert src.read_bytes() == back.read_bytes(), (
-            f"wheel round-trip mismatch:\n{src.read_text()!r}\n!=\n{back.read_text()!r}"
+            f"wheel round-trip mismatch:\n{src.read_bytes()!r}\n!=\n{back.read_bytes()!r}"
         )
 
     print("wheel smoke test passed")

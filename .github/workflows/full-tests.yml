@@ -90,7 +90,7 @@ jobs:
     if: needs.decide.outputs.run_full == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.decide.outputs.ref }}
       - uses: dtolnay/rust-toolchain@stable
@@ -110,7 +110,7 @@ jobs:
     if: needs.decide.outputs.run_full == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.decide.outputs.ref }}
       - uses: dtolnay/rust-toolchain@stable
@@ -132,7 +132,7 @@ jobs:
     if: needs.decide.outputs.run_endian == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.decide.outputs.ref }}
       - uses: dtolnay/rust-toolchain@stable
@@ -149,7 +149,7 @@ jobs:
     if: needs.decide.outputs.run_fuzz == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.decide.outputs.ref }}
       - uses: dtolnay/rust-toolchain@nightly
@@ -164,7 +164,7 @@ jobs:
         run: task fuzz FUZZ_SECONDS=120
       - name: upload crash artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-artifacts
           path: fuzz/artifacts/
