@@ -18,7 +18,10 @@ on:
 
 permissions:
   contents: read
-  issues: write # eyes-reaction acknowledgment on the triggering comment
+  # eyes-reaction acknowledgment on the triggering comment. The comment lives on a PR,
+  # so the reactions endpoint needs the pull-requests scope as well as issues.
+  issues: write
+  pull-requests: write
 
 jobs:
   decide:
@@ -98,6 +101,7 @@ jobs:
         run: >-
           cargo test -- --ignored
           --skip generate_format_stability_fixtures
+          --skip regenerate_twodelta_fixtures
           --skip generate_pcompress_interop_fixture
 
   python-tests:
