@@ -40,7 +40,7 @@ fn apply_runs_basic_two_position_swap() {
     // 1, next 2 get value 2 pair positions (where val is 1 or 2): 0,1,2,3 run 1 (len=2, val=1): pos
     // 0,1 → 1,1; run 2 (len=2, val=2): pos 2,3 → 2,2
     let prev = vec![1u16, 2, 1, 2];
-    let result = apply_twodelta_runs_to_assignment(prev, (1, 2), &[2, 2]).unwrap();
+    let result = apply_twodelta_runs_to_assignment(prev, (1, 2), &[2, 2], None).unwrap();
     assert_eq!(result, vec![1, 1, 2, 2]);
 }
 
@@ -49,7 +49,7 @@ fn apply_runs_non_pair_positions_unchanged() {
     // prev: [1,2,3,1,2], pair=(1,2), run_lengths=[2,2] pair positions: 0,1,3,4 (index 2 holds value
     // 3 → unchanged) run 1 (len=2, val=1): pos 0,1 → 1,1 run 2 (len=2, val=2): pos 3,4 → 2,2
     let prev = vec![1u16, 2, 3, 1, 2];
-    let result = apply_twodelta_runs_to_assignment(prev, (1, 2), &[2, 2]).unwrap();
+    let result = apply_twodelta_runs_to_assignment(prev, (1, 2), &[2, 2], None).unwrap();
     assert_eq!(result, vec![1, 1, 3, 2, 2]);
 }
 
@@ -58,7 +58,7 @@ fn apply_runs_full_reversal() {
     // prev: [1,1,2,2], pair=(2,1), run_lengths=[2,2] pair positions: 0,1,2,3; pair.0=2 comes first
     // run 1 (len=2, val=2): pos 0,1 → 2,2; run 2 (len=2, val=1): pos 2,3 → 1,1
     let prev = vec![1u16, 1, 2, 2];
-    let result = apply_twodelta_runs_to_assignment(prev, (2, 1), &[2, 2]).unwrap();
+    let result = apply_twodelta_runs_to_assignment(prev, (2, 1), &[2, 2], None).unwrap();
     assert_eq!(result, vec![2, 2, 1, 1]);
 }
 
@@ -67,7 +67,7 @@ fn apply_runs_exhausted_before_all_positions_covered_errors() {
     // prev: [1,2,1], pair=(1,2), run_lengths=[1], too short. After consuming run 0 (1 position with
     // value 1), run 1 missing → error
     let prev = vec![1u16, 2, 1];
-    let err = apply_twodelta_runs_to_assignment(prev, (1, 2), &[1]).unwrap_err();
+    let err = apply_twodelta_runs_to_assignment(prev, (1, 2), &[1], None).unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
 }
 
@@ -76,7 +76,7 @@ fn apply_runs_alternating_single_positions() {
     // prev: [1,2,1,2,1], pair=(1,2), run_lengths=[1,1,1,1,1] Each pair position flips: run
     // alternates 1,2,1,2,1
     let prev = vec![1u16, 2, 1, 2, 1];
-    let result = apply_twodelta_runs_to_assignment(prev, (1, 2), &[1, 1, 1, 1, 1]).unwrap();
+    let result = apply_twodelta_runs_to_assignment(prev, (1, 2), &[1, 1, 1, 1, 1], None).unwrap();
     // run[0]=1 → pos0=1; run[1]=1 → pos1=2; run[2]=1 → pos2=1; etc.
     assert_eq!(result, vec![1, 2, 1, 2, 1]);
 }

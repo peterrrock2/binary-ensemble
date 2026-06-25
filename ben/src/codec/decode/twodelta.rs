@@ -26,6 +26,7 @@ impl TwoDeltaMaskIndex {
         assignment: &mut [u16],
         pair: (u16, u16),
         run_lengths: &[u16],
+        mut changes_collector: Option<&mut Vec<(u32, u16, u16)>>,
     ) -> io::Result<()> {
         reject_zero_run_lengths(run_lengths)?;
 
@@ -59,6 +60,12 @@ impl TwoDeltaMaskIndex {
             }
 
             let pos = next_mask_position(&mut first_iter, &mut second_iter);
+            let old_value = assignment[pos];
+            if let Some(changes_vec) = changes_collector.as_deref_mut() {
+                if old_value != current_value {
+                    changes_vec.push((pos as u32, old_value, current_value));
+                }
+            }
             assignment[pos] = current_value;
             if current_value == first {
                 next_first.push(pos);
@@ -155,6 +162,8 @@ fn reject_unconsumed_runs(
 /// * `assignment` - The assignment from the preceding frame (consumed and returned).
 /// * `pair` - The two label values that participate in the delta.
 /// * `run_lengths` - Alternating run lengths starting with the first value of `pair`.
+/// * `changes_collector` - Optional mutable vector to collect changes made to the assignment. Each
+///   change is recorded as a tuple of (position, old_value, new_value).
 ///
 /// # Returns
 ///
@@ -164,6 +173,7 @@ pub(crate) fn apply_twodelta_runs_to_assignment(
     mut assignment: Vec<u16>,
     pair: (u16, u16),
     run_lengths: &[u16],
+    mut changes_collector: Option<&mut Vec<(u32, u16, u16)>>,
 ) -> io::Result<Vec<u16>> {
     reject_zero_run_lengths(run_lengths)?;
 
@@ -190,6 +200,14 @@ pub(crate) fn apply_twodelta_runs_to_assignment(
                     first
                 };
             }
+
+            let old_value = *val;
+            if let Some(changes_vec) = changes_collector.as_deref_mut() {
+                if old_value != current_value {
+                    changes_vec.push((pos as u32, old_value, current_value));
+                }
+            }
+
             *val = current_value;
             remaining_in_run -= 1;
         }
@@ -216,7 +234,7 @@ pub fn decode_twodelta_frame(previous: Vec<u16>, frame: &BenEncodeFrame) -> io::
             pair,
             run_length_vector,
             ..
-        } => apply_twodelta_runs_to_assignment(previous, *pair, run_length_vector),
+        } => apply_twodelta_runs_to_assignment(previous, *pair, run_length_vector, None),
         other => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!(

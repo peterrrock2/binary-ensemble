@@ -7,6 +7,7 @@
 //! [`crate::io::reader::DecodeFrame::expand_self_contained`] (subsample-level).
 
 mod ben;
+mod events;
 mod frames;
 mod xben;
 
@@ -24,6 +25,7 @@ use crate::progress::Spinner;
 use crate::BenVariant;
 
 pub use frames::BenStreamFrameReader;
+pub use events::{TwoDeltaFrameEvent, TwoDeltaFrameEventReader};
 
 /// Wire format of a BEN-stack stream.
 ///
@@ -164,6 +166,7 @@ impl<R: Read> BenStreamReader<R> {
         self.silent
     }
 
+    /// Return a mutable reference to the inner stream state.
     pub(crate) fn inner_mut(&mut self) -> &mut BenStreamInner<R> {
         &mut self.inner
     }

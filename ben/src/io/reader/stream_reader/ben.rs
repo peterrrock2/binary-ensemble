@@ -4,7 +4,9 @@ use std::io::{self, Read};
 
 use byteorder::ReadBytesExt;
 
+use super::events::diff_changes;
 use super::zero_count_frame_error;
+use super::TwoDeltaFrameEvent;
 use crate::codec::decode::{apply_twodelta_runs_to_assignment, DecodeError, TwoDeltaMaskIndex};
 use crate::codec::BenDecodeFrame;
 use crate::io::reader::subsample::MkvRecord;
@@ -70,9 +72,10 @@ fn expand_frame_ben(
                 .take()
                 .ok_or_else(|| io::Error::from(DecodeError::TwoDeltaNoAnchorFrame))?;
             if let Some(index) = twodelta_masks {
-                index.apply_runs(&mut assignment, pair, &run_lengths)?;
+                index.apply_runs(&mut assignment, pair, &run_lengths, None)?;
             } else {
-                assignment = apply_twodelta_runs_to_assignment(assignment, pair, &run_lengths)?;
+                assignment =
+                    apply_twodelta_runs_to_assignment(assignment, pair, &run_lengths, None)?;
                 *twodelta_masks = Some(TwoDeltaMaskIndex::from_assignment(&assignment));
             }
             Ok(assignment)
@@ -157,6 +160,75 @@ pub(super) fn next_record_ben<R: Read>(
             .set_count(*sample_count as u64);
     }
     Some(Ok((assignment, count)))
+}
+
+pub(super) fn next_event_ben<R: Read>(
+    reader: &mut R,
+    previous_assignment: &mut Option<Vec<u16>>,
+    twodelta_masks: &mut Option<TwoDeltaMaskIndex>,
+) -> Option<io::Result<TwoDeltaFrameEvent>> {
+    let frame = match pop_frame_from_reader(reader, BenVariant::TwoDelta) {
+        Some(Ok(frame)) => frame,
+        Some(Err(e)) => return Some(Err(e)),
+        None => return None,
+    };
+    let count = frame.count();
+    if count == 0 {
+        return Some(Err(zero_count_frame_error("BEN")));
+    }
+
+    match frame {
+        BenDecodeFrame::TwoDelta {
+            pair, run_lengths, ..
+        } => {
+            let mut assignment = match previous_assignment.take() {
+                Some(assignment) => assignment,
+                None => return Some(Err(io::Error::from(DecodeError::TwoDeltaNoAnchorFrame))),
+            };
+            let mut changes = Vec::new();
+            let result = if let Some(index) = twodelta_masks {
+                index
+                    .apply_runs(&mut assignment, pair, &run_lengths, Some(&mut changes))
+                    .map(|()| assignment)
+            } else {
+                match apply_twodelta_runs_to_assignment(
+                    assignment,
+                    pair,
+                    &run_lengths,
+                    Some(&mut changes),
+                ) {
+                    Ok(assignment) => {
+                        *twodelta_masks = Some(TwoDeltaMaskIndex::from_assignment(&assignment));
+                        Ok(assignment)
+                    }
+                    Err(e) => Err(e),
+                }
+            };
+
+            let assignment = match result {
+                Ok(assignment) => assignment,
+                Err(e) => return Some(Err(e)),
+            };
+            *previous_assignment = Some(assignment);
+            Some(Ok(TwoDeltaFrameEvent::Delta { changes, count }))
+        }
+        snapshot => {
+            let assignment = match snapshot.expand(None) {
+                Ok(assignment) => assignment,
+                Err(e) => return Some(Err(e)),
+            };
+            let changes = previous_assignment
+                .as_ref()
+                .map(|previous| diff_changes(previous, &assignment));
+            *twodelta_masks = Some(TwoDeltaMaskIndex::from_assignment(&assignment));
+            *previous_assignment = Some(assignment.clone());
+            Some(Ok(TwoDeltaFrameEvent::Snapshot {
+                assignment,
+                changes,
+                count,
+            }))
+        }
+    }
 }
 
 pub(super) fn count_samples_ben<R: Read>(mut reader: R, variant: BenVariant) -> io::Result<usize> {
