@@ -1,7 +1,9 @@
 use crate::codec::encode::encode_jsonl_to_xben;
 use crate::io::reader::errors::DecoderInitError;
 use crate::io::reader::subsample::{DecodeFrame, Selection, SubsampleFrameDecoder};
-use crate::io::reader::{BenStreamFrameReader, BenStreamReader, BenWireFormat};
+use crate::io::reader::{
+    BenStreamFrameReader, BenStreamReader, BenWireFormat, TwoDeltaFrameEvent,
+};
 use crate::io::writer::BenStreamWriter;
 use crate::BenVariant;
 use std::io::{self, Cursor, Write};
@@ -1160,6 +1162,365 @@ fn assignment_reader_twodelta_roundtrip() {
     assert_eq!(reader.variant(), BenVariant::TwoDelta);
     let results: Vec<_> = reader.map(|r| r.unwrap().0).collect();
     assert_eq!(results, assignments);
+}
+
+fn make_twodelta_ben_from_assignments(assignments: &[Vec<u16>]) -> Vec<u8> {
+    let mut ben = Vec::new();
+    {
+        let mut writer = BenStreamWriter::for_ben(&mut ben, BenVariant::TwoDelta).unwrap();
+        for assignment in assignments {
+            writer.write_assignment(assignment.clone()).unwrap();
+        }
+    }
+    ben
+}
+
+fn make_twodelta_xben_from_assignments(
+    assignments: &[Vec<u16>],
+    chunk_size: Option<usize>,
+) -> Vec<u8> {
+    let mut xben = Vec::new();
+    {
+        let encoder = XzEncoder::new(&mut xben, 1);
+        let mut writer =
+            BenStreamWriter::for_xben_with_encoder(encoder, BenVariant::TwoDelta, chunk_size)
+                .unwrap();
+        for assignment in assignments {
+            writer.write_assignment(assignment.clone()).unwrap();
+        }
+    }
+    xben
+}
+
+fn twodelta_ben_second_frame_start(ben: &[u8]) -> usize {
+    let banner_len = 17usize;
+    let anchor_start = banner_len + 1;
+    let n_bytes =
+        u32::from_be_bytes(ben[anchor_start + 2..anchor_start + 6].try_into().unwrap()) as usize;
+    anchor_start + 6 + n_bytes + 2
+}
+
+fn write_xben_twodelta_full_frame(writer: &mut impl Write, runs: &[(u16, u16)], count: u16) {
+    use crate::io::reader::twodelta::XBEN_TWODELTA_FULL_TAG;
+
+    writer.write_all(&[XBEN_TWODELTA_FULL_TAG]).unwrap();
+    writer
+        .write_all(&(runs.len() as u32).to_be_bytes())
+        .unwrap();
+    for &(value, len) in runs {
+        writer.write_all(&value.to_be_bytes()).unwrap();
+        writer.write_all(&len.to_be_bytes()).unwrap();
+    }
+    writer.write_all(&count.to_be_bytes()).unwrap();
+}
+
+fn replay_twodelta_events(events: &[TwoDeltaFrameEvent]) -> Vec<(Vec<u16>, u16)> {
+    let mut current: Option<Vec<u16>> = None;
+    let mut records = Vec::new();
+
+    for event in events {
+        match event {
+            TwoDeltaFrameEvent::Snapshot {
+                assignment, count, ..
+            } => {
+                current = Some(assignment.clone());
+                records.push((assignment.clone(), *count));
+            }
+            TwoDeltaFrameEvent::Delta { changes, count } => {
+                let assignment = current.as_mut().expect("delta event must follow snapshot");
+                for &(pos, old, new) in changes {
+                    assert_eq!(assignment[pos as usize], old);
+                    assignment[pos as usize] = new;
+                }
+                records.push((assignment.clone(), *count));
+            }
+        }
+    }
+
+    records
+}
+
+#[test]
+fn twodelta_events_ben_emit_snapshot_delta_and_midstream_snapshot() {
+    let a0 = vec![1u16, 2, 1, 2];
+    let a1 = vec![1u16, 1, 2, 2];
+    let a2 = vec![3u16, 3, 4, 4];
+    let assignments = vec![a0.clone(), a1.clone(), a2.clone(), a2.clone()];
+    let ben = make_twodelta_ben_from_assignments(&assignments);
+
+    let events: Vec<_> = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .into_twodelta_events()
+        .map(|event| event.unwrap())
+        .collect();
+
+    assert_eq!(
+        events,
+        vec![
+            TwoDeltaFrameEvent::Snapshot {
+                assignment: a0.clone(),
+                changes: None,
+                count: 1,
+            },
+            TwoDeltaFrameEvent::Delta {
+                changes: vec![(1, 2, 1), (2, 1, 2)],
+                count: 1,
+            },
+            TwoDeltaFrameEvent::Snapshot {
+                assignment: a2.clone(),
+                changes: Some(vec![(0, 1, 3), (1, 1, 3), (2, 2, 4), (3, 2, 4)]),
+                count: 2,
+            },
+        ]
+    );
+
+    let records: Vec<_> = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .map(|record| record.unwrap())
+        .collect();
+    assert_eq!(replay_twodelta_events(&events), records);
+}
+
+#[test]
+fn twodelta_events_preserve_repeated_delta_count() {
+    let a0 = vec![1u16, 2, 1, 2];
+    let a1 = vec![1u16, 1, 2, 2];
+    let assignments = vec![a0.clone(), a1.clone(), a1.clone(), a1.clone()];
+    let ben = make_twodelta_ben_from_assignments(&assignments);
+
+    let events: Vec<_> = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .into_twodelta_events()
+        .map(|event| event.unwrap())
+        .collect();
+
+    assert_eq!(
+        events,
+        vec![
+            TwoDeltaFrameEvent::Snapshot {
+                assignment: a0,
+                changes: None,
+                count: 1,
+            },
+            TwoDeltaFrameEvent::Delta {
+                changes: vec![(1, 2, 1), (2, 1, 2)],
+                count: 3,
+            },
+        ]
+    );
+}
+
+#[test]
+fn twodelta_events_xben_emit_chunk_delta_changes() {
+    let a0 = vec![1u16, 2, 1, 2];
+    let a1 = vec![1u16, 1, 2, 2];
+    let assignments = vec![a0.clone(), a1.clone()];
+    let xben = make_twodelta_xben_from_assignments(&assignments, Some(1));
+
+    let events: Vec<_> = BenStreamReader::from_xben(Cursor::new(&xben))
+        .unwrap()
+        .into_twodelta_events()
+        .map(|event| event.unwrap())
+        .collect();
+
+    assert_eq!(
+        events,
+        vec![
+            TwoDeltaFrameEvent::Snapshot {
+                assignment: a0,
+                changes: None,
+                count: 1,
+            },
+            TwoDeltaFrameEvent::Delta {
+                changes: vec![(1, 2, 1), (2, 1, 2)],
+                count: 1,
+            },
+        ]
+    );
+}
+
+#[test]
+fn twodelta_events_xben_emit_full_frame_snapshot_changes() {
+    let a0 = vec![1u16, 2, 1, 2];
+    let a1 = vec![1u16, 1, 2, 2];
+    let a2 = vec![3u16, 3, 4, 4];
+    let assignments = vec![a0.clone(), a1, a2.clone()];
+    let xben = make_twodelta_xben_from_assignments(&assignments, Some(1));
+
+    let events: Vec<_> = BenStreamReader::from_xben(Cursor::new(&xben))
+        .unwrap()
+        .into_twodelta_events()
+        .map(|event| event.unwrap())
+        .collect();
+
+    assert_eq!(
+        events.last().unwrap(),
+        &TwoDeltaFrameEvent::Snapshot {
+            assignment: a2,
+            changes: Some(vec![(0, 1, 3), (1, 1, 3), (2, 2, 4), (3, 2, 4)]),
+            count: 1,
+        }
+    );
+
+    let records: Vec<_> = BenStreamReader::from_xben(Cursor::new(&xben))
+        .unwrap()
+        .map(|record| record.unwrap())
+        .collect();
+    assert_eq!(replay_twodelta_events(&events), records);
+}
+
+#[test]
+fn twodelta_events_snapshot_diff_uses_aligned_positions_only() {
+    let mut xben = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben, 1);
+        encoder.write_all(b"TWODELTA BEN FILE").unwrap();
+        write_xben_twodelta_full_frame(&mut encoder, &[(1, 1), (2, 1)], 1);
+        write_xben_twodelta_full_frame(&mut encoder, &[(1, 1), (2, 1), (3, 1)], 1);
+        encoder.finish().unwrap();
+    }
+
+    let events: Vec<_> = BenStreamReader::from_xben(Cursor::new(&xben))
+        .unwrap()
+        .into_twodelta_events()
+        .map(|event| event.unwrap())
+        .collect();
+
+    assert_eq!(
+        events.last().unwrap(),
+        &TwoDeltaFrameEvent::Snapshot {
+            assignment: vec![1, 2, 3],
+            changes: Some(Vec::new()),
+            count: 1,
+        }
+    );
+}
+
+#[test]
+fn twodelta_events_non_twodelta_stream_errors_once() {
+    use crate::codec::encode::encode_jsonl_to_ben;
+
+    let jsonl = r#"{"assignment":[1,2],"sample":1}
+"#;
+    let mut ben = Vec::new();
+    encode_jsonl_to_ben(jsonl.as_bytes(), &mut ben, BenVariant::Standard).unwrap();
+
+    let mut events = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .into_twodelta_events();
+    let err = events.next().unwrap().unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    assert!(events.next().is_none());
+}
+
+#[test]
+fn twodelta_events_ben_unknown_tag_errors() {
+    let mut ben = b"TWODELTA BEN FILE".to_vec();
+    ben.push(0xff);
+
+    let err = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .into_twodelta_events()
+        .next()
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("unknown"));
+}
+
+#[test]
+fn twodelta_events_ben_truncated_after_tag_errors() {
+    use crate::io::reader::twodelta::BEN_TWODELTA_SNAPSHOT_TAG;
+
+    let mut ben = b"TWODELTA BEN FILE".to_vec();
+    ben.push(BEN_TWODELTA_SNAPSHOT_TAG);
+
+    let err = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .into_twodelta_events()
+        .next()
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn twodelta_events_ben_delta_before_anchor_errors() {
+    let valid = make_twodelta_ben_from_assignments(&[vec![1u16, 2, 1, 2], vec![1, 1, 2, 2]]);
+    let delta_start = twodelta_ben_second_frame_start(&valid);
+    let mut ben = b"TWODELTA BEN FILE".to_vec();
+    ben.extend_from_slice(&valid[delta_start..]);
+
+    let err = BenStreamReader::from_ben(ben.as_slice())
+        .unwrap()
+        .into_twodelta_events()
+        .next()
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(
+        err.to_string().contains("full-assignment") || err.to_string().contains("anchor"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn twodelta_events_xben_chunk_delta_without_anchor_errors() {
+    use crate::io::reader::twodelta::XBEN_TWODELTA_CHUNK_TAG;
+
+    let mut xben = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben, 1);
+        encoder.write_all(b"TWODELTA BEN FILE").unwrap();
+        encoder.write_all(&[XBEN_TWODELTA_CHUNK_TAG]).unwrap();
+        encoder.write_all(&1u32.to_be_bytes()).unwrap();
+        encoder.write_all(&1u16.to_be_bytes()).unwrap();
+        encoder.write_all(&2u16.to_be_bytes()).unwrap();
+        encoder.write_all(&1u16.to_be_bytes()).unwrap();
+        encoder.write_all(&1u32.to_be_bytes()).unwrap();
+        encoder.write_all(&2u16.to_be_bytes()).unwrap();
+        encoder.finish().unwrap();
+    }
+
+    let err = BenStreamReader::from_xben(Cursor::new(&xben))
+        .unwrap()
+        .into_twodelta_events()
+        .next()
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(
+        err.to_string().contains("full-assignment") || err.to_string().contains("anchor"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn twodelta_events_xben_zero_count_chunk_delta_errors() {
+    use crate::io::reader::twodelta::XBEN_TWODELTA_CHUNK_TAG;
+
+    let mut xben = Vec::new();
+    {
+        let mut encoder = XzEncoder::new(&mut xben, 1);
+        encoder.write_all(b"TWODELTA BEN FILE").unwrap();
+        write_xben_twodelta_full_frame(&mut encoder, &[(1, 2), (2, 2)], 1);
+        encoder.write_all(&[XBEN_TWODELTA_CHUNK_TAG]).unwrap();
+        encoder.write_all(&1u32.to_be_bytes()).unwrap();
+        encoder.write_all(&1u16.to_be_bytes()).unwrap();
+        encoder.write_all(&2u16.to_be_bytes()).unwrap();
+        encoder.write_all(&0u16.to_be_bytes()).unwrap();
+        encoder.write_all(&1u32.to_be_bytes()).unwrap();
+        encoder.write_all(&4u16.to_be_bytes()).unwrap();
+        encoder.finish().unwrap();
+    }
+
+    let mut events = BenStreamReader::from_xben(Cursor::new(&xben))
+        .unwrap()
+        .into_twodelta_events();
+    events.next().unwrap().unwrap();
+    let err = events.next().unwrap().unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("count"));
 }
 
 #[test]
