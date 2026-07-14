@@ -1,6 +1,6 @@
 use super::args::{
-    resolve_variant, CanonicalizeArgs, Cli, CliVariant, Command, Globals, OrderingMethod,
-    ReencodeArgs, RelabelArgs, SortGraphArgs,
+    resolve_variant, CanonicalizeArgs, Cli, CliVariant, Command, Globals, LookupTarget,
+    OrderingMethod, ReencodeArgs, RelabelArgs, SortGraphArgs,
 };
 use super::bundle::{
     append_graph_asset, run_encode_bundle_with_graph, run_xencode_bundle_with_graph,
@@ -115,11 +115,24 @@ fn parse_decode_from_xben_flag() {
 }
 
 #[test]
-fn lookup_requires_sample_number() {
+fn lookup_requires_position_kind_and_parses_both_conventions() {
     assert!(Cli::try_parse_from(["ben", "lookup", "x.ben"]).is_err());
-    let cli = Cli::try_parse_from(["ben", "lookup", "x.ben", "-n", "2"]).unwrap();
+
+    let cli = Cli::try_parse_from(["ben", "lookup", "index", "x.ben", "0"]).unwrap();
     match cli.command {
-        Command::Lookup(a) => assert_eq!(a.sample_number, 2),
+        Command::Lookup(a) => match a.target {
+            LookupTarget::Index(a) => assert_eq!(a.index, 0),
+            other => panic!("expected lookup index, got {other:?}"),
+        },
+        other => panic!("expected lookup, got {other:?}"),
+    }
+
+    let cli = Cli::try_parse_from(["ben", "lookup", "sample", "x.ben", "2"]).unwrap();
+    match cli.command {
+        Command::Lookup(a) => match a.target {
+            LookupTarget::Sample(a) => assert_eq!(a.sample_number, 2),
+            other => panic!("expected lookup sample, got {other:?}"),
+        },
         other => panic!("expected lookup, got {other:?}"),
     }
 }

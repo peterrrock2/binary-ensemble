@@ -193,9 +193,23 @@ fn ben_cli_encode_decode_read_and_x_modes_roundtrip() {
         "ben",
         &[
             "lookup",
+            "sample",
             ben_path.to_str().unwrap(),
-            "--sample-number",
             "2",
+            "--print",
+        ],
+        temp.path(),
+    );
+    assert_success(&read);
+    assert_eq!(String::from_utf8(read.stdout).unwrap(), "[2, 2, 3]\n");
+
+    let read = run(
+        "ben",
+        &[
+            "lookup",
+            "index",
+            ben_path.to_str().unwrap(),
+            "1",
             "--print",
         ],
         temp.path(),
@@ -483,14 +497,10 @@ fn ben_cli_reports_expected_error_paths() {
     assert_failure(&decode);
     assert!(String::from_utf8_lossy(&decode.stderr).contains("Error:"));
 
-    // lookup requires --sample-number; omitting it is a clap parse error.
-    let read = run(
-        "ben",
-        &["lookup", bogus_jsonl.to_str().unwrap()],
-        temp.path(),
-    );
+    // lookup requires an explicit indexing convention; omitting it is a clap parse error.
+    let read = run("ben", &["lookup"], temp.path());
     assert_failure(&read);
-    assert!(String::from_utf8_lossy(&read.stderr).contains("sample-number"));
+    assert!(String::from_utf8_lossy(&read.stderr).contains("Usage:"));
 
     let xz = run(
         "ben",
@@ -634,8 +644,8 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
             "ben",
             &[
                 "lookup",
+                "sample",
                 ben_path.to_str().unwrap(),
-                "--sample-number",
                 "1",
                 "--output-file",
                 occupied.to_str().unwrap(),
@@ -693,8 +703,8 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
         "ben",
         &[
             "lookup",
+            "sample",
             ben_path.to_str().unwrap(),
-            "--sample-number",
             "99",
             "--print",
         ],

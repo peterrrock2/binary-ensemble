@@ -68,7 +68,8 @@ ben encode small_example.jsonl                 # -> small_example.ben
 ben xencode small_example.ben                  # -> small_example.xben
 ben decode small_example.xben -w               # XBEN -> BEN (one layer down)
 ben decode small_example.ben -o roundtrip.jsonl     # BEN -> JSONL
-ben lookup small_example.ben -n 4              # prints sample 4: [1, 1, 1, 2, ...]
+ben lookup sample small_example.ben 4          # 1-based sample number
+ben lookup index small_example.ben 3           # same assignment, 0-based position
 ```
 
 `ben` also has `xdecode` (XBEN straight to JSONL) and general-purpose `xz-compress` /

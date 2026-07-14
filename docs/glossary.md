@@ -179,13 +179,14 @@ listed for reference.
   - Means "with LZMA2 wrapping." Not a separate verb; a modifier on `encode`/`decode`.
 - **Sample lookup** _(prose)_ / random-access decode
   - Decode just sample N from a BEN file.
-  - CLI: `ben lookup -n N`.
+  - CLI: `ben lookup sample FILE N` for a 1-based sample number, or
+    `ben lookup index FILE I` for a 0-based position.
   - For seekable plain `.ben` files, `TwoDelta` lookup scans frame tags/counts to find the latest
     snapshot before N, seeks there, and replays forward. `Standard` and `MkvChain` can skip raw
     frames directly.
 - **Subsampling**
   - Iterate over a subset of frames without consuming the whole stream. The umbrella that
-    `lookup -n N` is the special case "subsample of size 1."
+    lookup is the special case "subsample of size 1."
 - **Asset extract** vs **sample-range extract**
   - Two unrelated operations sharing the verb "extract." Always qualify in prose.
   - **Asset extract**: pull a named asset out of a bundle. Code: `extract_asset`. CLI:
