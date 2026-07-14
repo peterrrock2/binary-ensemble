@@ -29,6 +29,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(crate::recompress::recompress_bundle, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::recompress::decompress_bundle, m)?)?;
     m.add_function(wrap_pyfunction!(crate::relabel::relabel_bundle, m)?)?;
 
     Ok(())

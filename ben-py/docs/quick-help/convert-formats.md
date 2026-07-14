@@ -71,4 +71,5 @@ replace it. You never specify a variant when decoding — it's detected from the
 
 These helpers operate on plain streams and JSONL. To recompress the stream _inside_ a
 `.bendl` file (keeping its graph and metadata), use
-[`compress_stream`](shrink-for-sharing.md) instead.
+[`compress_stream`](shrink-for-sharing.md) instead. Its inverse, `decompress_stream`, changes the
+embedded XBEN stream back to BEN while also preserving every bundle asset.

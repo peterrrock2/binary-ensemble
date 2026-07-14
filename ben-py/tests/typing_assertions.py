@@ -24,6 +24,7 @@ from binary_ensemble import (
     BendlDecoder,
     BendlEncoder,
     compress_stream,
+    decompress_stream,
     relabel_bundle,
 )
 from binary_ensemble import graph as bgraph
@@ -108,6 +109,8 @@ def stream_and_transforms_surface(tmp: Path) -> None:
 
     compress_stream(tmp / "a.bendl")  # out_file=None means in place
     compress_stream(tmp / "a.bendl", out_file=tmp / "b.bendl", overwrite=True)
+    decompress_stream(tmp / "a.bendl")
+    decompress_stream(tmp / "a.bendl", out_file=tmp / "b.bendl", overwrite=True)
     relabel_bundle(tmp / "a.bendl", out_file=tmp / "c.bendl", overwrite=True)
     relabel_bundle(tmp / "a.bendl", sort="rcm")
     relabel_bundle(tmp / "a.bendl", in_place=True)  # type: ignore

@@ -19,8 +19,8 @@ conversions, and graph preprocessing.
 :link: bundle
 :link-type: doc
 
-`BendlEncoder`, `BendlDecoder`, `compress_stream`, `relabel_bundle` — the recommended
-single-file `.bendl` format.
+`BendlEncoder`, `BendlDecoder`, `compress_stream`, `decompress_stream`, `relabel_bundle` — the
+recommended single-file `.bendl` format.
 :::
 
 :::{grid-item-card} {octicon}`list-unordered` stream

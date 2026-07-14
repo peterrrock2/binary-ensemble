@@ -18,6 +18,7 @@ was written against.
 | Read assignments and assets        | `BendlDecoder(path)`                         |
 | Reorder/relabel an existing bundle | `relabel_bundle(...)`                        |
 | Recompress a bundle to XBEN        | `compress_stream(...)`                       |
+| Decompress a bundle to BEN         | `decompress_stream(...)`                     |
 
 ```python
 from binary_ensemble import BendlDecoder
@@ -154,17 +155,24 @@ decoder object; open a second decoder if you need independent cursors.
 These functions preserve bundle assets while rewriting the embedded stream.
 
 ```python
-from binary_ensemble import compress_stream, relabel_bundle
+from binary_ensemble import compress_stream, decompress_stream, relabel_bundle
 
 relabel_bundle("ensemble.bendl", out_file="api-sorted.bendl", sort="mlc")
 compress_stream("api-sorted.bendl", out_file="api-archive.bendl")
+decompress_stream("api-archive.bendl", out_file="api-working.bendl")
 ```
 
-Both transforms take an optional `out_file`: pass one to create a new file (`overwrite=True`
+Each transform takes an optional `out_file`: pass one to create a new file (`overwrite=True`
 replaces an existing one), or leave it off to atomically replace the input in place.
+
+`compress_stream()` is a whole-bundle transform: it changes the embedded BEN stream to XBEN
+while retaining the graph, metadata, and other assets. `decompress_stream()` is its inverse,
+changing XBEN back to BEN for faster day-to-day access while retaining the same assets.
 
 ```{eval-rst}
 .. autofunction:: binary_ensemble.bundle.compress_stream
+
+.. autofunction:: binary_ensemble.bundle.decompress_stream
 
 .. autofunction:: binary_ensemble.bundle.relabel_bundle
 ```

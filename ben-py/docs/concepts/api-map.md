@@ -20,6 +20,7 @@ For most work, reach for {mod}`binary_ensemble.bundle` first:
 - **`BendlEncoder`** — write a bundle: attach a graph and metadata, then stream assignments.
 - **`BendlDecoder`** — read a bundle: iterate assignments, recover the graph and metadata.
 - **`compress_stream`** — recompress a bundle's BEN stream to XBEN, keeping every asset.
+- **`decompress_stream`** — decompress a bundle's XBEN stream to BEN, keeping every asset.
 - **`relabel_bundle`** — reorder a bundle's graph and rewrite its stream to match.
 
 A bundle keeps the assignment stream and its dual graph together, which is what you want the

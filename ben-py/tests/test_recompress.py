@@ -1,4 +1,4 @@
-"""Tests for ``binary_ensemble.bundle.compress_stream`` (BEN bundle → XBEN bundle)."""
+"""Tests for transcoding a bundle's stream between BEN and XBEN."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from binary_ensemble.bundle import BendlDecoder, BendlEncoder, compress_stream
+from binary_ensemble.bundle import BendlDecoder, BendlEncoder, compress_stream, decompress_stream
 from helpers import example_graph as _graph
 
 
@@ -23,8 +23,8 @@ def _build_ben_bundle(path: Path):
     return samples
 
 
-def _assert_preserved(src_dec, out_dec):
-    assert out_dec.assignment_format() == "xben"
+def _assert_preserved(src_dec, out_dec, assignment_format):
+    assert out_dec.assignment_format() == assignment_format
     assert out_dec.asset_names() == src_dec.asset_names()
     # Decoded payloads + JSON flag preserved semantically.
     src_flags = {a["name"]: ("json" in a["flags"]) for a in src_dec.list_assets()}
@@ -43,7 +43,7 @@ def test_compress_stream_explicit_out_path(tmp_path: Path) -> None:
     compress_stream(src, out_file=out)
 
     out_dec = BendlDecoder(out)
-    _assert_preserved(src_dec, out_dec)
+    _assert_preserved(src_dec, out_dec, "xben")
     assert list(out_dec) == samples
     assert out_dec.read_metadata() == {"seed": 99}
     assert out_dec.read_node_permutation_map() is not None
@@ -94,3 +94,67 @@ def test_compress_stream_out_file_refuses_existing(tmp_path: Path) -> None:
     # overwrite=True is the explicit opt-in to replace it.
     compress_stream(src, out_file=out, overwrite=True)
     assert BendlDecoder(out).assignment_format() == "xben"
+
+
+def test_decompress_stream_explicit_out_path(tmp_path: Path) -> None:
+    src = tmp_path / "in.bendl"
+    compressed = tmp_path / "compressed.bendl"
+    out = tmp_path / "out.bendl"
+    samples = _build_ben_bundle(src)
+    compress_stream(src, out_file=compressed)
+    compressed_dec = BendlDecoder(compressed)
+
+    decompress_stream(compressed, out_file=out)
+
+    out_dec = BendlDecoder(out)
+    _assert_preserved(compressed_dec, out_dec, "ben")
+    assert list(out_dec) == samples
+    assert out_dec.read_metadata() == {"seed": 99}
+    assert out_dec.read_node_permutation_map() is not None
+    assert BendlDecoder(compressed).assignment_format() == "xben"
+
+
+def test_decompress_stream_in_place_by_default(tmp_path: Path) -> None:
+    path = tmp_path / "in.bendl"
+    samples = _build_ben_bundle(path)
+    compress_stream(path)
+    before = BendlDecoder(path)
+    before_assets = {name: before.read_asset_bytes(name) for name in before.asset_names()}
+
+    decompress_stream(path)
+
+    after = BendlDecoder(path)
+    assert after.assignment_format() == "ben"
+    assert list(after) == samples
+    for name, payload in before_assets.items():
+        assert after.read_asset_bytes(name) == payload
+
+
+def test_decompress_stream_assets_only_bundle(tmp_path: Path) -> None:
+    src = tmp_path / "assets.bendl"
+    with BendlEncoder(src, overwrite=True) as enc:
+        enc.add_metadata({"only": "assets"})
+    compressed = tmp_path / "assets.xben.bendl"
+    out = tmp_path / "assets.ben.bendl"
+    compress_stream(src, out_file=compressed)
+
+    decompress_stream(compressed, out_file=out)
+
+    dec = BendlDecoder(out)
+    assert dec.assignment_format() == "ben"
+    assert dec.is_complete()
+    assert dec.count_samples() == 0
+    assert list(dec) == []
+    assert dec.read_metadata() == {"only": "assets"}
+
+
+def test_stream_transcodes_require_the_opposite_format(tmp_path: Path) -> None:
+    ben = tmp_path / "ben.bendl"
+    xben = tmp_path / "xben.bendl"
+    _build_ben_bundle(ben)
+    compress_stream(ben, out_file=xben)
+
+    with pytest.raises(Exception, match="requires an embedded XBEN stream"):
+        decompress_stream(ben, out_file=tmp_path / "bad-ben.bendl")
+    with pytest.raises(Exception, match="requires an embedded BEN stream"):
+        compress_stream(xben, out_file=tmp_path / "bad-xben.bendl")

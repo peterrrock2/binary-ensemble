@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Literal, cast, get_args, overload
 
 from binary_ensemble._core import BendlDecoder, BendlStreamSession
 from binary_ensemble._core import BendlEncoder as _CoreBendlEncoder
+from binary_ensemble._core import decompress_bundle as _decompress_bundle
 from binary_ensemble._core import recompress_bundle as _recompress_bundle
 from binary_ensemble._core import relabel_bundle as _relabel_bundle
 from binary_ensemble.types import (
@@ -54,6 +55,7 @@ __all__ = [
     "BendlDecoder",
     "BendlStreamSession",
     "compress_stream",
+    "decompress_stream",
     "relabel_bundle",
 ]
 
@@ -479,6 +481,38 @@ def compress_stream(
     """
     _atomic_or_out(
         lambda src, dst, ow: _recompress_bundle(src, dst, overwrite=ow),
+        path,
+        out_file,
+        overwrite,
+    )
+
+
+def decompress_stream(
+    path: StrPath,
+    out_file: StrPath | None = None,
+    overwrite: bool = False,
+) -> None:
+    """Decompress a bundle's embedded XBEN stream to BEN, preserving every asset.
+
+    All assets (graph, metadata, node_permutation_map, custom blobs) are preserved by decoded
+    payload, name, type, and JSON flag; storage compression is normalized to the writer's default
+    policy. An assets-only XBEN bundle becomes an assets-only BEN bundle.
+
+    Args:
+        path (StrPath): Path to the source ``.bendl`` bundle (``str`` or ``os.PathLike``).
+        out_file (StrPath | None, optional): Destination path for the decompressed bundle
+            (``str`` or ``os.PathLike``), leaving ``path`` untouched. Default is ``None`` which
+            decompresses in place: the result is written to a temp file and atomically swapped
+            over ``path``.
+        overwrite (bool, optional): Replace ``out_file`` if it already exists. Irrelevant in
+            place, which always replaces ``path``. Default is ``False``.
+
+    Raises:
+        OSError: If ``out_file`` exists and ``overwrite`` is ``False``.
+        Exception: If the bundle is unfinalized or does not contain an XBEN stream.
+    """
+    _atomic_or_out(
+        lambda src, dst, ow: _decompress_bundle(src, dst, overwrite=ow),
         path,
         out_file,
         overwrite,
