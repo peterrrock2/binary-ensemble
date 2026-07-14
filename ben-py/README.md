@@ -64,7 +64,7 @@ from binary_ensemble import BendlEncoder, BendlDecoder
 dual_graph = nx.convert_node_labels_to_integers(nx.grid_2d_graph(4, 4))
 
 encoder = BendlEncoder("run.bendl", overwrite=True)
-ordered = encoder.add_graph(nx.adjacency_data(dual_graph))  # reordered for compression
+ordered = encoder.add_graph(nx.adjacency_data(dual_graph))  # preserves the graph's node order
 with encoder.ben_stream() as ensemble:
     for step in range(1000):
         ensemble.write([(node + step) % 4 + 1 for node in range(16)])

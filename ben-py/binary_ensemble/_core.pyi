@@ -163,12 +163,11 @@ class BendlEncoder:
         compression_level: int | None = None,
     ) -> None: ...
     # Returns the (possibly reordered) graph as a NetworkX graph, matching
-    # BendlDecoder.read_graph. sort defaults to "mlc"; sort="key" sorts by `key`; sort=None
-    # stores raw.
+    # BendlDecoder.read_graph. sort="key" sorts by `key`; sort=None (the default) stores raw.
     def add_graph(
         self,
         graph: GraphInput,
-        sort: SortMethod | None = "mlc",
+        sort: SortMethod | None = None,
         key: str | None = None,
         compress: bool | None = None,
         compression_level: int | None = None,

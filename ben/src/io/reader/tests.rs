@@ -1,9 +1,7 @@
 use crate::codec::encode::encode_jsonl_to_xben;
 use crate::io::reader::errors::DecoderInitError;
 use crate::io::reader::subsample::{DecodeFrame, Selection, SubsampleFrameDecoder};
-use crate::io::reader::{
-    BenStreamFrameReader, BenStreamReader, BenWireFormat, TwoDeltaFrameEvent,
-};
+use crate::io::reader::{BenStreamFrameReader, BenStreamReader, BenWireFormat, TwoDeltaFrameEvent};
 use crate::io::writer::BenStreamWriter;
 use crate::BenVariant;
 use std::io::{self, Cursor, Write};

@@ -31,7 +31,7 @@ class BendlEncoder:
     def add_graph(
         self,
         graph: GraphInput,
-        sort: SortMethod | None = "mlc",
+        sort: SortMethod | None = None,
         key: str | None = None,
         *,
         compress: bool | None = None,

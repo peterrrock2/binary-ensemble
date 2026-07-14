@@ -135,7 +135,7 @@ class BendlEncoder:
     the ``ben_stream()`` context finalizes the bundle, so the common pattern is::
 
         enc = BendlEncoder(path, overwrite=True)
-        graph = enc.add_graph(my_graph)          # MLC-reordered by default
+        graph = enc.add_graph(my_graph)          # original node order by default
         with enc.ben_stream() as ensemble:             # only the stream needs ``with``
             for assignment in chain:
                 ensemble.write(assignment)
@@ -188,7 +188,7 @@ class BendlEncoder:
     def add_graph(
         self,
         graph: GraphInput,
-        sort: SortMethod | None = "mlc",
+        sort: SortMethod | None = None,
         key: str | None = None,
         *,
         compress: bool | None = None,
@@ -210,7 +210,7 @@ class BendlEncoder:
                 (:data:`~binary_ensemble.types.SortMethod` or ``None``): ``"mlc"`` (multi-level
                 clustering that reorders the graph for better compression), ``"rcm"`` (reverse
                 Cuthill-McKee), ``"key"`` (sort by the node attribute named in ``key``), or
-                ``None`` to store the graph as-is with no permutation map. Default is ``"mlc"``.
+                ``None`` to store the graph as-is with no permutation map. Default is ``None``.
             key (str | None, optional): Node attribute to sort by, e.g. ``key="GEOID"``;
                 ``key="id"`` sorts by the NetworkX node id. Required with (and only valid with)
                 ``sort="key"``. Default is ``None``.

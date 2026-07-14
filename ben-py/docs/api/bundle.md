@@ -58,15 +58,15 @@ with encoder.ben_stream() as ensemble:
 ### Graph handling
 
 `add_graph()` accepts NetworkX adjacency JSON, a path to that JSON, raw bytes, or a readable
-object. By default it reorders with `sort="mlc"` for better compression and returns the
-reordered NetworkX graph. Write assignments in the returned graph's node order.
+object. By default it preserves the input node order. Pass an explicit `sort` method to reorder
+for better compression. Write assignments in the returned NetworkX graph's node order.
 
 | `sort`  | Meaning                                        | Needs `key`? | Stores permutation map? |
 | ------- | ---------------------------------------------- | -----------: | ----------------------: |
-| `"mlc"` | Multi-level clustering; topology-based default |           no |                     yes |
+| `"mlc"` | Multi-level clustering; topology-based         |           no |                     yes |
 | `"rcm"` | Reverse Cuthill-McKee topology ordering        |           no |                     yes |
 | `"key"` | Sort nodes by a node attribute                 |          yes |                     yes |
-| `None`  | Store the graph as-is                          |           no |                      no |
+| `None`  | Store the graph as-is (default)                |           no |                      no |
 
 ```python
 import networkx as nx

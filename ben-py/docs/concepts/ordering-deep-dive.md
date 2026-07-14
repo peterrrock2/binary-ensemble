@@ -19,7 +19,7 @@ If the graph order is `[A, B, C, D]`, the assignment says `A -> 1`, `B -> 1`,
 | Ordering     | Use when                                                 | Strength                       | Cost            |
 | ------------ | -------------------------------------------------------- | ------------------------------ | --------------- |
 | `sort="key"` | Nodes have a meaningful geographic key such as `GEOID20` | Often strongest on Census data | Cheap sort      |
-| `sort="mlc"` | No reliable key, topology should drive order             | Strong default                 | Graph algorithm |
+| `sort="mlc"` | No reliable key, topology should drive order             | Strong option                  | Graph algorithm |
 | `sort="rcm"` | Want topology-based bandwidth reduction                  | Solid fallback                 | Graph algorithm |
 | `sort=None`  | You must preserve existing order exactly                 | No compression help            | None            |
 

@@ -24,8 +24,8 @@ use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::progress::Spinner;
 use crate::BenVariant;
 
-pub use frames::BenStreamFrameReader;
 pub use events::{TwoDeltaFrameEvent, TwoDeltaFrameEventReader};
+pub use frames::BenStreamFrameReader;
 
 /// Wire format of a BEN-stack stream.
 ///
