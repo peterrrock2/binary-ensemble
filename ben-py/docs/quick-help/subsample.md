@@ -6,9 +6,9 @@ never materialize the samples you skip, and where the stream allows it they skip
 frames without unpacking them.
 
 All three methods are available on both `BendlDecoder` (for bundles) and `BenDecoder` (for
-plain streams). Each returns a decoder you iterate. Indices are **1-based**; out-of-range
-indices raise rather than being silently dropped, duplicate indices are dropped, and an
-unsorted index list is sorted (with a `UserWarning`).
+plain streams). Each returns a decoder you iterate. Indices are **zero-based**; out-of-range
+indices raise rather than being silently dropped, duplicate indices are dropped, and an unsorted
+index list is sorted (with a `UserWarning`).
 
 ```{note}
 How cheap skipping is depends on the stream's [encoding variant](../concepts/variants.md).
@@ -26,14 +26,14 @@ heavy random access or repeated subsampling is your primary workload, encode wit
 ```python
 from binary_ensemble import BendlDecoder
 
-for assignment in BendlDecoder("ensemble.bendl").subsample_indices([1, 50, 100]):
+for assignment in BendlDecoder("ensemble.bendl").subsample_indices([0, 49, 99]):
     print(assignment[:10])
 ```
 
 ## By a contiguous range
 
-Ranges are **1-based and inclusive**: `subsample_range(10, 15)` yields samples 10, 11, 12,
-13, 14, and 15.
+Ranges are **zero-based and half-open**, like Python slices: `subsample_range(10, 15)` yields
+indices 10, 11, 12, 13, and 14.
 
 ```python
 for assignment in BendlDecoder("ensemble.bendl").subsample_range(10, 15):
@@ -42,7 +42,7 @@ for assignment in BendlDecoder("ensemble.bendl").subsample_range(10, 15):
 
 ## By a fixed stride
 
-`subsample_every(step)` yields every `step`-th sample (with an optional `offset`):
+`subsample_every(step, offset=0)` follows the same positions as `plans[offset::step]`:
 
 ```python
 for assignment in BendlDecoder("ensemble.bendl").subsample_every(25):

@@ -149,12 +149,12 @@ assert ordered_graph.number_of_nodes() == 4
 
 ## A subsample call rejects its arguments
 
-**Symptom:** an `Exception` such as `indices must be 1-based`, `indices must be <= number
-of samples in base data`, `range must be 1-based and end >= start`, or `step and offset
-must be >= 1`.
+**Symptom:** an `Exception` such as `indices must be < number of samples in base data`,
+`range end must be >= start`, `step must be >= 1`, or `offset must be < number of samples in
+base data`.
 
-**Cause:** sample positions are 1-based everywhere, and out-of-range positions raise
-rather than being silently dropped. (Duplicate indices do not raise — they are dropped; an
+**Cause:** subsample positions are zero-based, ranges are half-open, and out-of-range positions
+raise rather than being silently dropped. (Duplicate indices do not raise: they are dropped; an
 _unsorted_ list is sorted with a `UserWarning`. An empty index list raises.)
 
 **Fix:** clamp the request to `len(decoder)` first.
@@ -163,8 +163,8 @@ _unsorted_ list is sorted with a `UserWarning`. An empty index list raises.)
 from binary_ensemble import BendlDecoder
 
 decoder = BendlDecoder("ensemble.bendl")
-window = list(decoder.subsample_range(1, min(50, len(decoder))))
-assert len(window) == 50
+window = list(decoder.subsample_range(0, min(50, len(decoder))))
+assert len(window) == min(50, len(decoder))
 ```
 
 ## `ensemble.write()` rejects an assignment

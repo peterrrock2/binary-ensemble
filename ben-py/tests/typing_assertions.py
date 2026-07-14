@@ -88,8 +88,8 @@ def bundle_decoder_surface(dec: BendlDecoder) -> None:
     if pmap is not None:
         assert_type(pmap["node_permutation_old_to_new"], dict[str, int])
 
-    dec.subsample_indices([1, 500, 1000])
-    dec.subsample_every(250, offset=2)
+    dec.subsample_indices([0, 499, 999])
+    dec.subsample_every(250, offset=1)
     dec.verify()
 
 
@@ -104,7 +104,7 @@ def stream_and_transforms_surface(tmp: Path) -> None:
     with BenEncoder(tmp / "t.ben", overwrite=True, variant="mkv_chain") as enc:
         enc.write([0, 1])
     dec = BenDecoder(tmp / "t.xben", mode="xben")
-    dec.subsample_range(1, 3)
+    dec.subsample_range(0, 3)
     BenDecoder(tmp, mode="jsonl")  # type: ignore
 
     compress_stream(tmp / "a.bendl")  # out_file=None means in place

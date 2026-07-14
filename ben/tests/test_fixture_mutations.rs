@@ -93,7 +93,7 @@ fn drive_ben_entry_points(fixture_name: &str, pos: usize, byte: u8, bytes: &[u8]
         if let Ok(reader) = BenStreamReader::from_ben(bytes) {
             for record in reader
                 .silent(true)
-                .into_subsample_by_indices(vec![1, 3])
+                .into_subsample_by_indices(vec![0, 2])
                 .take(MAX_PULLS)
             {
                 let _ = record;
@@ -104,7 +104,7 @@ fn drive_ben_entry_points(fixture_name: &str, pos: usize, byte: u8, bytes: &[u8]
         if let Ok(reader) = BenStreamReader::from_ben(bytes) {
             for record in reader
                 .silent(true)
-                .into_subsample_by_range(1, 2)
+                .into_subsample_by_range(0, 2)
                 .take(MAX_PULLS)
             {
                 let _ = record;
@@ -115,7 +115,7 @@ fn drive_ben_entry_points(fixture_name: &str, pos: usize, byte: u8, bytes: &[u8]
         if let Ok(reader) = BenStreamReader::from_ben(bytes) {
             for record in reader
                 .silent(true)
-                .into_subsample_every(2, 1)
+                .into_subsample_every(2, 0)
                 .take(MAX_PULLS)
             {
                 let _ = record;
@@ -198,7 +198,7 @@ fn drive_xben_entry_points(fixture_name: &str, pos: usize, byte: u8, bytes: &[u8
         if let Ok(reader) = BenStreamReader::from_xben(bytes) {
             for record in reader
                 .silent(true)
-                .into_subsample_by_range(1, 2)
+                .into_subsample_by_range(0, 2)
                 .take(MAX_PULLS)
             {
                 let _ = record;

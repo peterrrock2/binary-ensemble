@@ -194,7 +194,8 @@ to-ben / to-xben <file>`), so ensembles can move between the two ecosystems. Bot
   format cannot detect a mismatched graph. Decoding a stream against the wrong node order
   yields valid-looking but wrong plans — which is exactly why `.bendl` files embed the
   graph.
-- **Samples are 1-indexed**, and decoded ensembles always start at sample 1.
+- **Sample numbers are 1-indexed**, and decoded ensembles always start at sample 1. Positional
+  operations such as subsampling use zero-based indices.
 - **District ids and run lengths are 16-bit** (ids 0–65535, run lengths 1–65535) — far
   beyond any statewide redistricting use.
 - A machine running the codecs only needs memory for one assignment vector at a time.

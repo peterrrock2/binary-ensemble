@@ -182,8 +182,8 @@ def test_subsample_indices(tmp_path: Path) -> None:
     encode_jsonl_to_xben(
         src, xben, overwrite=True, variant="mkv_chain", n_threads=1, compression_level=1
     )
-    want = list(range(1, 201, 3))
-    baseline = [seq[i - 1] for i in want]
+    want = list(range(0, 200, 3))
+    baseline = [seq[i] for i in want]
     assert list(BenDecoder(xben, mode="xben").subsample_indices(want)) == baseline
 
 
@@ -194,7 +194,8 @@ def test_subsample_range(tmp_path: Path) -> None:
     write_jsonl(seq, src)
     ben = tmp_path / "out.ben"
     encode_jsonl_to_ben(src, ben, overwrite=True, variant="mkv_chain")
-    assert list(BenDecoder(ben, mode="ben").subsample_range(11, 77)) == seq[10:77]
+    assert list(BenDecoder(ben, mode="ben").subsample_range(10, 77)) == seq[10:77]
+    assert list(BenDecoder(ben, mode="ben").subsample_range(0, 1)) == seq[:1]
 
 
 def test_subsample_every(tmp_path: Path) -> None:
@@ -206,8 +207,8 @@ def test_subsample_every(tmp_path: Path) -> None:
     encode_jsonl_to_xben(
         src, xben, overwrite=True, variant="mkv_chain", n_threads=1, compression_level=1
     )
-    baseline = [seq[i - 1] for i in range(2, 181, 5)]
-    assert list(BenDecoder(xben, mode="xben").subsample_every(5, 2)) == baseline
+    baseline = [seq[i] for i in range(1, 180, 5)]
+    assert list(BenDecoder(xben, mode="xben").subsample_every(5, 1)) == baseline
 
 
 def test_plain_stream_iteration_restart(tmp_path: Path) -> None:
@@ -227,7 +228,7 @@ def test_plain_stream_subsample_survives_reiteration(tmp_path: Path) -> None:
     with BenEncoder(path, overwrite=True, variant="standard") as enc:
         for a in samples:
             enc.write(a)
-    dec = BenDecoder(path).subsample_every(2, offset=1)
+    dec = BenDecoder(path).subsample_every(2, offset=0)
     expected = [[1], [3], [5], [7]]
     assert list(dec) == expected
     assert list(dec) == expected
@@ -335,7 +336,7 @@ def test_decoder_count_after_subsample_preserves_len(tmp_path: Path) -> None:
     with BenEncoder(path, overwrite=True, variant="standard") as enc:
         for a in samples:
             enc.write(a)
-    dec = BenDecoder(path).subsample_every(3, 1)
+    dec = BenDecoder(path).subsample_every(3)
     expected = samples[::3]
     assert len(dec) == len(expected)
     assert dec.count_samples() == len(samples)
@@ -351,22 +352,21 @@ def test_decoder_subsample_validations(tmp_path: Path) -> None:
     encode_jsonl_to_ben(src, ben, overwrite=True, variant="standard")
 
     with pytest.warns(UserWarning, match="sorted and unique"):
-        got = list(BenDecoder(ben, mode="ben").subsample_indices([5, 1, 1, 3]))
+        got = list(BenDecoder(ben, mode="ben").subsample_indices([4, 0, 0, 2]))
     assert got == [samples[0], samples[2], samples[4]]
-    with pytest.raises(Exception, match="indices must be 1-based"):
-        BenDecoder(ben, mode="ben").subsample_indices([0, 1])
     with pytest.raises(Exception, match="indices must not be empty"):
         BenDecoder(ben, mode="ben").subsample_indices([])
-    with pytest.raises(Exception, match="indices must be <="):
-        BenDecoder(ben, mode="ben").subsample_indices([6])
-    with pytest.raises(Exception, match="range must be 1-based"):
-        BenDecoder(ben, mode="ben").subsample_range(0, 2)
+    with pytest.raises(Exception, match="indices must be <"):
+        BenDecoder(ben, mode="ben").subsample_indices([5])
+    with pytest.raises(Exception, match="range end must be >= start"):
+        BenDecoder(ben, mode="ben").subsample_range(3, 2)
     with pytest.raises(Exception, match="end must be <="):
-        BenDecoder(ben, mode="ben").subsample_range(1, 99)
-    with pytest.raises(Exception, match="step and offset must be >= 1"):
-        BenDecoder(ben, mode="ben").subsample_every(0, 1)
-    with pytest.raises(Exception, match="offset must be <="):
-        BenDecoder(ben, mode="ben").subsample_every(2, 99)
+        BenDecoder(ben, mode="ben").subsample_range(0, 99)
+    assert list(BenDecoder(ben, mode="ben").subsample_range(2, 2)) == []
+    with pytest.raises(Exception, match="step must be >= 1"):
+        BenDecoder(ben, mode="ben").subsample_every(0, 0)
+    with pytest.raises(Exception, match="offset must be <"):
+        BenDecoder(ben, mode="ben").subsample_every(2, 5)
 
 
 def test_decoder_reports_zero_count_and_bad_frame_errors(tmp_path: Path) -> None:

@@ -187,6 +187,8 @@ listed for reference.
 - **Subsampling**
   - Iterate over a subset of frames without consuming the whole stream. The umbrella that
     lookup is the special case "subsample of size 1."
+  - Positional selectors use zero-based indices and half-open ranges; these are distinct from the
+    one-based `sample_number` domain field.
 - **Asset extract** vs **sample-range extract**
   - Two unrelated operations sharing the verb "extract." Always qualify in prose.
   - **Asset extract**: pull a named asset out of a bundle. Code: `extract_asset`. CLI:

@@ -279,7 +279,7 @@ fn subsample_mixed_twodelta_ben_selects_correct_samples() {
     let ben = make_ben_from_assignments(&assignments, BenVariant::TwoDelta);
     let results: Vec<_> = BenStreamReader::from_ben(Cursor::new(ben))
         .unwrap()
-        .into_subsample_by_indices(vec![1, 3, 5])
+        .into_subsample_by_indices(vec![0, 2, 4])
         .map(|r| r.unwrap().0)
         .collect();
     assert_eq!(
@@ -298,7 +298,7 @@ fn subsample_mixed_twodelta_xben_selects_correct_samples() {
     let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
     let results: Vec<_> = BenStreamReader::from_xben(Cursor::new(xben))
         .unwrap()
-        .into_subsample_by_indices(vec![1, 3, 5])
+        .into_subsample_by_indices(vec![0, 2, 4])
         .map(|r| r.unwrap().0)
         .collect();
     assert_eq!(
@@ -339,7 +339,7 @@ fn xz_reader_subsample_by_indices() {
     let xben = make_xben(jsonl, BenVariant::Standard);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader
-        .into_subsample_by_indices(vec![1, 3])
+        .into_subsample_by_indices(vec![0, 2])
         .map(|r| r.unwrap().0)
         .collect();
     assert_eq!(results.len(), 2);
@@ -356,7 +356,7 @@ fn xz_reader_subsample_by_range() {
     let xben = make_xben(jsonl, BenVariant::Standard);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader
-        .into_subsample_by_range(2, 3)
+        .into_subsample_by_range(1, 3)
         .map(|r| r.unwrap().0)
         .collect();
     assert_eq!(results.len(), 2);
@@ -374,7 +374,7 @@ fn xz_reader_subsample_every() {
     let xben = make_xben(jsonl, BenVariant::Standard);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader
-        .into_subsample_every(2, 1) // samples 1, 3
+        .into_subsample_every(2, 0) // indices 0, 2
         .map(|r| r.unwrap().0)
         .collect();
     assert_eq!(results.len(), 2);
@@ -523,9 +523,9 @@ fn xz_reader_subsample_by_indices_deduplicates_and_sorts() {
 "#;
     let xben = make_xben(jsonl, BenVariant::Standard);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
-    // Pass unsorted duplicates: [3,1,3,1] → sorted+deduped [1,3]
+    // Pass unsorted duplicates: [2,0,2,0] → sorted+deduped [0,2]
     let results: Vec<_> = reader
-        .into_subsample_by_indices(vec![3, 1, 3, 1])
+        .into_subsample_by_indices(vec![2, 0, 2, 0])
         .map(|r| r.unwrap().0)
         .collect();
     assert_eq!(results.len(), 2);
@@ -540,9 +540,9 @@ fn xz_reader_subsample_by_indices_beyond_stream() {
 "#;
     let xben = make_xben(jsonl, BenVariant::Standard);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
-    // Index 5 is beyond the stream (only 2 samples)
+    // Index 2 is beyond the stream (only 2 samples).
     let results: Vec<_> = reader
-        .into_subsample_by_indices(vec![5])
+        .into_subsample_by_indices(vec![2])
         .map(|r| r.unwrap().0)
         .collect();
     assert_eq!(results.len(), 0);
@@ -557,7 +557,7 @@ fn xz_reader_subsample_by_range_single_element() {
     let xben = make_xben(jsonl, BenVariant::Standard);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader
-        .into_subsample_by_range(2, 2) // only sample 2
+        .into_subsample_by_range(1, 2) // only index 1
         .map(|r| r.unwrap().0)
         .collect();
     assert_eq!(results.len(), 1);
@@ -588,9 +588,9 @@ fn xz_reader_subsample_mkv_with_count_gt_1() {
 "#;
     let xben = make_xben(jsonl, BenVariant::MkvChain);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
-    // Select sample 2 (middle of the count=3 frame) and sample 4
+    // Select index 1 (middle of the count=3 frame) and index 3.
     let results: Vec<_> = reader
-        .into_subsample_by_indices(vec![2, 4])
+        .into_subsample_by_indices(vec![1, 3])
         .map(|r| r.unwrap())
         .collect();
     assert_eq!(results.len(), 2);
@@ -604,7 +604,7 @@ fn xz_reader_subsample_twodelta() {
     let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader
-        .into_subsample_by_indices(vec![1, 3])
+        .into_subsample_by_indices(vec![0, 2])
         .map(|r| r.unwrap().0)
         .collect();
     assert_eq!(results.len(), 2);
@@ -725,7 +725,7 @@ fn subsample_indices_mixed_before_and_after() {
     let xben = make_xben_from_assignments(&assignments, BenVariant::Standard);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader
-        .into_subsample_by_indices(vec![2, 4, 100])
+        .into_subsample_by_indices(vec![1, 3, 100])
         .map(|r| r.unwrap().0)
         .collect();
     assert_eq!(results.len(), 2);
@@ -739,7 +739,7 @@ fn subsample_every_step_larger_than_stream() {
     let xben = make_xben_from_assignments(&assignments, BenVariant::Standard);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader
-        .into_subsample_every(100, 1)
+        .into_subsample_every(100, 0)
         .map(|r| r.unwrap().0)
         .collect();
     assert_eq!(results.len(), 1);
@@ -764,7 +764,7 @@ fn subsample_twodelta_by_range() {
     let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader
-        .into_subsample_by_range(2, 3)
+        .into_subsample_by_range(1, 3)
         .map(|r| r.unwrap().0)
         .collect();
     assert_eq!(results.len(), 2);
@@ -783,7 +783,7 @@ fn subsample_twodelta_every() {
     let xben = make_xben_from_assignments(&assignments, BenVariant::TwoDelta);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader
-        .into_subsample_every(2, 1)
+        .into_subsample_every(2, 0)
         .map(|r| r.unwrap().0)
         .collect();
     assert_eq!(results.len(), 2);
@@ -1640,8 +1640,7 @@ fn xz_reader_truncated_stream_errors() {
 
 #[test]
 fn subsample_every_first_past_hi() {
-    // 4 samples, step=10, offset=5: first selected = 5, but only 4 samples exist → the `first > hi`
-    // branch fires for every frame.
+    // Four samples, step=10, offset=4: the first selected index is just beyond the stream.
     let jsonl = concat!(
         "{\"assignment\":[1,2],\"sample\":1}\n",
         "{\"assignment\":[3,4],\"sample\":2}\n",
@@ -1650,7 +1649,7 @@ fn subsample_every_first_past_hi() {
     );
     let xben = make_xben(jsonl, BenVariant::Standard);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
-    let sub = reader.into_subsample_every(10, 5);
+    let sub = reader.into_subsample_every(10, 4);
     let results: Vec<_> = sub.map(|r| r.unwrap()).collect();
     assert!(results.is_empty());
 }
@@ -1755,8 +1754,7 @@ fn xz_reader_twodelta_chunk_zero_count_errors() {
 
 #[test]
 fn subsample_indices_skip_past_lo() {
-    // MkvChain stream where first frame has count=5 but we only want indices [7,8]. This forces the
-    // Indices selection to skip past `lo` (line 160-161 in subsample.rs).
+    // MkvChain stream where indices 6 and 7 both fall in the second repeated frame.
     let jsonl = concat!(
         "{\"assignment\":[1,2,3],\"sample\":1}\n",
         "{\"assignment\":[1,2,3],\"sample\":2}\n",
@@ -1770,7 +1768,7 @@ fn subsample_indices_skip_past_lo() {
     let xben = make_xben(jsonl, BenVariant::MkvChain);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
     let results: Vec<_> = reader
-        .into_subsample_by_indices(vec![7, 8])
+        .into_subsample_by_indices(vec![6, 7])
         .map(|r| r.unwrap())
         .collect();
     assert_eq!(results.len(), 1); // one frame covering both
@@ -1778,20 +1776,19 @@ fn subsample_indices_skip_past_lo() {
     assert_eq!(results[0].1, 2);
 }
 
-// ── Subsample indices with zero (below 1-based lo) ──────────────────
+// ── Subsample indices with a stale unsorted entry ──────────────────
 
 #[test]
-fn subsample_indices_with_zero_skips_past_lo() {
+fn subsample_indices_skips_stale_unsorted_entry() {
     let assignments = vec![vec![1u16, 2], vec![3, 4], vec![5, 6]];
     let xben = make_xben_from_assignments(&assignments, BenVariant::Standard);
     let reader = BenStreamReader::from_xben(Cursor::new(xben)).unwrap();
-    // Index 0 is below the 1-based lo boundary, exercises the `next < lo` skip.
-    let results: Vec<_> = reader
-        .into_subsample_by_indices(vec![0, 2])
+    let selection = Selection::Indices(vec![2, 0].into_iter().peekable());
+    let results: Vec<_> = SubsampleFrameDecoder::new(reader.into_frames(), selection)
         .map(|r| r.unwrap().0)
         .collect();
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0], vec![3, 4]);
+    assert_eq!(results[0], vec![5, 6]);
 }
 
 // ── BenStreamFrameReader for MkvChain zero-count ─────────────────

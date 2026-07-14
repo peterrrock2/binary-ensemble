@@ -272,7 +272,7 @@ impl<R: Read> Iterator for BenStreamReader<R> {
 }
 
 impl<R: Read + Send> BenStreamReader<R> {
-    /// Convert this decoder into a subsampling iterator over explicit 1-based indices.
+    /// Convert this decoder into a subsampling iterator over explicit zero-based indices.
     pub fn into_subsample_by_indices<T>(
         self,
         indices: T,
@@ -283,8 +283,8 @@ impl<R: Read + Send> BenStreamReader<R> {
         SubsampleFrameDecoder::by_indices(self.into_frames(), indices)
     }
 
-    /// Convert this decoder into a subsampling iterator over the inclusive 1-based range
-    /// `[start, end]`.
+    /// Convert this decoder into a subsampling iterator over the half-open zero-based range
+    /// `[start, end)`.
     pub fn into_subsample_by_range(
         self,
         start: usize,
@@ -294,7 +294,7 @@ impl<R: Read + Send> BenStreamReader<R> {
     }
 
     /// Convert this decoder into a subsampling iterator that selects every `step` samples from the
-    /// 1-based `offset`.
+    /// zero-based `offset`.
     pub fn into_subsample_every(
         self,
         step: usize,

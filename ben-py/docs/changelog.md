@@ -6,6 +6,9 @@ in [Compatibility and stability](concepts/compatibility.md).
 
 ## Unreleased
 
+- **Explicit lookup and zero-based subsampling (behavior change):** `ben lookup` now requires
+  either `index` (zero-based) or `sample` (one-based). Decoder subsampling now uses zero-based
+  indices, half-open ranges, and a zero-based `offset` defaulting to `0`.
 - **Graph embedding default (behavior change):** `BendlEncoder.add_graph()` now preserves the
   input node order by default (`sort=None`) instead of applying multi-level clustering. Existing
   code that relies on implicit MLC ordering must pass `sort="mlc"`; explicit `"mlc"`, `"rcm"`,

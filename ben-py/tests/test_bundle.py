@@ -408,6 +408,8 @@ def test_asset_free_empty_stream(tmp_path: Path) -> None:
     assert dec.count_samples() == 0
     assert len(dec) == 0
     assert list(dec) == []
+    assert list(dec.subsample_range(0, 0)) == []
+    assert list(dec) == []
     assert dec.asset_names() == []
     out = tmp_path / "empty.ben"
     dec.extract_stream(out)
@@ -960,14 +962,14 @@ def test_subsample_modes(tmp_path: Path) -> None:
     bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
     path = _write_bundle(tmp_path / "sub.bendl", bundle)
 
-    dec = BendlDecoder(path).subsample_range(3, 6)
+    dec = BendlDecoder(path).subsample_range(2, 6)
     assert list(dec) == samples[2:6]
     assert list(dec) == samples[2:6]  # survives reiteration
 
-    dec2 = BendlDecoder(path).subsample_indices([1, 4, 8])
+    dec2 = BendlDecoder(path).subsample_indices([0, 3, 7])
     assert list(dec2) == [samples[0], samples[3], samples[7]]
 
-    dec3 = BendlDecoder(path).subsample_every(3, 2)
+    dec3 = BendlDecoder(path).subsample_every(3, 1)
     assert list(dec3) == [samples[1], samples[4], samples[7]]
 
 
@@ -975,7 +977,7 @@ def test_subsample_count_preserves_filtered_len(tmp_path: Path) -> None:
     samples = [[i] for i in range(1, 9)]
     bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
     path = _write_bundle(tmp_path / "cnt.bendl", bundle)
-    dec = BendlDecoder(path).subsample_range(2, 5)
+    dec = BendlDecoder(path).subsample_range(1, 5)
     assert len(dec) == 4
     assert dec.count_samples() == len(samples)
     assert len(dec) == 4
@@ -987,11 +989,11 @@ def test_subsample_out_of_bounds(tmp_path: Path) -> None:
     bundle = build_bundle(stream_bytes=_ben_bytes_for(samples, tmp_path), sample_count=len(samples))
     path = _write_bundle(tmp_path / "oob.bendl", bundle)
     with pytest.raises(Exception, match="end must be <= number of samples"):
-        BendlDecoder(path).subsample_range(1, 99)
+        BendlDecoder(path).subsample_range(0, 99)
     with pytest.raises(Exception, match="number of samples"):
-        BendlDecoder(path).subsample_indices([1, 42])
+        BendlDecoder(path).subsample_indices([0, 3])
     with pytest.warns(UserWarning, match="sorted and unique"):
-        dec = BendlDecoder(path).subsample_indices([3, 1, 3, 1])
+        dec = BendlDecoder(path).subsample_indices([2, 0, 2, 0])
     assert list(dec) == [samples[0], samples[2]]
 
 

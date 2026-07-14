@@ -138,7 +138,7 @@ decoder = BendlDecoder("ensemble.bendl")
 print(decoder.asset_names())
 print(decoder.read_metadata())
 
-for assignment in decoder.subsample_range(1, 3):
+for assignment in decoder.subsample_range(0, 3):
     print(assignment[:4])
 ```
 

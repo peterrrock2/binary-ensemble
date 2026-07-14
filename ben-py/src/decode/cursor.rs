@@ -60,6 +60,7 @@ impl SampleCursor {
 
         let new_iter: DynIter = match self.active_selection.clone() {
             ActiveSelection::None => build_iter(&self.source, self.mode)?,
+            ActiveSelection::Range { start, end } if start == end => Box::new(std::iter::empty()),
             sel => {
                 let frames = build_frames_for_subsample(&self.source, self.mode)?;
                 let ben_sel = sel
@@ -151,12 +152,9 @@ impl SampleCursor {
             return Err(PyException::new_err("indices must not be empty"));
         }
         let base_len = self.ensure_base_len(py)?;
-        if indices[0] == 0 {
-            return Err(PyException::new_err("indices must be 1-based"));
-        }
-        if indices.last().unwrap() > &base_len {
+        if indices.last().unwrap() >= &base_len {
             return Err(PyException::new_err(format!(
-                "indices must be <= number of samples in base data ({base_len})"
+                "indices must be < number of samples in base data ({base_len})"
             )));
         }
         let len_hint = indices.len();
@@ -171,10 +169,8 @@ impl SampleCursor {
         end: usize,
         py: Python<'_>,
     ) -> PyResult<()> {
-        if start == 0 || end < start {
-            return Err(PyException::new_err(
-                "range must be 1-based and end >= start",
-            ));
+        if end < start {
+            return Err(PyException::new_err("range end must be >= start"));
         }
         let base_len = self.ensure_base_len(py)?;
         if end > base_len {
@@ -184,7 +180,7 @@ impl SampleCursor {
         }
         self.active_selection = ActiveSelection::Range { start, end };
         let sel = Selection::Range { start, end };
-        let len_hint = end - start + 1;
+        let len_hint = end - start;
         self.reset_with_selection(sel, len_hint)
     }
 
@@ -194,22 +190,29 @@ impl SampleCursor {
         offset: usize,
         py: Python<'_>,
     ) -> PyResult<()> {
-        if step == 0 || offset == 0 {
-            return Err(PyException::new_err("step and offset must be >= 1"));
+        if step == 0 {
+            return Err(PyException::new_err("step must be >= 1"));
         }
         let base_len = self.ensure_base_len(py)?;
-        if offset > base_len {
+        if offset >= base_len {
             return Err(PyException::new_err(format!(
-                "offset must be <= number of samples in base data ({base_len})"
+                "offset must be < number of samples in base data ({base_len})"
             )));
         }
         self.active_selection = ActiveSelection::Every { step, offset };
         let sel = Selection::Every { step, offset };
-        let len_hint = (base_len + step - 1 - (offset - 1)) / step;
+        let len_hint = 1 + (base_len - 1 - offset) / step;
         self.reset_with_selection(sel, len_hint)
     }
 
     fn reset_with_selection(&mut self, selection: Selection, len_hint: usize) -> PyResult<()> {
+        if len_hint == 0 {
+            self.iter = Some(Box::new(std::iter::empty()));
+            self.current_assignment = None;
+            self.remaining_count = 0;
+            self.len_hint = Some(0);
+            return Ok(());
+        }
         let frames = build_frames_for_subsample(&self.source, self.mode)?;
         let frame_decoder = SubsampleFrameDecoder::new(frames, selection);
         self.iter = Some(Box::new(frame_decoder));

@@ -451,7 +451,7 @@ mod mkvchain {
 
     #[test]
     fn subsample_by_indices_locates_correct_sample_in_run() {
-        // A×5, B×5; index 3 is in the A run, index 6 is the first B.
+        // A×5, B×5; index 2 is in the A run, index 5 is the first B.
         let a = vec![1u16; 4];
         let b = vec![2u16; 4];
         let assignments: Vec<_> = (0..5)
@@ -463,7 +463,7 @@ mod mkvchain {
         let selected: Vec<(Vec<u16>, u16)> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
-            .into_subsample_by_indices(vec![3usize, 6])
+            .into_subsample_by_indices(vec![2usize, 5])
             .map(|r| r.unwrap())
             .collect();
         assert_eq!(selected, vec![(a, 1), (b, 1)]);
@@ -471,14 +471,14 @@ mod mkvchain {
 
     #[test]
     fn subsample_by_indices_multiple_in_same_frame_returns_count() {
-        // A×5; indices 2 and 4 both fall in the single A frame → one result with count=2.
+        // A×5; indices 1 and 3 both fall in the single A frame → one result with count=2.
         let a = vec![1u16; 4];
         let ben = encode_ben(&vec![a.clone(); 5], BenVariant::MkvChain);
 
         let selected: Vec<(Vec<u16>, u16)> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
-            .into_subsample_by_indices(vec![2usize, 4])
+            .into_subsample_by_indices(vec![1usize, 3])
             .map(|r| r.unwrap())
             .collect();
         assert_eq!(
@@ -492,8 +492,7 @@ mod mkvchain {
 
     #[test]
     fn subsample_by_range_spans_repeated_frames() {
-        // A×3, B×3; range [2, 5] → A contributes samples 2,3 (count=2) and B contributes 4,5
-        // (count=2).
+        // A×3, B×3; range [1, 5) → A and B each contribute two selected indices.
         let a = vec![10u16; 3];
         let b = vec![20u16; 3];
         let assignments: Vec<_> = (0..3)
@@ -505,24 +504,24 @@ mod mkvchain {
         let selected: Vec<(Vec<u16>, u16)> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
-            .into_subsample_by_range(2, 5)
+            .into_subsample_by_range(1, 5)
             .map(|r| r.unwrap())
             .collect();
-        assert_eq!(selected.len(), 2, "two frames contribute to range [2,5]");
-        assert_eq!(selected[0], (a, 2)); // samples 2,3 from A
-        assert_eq!(selected[1], (b, 2)); // samples 4,5 from B
+        assert_eq!(selected.len(), 2, "two frames contribute to range [1, 5)");
+        assert_eq!(selected[0], (a, 2));
+        assert_eq!(selected[1], (b, 2));
     }
 
     #[test]
     fn subsample_every_within_single_run() {
-        // A×6; every 2nd from offset 1 → indices 1,3,5 all in the A frame → count=3.
+        // A×6; every 2nd from offset 0 → indices 0,2,4 all in the A frame → count=3.
         let a = vec![99u16; 2];
         let ben = encode_ben(&vec![a.clone(); 6], BenVariant::MkvChain);
 
         let selected: Vec<(Vec<u16>, u16)> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
-            .into_subsample_every(2, 1)
+            .into_subsample_every(2, 0)
             .map(|r| r.unwrap())
             .collect();
         assert_eq!(
@@ -531,12 +530,12 @@ mod mkvchain {
             "all selected indices in one frame → one result"
         );
         assert_eq!(selected[0].0, a);
-        assert_eq!(selected[0].1, 3, "indices 1,3,5 selected → count=3");
+        assert_eq!(selected[0].1, 3, "indices 0,2,4 selected → count=3");
     }
 
     #[test]
     fn subsample_every_across_two_runs() {
-        // A×4, B×4; every 2nd from offset 2 → indices 2,4,6,8 → 2 from A, 2 from B.
+        // A×4, B×4; every 2nd from offset 1 → indices 1,3,5,7 → 2 from A, 2 from B.
         let a = vec![10u16; 2];
         let b = vec![20u16; 2];
         let assignments: Vec<_> = (0..4)
@@ -548,7 +547,7 @@ mod mkvchain {
         let selected: Vec<(Vec<u16>, u16)> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
-            .into_subsample_every(2, 2)
+            .into_subsample_every(2, 1)
             .map(|r| r.unwrap())
             .collect();
         assert_eq!(selected, vec![(a, 2), (b, 2)]);
@@ -1075,7 +1074,7 @@ mod twodelta {
 
     #[test]
     fn subsample_by_indices_distinct_frames() {
-        // Five distinct assignments; select 1-based indices 1, 3, 5.
+        // Five distinct assignments; select zero-based indices 0, 2, 4.
         let a = vec![1u16, 1, 2, 2];
         let b = vec![2u16, 2, 1, 1];
         let c = vec![1u16, 2, 1, 2];
@@ -1085,7 +1084,7 @@ mod twodelta {
         let selected: Vec<Vec<u16>> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
-            .into_subsample_by_indices(vec![1usize, 3, 5])
+            .into_subsample_by_indices(vec![0usize, 2, 4])
             .map(|r| r.unwrap().0)
             .collect();
 
@@ -1100,11 +1099,11 @@ mod twodelta {
         let input = vec![a.clone(), b.clone(), c.clone(), a.clone(), b.clone()];
         let ben = encode_twodelta(&input);
 
-        // Range [2, 4] → 3 assignments: b, c, a.
+        // Range [1, 4) → 3 assignments: b, c, a.
         let selected: Vec<Vec<u16>> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
-            .into_subsample_by_range(2, 4)
+            .into_subsample_by_range(1, 4)
             .map(|r| r.unwrap().0)
             .collect();
 
@@ -1113,7 +1112,7 @@ mod twodelta {
 
     #[test]
     fn subsample_every_distinct_frames() {
-        // 6 cycling assignments: a,b,c,a,b,c. Every 3 from offset 1 → indices 1,4 → a,a.
+        // 6 cycling assignments: a,b,c,a,b,c. Every 3 from offset 0 → indices 0,3 → a,a.
         let a = vec![1u16, 1, 2, 2];
         let b = vec![2u16, 2, 1, 1];
         let c = vec![1u16, 2, 1, 2];
@@ -1130,7 +1129,7 @@ mod twodelta {
         let selected: Vec<Vec<u16>> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
-            .into_subsample_every(3, 1)
+            .into_subsample_every(3, 0)
             .map(|r| r.unwrap().0)
             .collect();
 
@@ -1139,8 +1138,8 @@ mod twodelta {
 
     #[test]
     fn subsample_by_indices_across_repeated_frames() {
-        // a×3, b×3 → 6 samples from 2 frames. Indices 1 and 3 fall in the anchor (a) frame →
-        // (a, 2). Index 4 is the first b → (b, 1).
+        // a×3, b×3 → 6 samples from 2 frames. Indices 0 and 2 fall in the anchor (a) frame;
+        // index 3 is the first b.
         let a = vec![1u16, 1, 2, 2];
         let b = vec![2u16, 2, 1, 1];
         let assignments: Vec<_> = (0..3)
@@ -1152,13 +1151,13 @@ mod twodelta {
         let selected: Vec<(Vec<u16>, u16)> = BenStreamReader::from_ben(ben.as_slice())
             .unwrap()
             .silent(true)
-            .into_subsample_by_indices(vec![1usize, 3, 4])
+            .into_subsample_by_indices(vec![0usize, 2, 3])
             .map(|r| r.unwrap())
             .collect();
 
         assert_eq!(selected.len(), 2);
-        assert_eq!(selected[0], (a, 2)); // indices 1,3 in anchor frame
-        assert_eq!(selected[1], (b, 1)); // index 4 in delta frame
+        assert_eq!(selected[0], (a, 2));
+        assert_eq!(selected[1], (b, 1));
     }
 
     // ─── error paths ─────────────────────────────────────────────────────────

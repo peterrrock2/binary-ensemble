@@ -45,7 +45,8 @@ The integer values inside an assignment. A district id is any integer from **0**
 ## Sample
 
 One entry in an ensemble: the pair `(sample_number, assignment)`. The `sample_number` is
-**1-indexed** — decoded ensembles always start at sample 1.
+**1-indexed**: decoded ensembles always start at sample 1. Positional APIs such as subsampling use
+normal zero-based indices instead.
 
 ## Ensemble
 
