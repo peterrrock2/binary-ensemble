@@ -144,8 +144,8 @@ fn drive_ben_entry_points(fixture_name: &str, pos: usize, byte: u8, bytes: &[u8]
         let _ = relabel_ben_file(bytes, io::sink(), RelabelOptions::node_permutation(map));
     });
     run("extract_assignment_ben", &|| {
-        let _ = extract_assignment_ben(bytes, 1);
-        let _ = extract_assignment_ben(bytes, 3);
+        let _ = extract_assignment_ben(bytes, 0);
+        let _ = extract_assignment_ben(bytes, 2);
     });
     // Encode-side entry point that *reads* untrusted BEN: the BEN→XBEN converter re-parses every
     // frame (including the TwoDelta ingest path), so it faces the same corruption surface as the
@@ -206,7 +206,7 @@ fn drive_xben_entry_points(fixture_name: &str, pos: usize, byte: u8, bytes: &[u8
         }
     });
     run("extract_assignment_xben", &|| {
-        let _ = extract_assignment_xben(bytes, 1);
+        let _ = extract_assignment_xben(bytes, 0);
     });
 }
 

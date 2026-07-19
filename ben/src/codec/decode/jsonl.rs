@@ -3,8 +3,8 @@ use std::io::{self, BufRead, Read, Write};
 
 /// Decode a BEN stream into JSONL assignment records.
 ///
-/// Each decoded sample is written as a JSON object containing an `assignment` vector and a 1-based
-/// `sample` index.
+/// Each decoded sample is written as a JSON object containing an `assignment` vector and a
+/// one-based `sample` number.
 ///
 /// # Arguments
 ///

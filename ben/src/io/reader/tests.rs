@@ -1676,8 +1676,8 @@ fn extract_assignment_ben_mkv_mid_block() {
     )
     .unwrap();
 
-    // Sample 2 is in the middle of the first MkvChain block (count=3)
-    let result = extract_assignment_ben(ben.as_slice(), 2).unwrap();
+    // Index 1 is in the middle of the first MkvChain block (count=3).
+    let result = extract_assignment_ben(ben.as_slice(), 1).unwrap();
     assert_eq!(result, vec![1, 2, 3]);
 }
 

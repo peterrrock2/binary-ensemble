@@ -115,26 +115,19 @@ fn parse_decode_from_xben_flag() {
 }
 
 #[test]
-fn lookup_requires_position_kind_and_parses_both_conventions() {
+fn lookup_requires_index_subcommand() {
     assert!(Cli::try_parse_from(["ben", "lookup", "x.ben"]).is_err());
 
     let cli = Cli::try_parse_from(["ben", "lookup", "index", "x.ben", "0"]).unwrap();
     match cli.command {
-        Command::Lookup(a) => match a.target {
-            LookupTarget::Index(a) => assert_eq!(a.index, 0),
-            other => panic!("expected lookup index, got {other:?}"),
-        },
+        Command::Lookup(a) => {
+            let LookupTarget::Index(a) = a.target;
+            assert_eq!(a.index, 0);
+        }
         other => panic!("expected lookup, got {other:?}"),
     }
 
-    let cli = Cli::try_parse_from(["ben", "lookup", "sample", "x.ben", "2"]).unwrap();
-    match cli.command {
-        Command::Lookup(a) => match a.target {
-            LookupTarget::Sample(a) => assert_eq!(a.sample_number, 2),
-            other => panic!("expected lookup sample, got {other:?}"),
-        },
-        other => panic!("expected lookup, got {other:?}"),
-    }
+    assert!(Cli::try_parse_from(["ben", "lookup", "sample", "x.ben", "2"]).is_err());
 }
 
 #[test]

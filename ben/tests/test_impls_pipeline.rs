@@ -216,7 +216,7 @@ proptest! {
         prop_assert_eq!(out, jsonl);
     }
 
-    // `extract(i) == seq[i-1]` for every 1-based sample in a TwoDelta stream. Exercises the
+    // `extract(i) == seq[i]` for every zero-based sample in a TwoDelta stream. Exercises the
     // incremental `TwoDeltaMaskIndex` replay across long delta chains and mid-stream snapshot
     // re-anchors, where a desync between the mask index and the running assignment would surface.
     // `strat_twodelta_seq` also emits repeated assignments (count > 1 frames), covering the
@@ -228,9 +228,9 @@ proptest! {
         encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::TwoDelta).unwrap();
 
         for (i, expected) in seq.iter().enumerate() {
-            let extracted = extract_assignment_ben(ben.as_slice(), i + 1).unwrap();
+            let extracted = extract_assignment_ben(ben.as_slice(), i).unwrap();
             prop_assert_eq!(&extracted, expected,
-                "extract(sample_number={}) returned the wrong assignment", i + 1);
+                "extract(index={}) returned the wrong assignment", i);
         }
     }
 
@@ -244,14 +244,13 @@ proptest! {
         encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::TwoDelta).unwrap();
 
         for (i, expected) in seq.iter().enumerate() {
-            let n = i + 1;
-            let plain = extract_assignment_ben(Cursor::new(&ben), n).unwrap();
-            let seek = extract_assignment_ben_seek(Cursor::new(&ben), n).unwrap();
-            prop_assert_eq!(&plain, expected, "plain extract({}) wrong", n);
-            prop_assert_eq!(&seek, expected, "seek extract({}) wrong", n);
+            let plain = extract_assignment_ben(Cursor::new(&ben), i).unwrap();
+            let seek = extract_assignment_ben_seek(Cursor::new(&ben), i).unwrap();
+            prop_assert_eq!(&plain, expected, "plain extract({}) wrong", i);
+            prop_assert_eq!(&seek, expected, "seek extract({}) wrong", i);
         }
 
-        let oob = seq.len() + 1;
+        let oob = seq.len();
         prop_assert!(extract_assignment_ben(Cursor::new(&ben), oob).is_err());
         prop_assert!(extract_assignment_ben_seek(Cursor::new(&ben), oob).is_err());
     }
@@ -1600,7 +1599,7 @@ fn twodelta_supports_frame_iteration_counting_and_sample_extraction() {
     assert_eq!(frames[1].1, 1);
     assert_eq!(frames[2].1, 1);
 
-    let picked = extract_assignment_ben(ben.as_slice(), 3).unwrap();
+    let picked = extract_assignment_ben(ben.as_slice(), 2).unwrap();
     assert_eq!(picked, assignments[2]);
 
     let ben_path = unique_temp_path("twodelta_sample.ben");
@@ -1635,11 +1634,11 @@ fn twodelta_seek_lookup_crosses_forced_checkpoint() {
     )
     .unwrap();
 
-    for &n in &[1usize, 2, 49_999, 50_000, 50_001, 50_002, 50_005] {
-        let expected = &assignments[n - 1];
-        let seek = extract_assignment_ben_seek(Cursor::new(&ben), n).unwrap();
-        let plain = extract_assignment_ben(Cursor::new(&ben), n).unwrap();
-        assert_eq!(&seek, expected, "seek extract({n}) across checkpoint");
-        assert_eq!(&plain, expected, "plain extract({n}) across checkpoint");
+    for &index in &[0usize, 1, 49_998, 49_999, 50_000, 50_001, 50_004] {
+        let expected = &assignments[index];
+        let seek = extract_assignment_ben_seek(Cursor::new(&ben), index).unwrap();
+        let plain = extract_assignment_ben(Cursor::new(&ben), index).unwrap();
+        assert_eq!(&seek, expected, "seek extract({index}) across checkpoint");
+        assert_eq!(&plain, expected, "plain extract({index}) across checkpoint");
     }
 }

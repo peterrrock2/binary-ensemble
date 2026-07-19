@@ -45,5 +45,5 @@ fuzz_target!(|data: &[u8]| {
             let _ = frame;
         }
     }
-    let _ = extract_assignment_xben(container.as_slice(), 2);
+    let _ = extract_assignment_xben(container.as_slice(), 0);
 });

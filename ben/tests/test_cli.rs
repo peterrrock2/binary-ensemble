@@ -193,20 +193,6 @@ fn ben_cli_encode_decode_read_and_x_modes_roundtrip() {
         "ben",
         &[
             "lookup",
-            "sample",
-            ben_path.to_str().unwrap(),
-            "2",
-            "--print",
-        ],
-        temp.path(),
-    );
-    assert_success(&read);
-    assert_eq!(String::from_utf8(read.stdout).unwrap(), "[2, 2, 3]\n");
-
-    let read = run(
-        "ben",
-        &[
-            "lookup",
             "index",
             ben_path.to_str().unwrap(),
             "1",
@@ -644,9 +630,9 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
             "ben",
             &[
                 "lookup",
-                "sample",
+                "index",
                 ben_path.to_str().unwrap(),
-                "1",
+                "0",
                 "--output-file",
                 occupied.to_str().unwrap(),
             ],
@@ -703,7 +689,7 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
         "ben",
         &[
             "lookup",
-            "sample",
+            "index",
             ben_path.to_str().unwrap(),
             "99",
             "--print",
@@ -1435,8 +1421,7 @@ fn pcben_decodes_committed_foreign_pcompress_fixture() {
     // crates.io dependency), so this pins the foreign-format interop contract: bytes produced by
     // genuine PCompress must keep converting to a BEN that decodes back to the canonical ensemble.
     // Both formats are zero-based, so the bridge transcodes ids unchanged; the committed
-    // `source.jsonl` is the one-based canonical ensemble, so the expected decode is its ids minus
-    // one.
+    // `source.jsonl` uses one-based district ids, so the expected decode is its ids minus one.
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")

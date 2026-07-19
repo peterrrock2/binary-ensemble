@@ -78,7 +78,7 @@ bundling the graph (see [The data contract](../concepts/data-model.md)).
 ## Label columns with a DataFrame
 
 A {class}`pandas.DataFrame` makes the node order explicit by naming each column after its
-graph node. Decoded JSONL uses one-based sample numbers, so use the same labels here if you want
+graph node. Decoded JSONL uses one-based `sample` labels, so use the same labels here if you want
 the table to match that representation:
 
 ```python

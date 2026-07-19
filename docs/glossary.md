@@ -19,8 +19,8 @@ renames listed at the end.
   - The integer values stored in an assignment vector. Names _what the integer means_ (a district).
     Replaces "assignment id" in prose; code rename pending.
 - **Sample**
-  - One entry in an ensemble stream: the pair `(sample_number, assignment)`.
-  - `sample_number` is 1-indexed and lives in _expanded_ space (see **sample count**).
+  - One entry in an ensemble stream: the pair `(sample_index, assignment)`.
+  - `sample_index` is zero-based and lives in _expanded_ space (see **sample count**).
 - **Ensemble**
   - An ordered stream of samples produced by a single sampler run. The unit that `.ben`, `.xben`,
     and `.bendl` files all wrap.
@@ -178,17 +178,16 @@ listed for reference.
 - **`x` prefix**
   - Means "with LZMA2 wrapping." Not a separate verb; a modifier on `encode`/`decode`.
 - **Sample lookup** _(prose)_ / random-access decode
-  - Decode just sample N from a BEN file.
-  - CLI: `ben lookup sample FILE N` for a 1-based sample number, or
-    `ben lookup index FILE I` for a 0-based position.
+  - Decode just one sample from a BEN file.
+  - CLI: `ben lookup index FILE I`, where `I` is a zero-based sample index.
   - For seekable plain `.ben` files, `TwoDelta` lookup scans frame tags/counts to find the latest
-    snapshot before N, seeks there, and replays forward. `Standard` and `MkvChain` can skip raw
+    snapshot before I, seeks there, and replays forward. `Standard` and `MkvChain` can skip raw
     frames directly.
 - **Subsampling**
   - Iterate over a subset of frames without consuming the whole stream. The umbrella that
     lookup is the special case "subsample of size 1."
-  - Positional selectors use zero-based indices and half-open ranges; these are distinct from the
-    one-based `sample_number` domain field.
+  - Positional selectors use zero-based indices and half-open ranges, matching the `sample_index`
+    domain field.
 - **Asset extract** vs **sample-range extract**
   - Two unrelated operations sharing the verb "extract." Always qualify in prose.
   - **Asset extract**: pull a named asset out of a bundle. Code: `extract_asset`. CLI:
@@ -297,8 +296,8 @@ Words that historically had multiple meanings; the meanings are now segregated.
 
 ### "canonical\*" — three former senses, now two
 
-- **Canonicalized JSONL** — input format conventions: `assignment` and `sample` keys, sample numbers
-  from 1, etc. Reserved meaning. Stays.
+- **Canonicalized JSONL** — input format conventions: `assignment` and `sample` keys, with
+  one-based `sample` labels. Reserved meaning. Stays.
 - **First-seen relabeling** — the operation formerly called "canonicalize_assignment." Loses the
   "canonical" word.
 - **Standardized name** — the required filename for a known asset in a bundle (formerly "canonical

@@ -30,8 +30,8 @@ changes. The essentials:
 - **Plan**: a partition of dual-graph nodes into districts (the mathematical object).
   **Assignment**: its vector encoding, `Vec<u16>` where index _i_ is the district id of node _i_.
   One plan has many assignments.
-- **Sample**: `(sample_number, assignment)`. **Ensemble**: an ordered stream of samples from one
-  sampler run; the thing every format wraps.
+- **Sample**: `(sample_index, assignment)`, with a zero-based index. **Ensemble**: an ordered stream
+  of samples from one sampler run; the thing every format wraps.
 - **Variant**: `Standard` | `MkvChain` | `TwoDelta`. Fixed per stream by its banner. `Standard`
   stores each sample independently; `MkvChain` collapses repeated consecutive samples with a count;
   `TwoDelta` delta-encodes single-ReCom-step transitions. Variant fitness depends on the sampler;

@@ -551,7 +551,7 @@ impl<'a, R: Read + Seek> BendlVerifiedStreamReader<'a, R> {
     /// Decode the remaining stream, write it as JSONL, and verify the stream CRC32C.
     ///
     /// Each decoded sample is written as a JSON object containing an `assignment` vector and a
-    /// 1-based `sample` index. After all records are written, the stream CRC is checked; a
+    /// one-based `sample` number. After all records are written, the stream CRC is checked; a
     /// mismatch is returned instead of `Ok(())`.
     pub fn write_all_jsonl(&mut self, mut writer: impl Write) -> io::Result<()> {
         let mut sample_number = 0usize;

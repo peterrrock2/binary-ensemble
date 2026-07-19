@@ -225,7 +225,7 @@ impl<R: Read> BenStreamReader<R> {
     /// Decode the remaining stream and write it as JSONL.
     ///
     /// Each decoded sample is written as a JSON object containing an `assignment` vector and a
-    /// 1-based `sample` index.
+    /// one-based `sample` number.
     pub fn write_all_jsonl(&mut self, mut writer: impl Write) -> io::Result<()> {
         let mut sample_number = 0usize;
         self.for_each_assignment(|assignment, count| {
