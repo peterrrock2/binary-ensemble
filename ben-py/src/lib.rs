@@ -9,7 +9,7 @@ pub mod graph;
 pub mod recompress;
 pub mod relabel;
 
-#[pymodule]
+#[pymodule(gil_used = true)]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::encode::PyBenEncoder>()?;
     m.add_class::<crate::encode::PyBendlEncoder>()?;

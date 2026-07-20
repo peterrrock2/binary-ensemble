@@ -1180,7 +1180,7 @@ fn append_rejects_duplicate_name_across_existing_and_pending() {
 /// deterministic but covers a wide surface.
 #[test]
 fn randomized_round_trip_many_custom_assets() {
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
     for seed in 0u64..12 {
@@ -1326,7 +1326,7 @@ fn five_successive_appends_preserve_everything() {
 fn randomized_append_sequence_preserves_all_prior_entries() {
     // Independent coverage for append: random number of rounds, random payload sizes. Catches any
     // bookkeeping drift in the appender's append-only replacement-directory path.
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
     let (mut buf, _) = build_base_bundle();

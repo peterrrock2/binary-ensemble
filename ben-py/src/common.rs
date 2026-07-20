@@ -268,15 +268,15 @@ pub fn parse_json_input(
     // Raw bytes / bytearray. Deliberately strict downcasts: a generic Vec<u8> extraction would
     // also accept any sequence of small ints (e.g. iterating a NetworkX graph's node ids) and
     // silently store garbage.
-    if let Ok(b) = obj.downcast::<PyBytes>() {
+    if let Ok(b) = obj.cast::<PyBytes>() {
         return validated_json(b.as_bytes().to_vec(), what);
     }
-    if let Ok(b) = obj.downcast::<PyByteArray>() {
+    if let Ok(b) = obj.cast::<PyByteArray>() {
         return validated_json(b.to_vec(), what);
     }
-    if obj.downcast::<PyMemoryView>().is_ok() {
+    if obj.cast::<PyMemoryView>().is_ok() {
         let data = obj.call_method0("tobytes")?;
-        let b = data.downcast::<PyBytes>().map_err(PyErr::from)?;
+        let b = data.cast::<PyBytes>().map_err(PyErr::from)?;
         return validated_json(b.as_bytes().to_vec(), what);
     }
 
@@ -284,7 +284,7 @@ pub fn parse_json_input(
     // `.read()` attribute and will fall through.
     if obj.hasattr("read")? {
         let data = obj.call_method0("read")?;
-        if let Ok(b) = data.downcast::<PyBytes>() {
+        if let Ok(b) = data.cast::<PyBytes>() {
             return validated_json(b.as_bytes().to_vec(), what);
         }
         if let Ok(b) = data.extract::<Vec<u8>>() {
