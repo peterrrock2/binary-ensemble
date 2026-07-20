@@ -217,9 +217,14 @@ pub(super) fn next_event_ben<R: Read>(
                 Ok(assignment) => assignment,
                 Err(e) => return Some(Err(e)),
             };
-            let changes = previous_assignment
+            let changes = match previous_assignment
                 .as_ref()
-                .map(|previous| diff_changes(previous, &assignment));
+                .map(|previous| diff_changes(previous, &assignment))
+                .transpose()
+            {
+                Ok(changes) => changes,
+                Err(e) => return Some(Err(e)),
+            };
             *twodelta_masks = Some(TwoDeltaMaskIndex::from_assignment(&assignment));
             *previous_assignment = Some(assignment.clone());
             Some(Ok(TwoDeltaFrameEvent::Snapshot {

@@ -36,13 +36,25 @@ impl<R: Read> TwoDeltaFrameEventReader<R> {
     }
 }
 
-pub(super) fn diff_changes(old: &[u16], new: &[u16]) -> Vec<(u32, u16, u16)> {
-    old.iter()
+pub(super) fn diff_changes(old: &[u16], new: &[u16]) -> io::Result<Vec<(u32, u16, u16)>> {
+    if old.len() != new.len() {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            format!(
+                "TwoDelta snapshot length mismatch: previous has {} positions, current has {}",
+                old.len(),
+                new.len()
+            ),
+        ));
+    }
+
+    Ok(old
+        .iter()
         .zip(new.iter())
         .enumerate()
         .filter(|(_, (old_val, new_val))| old_val != new_val)
         .map(|(idx, (old_val, new_val))| (idx as u32, *old_val, *new_val))
-        .collect()
+        .collect())
 }
 
 impl<R: Read> Iterator for TwoDeltaFrameEventReader<R> {

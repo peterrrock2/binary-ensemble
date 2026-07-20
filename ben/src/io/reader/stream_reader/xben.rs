@@ -373,10 +373,18 @@ pub(super) fn next_event_xben<R: Read>(
                         return Some(Err(zero_count_frame_error("XBEN")));
                     }
                     let assignment = rle_to_vec(runs);
-                    let changes = inner
+                    let changes = match inner
                         .previous_assignment
                         .as_ref()
-                        .map(|previous| diff_changes(previous, &assignment));
+                        .map(|previous| diff_changes(previous, &assignment))
+                        .transpose()
+                    {
+                        Ok(changes) => changes,
+                        Err(e) => {
+                            inner.overflow.drain(..consumed);
+                            return Some(Err(e));
+                        }
+                    };
                     inner.previous_assignment = Some(assignment.clone());
                     inner.overflow.drain(..consumed);
                     Ok(TwoDeltaFrameEvent::Snapshot {

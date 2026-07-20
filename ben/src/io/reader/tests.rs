@@ -1368,7 +1368,7 @@ fn twodelta_events_xben_emit_full_frame_snapshot_changes() {
 }
 
 #[test]
-fn twodelta_events_snapshot_diff_uses_aligned_positions_only() {
+fn twodelta_events_reject_snapshot_length_mismatch() {
     let mut xben = Vec::new();
     {
         let mut encoder = XzEncoder::new(&mut xben, 1);
@@ -1378,20 +1378,14 @@ fn twodelta_events_snapshot_diff_uses_aligned_positions_only() {
         encoder.finish().unwrap();
     }
 
-    let events: Vec<_> = BenStreamReader::from_xben(Cursor::new(&xben))
+    let mut events = BenStreamReader::from_xben(Cursor::new(&xben))
         .unwrap()
-        .into_twodelta_events()
-        .map(|event| event.unwrap())
-        .collect();
+        .into_twodelta_events();
 
-    assert_eq!(
-        events.last().unwrap(),
-        &TwoDeltaFrameEvent::Snapshot {
-            assignment: vec![1, 2, 3],
-            changes: Some(Vec::new()),
-            count: 1,
-        }
-    );
+    events.next().unwrap().unwrap();
+    let err = events.next().unwrap().unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("length mismatch"));
 }
 
 #[test]
