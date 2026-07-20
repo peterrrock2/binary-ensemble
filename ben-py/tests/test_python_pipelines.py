@@ -173,6 +173,36 @@ def test_decoder_iterator_matches_jsonl_xben(tmp_path: Path) -> None:
 # ---------- Subsampling on plain streams ----------
 
 
+@pytest.mark.parametrize("mode", ["ben", "xben"])
+def test_lookup_returns_one_sample_without_changing_iteration(tmp_path: Path, mode: str) -> None:
+    samples = [[1, 1, 2], [1, 2, 2], [2, 2, 1], [2, 1, 1]]
+    ben = tmp_path / "lookup.ben"
+    with BenEncoder(ben, overwrite=True, variant="twodelta") as enc:
+        for assignment in samples:
+            enc.write(assignment)
+
+    path = ben
+    if mode == "xben":
+        path = tmp_path / "lookup.xben"
+        encode_ben_to_xben(ben, path, overwrite=True, n_threads=1, compression_level=1)
+
+    dec = BenDecoder(path, mode=mode)
+    iterator = iter(dec)
+    assert next(iterator) == samples[0]
+    assert dec.lookup(2) == samples[2]
+    assert next(iterator) == samples[1]
+    assert dec.lookup(0) == samples[0]
+    assert dec.lookup(len(samples) - 1) == samples[-1]
+    with pytest.raises(IndexError, match="out of range"):
+        dec.lookup(-1)
+    with pytest.raises(IndexError, match="out of range"):
+        dec.lookup(len(samples))
+
+    selected = BenDecoder(path, mode=mode).subsample_range(1, 3)
+    assert selected.lookup(0) == samples[0]
+    assert list(selected) == samples[1:3]
+
+
 def test_subsample_indices(tmp_path: Path) -> None:
     rng = random.Random(2_022_11_11)
     seq = gen_sequence_mkv(rng, 200)

@@ -6,7 +6,8 @@ use binary_ensemble::io::reader::{
     build_frame_iter, build_frame_iter_from_reader, count_samples_from_file,
     count_samples_from_frame_iter, BenStreamReader, BenWireFormat, FrameIter,
 };
-use pyo3::exceptions::{PyException, PyIOError, PyUserWarning};
+use binary_ensemble::ops::extract::{extract_assignment_ben_seek, SampleError};
+use pyo3::exceptions::{PyException, PyIOError, PyIndexError, PyUserWarning};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::fs::File;
@@ -161,6 +162,107 @@ fn open_bundle_stream_reader(
     Ok(StrictStreamRegion {
         inner: ExactLen::bounded(buf, stream_len),
     })
+}
+
+/// A seekable view whose positions are relative to one bounded region of a larger file.
+struct SeekableStreamRegion<R: Read + Seek> {
+    inner: R,
+    start: u64,
+    len: u64,
+    position: u64,
+}
+
+impl<R: Read + Seek> SeekableStreamRegion<R> {
+    fn new(mut inner: R, start: u64, len: u64) -> io::Result<Self> {
+        inner.seek(SeekFrom::Start(start))?;
+        Ok(Self {
+            inner,
+            start,
+            len,
+            position: 0,
+        })
+    }
+}
+
+impl<R: Read + Seek> Read for SeekableStreamRegion<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() || self.position == self.len {
+            return Ok(0);
+        }
+        let available = self.len - self.position;
+        let max = available.min(buf.len() as u64) as usize;
+        let n = self.inner.read(&mut buf[..max])?;
+        if n == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "bundle assignment stream is shorter than its declared stream_len",
+            ));
+        }
+        self.position += n as u64;
+        Ok(n)
+    }
+}
+
+impl<R: Read + Seek> Seek for SeekableStreamRegion<R> {
+    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+        let target = match position {
+            SeekFrom::Start(offset) => i128::from(offset),
+            SeekFrom::Current(offset) => i128::from(self.position) + i128::from(offset),
+            SeekFrom::End(offset) => i128::from(self.len) + i128::from(offset),
+        };
+        if target < 0 || target > i128::from(self.len) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "seek outside bundle assignment stream",
+            ));
+        }
+
+        let relative = target as u64;
+        let absolute = self.start.checked_add(relative).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "bundle stream offset overflow")
+        })?;
+        self.inner.seek(SeekFrom::Start(absolute))?;
+        self.position = relative;
+        Ok(relative)
+    }
+}
+
+/// Look up one sample in an uncompressed BEN source using the core seek-and-replay path.
+pub(super) fn lookup_ben(source: &StreamSource, index: usize) -> PyResult<Vec<u16>> {
+    let result = match source {
+        StreamSource::Plain { path } => {
+            let file = File::open(path).map_err(|e| {
+                PyIOError::new_err(format!("Failed to open {}: {e}", path.display()))
+            })?;
+            extract_assignment_ben_seek(BufReader::new(file), index)
+        }
+        StreamSource::Bundle {
+            path,
+            identity,
+            stream_offset,
+            stream_len,
+            ..
+        } => {
+            identity.ensure_unchanged(path, "look up a bundle sample")?;
+            let file = File::open(path).map_err(|e| {
+                PyIOError::new_err(format!("Failed to open {}: {e}", path.display()))
+            })?;
+            let reader =
+                SeekableStreamRegion::new(BufReader::new(file), *stream_offset, *stream_len)
+                    .map_err(|e| {
+                        PyIOError::new_err(format!("Failed to seek into bundle stream: {e}"))
+                    })?;
+            extract_assignment_ben_seek(reader, index)
+        }
+    };
+
+    match result {
+        Ok(assignment) => Ok(assignment),
+        Err(e @ SampleError::SampleNotFound { .. }) => Err(PyIndexError::new_err(e.to_string())),
+        Err(e) => Err(PyException::new_err(format!(
+            "Error looking up sample {index}: {e}"
+        ))),
+    }
 }
 
 /// Build a fresh assignment iterator for the given source.

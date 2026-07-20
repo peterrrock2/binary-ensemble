@@ -6,10 +6,10 @@
 //! forward their iteration / `len` / `subsample_*` methods to it, so the single-pass restart logic,
 //! the `MkvRecord` run expansion, and the subsample bounds checks cannot drift between the two.
 
-use super::helpers::{build_frames_for_subsample, build_iter, scan_samples};
+use super::helpers::{build_frames_for_subsample, build_iter, lookup_ben, scan_samples};
 use super::types::{ActiveSelection, DecoderMode, DynIter, StreamSource};
 use binary_ensemble::io::reader::{Selection, SubsampleFrameDecoder};
-use pyo3::exceptions::{PyException, PyUserWarning};
+use pyo3::exceptions::{PyException, PyIndexError, PyUserWarning};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -123,6 +123,48 @@ impl SampleCursor {
     /// Deliberately does not touch `len_hint`, which tracks the filtered count for `__len__`.
     pub(super) fn count_samples(&mut self, py: Python<'_>) -> PyResult<usize> {
         self.ensure_base_len(py)
+    }
+
+    /// Return one sample without changing the decoder's iteration or subsample state.
+    pub(super) fn lookup(&self, index: isize, py: Python<'_>) -> PyResult<Vec<u16>> {
+        let index = usize::try_from(index)
+            .map_err(|_| PyIndexError::new_err(format!("sample index {index} is out of range")))?;
+        let known_len = self.base_len.or(match &self.source {
+            StreamSource::Bundle { empty: true, .. } => Some(0),
+            StreamSource::Bundle {
+                header_sample_count: Some(count),
+                ..
+            } if *count >= 0 => Some(*count as usize),
+            _ => None,
+        });
+        if let Some(len) = known_len {
+            if index >= len {
+                return Err(PyIndexError::new_err(format!(
+                    "sample index {index} is out of range"
+                )));
+            }
+        }
+
+        let source = self.source.clone();
+        let mode = self.mode;
+
+        py.detach(move || {
+            if matches!(mode, DecoderMode::Ben) {
+                return lookup_ben(&source, index);
+            }
+
+            let frames = build_frames_for_subsample(&source, mode)?;
+            let mut selected = SubsampleFrameDecoder::by_indices(frames, [index]);
+            match selected.next() {
+                Some(Ok((assignment, _))) => Ok(assignment),
+                Some(Err(e)) => Err(PyException::new_err(format!(
+                    "Error looking up sample {index}: {e}"
+                ))),
+                None => Err(PyIndexError::new_err(format!(
+                    "sample index {index} is out of range"
+                ))),
+            }
+        })
     }
 
     pub(super) fn subsample_indices(

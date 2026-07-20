@@ -79,6 +79,7 @@ def bundle_decoder_surface(dec: BendlDecoder) -> None:
     assert_type(dec.stream_size(), int)
     assert_type(dec.asset_size("blob.bin"), int)
     assert_type(dec.read_asset_bytes("blob.bin"), bytes)
+    assert_type(dec.lookup(0), list[int])
 
     entries = dec.list_assets()
     assert_type(entries[0], AssetEntry)
@@ -104,6 +105,7 @@ def stream_and_transforms_surface(tmp: Path) -> None:
     with BenEncoder(tmp / "t.ben", overwrite=True, variant="mkv_chain") as enc:
         enc.write([0, 1])
     dec = BenDecoder(tmp / "t.xben", mode="xben")
+    assert_type(dec.lookup(0), list[int])
     dec.subsample_range(0, 3)
     BenDecoder(tmp, mode="jsonl")  # type: ignore
 

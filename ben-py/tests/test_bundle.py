@@ -410,6 +410,8 @@ def test_asset_free_empty_stream(tmp_path: Path) -> None:
     assert list(dec) == []
     assert list(dec.subsample_range(0, 0)) == []
     assert list(dec) == []
+    with pytest.raises(IndexError, match="out of range"):
+        dec.lookup(0)
     assert dec.asset_names() == []
     out = tmp_path / "empty.ben"
     dec.extract_stream(out)
@@ -955,6 +957,35 @@ def test_partial_iteration_then_restart(tmp_path: Path) -> None:
     assert next(it) == samples[0]
     assert next(it) == samples[1]
     assert list(dec) == samples
+
+
+@pytest.mark.parametrize("assignment_format", ["ben", "xben"])
+def test_lookup_returns_one_sample_without_changing_iteration(
+    tmp_path: Path, assignment_format: str
+) -> None:
+    samples = [[1, 2], [2, 1], [3, 1], [3, 2]]
+    if assignment_format == "ben":
+        stream_bytes = _ben_bytes_for(samples, tmp_path, variant="twodelta")
+        format_code = ASSIGNMENT_FORMAT_BEN
+    else:
+        stream_bytes = _xben_bytes_for(samples, tmp_path, variant="twodelta")
+        format_code = ASSIGNMENT_FORMAT_XBEN
+    bundle = build_bundle(
+        stream_bytes=stream_bytes,
+        sample_count=len(samples),
+        assignment_format=format_code,
+    )
+    path = _write_bundle(tmp_path / "lookup.bendl", bundle)
+
+    dec = BendlDecoder(path)
+    iterator = iter(dec)
+    assert next(iterator) == samples[0]
+    assert dec.lookup(2) == samples[2]
+    assert next(iterator) == samples[1]
+    assert dec.lookup(0) == samples[0]
+    assert dec.lookup(len(samples) - 1) == samples[-1]
+    with pytest.raises(IndexError, match="out of range"):
+        dec.lookup(len(samples))
 
 
 def test_subsample_modes(tmp_path: Path) -> None:

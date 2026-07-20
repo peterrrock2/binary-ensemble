@@ -10,15 +10,25 @@ plain streams). Each returns a decoder you iterate. Indices are **zero-based**; 
 indices raise rather than being silently dropped, duplicate indices are dropped, and an unsorted
 index list is sorted (with a `UserWarning`).
 
+To retrieve one assignment directly, call `lookup(index)` on either decoder. It returns a single
+`list[int]` and does not change the decoder's current iteration or subsample selection:
+
+```python
+from binary_ensemble import BendlDecoder
+
+decoder = BendlDecoder("ensemble.bendl")
+assignment = decoder.lookup(49)  # zero-based
+```
+
 ```{note}
 How cheap skipping is depends on the stream's [encoding variant](../concepts/variants.md).
 `standard` and `mkv_chain` frames state their byte length up front, so the reader hops
 straight over unwanted samples. `twodelta` — the default — stores most samples as deltas, so
-the reader still has to replay the deltas between snapshots to reconstruct the samples you
-keep. Plain BEN `twodelta` writers insert checkpoint snapshots after at most 50,000 dependent
-delta frames, so replay is bounded by nearby snapshots, but skipped samples are still not free. If
-heavy random access or repeated subsampling is your primary workload, encode with
-`variant="standard"` or `variant="mkv_chain"`.
+the reader still has to replay deltas to reconstruct the samples you keep. A lookup in a BEN stream
+scans frame headers, seeks to the nearest checkpoint snapshot, and replays from there. Plain BEN
+`twodelta` writers insert checkpoints after at most 50,000 dependent delta frames. XBEN must be
+decompressed sequentially. If heavy random access or repeated subsampling is your primary
+workload, encode with `variant="standard"` or `variant="mkv_chain"`.
 ```
 
 ## By specific indices

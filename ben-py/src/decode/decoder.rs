@@ -120,6 +120,24 @@ impl PyBenDecoder {
         self.cursor.count_samples(py)
     }
 
+    /// Return the assignment at a zero-based sample index.
+    ///
+    /// Lookup uses a separate reader, so it does not change the decoder's current iteration
+    /// position or any selection installed with a ``subsample_*`` method.
+    ///
+    /// Args:
+    ///     index (int): Zero-based sample index to return.
+    ///
+    /// Returns:
+    ///     list[int]: The assignment at ``index``.
+    ///
+    /// Raises:
+    ///     IndexError: If ``index`` is outside the stream.
+    #[pyo3(text_signature = "(self, index)")]
+    fn lookup(&self, index: isize, py: Python<'_>) -> PyResult<Vec<u16>> {
+        self.cursor.lookup(index, py)
+    }
+
     /// Restrict iteration to the samples at the given zero-based indices.
     ///
     /// Skipped samples are never materialized as Python lists, and where the encoding
@@ -140,7 +158,7 @@ impl PyBenDecoder {
     /// Example:
     ///     >>> for plan in BenDecoder("plans.ben").subsample_indices([0, 499, 9998]):
     ///     ...     ...
-    #[pyo3(text_signature = "(self, indices, /)")]
+    #[pyo3(text_signature = "(self, indices)")]
     fn subsample_indices<'py>(
         mut slf: PyRefMut<'py, Self>,
         indices: Vec<usize>,
@@ -166,7 +184,7 @@ impl PyBenDecoder {
     /// Example:
     ///     >>> list(BenDecoder("plans.ben").subsample_range(10, 15))
     ///     # indices 10, 11, 12, 13, and 14
-    #[pyo3(text_signature = "(self, start, end, /)")]
+    #[pyo3(text_signature = "(self, start, end)")]
     fn subsample_range<'py>(
         mut slf: PyRefMut<'py, Self>,
         start: usize,

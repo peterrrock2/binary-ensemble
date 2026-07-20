@@ -6,10 +6,12 @@ in [Compatibility and stability](concepts/compatibility.md).
 
 ## Unreleased
 
-- **Zero-based positional indexing (behavior change):** lookup, Rust extraction APIs, and decoder
-  subsampling now use zero-based sample indices. Lookup uses `ben lookup FILE INDEX`. Ranges are
-  half-open, and subsampling offsets default to `0`. Decoded JSONL retains one-based `sample`
-  labels.
+## 2.0.0
+
+- **Zero-based positional indexing (behavior change):** CLI lookup, Rust extraction APIs, and
+  decoder subsampling now use zero-based sample indices. Lookup uses `ben lookup FILE INDEX`, and
+  Python's `BenDecoder` and `BendlDecoder` expose `lookup(index)`. Ranges are half-open, and
+  subsampling offsets default to `0`. Decoded JSONL retains one-based `sample` labels.
 - **Graph embedding default (behavior change):** `BendlEncoder.add_graph()` now preserves the
   input node order by default (`sort=None`) instead of applying multi-level clustering. Existing
   code that relies on implicit MLC ordering must pass `sort="mlc"`; explicit `"mlc"`, `"rcm"`,
