@@ -478,6 +478,7 @@ def compress_stream(
 
     Raises:
         OSError: If ``out_file`` exists and ``overwrite`` is ``False``.
+        Exception: If the bundle is unfinalized or does not contain a BEN stream.
     """
     _atomic_or_out(
         lambda src, dst, ow: _recompress_bundle(src, dst, overwrite=ow),
