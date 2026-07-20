@@ -126,6 +126,18 @@ fn transcode_bundle_impl(
     let sample_count = reader.header().sample_count;
     let stream_len = reader.header().stream_len;
     let empty = stream_len == 0 && sample_count == 0;
+    reader.verify_sample_count().map_err(|e| {
+        PyException::new_err(format!(
+            "Failed to verify source sample count before {operation}: {e}"
+        ))
+    })?;
+    if empty {
+        reader.verify_stream_checksum().map_err(|e| {
+            PyException::new_err(format!(
+                "Failed to verify source stream before {operation}: {e}"
+            ))
+        })?;
+    }
 
     // Read every asset's decoded payload up front (each read borrows the reader exclusively).
     let entries: Vec<_> = reader.assets().to_vec();

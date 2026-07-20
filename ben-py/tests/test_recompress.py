@@ -2,12 +2,28 @@
 
 from __future__ import annotations
 
+import struct
 from pathlib import Path
 
 import pytest
 
 from binary_ensemble.bundle import BendlDecoder, BendlEncoder, compress_stream, decompress_stream
 from helpers import example_graph as _graph
+
+
+def _crc32c(data: bytes) -> int:
+    crc = 0xFFFFFFFF
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            mask = -(crc & 1)
+            crc = (crc >> 1) ^ (0x82F63B78 & mask)
+    return (~crc) & 0xFFFFFFFF
+
+
+def _restamp_header(path: Path, data: bytearray) -> None:
+    data[64:68] = struct.pack("<I", _crc32c(data[:64]))
+    path.write_bytes(data)
 
 
 def _build_ben_bundle(path: Path):
@@ -146,6 +162,35 @@ def test_decompress_stream_assets_only_bundle(tmp_path: Path) -> None:
     assert dec.count_samples() == 0
     assert list(dec) == []
     assert dec.read_metadata() == {"only": "assets"}
+
+
+def test_decompress_stream_assets_only_verifies_stream_checksum(tmp_path: Path) -> None:
+    src = tmp_path / "assets.bendl"
+    with BendlEncoder(src, overwrite=True) as enc:
+        enc.add_metadata({"only": "assets"})
+    compressed = tmp_path / "assets.xben.bendl"
+    compress_stream(src, out_file=compressed)
+
+    data = bytearray(compressed.read_bytes())
+    data[20:24] = struct.pack("<I", 1)
+    _restamp_header(compressed, data)
+
+    with pytest.raises(Exception, match="source stream.*checksum mismatch"):
+        decompress_stream(compressed, out_file=tmp_path / "out.bendl")
+
+
+def test_decompress_stream_verifies_sample_count(tmp_path: Path) -> None:
+    src = tmp_path / "in.bendl"
+    compressed = tmp_path / "compressed.bendl"
+    _build_ben_bundle(src)
+    compress_stream(src, out_file=compressed)
+
+    data = bytearray(compressed.read_bytes())
+    data[56:64] = struct.pack("<q", 99)
+    _restamp_header(compressed, data)
+
+    with pytest.raises(Exception, match="source sample count.*sample_count"):
+        decompress_stream(compressed, out_file=tmp_path / "out.bendl")
 
 
 def test_stream_transcodes_require_the_opposite_format(tmp_path: Path) -> None:
