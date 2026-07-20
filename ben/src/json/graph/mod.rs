@@ -46,6 +46,19 @@ pub fn sort_json_file_by_key<R: Read, W: Write>(
     tracing::trace!("Loading JSON file...");
     let nx_graph: NxGraphAdjFormat = serde_json::from_reader(reader)?;
 
+    if key != "id"
+        && !nx_graph.nodes.is_empty()
+        && nx_graph
+            .nodes
+            .iter()
+            .all(|node| !node.attrs.contains_key(key))
+    {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            format!("sort key {key:?} is not present on any node"),
+        ));
+    }
+
     tracing::trace!("Sorting JSON file by key: {}", key);
     let (result, order) = if nx_graph.directed {
         reorder_directed(nx_graph, |p| petxgraph::sort_by_key(p, key))?

@@ -476,6 +476,20 @@ fn test_sort_json_file_by_key_missing_attribute_uses_null() {
 }
 
 #[test]
+fn test_sort_json_file_by_key_rejects_unknown_key() {
+    let mut output = Vec::new();
+
+    let error = sort_json_file_by_key(path_graph_json(), &mut output, "idontexist").unwrap_err();
+
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    assert_eq!(
+        error.to_string(),
+        "sort key \"idontexist\" is not present on any node"
+    );
+    assert!(output.is_empty());
+}
+
+#[test]
 fn test_mlc_with_isolated_node() {
     // A graph containing an isolated node (no edges) triggers the single-node-component early
     // return in mlc_component.
