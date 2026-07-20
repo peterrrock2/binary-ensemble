@@ -21,6 +21,7 @@ __all__ = [
     "BendlDecoder",
     "BendlStreamSession",
     "compress_stream",
+    "decompress_stream",
     "relabel_bundle",
 ]
 
@@ -31,7 +32,7 @@ class BendlEncoder:
     def add_graph(
         self,
         graph: GraphInput,
-        sort: SortMethod | None = "mlc",
+        sort: SortMethod | None = None,
         key: str | None = None,
         *,
         compress: bool | None = None,
@@ -100,6 +101,11 @@ class BendlEncoder:
 
 # out_file=None means in place: the result is atomically swapped over `path`.
 def compress_stream(
+    path: StrPath,
+    out_file: StrPath | None = None,
+    overwrite: bool = False,
+) -> None: ...
+def decompress_stream(
     path: StrPath,
     out_file: StrPath | None = None,
     overwrite: bool = False,

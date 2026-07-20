@@ -191,13 +191,7 @@ fn ben_cli_encode_decode_read_and_x_modes_roundtrip() {
 
     let read = run(
         "ben",
-        &[
-            "lookup",
-            ben_path.to_str().unwrap(),
-            "--sample-number",
-            "2",
-            "--print",
-        ],
+        &["lookup", ben_path.to_str().unwrap(), "1", "--print"],
         temp.path(),
     );
     assert_success(&read);
@@ -483,14 +477,10 @@ fn ben_cli_reports_expected_error_paths() {
     assert_failure(&decode);
     assert!(String::from_utf8_lossy(&decode.stderr).contains("Error:"));
 
-    // lookup requires --sample-number; omitting it is a clap parse error.
-    let read = run(
-        "ben",
-        &["lookup", bogus_jsonl.to_str().unwrap()],
-        temp.path(),
-    );
+    // Lookup requires both an input path and index; omitting them is a clap parse error.
+    let read = run("ben", &["lookup"], temp.path());
     assert_failure(&read);
-    assert!(String::from_utf8_lossy(&read.stderr).contains("sample-number"));
+    assert!(String::from_utf8_lossy(&read.stderr).contains("Usage:"));
 
     let xz = run(
         "ben",
@@ -635,8 +625,7 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
             &[
                 "lookup",
                 ben_path.to_str().unwrap(),
-                "--sample-number",
-                "1",
+                "0",
                 "--output-file",
                 occupied.to_str().unwrap(),
             ],
@@ -691,13 +680,7 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
 
     let read_too_large = run(
         "ben",
-        &[
-            "lookup",
-            ben_path.to_str().unwrap(),
-            "--sample-number",
-            "99",
-            "--print",
-        ],
+        &["lookup", ben_path.to_str().unwrap(), "99", "--print"],
         temp.path(),
     );
     assert_failure(&read_too_large);
@@ -1425,8 +1408,7 @@ fn pcben_decodes_committed_foreign_pcompress_fixture() {
     // crates.io dependency), so this pins the foreign-format interop contract: bytes produced by
     // genuine PCompress must keep converting to a BEN that decodes back to the canonical ensemble.
     // Both formats are zero-based, so the bridge transcodes ids unchanged; the committed
-    // `source.jsonl` is the one-based canonical ensemble, so the expected decode is its ids minus
-    // one.
+    // `source.jsonl` uses one-based district ids, so the expected decode is its ids minus one.
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")

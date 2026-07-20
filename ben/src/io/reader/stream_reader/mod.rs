@@ -7,6 +7,7 @@
 //! [`crate::io::reader::DecodeFrame::expand_self_contained`] (subsample-level).
 
 mod ben;
+mod events;
 mod frames;
 mod xben;
 
@@ -23,6 +24,7 @@ use crate::format::banners::{variant_from_banner, BANNER_LEN};
 use crate::progress::Spinner;
 use crate::BenVariant;
 
+pub use events::{TwoDeltaFrameEvent, TwoDeltaFrameEventReader};
 pub use frames::BenStreamFrameReader;
 
 /// Wire format of a BEN-stack stream.
@@ -164,6 +166,7 @@ impl<R: Read> BenStreamReader<R> {
         self.silent
     }
 
+    /// Return a mutable reference to the inner stream state.
     pub(crate) fn inner_mut(&mut self) -> &mut BenStreamInner<R> {
         &mut self.inner
     }
@@ -222,7 +225,7 @@ impl<R: Read> BenStreamReader<R> {
     /// Decode the remaining stream and write it as JSONL.
     ///
     /// Each decoded sample is written as a JSON object containing an `assignment` vector and a
-    /// 1-based `sample` index.
+    /// one-based `sample` number.
     pub fn write_all_jsonl(&mut self, mut writer: impl Write) -> io::Result<()> {
         let mut sample_number = 0usize;
         self.for_each_assignment(|assignment, count| {
@@ -269,7 +272,7 @@ impl<R: Read> Iterator for BenStreamReader<R> {
 }
 
 impl<R: Read + Send> BenStreamReader<R> {
-    /// Convert this decoder into a subsampling iterator over explicit 1-based indices.
+    /// Convert this decoder into a subsampling iterator over explicit zero-based indices.
     pub fn into_subsample_by_indices<T>(
         self,
         indices: T,
@@ -280,8 +283,8 @@ impl<R: Read + Send> BenStreamReader<R> {
         SubsampleFrameDecoder::by_indices(self.into_frames(), indices)
     }
 
-    /// Convert this decoder into a subsampling iterator over the inclusive 1-based range
-    /// `[start, end]`.
+    /// Convert this decoder into a subsampling iterator over the half-open zero-based range
+    /// `[start, end)`.
     pub fn into_subsample_by_range(
         self,
         start: usize,
@@ -291,7 +294,7 @@ impl<R: Read + Send> BenStreamReader<R> {
     }
 
     /// Convert this decoder into a subsampling iterator that selects every `step` samples from the
-    /// 1-based `offset`.
+    /// zero-based `offset`.
     pub fn into_subsample_every(
         self,
         step: usize,

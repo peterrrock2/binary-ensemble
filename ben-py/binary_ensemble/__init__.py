@@ -4,7 +4,8 @@ The public surface mirrors the CLI's ``ben`` vs ``bendl`` split:
 
 - :mod:`binary_ensemble.bundle`: the recommended single-file ``.bendl`` format:
   :class:`~binary_ensemble.bundle.BendlEncoder`, :class:`~binary_ensemble.bundle.BendlDecoder`,
-  and :func:`~binary_ensemble.bundle.compress_stream`.
+  :func:`~binary_ensemble.bundle.compress_stream`, and
+  :func:`~binary_ensemble.bundle.decompress_stream`.
 - :mod:`binary_ensemble.stream`: plain BEN/XBEN streams:
   :class:`~binary_ensemble.stream.BenEncoder`, :class:`~binary_ensemble.stream.BenDecoder`.
 - :mod:`binary_ensemble.codec`: whole-file JSONL ↔ BEN ↔ XBEN transforms.
@@ -21,6 +22,7 @@ from binary_ensemble.bundle import (
     BendlDecoder,
     BendlEncoder,
     compress_stream,
+    decompress_stream,
     relabel_bundle,
 )
 from binary_ensemble.codec import (
@@ -49,6 +51,7 @@ __all__ = [
     "BendlEncoder",
     "BendlDecoder",
     "compress_stream",
+    "decompress_stream",
     "relabel_bundle",
     # Stream
     "BenEncoder",

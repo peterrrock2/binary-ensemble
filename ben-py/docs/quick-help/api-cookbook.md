@@ -121,7 +121,7 @@ for assignment in BendlDecoder("ensemble.bendl").subsample_every(30):
 from binary_ensemble import BendlDecoder
 
 window = list(BendlDecoder("ensemble.bendl").subsample_range(10, 15))
-assert len(window) == 6
+assert len(window) == 5
 ```
 
 ## Convert JSONL to BEN and XBEN

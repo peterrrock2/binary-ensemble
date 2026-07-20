@@ -17,17 +17,9 @@ use crate::BenVariant;
 #[derive(Debug, Error)]
 /// Error returned by sample extraction helpers.
 pub enum SampleError {
-    /// The provided sample number was zero, which is invalid.
-    #[error("Invalid sample number. Sample number must be greater than 0")]
-    InvalidSampleNumber,
-
     /// The requested sample index was not found in the file.
-    #[error(
-        "Sample number not found in file. Failed to find sample '{sample_number}'. \
-         Last sample seems to be '{}'",
-        sample_number - 1
-    )]
-    SampleNotFound { sample_number: usize },
+    #[error("Sample index {index} is out of range for {sample_count} samples")]
+    SampleNotFound { index: usize, sample_count: usize },
 
     /// An I/O error occurred during extraction.
     #[error("IO Error: {0}")]
@@ -45,25 +37,21 @@ impl SampleError {
     }
 }
 
-/// Extract a single 1-based sample from an uncompressed BEN stream.
+/// Extract a single sample by zero-based index from an uncompressed BEN stream.
 ///
 /// # Arguments
 ///
 /// * `reader` - The input BEN stream, including its 17-byte banner.
-/// * `sample_number` - The 1-based sample index to retrieve.
+/// * `index` - The zero-based sample index to retrieve.
 ///
 /// # Returns
 ///
 /// Returns the decoded assignment vector for the requested sample.
 pub fn extract_assignment_ben<R: Read>(
     mut reader: R,
-    sample_number: usize,
+    index: usize,
 ) -> Result<Vec<u16>, SampleError> {
-    if sample_number == 0 {
-        return Err(SampleError::InvalidSampleNumber);
-    }
-
-    let mut current_sample = 1;
+    let mut current_index = 0;
     let mut inner_decoder = BenStreamReader::from_ben(&mut reader)
         .map_err(io::Error::from)?
         .silent(true);
@@ -72,13 +60,11 @@ pub fn extract_assignment_ben<R: Read>(
         let mut found = None;
         inner_decoder
             .for_each_assignment(|assignment, count| {
-                if current_sample == sample_number
-                    || current_sample + count as usize > sample_number
-                {
+                if current_index + count as usize > index {
                     found = Some(assignment.to_vec());
                     return Ok(false);
                 }
-                current_sample += count as usize;
+                current_index += count as usize;
                 Ok(true)
             })
             .map_err(SampleError::new_io_error)?;
@@ -88,32 +74,29 @@ pub fn extract_assignment_ben<R: Read>(
     } else {
         for frame in inner_decoder.into_frames() {
             let (decode_frame, count) = frame.map_err(SampleError::new_io_error)?;
-            if current_sample == sample_number || current_sample + count as usize > sample_number {
+            if current_index + count as usize > index {
                 return decode_frame
                     .expand_self_contained()
                     .map_err(SampleError::new_io_error);
             }
-            current_sample += count as usize;
+            current_index += count as usize;
         }
     }
 
     Err(SampleError::SampleNotFound {
-        sample_number: current_sample,
+        index,
+        sample_count: current_index,
     })
 }
 
-/// Extract a single 1-based sample from a seekable uncompressed BEN stream.
+/// Extract a single sample by zero-based index from a seekable uncompressed BEN stream.
 ///
 /// Plain TwoDelta streams use a byte-level pre-scan to seek to the latest snapshot before the
 /// requested sample, then replay from there. Other variants delegate to [`extract_assignment_ben`].
 pub fn extract_assignment_ben_seek<R: Read + Seek>(
     mut reader: R,
-    sample_number: usize,
+    index: usize,
 ) -> Result<Vec<u16>, SampleError> {
-    if sample_number == 0 {
-        return Err(SampleError::InvalidSampleNumber);
-    }
-
     let mut banner = [0u8; BANNER_LEN];
     reader.read_exact(&mut banner)?;
     let variant = variant_from_banner(&banner)
@@ -121,42 +104,42 @@ pub fn extract_assignment_ben_seek<R: Read + Seek>(
     reader.seek(SeekFrom::Start(0))?;
 
     if variant != BenVariant::TwoDelta {
-        return extract_assignment_ben(reader, sample_number);
+        return extract_assignment_ben(reader, index);
     }
 
-    let (snapshot_offset, snapshot_sample) =
-        latest_twodelta_snapshot_before(&mut reader, sample_number)?;
+    let (snapshot_offset, snapshot_index) = latest_twodelta_snapshot_before(&mut reader, index)?;
     reader.seek(SeekFrom::Start(snapshot_offset))?;
 
     let mut prefixed = Cursor::new(TWODELTA_BEN_BANNER.as_slice()).chain(&mut reader);
     let mut decoder = BenStreamReader::from_ben(&mut prefixed)
         .map_err(io::Error::from)?
         .silent(true);
-    let mut current_sample = snapshot_sample;
+    let mut current_index = snapshot_index;
     let mut found = None;
     decoder
         .for_each_assignment(|assignment, count| {
-            if current_sample == sample_number || current_sample + count as usize > sample_number {
+            if current_index + count as usize > index {
                 found = Some(assignment.to_vec());
                 return Ok(false);
             }
-            current_sample += count as usize;
+            current_index += count as usize;
             Ok(true)
         })
         .map_err(SampleError::new_io_error)?;
 
     found.ok_or(SampleError::SampleNotFound {
-        sample_number: current_sample,
+        index,
+        sample_count: current_index,
     })
 }
 
 fn latest_twodelta_snapshot_before<R: Read + Seek>(
     reader: &mut R,
-    sample_number: usize,
+    index: usize,
 ) -> Result<(u64, usize), SampleError> {
     reader.seek(SeekFrom::Start(BANNER_LEN as u64))?;
 
-    let mut current_sample = 1usize;
+    let mut current_index = 0usize;
     let mut latest_snapshot = None;
 
     loop {
@@ -167,7 +150,7 @@ fn latest_twodelta_snapshot_before<R: Read + Seek>(
         };
         let count = match tag {
             BEN_TWODELTA_SNAPSHOT_TAG => {
-                latest_snapshot = Some((frame_offset, current_sample));
+                latest_snapshot = Some((frame_offset, current_index));
                 read_twodelta_snapshot_count(reader)?
             }
             BEN_TWODELTA_DELTA_TAG => read_twodelta_delta_count(reader)?,
@@ -185,7 +168,7 @@ fn latest_twodelta_snapshot_before<R: Read + Seek>(
             )));
         }
 
-        if current_sample == sample_number || current_sample + count as usize > sample_number {
+        if current_index + count as usize > index {
             return latest_snapshot.ok_or_else(|| {
                 SampleError::new_io_error(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -193,11 +176,12 @@ fn latest_twodelta_snapshot_before<R: Read + Seek>(
                 ))
             });
         }
-        current_sample += count as usize;
+        current_index += count as usize;
     }
 
     Err(SampleError::SampleNotFound {
-        sample_number: current_sample,
+        index,
+        sample_count: current_index,
     })
 }
 
@@ -236,33 +220,29 @@ fn read_u16_be(reader: &mut impl Read) -> io::Result<u16> {
     Ok(u16::from_be_bytes(bytes))
 }
 
-/// Extract a single 1-based sample from an XBEN stream.
+/// Extract a single sample by zero-based index from an XBEN stream.
 ///
 /// # Arguments
 ///
 /// * `reader` - The compressed XBEN input stream.
-/// * `sample_number` - The 1-based sample index to retrieve.
+/// * `index` - The zero-based sample index to retrieve.
 ///
 /// # Returns
 ///
 /// Returns the decoded assignment vector for the requested sample.
 pub fn extract_assignment_xben<R: Read>(
     mut reader: R,
-    sample_number: usize,
+    index: usize,
 ) -> Result<Vec<u16>, SampleError> {
-    if sample_number == 0 {
-        return Err(SampleError::InvalidSampleNumber);
-    }
-
     let inner_decoder = BenStreamReader::from_xben(&mut reader)
         .map_err(|e| SampleError::new_io_error(io::Error::from(e)))?;
     let variant = inner_decoder.variant();
     let frame_iterator = inner_decoder.into_frames();
 
-    let mut current_sample = 1;
+    let mut current_index = 0;
     for frame in frame_iterator {
         let (decode_frame, count) = frame.map_err(SampleError::new_io_error)?;
-        if current_sample == sample_number || current_sample + count as usize > sample_number {
+        if current_index + count as usize > index {
             // The frame iterator guarantees structurally complete zero-sentinel ben32 frames in
             // the XBEN arm, but the runs inside can still be semantically corrupt (zero-length
             // run, oversized expansion), so the decode is fallible.
@@ -276,30 +256,25 @@ pub fn extract_assignment_xben<R: Read>(
                 .map_err(SampleError::new_io_error)?;
             return Ok(assignment);
         }
-        current_sample += count as usize;
+        current_index += count as usize;
     }
 
     Err(SampleError::SampleNotFound {
-        sample_number: current_sample,
+        index,
+        sample_count: current_index,
     })
 }
 
-/// Extract a single 1-based sample from a BEN file at `input`.
-pub fn extract_assignment_ben_path(
-    input: &Path,
-    sample_number: usize,
-) -> Result<Vec<u16>, SampleError> {
+/// Extract a single sample by zero-based index from a BEN file at `input`.
+pub fn extract_assignment_ben_path(input: &Path, index: usize) -> Result<Vec<u16>, SampleError> {
     let reader = BufReader::new(File::open(input).map_err(SampleError::new_io_error)?);
-    extract_assignment_ben_seek(reader, sample_number)
+    extract_assignment_ben_seek(reader, index)
 }
 
-/// Extract a single 1-based sample from an XBEN file at `input`.
-pub fn extract_assignment_xben_path(
-    input: &Path,
-    sample_number: usize,
-) -> Result<Vec<u16>, SampleError> {
+/// Extract a single sample by zero-based index from an XBEN file at `input`.
+pub fn extract_assignment_xben_path(input: &Path, index: usize) -> Result<Vec<u16>, SampleError> {
     let reader = BufReader::new(File::open(input).map_err(SampleError::new_io_error)?);
-    extract_assignment_xben(reader, sample_number)
+    extract_assignment_xben(reader, index)
 }
 
 #[cfg(test)]

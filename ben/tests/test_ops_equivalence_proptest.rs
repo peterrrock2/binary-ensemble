@@ -6,8 +6,7 @@
 //!
 //! - **relabel composition:** for any node permutation `P` of length `L`, `relabel(P^-1, relabel(P,
 //!   x)) == x`.
-//! - **extract correctness:** for any sample index `i` in `1..=N`, `extract(i, encode(x)) ==
-//!   x[i-1]`.
+//! - **extract correctness:** for any sample index `i` in `0..N`, `extract(i, encode(x)) == x[i]`.
 //! - **convert variant round-trip:** for any variant pair `(A, B)`, `convert(A, convert(B, x)) ==
 //!   x` (compared at the decoded-assignment level, since BEN variants differ in frame structure and
 //!   counts but not assignment data).
@@ -152,7 +151,7 @@ proptest! {
         prop_assert_eq!(decoded, jsonl);
     }
 
-    /// `extract(i, encode(x)) == x[i-1]` for every 1-based sample index `i` in `1..=N`.
+    /// `extract(i, encode(x)) == x[i]` for every zero-based sample index `i` in `0..N`.
     /// Sweeps the entire sequence (not just a random index) because extract correctness for one
     /// index is almost free to verify for all of them once the BEN file is built.
     #[test]
@@ -165,9 +164,9 @@ proptest! {
             .unwrap();
 
         for (i, expected) in seq.iter().enumerate() {
-            let extracted = extract_assignment_ben(Cursor::new(&ben), i + 1).unwrap();
+            let extracted = extract_assignment_ben(Cursor::new(&ben), i).unwrap();
             prop_assert_eq!(&extracted, expected,
-                "extract(sample_number={}) returned the wrong assignment", i + 1);
+                "extract(index={}) returned the wrong assignment", i);
         }
     }
 

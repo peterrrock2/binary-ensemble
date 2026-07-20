@@ -120,25 +120,25 @@ impl PyBenDecoder {
         self.cursor.count_samples(py)
     }
 
-    /// Restrict iteration to the samples at the given 1-indexed positions.
+    /// Restrict iteration to the samples at the given zero-based indices.
     ///
     /// Skipped samples are never materialized as Python lists, and where the encoding
     /// variant allows it (``standard``, ``mkv_chain``) whole frames are skipped without
     /// being unpacked, so this stays fast on large ensembles.
     ///
     /// Args:
-    ///     indices (Sequence[int]): The 1-indexed sample numbers to keep. Duplicates are
+    ///     indices (Sequence[int]): The zero-based indices to keep. Duplicates are
     ///         dropped; an unsorted list is sorted, with a ``UserWarning``.
     ///
     /// Returns:
     ///     BenDecoder: ``self``, so the call can be chained directly into a ``for`` loop.
     ///
     /// Raises:
-    ///     Exception: If ``indices`` is empty, contains ``0`` (indices are 1-based), or
-    ///         contains an index greater than the number of samples in the stream.
+    ///     Exception: If ``indices`` is empty or contains an index greater than or equal to the
+    ///         number of samples in the stream.
     ///
     /// Example:
-    ///     >>> for plan in BenDecoder("plans.ben").subsample_indices([1, 500, 9999]):
+    ///     >>> for plan in BenDecoder("plans.ben").subsample_indices([0, 499, 9998]):
     ///     ...     ...
     #[pyo3(text_signature = "(self, indices, /)")]
     fn subsample_indices<'py>(
@@ -150,22 +150,22 @@ impl PyBenDecoder {
         Ok(slf.into())
     }
 
-    /// Restrict iteration to a contiguous, 1-indexed inclusive range of samples.
+    /// Restrict iteration to a contiguous, zero-based half-open range of samples.
     ///
     /// Args:
-    ///     start (int): First sample number to keep (1-indexed, inclusive).
-    ///     end (int): Last sample number to keep (1-indexed, inclusive).
+    ///     start (int): First index to keep (inclusive).
+    ///     end (int): Index at which to stop (exclusive).
     ///
     /// Returns:
     ///     BenDecoder: ``self``, for chaining into a ``for`` loop.
     ///
     /// Raises:
-    ///     Exception: If ``start`` is ``0``, ``end`` is less than ``start``, or ``end``
-    ///         is greater than the number of samples in the stream.
+    ///     Exception: If ``end`` is less than ``start`` or greater than the number of samples in
+    ///         the stream.
     ///
     /// Example:
     ///     >>> list(BenDecoder("plans.ben").subsample_range(10, 15))
-    ///     # samples 10, 11, 12, 13, 14, and 15
+    ///     # indices 10, 11, 12, 13, and 14
     #[pyo3(text_signature = "(self, start, end, /)")]
     fn subsample_range<'py>(
         mut slf: PyRefMut<'py, Self>,
@@ -181,19 +181,19 @@ impl PyBenDecoder {
     ///
     /// Args:
     ///     step (int): Stride between kept samples (e.g. ``10`` keeps every tenth sample).
-    ///     offset (int, optional): 1-indexed position of the first kept sample. Default is ``1``.
+    ///     offset (int, optional): Zero-based index of the first kept sample. Default is ``0``.
     ///
     /// Returns:
     ///     BenDecoder: ``self``, for chaining into a ``for`` loop.
     ///
     /// Raises:
-    ///     Exception: If ``step`` or ``offset`` is ``0`` (both are 1-based).
+    ///     Exception: If ``step`` is ``0`` or ``offset`` is outside the stream.
     ///
     /// Example:
     ///     >>> for plan in BenDecoder("plans.ben").subsample_every(1000):
     ///     ...     ...
-    #[pyo3(signature = (step, offset=1))]
-    #[pyo3(text_signature = "(self, step, offset=1)")]
+    #[pyo3(signature = (step, offset=0))]
+    #[pyo3(text_signature = "(self, step, offset=0)")]
     fn subsample_every<'py>(
         mut slf: PyRefMut<'py, Self>,
         step: usize,

@@ -284,16 +284,18 @@ def test_add_graph_none_stores_raw_without_permutation_map(tmp_path: Path) -> No
     assert dec.read_node_permutation_map() is None
 
 
-def test_add_graph_defaults_to_mlc_reorder(tmp_path: Path) -> None:
-    # With no sort given, add_graph reorders via MLC (the default) and stores a map.
+def test_add_graph_defaults_to_original_node_order(tmp_path: Path) -> None:
     path = tmp_path / "default.bendl"
+    graph = _graph()
+    original_order = [node["id"] for node in graph["nodes"]]
     enc = BendlEncoder(path, overwrite=True)
-    returned = enc.add_graph(_graph())
+    returned = enc.add_graph(graph)
     enc.close()
-    assert returned.number_of_nodes() == _n()
+    assert list(returned.nodes) == original_order
     dec = BendlDecoder(path)
-    assert dec.asset_names() == ["graph.json", "node_permutation_map.json"]
-    assert dec.read_node_permutation_map()["ordering_method"] == "multi-level-cluster"
+    assert list(dec.read_graph().nodes) == original_order
+    assert dec.asset_names() == ["graph.json"]
+    assert dec.read_node_permutation_map() is None
 
 
 def test_add_graph_node_count_mismatch_raises(tmp_path: Path) -> None:

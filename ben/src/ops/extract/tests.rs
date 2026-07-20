@@ -52,19 +52,19 @@ fn test_extract_assignment_ben() {
     let mut reader = input.as_slice();
 
     assert_eq!(
-        extract_assignment_ben(&mut reader, 1).unwrap(),
+        extract_assignment_ben(&mut reader, 0).unwrap(),
         vec![1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4]
     );
 
     let mut reader = input.as_slice();
     assert_eq!(
-        extract_assignment_ben(&mut reader, 2).unwrap(),
+        extract_assignment_ben(&mut reader, 1).unwrap(),
         vec![2, 2, 3, 3, 3, 3, 3, 3, 3, 1, 2, 3]
     );
 
     let mut reader = input.as_slice();
     assert_eq!(
-        extract_assignment_ben(&mut reader, 3).unwrap(),
+        extract_assignment_ben(&mut reader, 2).unwrap(),
         vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     );
 }
@@ -108,28 +108,20 @@ fn test_extract_assignment_sample_too_large() {
     ]);
 
     let mut reader = input.as_slice();
-    let sample_number = 4;
+    let index = 3;
 
-    let result = extract_assignment_ben(&mut reader, sample_number);
+    let result = extract_assignment_ben(&mut reader, index);
 
     match result {
-        Err(SampleError::SampleNotFound { sample_number: 4 }) => (),
+        Err(SampleError::SampleNotFound {
+            index: 3,
+            sample_count: 3,
+        }) => (),
         _ => panic!(
             "{}",
             format!("Expected SampleError::SampleNotFound, got {:?}", result)
         ),
     }
-}
-
-#[test]
-fn test_extract_assignment_ben_rejects_zero_sample_number() {
-    let err = extract_assignment_ben([].as_slice(), 0).unwrap_err();
-    assert!(matches!(err, SampleError::InvalidSampleNumber));
-    assert_eq!(
-        err.to_string(),
-        "Invalid sample number. Sample number must be greater than 0"
-    );
-    assert!(err.source().is_none());
 }
 
 #[test]
@@ -154,22 +146,22 @@ fn test_extract_assignment_xben_roundtrip_and_errors() {
     )
     .unwrap();
 
-    let assignment = extract_assignment_xben(xben.as_slice(), 3).unwrap();
+    let assignment = extract_assignment_xben(xben.as_slice(), 2).unwrap();
     assert_eq!(assignment, vec![3, 3, 4]);
 
-    let missing = extract_assignment_xben(xben.as_slice(), 4).unwrap_err();
+    let missing = extract_assignment_xben(xben.as_slice(), 3).unwrap_err();
     assert!(matches!(
         missing,
-        SampleError::SampleNotFound { sample_number: 4 }
+        SampleError::SampleNotFound {
+            index: 3,
+            sample_count: 3,
+        }
     ));
     assert_eq!(
         missing.to_string(),
-        "Sample number not found in file. Failed to find sample '4'. Last sample seems to be '3'"
+        "Sample index 3 is out of range for 3 samples"
     );
     assert!(missing.source().is_none());
-
-    let zero = extract_assignment_xben(xben.as_slice(), 0).unwrap_err();
-    assert!(matches!(zero, SampleError::InvalidSampleNumber));
 }
 
 #[test]
@@ -190,11 +182,11 @@ fn extract_assignment_ben_seek_uses_snapshots_without_changing_result() {
     }
 
     assert_eq!(
-        extract_assignment_ben(Cursor::new(&ben), 4).unwrap(),
+        extract_assignment_ben(Cursor::new(&ben), 3).unwrap(),
         assignments[3]
     );
     assert_eq!(
-        extract_assignment_ben_seek(Cursor::new(&ben), 4).unwrap(),
+        extract_assignment_ben_seek(Cursor::new(&ben), 3).unwrap(),
         assignments[3]
     );
 }
@@ -234,11 +226,11 @@ fn extract_assignment_ben_path_returns_assignment() {
     std::fs::write(&path, &ben_bytes).unwrap();
 
     assert_eq!(
-        extract_assignment_ben_path(&path, 1).unwrap(),
+        extract_assignment_ben_path(&path, 0).unwrap(),
         vec![1, 2, 3]
     );
     assert_eq!(
-        extract_assignment_ben_path(&path, 2).unwrap(),
+        extract_assignment_ben_path(&path, 1).unwrap(),
         vec![3, 2, 1]
     );
 
@@ -250,6 +242,6 @@ fn extract_assignment_ben_path_propagates_missing_file() {
     use crate::test_utils::unique_path;
 
     let missing = unique_path("nonexistent.ben");
-    let err = extract_assignment_ben_path(&missing, 1).unwrap_err();
+    let err = extract_assignment_ben_path(&missing, 0).unwrap_err();
     assert!(matches!(err, SampleError::IoError(_)));
 }

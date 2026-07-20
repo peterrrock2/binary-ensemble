@@ -340,10 +340,10 @@ impl PyBendlEncoder {
 
     /// Add the ``graph.json`` known asset and return the graph to use for assignments.
     ///
-    /// `sort` defaults to `"mlc"`, so by default the graph is reordered for better compression.
     /// `sort` is `"mlc"` (multi-level clustering), `"rcm"` (reverse Cuthill-McKee), `"key"` to sort
     /// by a node attribute named via `key` (e.g. `key="GEOID"`), or `None` to store the graph
-    /// as-is. When reordering, both `graph.json` and `node_permutation_map.json` are stored,
+    /// as-is (the default). When reordering, both `graph.json` and `node_permutation_map.json` are
+    /// stored,
     /// and the reordered graph is returned (as a NetworkX graph, matching
     /// `BendlDecoder.read_graph`) so the chain runs on that ordering. Reordering is pre-stream
     /// only; a raw graph (`sort=None`) may also be attached post-stream / in append mode. The
@@ -355,7 +355,7 @@ impl PyBendlEncoder {
     ///         raw JSON ``bytes``, a file-like object with ``.read()``, or a
     ///         ``str``/``os.PathLike`` path to a JSON file (a plain ``str`` is a *path* here).
     ///     sort (SortMethod | None, optional): ``"mlc"``, ``"rcm"``, ``"key"``, or ``None``
-    ///         to store the graph as-is. Default is ``"mlc"``.
+    ///         to store the graph as-is. Default is ``None``.
     ///     key (str | None, optional): Node attribute used when ``sort="key"``. Use ``"id"``
     ///         for node id ordering. Default is ``None``.
     ///
@@ -369,9 +369,9 @@ impl PyBendlEncoder {
     /// Example:
     ///     >>> stored_graph = encoder.add_graph("graph.json", sort="mlc")
     ///     >>> write_order = list(stored_graph.nodes)
-    #[pyo3(signature = (graph, sort = Some("mlc".to_string()), key = None, compress = None, compression_level = None))]
+    #[pyo3(signature = (graph, sort = None, key = None, compress = None, compression_level = None))]
     #[pyo3(
-        text_signature = "(self, graph, sort='mlc', key=None, compress=None, compression_level=None)"
+        text_signature = "(self, graph, sort=None, key=None, compress=None, compression_level=None)"
     )]
     fn add_graph(
         &mut self,

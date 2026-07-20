@@ -68,7 +68,7 @@ ben encode small_example.jsonl                 # -> small_example.ben
 ben xencode small_example.ben                  # -> small_example.xben
 ben decode small_example.xben -w               # XBEN -> BEN (one layer down)
 ben decode small_example.ben -o roundtrip.jsonl     # BEN -> JSONL
-ben lookup small_example.ben -n 4              # prints sample 4: [1, 1, 1, 2, ...]
+ben lookup small_example.ben 3                 # fourth assignment, at zero-based index 3
 ```
 
 `ben` also has `xdecode` (XBEN straight to JSONL) and general-purpose `xz-compress` /
@@ -193,7 +193,8 @@ to-ben / to-xben <file>`), so ensembles can move between the two ecosystems. Bot
   format cannot detect a mismatched graph. Decoding a stream against the wrong node order
   yields valid-looking but wrong plans — which is exactly why `.bendl` files embed the
   graph.
-- **Samples are 1-indexed**, and decoded ensembles always start at sample 1.
+- **Sample indices are zero-based** for lookup, extraction, and subsampling. Decoded JSONL keeps
+  the established one-based `"sample"` labels and starts at 1.
 - **District ids and run lengths are 16-bit** (ids 0–65535, run lengths 1–65535) — far
   beyond any statewide redistricting use.
 - A machine running the codecs only needs memory for one assignment vector at a time.

@@ -61,5 +61,5 @@ fuzz_target!(|data: &[u8]| {
         RelabelOptions::convert_to(BenVariant::TwoDelta).with_max_samples(MAX_PULLS),
     );
 
-    let _ = extract_assignment_ben(data, 2);
+    let _ = extract_assignment_ben(data, 0);
 });

@@ -43,11 +43,11 @@ impl DecodeFrame {
 
 /// A selection strategy for extracting only part of a frame stream.
 pub enum Selection {
-    /// Select explicit 1-based indices.
+    /// Select explicit zero-based indices.
     Indices(Peekable<std::vec::IntoIter<usize>>),
-    /// Select every `step` samples starting at the 1-based `offset`.
+    /// Select every `step` samples starting at the zero-based `offset`.
     Every { step: usize, offset: usize },
-    /// Select the inclusive 1-based range `[start, end]`.
+    /// Select the half-open zero-based range `[start, end)`.
     Range { start: usize, end: usize },
 }
 
@@ -58,7 +58,7 @@ where
 {
     inner: I,
     selection: Selection,
-    sample: usize,
+    next_index: usize,
 }
 
 impl<I> SubsampleFrameDecoder<I>
@@ -70,11 +70,11 @@ where
         Self {
             inner,
             selection,
-            sample: 0,
+            next_index: 0,
         }
     }
 
-    /// Select a set of 1-based sample indices.
+    /// Select a set of zero-based sample indices.
     ///
     /// Indices are sorted and deduplicated before iteration begins.
     pub fn by_indices<T>(inner: I, indices: T) -> Self
@@ -87,22 +87,19 @@ where
         Self::new(inner, Selection::Indices(v.into_iter().peekable()))
     }
 
-    /// Select the inclusive 1-based range `[start, end]`.
+    /// Select the half-open zero-based range `[start, end)`.
     pub fn by_range(inner: I, start: usize, end: usize) -> Self {
-        assert!(
-            start >= 1 && end >= start,
-            "range must be 1-based and end >= start"
-        );
+        assert!(end >= start, "range end must be >= start");
         Self::new(inner, Selection::Range { start, end })
     }
 
-    /// Select every `step` samples beginning from the 1-based `offset`.
+    /// Select every `step` samples beginning from the zero-based `offset`.
     pub fn every(inner: I, step: usize, offset: usize) -> Self {
-        assert!(step >= 1 && offset >= 1, "step and offset must be >= 1");
+        assert!(step >= 1, "step must be >= 1");
         Self::new(inner, Selection::Every { step, offset })
     }
 
-    /// Count how many selected samples fall within an inclusive sample interval.
+    /// Count how many selected samples fall within a half-open sample interval.
     fn count_selected_in(&mut self, lo: usize, hi: usize) -> u16 {
         match &mut self.selection {
             Selection::Indices(iter) => {
@@ -112,7 +109,7 @@ where
                         iter.next();
                         continue;
                     }
-                    if next > hi {
+                    if next >= hi {
                         break;
                     }
                     iter.next();
@@ -122,24 +119,21 @@ where
             }
             Selection::Every { step, offset } => {
                 let start = lo.max(*offset);
-                if start > hi {
-                    return 0;
-                }
-                let r = (start as isize - *offset as isize).rem_euclid(*step as isize) as usize;
-                let first = start + ((*step - r) % *step);
-                if first > hi {
+                let remainder = (start - *offset) % *step;
+                let first = start + ((*step - remainder) % *step);
+                if first >= hi {
                     0
                 } else {
-                    (1 + (hi - first) / *step) as u16
+                    (1 + (hi - 1 - first) / *step) as u16
                 }
             }
             Selection::Range { start, end } => {
-                if hi < *start || lo > *end {
+                let a = lo.max(*start);
+                let b = hi.min(*end);
+                if a >= b {
                     0
                 } else {
-                    let a = lo.max(*start);
-                    let b = hi.min(*end);
-                    (b - a + 1) as u16
+                    (b - a) as u16
                 }
             }
         }
@@ -156,7 +150,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if let Selection::Range { end, .. } = self.selection {
-                if self.sample >= end {
+                if self.next_index >= end {
                     return None;
                 }
             }
@@ -175,11 +169,11 @@ where
                 )));
             }
 
-            let lo = self.sample + 1;
-            let hi = self.sample + count as usize;
+            let lo = self.next_index;
+            let hi = self.next_index + count as usize;
             let selected = self.count_selected_in(lo, hi);
 
-            self.sample = hi;
+            self.next_index = hi;
 
             if selected > 0 {
                 match frame.expand_self_contained() {

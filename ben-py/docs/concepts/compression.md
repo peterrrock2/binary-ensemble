@@ -64,8 +64,8 @@ don't have a geographic key to sort on.
 MLC reorders by **community structure**: it recursively groups the graph into tightly-connected
 clusters and lays the nodes out cluster by cluster (each connected component handled on its
 own). A district is, almost by definition, a tightly-connected cluster of units — so ordering
-by clusters tends to line up with district boundaries even more closely than RCM does. That is
-why it is the **default** for `add_graph`. Like RCM, it needs only the topology.
+by clusters tends to line up with district boundaries even more closely than RCM does. Like RCM,
+it needs only the topology.
 
 ### In Python
 
@@ -92,7 +92,7 @@ always recover the original node order. When you embed a graph in a bundle with
 
 - **Have a geographic key** like `GEOID`? Start with `sort="key"` — usually the strongest, and
   the cheapest.
-- **No useful key?** Use `sort="mlc"` (the default) or `sort="rcm"`; both work from the graph's
+- **No useful key?** Use `sort="mlc"` or `sort="rcm"`; both work from the graph's
   topology alone.
 
 These are all heuristics, so the exact win depends on your dual graph. Reordering is cheap and

@@ -26,7 +26,7 @@ from binary_ensemble import BendlEncoder
 
 encoder = BendlEncoder("ensemble.bendl", overwrite=True)
 
-# Explicitly show the default: MLC reorders the graph for better run-length compression.
+# Explicitly request MLC reordering for better run-length compression.
 mlc_graph = encoder.add_graph("gerrymandria.json", sort="mlc")
 
 # Hand the reordered graph back into GerryChain. This is the load-bearing step:

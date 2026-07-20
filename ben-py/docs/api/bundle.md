@@ -18,6 +18,7 @@ was written against.
 | Read assignments and assets        | `BendlDecoder(path)`                         |
 | Reorder/relabel an existing bundle | `relabel_bundle(...)`                        |
 | Recompress a bundle to XBEN        | `compress_stream(...)`                       |
+| Decompress a bundle to BEN         | `decompress_stream(...)`                     |
 
 ```python
 from binary_ensemble import BendlDecoder
@@ -58,15 +59,15 @@ with encoder.ben_stream() as ensemble:
 ### Graph handling
 
 `add_graph()` accepts NetworkX adjacency JSON, a path to that JSON, raw bytes, or a readable
-object. By default it reorders with `sort="mlc"` for better compression and returns the
-reordered NetworkX graph. Write assignments in the returned graph's node order.
+object. By default it preserves the input node order. Pass an explicit `sort` method to reorder
+for better compression. Write assignments in the returned NetworkX graph's node order.
 
 | `sort`  | Meaning                                        | Needs `key`? | Stores permutation map? |
 | ------- | ---------------------------------------------- | -----------: | ----------------------: |
-| `"mlc"` | Multi-level clustering; topology-based default |           no |                     yes |
+| `"mlc"` | Multi-level clustering; topology-based         |           no |                     yes |
 | `"rcm"` | Reverse Cuthill-McKee topology ordering        |           no |                     yes |
 | `"key"` | Sort nodes by a node attribute                 |          yes |                     yes |
-| `None`  | Store the graph as-is                          |           no |                      no |
+| `None`  | Store the graph as-is (default)                |           no |                      no |
 
 ```python
 import networkx as nx
@@ -137,7 +138,7 @@ decoder = BendlDecoder("ensemble.bendl")
 print(decoder.asset_names())
 print(decoder.read_metadata())
 
-for assignment in decoder.subsample_range(1, 3):
+for assignment in decoder.subsample_range(0, 3):
     print(assignment[:4])
 ```
 
@@ -154,17 +155,24 @@ decoder object; open a second decoder if you need independent cursors.
 These functions preserve bundle assets while rewriting the embedded stream.
 
 ```python
-from binary_ensemble import compress_stream, relabel_bundle
+from binary_ensemble import compress_stream, decompress_stream, relabel_bundle
 
 relabel_bundle("ensemble.bendl", out_file="api-sorted.bendl", sort="mlc")
 compress_stream("api-sorted.bendl", out_file="api-archive.bendl")
+decompress_stream("api-archive.bendl", out_file="api-working.bendl")
 ```
 
-Both transforms take an optional `out_file`: pass one to create a new file (`overwrite=True`
+Each transform takes an optional `out_file`: pass one to create a new file (`overwrite=True`
 replaces an existing one), or leave it off to atomically replace the input in place.
+
+`compress_stream()` is a whole-bundle transform: it changes the embedded BEN stream to XBEN
+while retaining the graph, metadata, and other assets. `decompress_stream()` is its inverse,
+changing XBEN back to BEN for faster day-to-day access while retaining the same assets.
 
 ```{eval-rst}
 .. autofunction:: binary_ensemble.bundle.compress_stream
+
+.. autofunction:: binary_ensemble.bundle.decompress_stream
 
 .. autofunction:: binary_ensemble.bundle.relabel_bundle
 ```

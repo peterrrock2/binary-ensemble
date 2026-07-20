@@ -31,6 +31,49 @@ body {
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22) !important;
 }
 
+/* Give code blocks a faint four-sided outline across palettes. */
+body {
+  --docs-hairline: color-mix(
+    in srgb,
+    var(--color-foreground-primary) 18%,
+    transparent
+  );
+}
+body[data-theme="dark"] {
+  --docs-hairline: color-mix(
+    in srgb,
+    var(--color-foreground-primary) 12%,
+    transparent
+  );
+}
+@media (prefers-color-scheme: dark) {
+  body[data-theme="auto"] {
+    --docs-hairline: color-mix(
+      in srgb,
+      var(--color-foreground-primary) 12%,
+      transparent
+    );
+  }
+}
+[role="main"] div.highlight > pre {
+  border: 1px solid var(--docs-hairline);
+  border-radius: 4px;
+}
+
+/* Replace MyST-NB's thick green input-cell accent with the normal cell outline. */
+div.cell > div.cell_input {
+  border-left-color: var(--mystnb-source-border-color);
+  border-left-width: var(--mystnb-source-border-width);
+}
+body[data-theme="dark"] {
+  --mystnb-source-border-color: var(--docs-hairline);
+}
+@media (prefers-color-scheme: dark) {
+  body[data-theme="auto"] {
+    --mystnb-source-border-color: var(--docs-hairline);
+  }
+}
+
 /* Live palette + code-theme switcher (added by js/palette-switcher.js). */
 .palette-switcher-bar {
   position: fixed;

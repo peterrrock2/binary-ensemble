@@ -223,7 +223,7 @@ pub fn ben_to_ben32_lines<R: Read, W: Write>(
     mut writer: W,
     variant: XBenVariant,
 ) -> io::Result<()> {
-    let mut sample_number = 1usize;
+    let mut samples_processed = 0usize;
     let spinner = Spinner::new("Encoding line");
     'outer: loop {
         let mut tmp_buffer = [0u8];
@@ -240,25 +240,24 @@ pub fn ben_to_ben32_lines<R: Read, W: Write>(
         let max_len_bits = reader.read_u8()?;
         let n_bytes = reader.read_u32::<BigEndian>()?;
 
-        spinner.set_count(sample_number as u64);
-
         match variant {
             XBenVariant::Standard => {
-                sample_number += 1;
                 let ben32_vec =
                     ben_to_ben32_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
                 writer.write_all(&ben32_vec)?;
+                samples_processed += 1;
             }
             XBenVariant::MkvChain => {
                 let ben32_vec =
                     ben_to_ben32_line(&mut reader, max_val_bits, max_len_bits, n_bytes)?;
 
                 let n_reps = reader.read_u16::<BigEndian>()?;
-                sample_number += n_reps as usize;
                 writer.write_all(&ben32_vec)?;
                 writer.write_all(&n_reps.to_be_bytes())?;
+                samples_processed += n_reps as usize;
             }
         }
+        spinner.set_count(samples_processed as u64);
     }
 
     Ok(())

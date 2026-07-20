@@ -64,7 +64,7 @@ from binary_ensemble import BendlEncoder, BendlDecoder
 dual_graph = nx.convert_node_labels_to_integers(nx.grid_2d_graph(4, 4))
 
 encoder = BendlEncoder("run.bendl", overwrite=True)
-ordered = encoder.add_graph(nx.adjacency_data(dual_graph))  # reordered for compression
+ordered = encoder.add_graph(nx.adjacency_data(dual_graph))  # preserves the graph's node order
 with encoder.ben_stream() as ensemble:
     for step in range(1000):
         ensemble.write([(node + step) % 4 + 1 for node in range(16)])
@@ -82,20 +82,22 @@ for assignment in decoder.subsample_every(100):
 - **Whole-file converters** for existing JSONL ensembles:
 
   ```python
-  from binary_ensemble import encode_jsonl_to_ben, encode_ben_to_xben
+  from binary_ensemble import decode_xben_to_ben, encode_ben_to_xben, encode_jsonl_to_ben
 
   encode_jsonl_to_ben("plans.jsonl", "plans.ben")   # fast working format
   encode_ben_to_xben("plans.ben", "plans.xben")     # smallest, for storage
+  decode_xben_to_ben("plans.xben", "plans.ben", overwrite=True)
   ```
 
-- **Shrink for sharing** — reorder a finished file and recompress its stream to XBEN,
+- **Shrink for sharing** — recompress a bundle's stream to XBEN, or decompress it back to BEN,
   keeping every asset:
 
   ```python
-  from binary_ensemble import relabel_bundle, compress_stream
+  from binary_ensemble import compress_stream, decompress_stream, relabel_bundle
 
   relabel_bundle("run.bendl", out_file="run-sorted.bendl", sort="mlc")
   compress_stream("run-sorted.bendl", out_file="run-archive.bendl")
+  decompress_stream("run-archive.bendl", out_file="run-working.bendl")
   ```
 
 - **Subsampling** by stride, range, or explicit indices on both bundles and plain

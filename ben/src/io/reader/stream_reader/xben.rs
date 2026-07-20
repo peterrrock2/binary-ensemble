@@ -2,7 +2,8 @@
 
 use std::io::{self, Cursor, Read};
 
-use super::{zero_count_frame_error, XBenInner};
+use super::events::diff_changes;
+use super::{zero_count_frame_error, TwoDeltaFrameEvent, XBenInner};
 use crate::codec::decode::{apply_twodelta_runs_to_assignment, decode_ben32_line, DecodeError};
 use crate::io::reader::subsample::MkvRecord;
 use crate::io::reader::twodelta::{XBEN_TWODELTA_CHUNK_TAG, XBEN_TWODELTA_FULL_TAG};
@@ -277,7 +278,9 @@ pub(super) fn next_record_xben<R: Read>(
                         return Some(Err(zero_count_frame_error("XBEN")));
                     }
                     let assignment = match inner.previous_assignment.take() {
-                        Some(prev) => apply_twodelta_runs_to_assignment(prev, pair, &run_lengths),
+                        Some(prev) => {
+                            apply_twodelta_runs_to_assignment(prev, pair, &run_lengths, None)
+                        }
                         None => Err(io::Error::from(DecodeError::TwoDeltaNoAnchorFrame)),
                     };
                     return Some(match assignment {
@@ -315,6 +318,87 @@ pub(super) fn next_record_xben<R: Read>(
                     return Some(res);
                 }
             }
+        }
+
+        let read = match inner.xz.read(&mut inner.buf) {
+            Ok(0) => {
+                if inner.overflow.is_empty() {
+                    return None;
+                } else {
+                    return Some(Err(io::Error::from(DecodeError::XBenTruncated)));
+                }
+            }
+            Ok(n) => n,
+            Err(e) => return Some(Err(e)),
+        };
+        inner.overflow.extend_from_slice(&inner.buf[..read]);
+    }
+}
+
+pub(super) fn next_event_xben<R: Read>(
+    inner: &mut XBenInner<R>,
+) -> Option<io::Result<TwoDeltaFrameEvent>> {
+    loop {
+        if let Some((pair, run_lengths, count)) = inner.chunk_queue.pop_front() {
+            if count == 0 {
+                return Some(Err(zero_count_frame_error("XBEN")));
+            }
+            let mut changes = Vec::new();
+            let assignment = match inner.previous_assignment.take() {
+                Some(prev) => {
+                    apply_twodelta_runs_to_assignment(prev, pair, &run_lengths, Some(&mut changes))
+                }
+                None => Err(io::Error::from(DecodeError::TwoDeltaNoAnchorFrame)),
+            };
+            return Some(match assignment {
+                Ok(assignment) => {
+                    inner.previous_assignment = Some(assignment);
+                    Ok(TwoDeltaFrameEvent::Delta { changes, count })
+                }
+                Err(e) => Err(e),
+            });
+        }
+
+        match try_parse_twodelta_chunk(inner) {
+            Some(Ok(())) => continue,
+            Some(Err(e)) => return Some(Err(e)),
+            None => {}
+        }
+
+        if let Some(parsed) = pop_twodelta_frame_from_overflow(&inner.overflow) {
+            let res = match parsed {
+                Ok((runs, consumed, count)) => {
+                    if count == 0 {
+                        inner.overflow.drain(..consumed);
+                        return Some(Err(zero_count_frame_error("XBEN")));
+                    }
+                    let assignment = rle_to_vec(runs);
+                    let changes = match inner
+                        .previous_assignment
+                        .as_ref()
+                        .map(|previous| diff_changes(previous, &assignment))
+                        .transpose()
+                    {
+                        Ok(changes) => changes,
+                        Err(e) => {
+                            inner.overflow.drain(..consumed);
+                            return Some(Err(e));
+                        }
+                    };
+                    inner.previous_assignment = Some(assignment.clone());
+                    inner.overflow.drain(..consumed);
+                    Ok(TwoDeltaFrameEvent::Snapshot {
+                        assignment,
+                        changes,
+                        count,
+                    })
+                }
+                Err(err) => {
+                    inner.overflow.clear();
+                    Err(err)
+                }
+            };
+            return Some(res);
         }
 
         let read = match inner.xz.read(&mut inner.buf) {

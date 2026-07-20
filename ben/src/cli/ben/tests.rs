@@ -115,11 +115,15 @@ fn parse_decode_from_xben_flag() {
 }
 
 #[test]
-fn lookup_requires_sample_number() {
+fn lookup_parses_flat_zero_based_index() {
     assert!(Cli::try_parse_from(["ben", "lookup", "x.ben"]).is_err());
-    let cli = Cli::try_parse_from(["ben", "lookup", "x.ben", "-n", "2"]).unwrap();
+
+    let cli = Cli::try_parse_from(["ben", "lookup", "x.ben", "0"]).unwrap();
     match cli.command {
-        Command::Lookup(a) => assert_eq!(a.sample_number, 2),
+        Command::Lookup(a) => {
+            assert_eq!(a.input_file, "x.ben");
+            assert_eq!(a.index, 0);
+        }
         other => panic!("expected lookup, got {other:?}"),
     }
 }

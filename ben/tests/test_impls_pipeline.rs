@@ -216,7 +216,7 @@ proptest! {
         prop_assert_eq!(out, jsonl);
     }
 
-    // `extract(i) == seq[i-1]` for every 1-based sample in a TwoDelta stream. Exercises the
+    // `extract(i) == seq[i]` for every zero-based sample in a TwoDelta stream. Exercises the
     // incremental `TwoDeltaMaskIndex` replay across long delta chains and mid-stream snapshot
     // re-anchors, where a desync between the mask index and the running assignment would surface.
     // `strat_twodelta_seq` also emits repeated assignments (count > 1 frames), covering the
@@ -228,9 +228,9 @@ proptest! {
         encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::TwoDelta).unwrap();
 
         for (i, expected) in seq.iter().enumerate() {
-            let extracted = extract_assignment_ben(ben.as_slice(), i + 1).unwrap();
+            let extracted = extract_assignment_ben(ben.as_slice(), i).unwrap();
             prop_assert_eq!(&extracted, expected,
-                "extract(sample_number={}) returned the wrong assignment", i + 1);
+                "extract(index={}) returned the wrong assignment", i);
         }
     }
 
@@ -244,14 +244,13 @@ proptest! {
         encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::TwoDelta).unwrap();
 
         for (i, expected) in seq.iter().enumerate() {
-            let n = i + 1;
-            let plain = extract_assignment_ben(Cursor::new(&ben), n).unwrap();
-            let seek = extract_assignment_ben_seek(Cursor::new(&ben), n).unwrap();
-            prop_assert_eq!(&plain, expected, "plain extract({}) wrong", n);
-            prop_assert_eq!(&seek, expected, "seek extract({}) wrong", n);
+            let plain = extract_assignment_ben(Cursor::new(&ben), i).unwrap();
+            let seek = extract_assignment_ben_seek(Cursor::new(&ben), i).unwrap();
+            prop_assert_eq!(&plain, expected, "plain extract({}) wrong", i);
+            prop_assert_eq!(&seek, expected, "seek extract({}) wrong", i);
         }
 
-        let oob = seq.len() + 1;
+        let oob = seq.len();
         prop_assert!(extract_assignment_ben(Cursor::new(&ben), oob).is_err());
         prop_assert!(extract_assignment_ben_seek(Cursor::new(&ben), oob).is_err());
     }
@@ -532,18 +531,17 @@ proptest! {
                     None,
         ).unwrap();
 
-        // Choose some indices to keep (1-based). We derive from seq length.
+        // Choose zero-based indices to keep.
         let n = seq.len().max(1);
-        let mut want: Vec<usize> = (1..=n).step_by(3).collect(); // 1,4,7,…
-        if want.is_empty() { want.push(1); }
+        let mut want: Vec<usize> = (0..n).step_by(3).collect();
+        if want.is_empty() { want.push(0); }
 
         let xb = BenStreamReader::from_xben(xben.as_slice()).unwrap();
         let mut sub = xb.into_subsample_by_indices(want.clone());
         let recs = collect_records(&mut sub).unwrap();
 
         // Ground truth: take those rows from original seq.
-        let truth: Vec<Vec<u16>> = (1..=n)
-            .zip(seq.iter())
+        let truth: Vec<Vec<u16>> = seq.iter().enumerate()
             .filter(|(i, _)| want.contains(i))
             .map(|(_, v)| v.clone())
             .collect();
@@ -559,7 +557,7 @@ proptest! {
 
     // SubsampleDecoder: every(step, offset)
     #[test]
-    fn fuzz_subsample_every(seq in strat_assignment_seq(), params in strat_threads_levels(), step in 1usize..=7usize, offset in 1usize..=5usize) {
+    fn fuzz_subsample_every(seq in strat_assignment_seq(), params in strat_threads_levels(), step in 1usize..=7usize, offset in 0usize..5usize) {
         let (threads, level) = params;
         let jsonl = jsonl_from_assignments(&seq);
 
@@ -574,11 +572,10 @@ proptest! {
                     None,
         ).unwrap();
 
-        let n = seq.len();
         let mut truth: Vec<Vec<u16>> = Vec::new();
-        for i in 1..=n {
+        for (i, assignment) in seq.iter().enumerate() {
             if i >= offset && (i - offset) % step == 0 {
-                truth.push(seq[i-1].clone());
+                truth.push(assignment.clone());
             }
         }
 
@@ -596,7 +593,7 @@ proptest! {
 
     // SubsampleDecoder: by_range
     #[test]
-    fn fuzz_subsample_range(seq in strat_assignment_seq(), params in strat_threads_levels(), start in 1usize..=5usize, len in 1usize..=10usize) {
+    fn fuzz_subsample_range(seq in strat_assignment_seq(), params in strat_threads_levels(), start in 0usize..5usize, len in 1usize..=10usize) {
         let (threads, level) = params;
         let jsonl = jsonl_from_assignments(&seq);
 
@@ -612,10 +609,10 @@ proptest! {
         ).unwrap();
 
         let n = seq.len();
-        let s = start.min(n.max(1));
+        let s = start.min(n);
         let e = (s + len).min(n);
 
-        let truth: Vec<Vec<u16>> = (s..=e).map(|i| seq[i-1].clone()).collect();
+        let truth: Vec<Vec<u16>> = seq[s..e].to_vec();
 
         let xb = BenStreamReader::from_xben(xben.as_slice()).unwrap();
         let mut sub = xb.into_subsample_by_range(s, e);
@@ -636,9 +633,9 @@ proptest! {
         encode_jsonl_to_ben(BufReader::new(jsonl.as_slice()), &mut ben, BenVariant::TwoDelta).unwrap();
 
         let n = seq.len().max(1);
-        let mut want: Vec<usize> = (1..=n).step_by(3).collect();
+        let mut want: Vec<usize> = (0..n).step_by(3).collect();
         if want.is_empty() {
-            want.push(1);
+            want.push(0);
         }
 
         let mut sub = BenStreamReader::from_ben(ben.as_slice())
@@ -646,8 +643,7 @@ proptest! {
             .into_subsample_by_indices(want.clone());
         let recs = collect_records(&mut sub).unwrap();
 
-        let truth: Vec<Vec<u16>> = (1..=n)
-            .zip(seq.iter())
+        let truth: Vec<Vec<u16>> = seq.iter().enumerate()
             .filter(|(i, _)| want.contains(i))
             .map(|(_, v)| v.clone())
             .collect();
@@ -738,9 +734,9 @@ fn subsample_every_respects_offset() {
     )
     .unwrap();
 
-    // Keep every 1 starting at offset=2 -> only second sample.
+    // Keep every 1 starting at index 1: only the second sample.
     let xb = BenStreamReader::from_xben(xben.as_slice()).unwrap();
-    let mut sub = xb.into_subsample_every(1, 2);
+    let mut sub = xb.into_subsample_every(1, 1);
     let recs = collect_records(&mut sub).unwrap();
 
     let mut picked = Vec::new();
@@ -964,7 +960,7 @@ fn subsample_by_indices_sorts_and_dedups() {
     let xb = BenStreamReader::from_xben(xz.as_slice()).unwrap();
 
     // Deliberately unsorted and duplicated indices
-    let mut sub = xb.into_subsample_by_indices(vec![5, 2, 2, 1, 5, 3]);
+    let mut sub = xb.into_subsample_by_indices(vec![4, 1, 1, 0, 4, 2]);
     let recs = collect_records(&mut sub).unwrap();
     let mut picked = Vec::new();
     for (a, c) in recs {
@@ -1241,7 +1237,7 @@ fn ben_decoder_mkv_count_read_error_path() {
 fn subsample_frame_decoder_propagates_inner_and_decode_errors() {
     let mut inner = SubsampleFrameDecoder::by_indices(
         vec![Err(std::io::Error::other("boom"))].into_iter(),
-        vec![1],
+        vec![0],
     );
     let err = inner.next().unwrap().unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::Other);
@@ -1252,7 +1248,7 @@ fn subsample_frame_decoder_propagates_inner_and_decode_errors() {
             1,
         ))]
         .into_iter(),
-        vec![1],
+        vec![0],
     );
     let err = malformed.next().unwrap().unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
@@ -1431,7 +1427,7 @@ fn ben_decoder_subsample_helpers_work_on_public_api() {
 
     let mut by_indices = BenStreamReader::from_ben(ben.as_slice())
         .unwrap()
-        .into_subsample_by_indices(vec![4, 1, 1, 3]);
+        .into_subsample_by_indices(vec![3, 0, 0, 2]);
     let picked = collect_records(&mut by_indices).unwrap();
     assert_eq!(
         picked.into_iter().map(|(a, _)| a[0]).collect::<Vec<u16>>(),
@@ -1440,7 +1436,7 @@ fn ben_decoder_subsample_helpers_work_on_public_api() {
 
     let mut by_range = BenStreamReader::from_ben(ben.as_slice())
         .unwrap()
-        .into_subsample_by_range(2, 3);
+        .into_subsample_by_range(1, 3);
     let picked = collect_records(&mut by_range).unwrap();
     assert_eq!(
         picked.into_iter().map(|(a, _)| a[0]).collect::<Vec<u16>>(),
@@ -1449,7 +1445,7 @@ fn ben_decoder_subsample_helpers_work_on_public_api() {
 
     let mut every = BenStreamReader::from_ben(ben.as_slice())
         .unwrap()
-        .into_subsample_every(2, 2);
+        .into_subsample_every(2, 1);
     let picked = collect_records(&mut every).unwrap();
     assert_eq!(
         picked.into_iter().map(|(a, _)| a[0]).collect::<Vec<u16>>(),
@@ -1603,7 +1599,7 @@ fn twodelta_supports_frame_iteration_counting_and_sample_extraction() {
     assert_eq!(frames[1].1, 1);
     assert_eq!(frames[2].1, 1);
 
-    let picked = extract_assignment_ben(ben.as_slice(), 3).unwrap();
+    let picked = extract_assignment_ben(ben.as_slice(), 2).unwrap();
     assert_eq!(picked, assignments[2]);
 
     let ben_path = unique_temp_path("twodelta_sample.ben");
@@ -1638,11 +1634,11 @@ fn twodelta_seek_lookup_crosses_forced_checkpoint() {
     )
     .unwrap();
 
-    for &n in &[1usize, 2, 49_999, 50_000, 50_001, 50_002, 50_005] {
-        let expected = &assignments[n - 1];
-        let seek = extract_assignment_ben_seek(Cursor::new(&ben), n).unwrap();
-        let plain = extract_assignment_ben(Cursor::new(&ben), n).unwrap();
-        assert_eq!(&seek, expected, "seek extract({n}) across checkpoint");
-        assert_eq!(&plain, expected, "plain extract({n}) across checkpoint");
+    for &index in &[0usize, 1, 49_998, 49_999, 50_000, 50_001, 50_004] {
+        let expected = &assignments[index];
+        let seek = extract_assignment_ben_seek(Cursor::new(&ben), index).unwrap();
+        let plain = extract_assignment_ben(Cursor::new(&ben), index).unwrap();
+        assert_eq!(&seek, expected, "seek extract({index}) across checkpoint");
+        assert_eq!(&plain, expected, "plain extract({index}) across checkpoint");
     }
 }

@@ -35,6 +35,7 @@ def test_top_level_exports() -> None:
         "BendlEncoder",
         "BendlDecoder",
         "compress_stream",
+        "decompress_stream",
         "relabel_bundle",
         "BenEncoder",
         "BenDecoder",
@@ -62,6 +63,7 @@ def test_bundle_module_exports() -> None:
         "BendlDecoder",
         "BendlStreamSession",
         "compress_stream",
+        "decompress_stream",
         "relabel_bundle",
     }
     assert bundle.BendlDecoder is _core.BendlDecoder
@@ -247,6 +249,10 @@ def test_bundle_facade_matches_stub() -> None:
     # Module-level functions.
     assert (
         _params_from_inspect(bundle.compress_stream, drop_self=False) == stub["compress_stream"][1]
+    )
+    assert (
+        _params_from_inspect(bundle.decompress_stream, drop_self=False)
+        == stub["decompress_stream"][1]
     )
     assert _params_from_inspect(bundle.relabel_bundle, drop_self=False) == stub["relabel_bundle"][1]
 

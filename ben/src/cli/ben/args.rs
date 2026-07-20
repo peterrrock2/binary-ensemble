@@ -103,7 +103,7 @@ pub(super) enum Command {
     Decode(DecodeArgs),
     /// Fully decode XBEN into JSONL.
     Xdecode(XdecodeArgs),
-    /// Look up a single sample from a BEN file (random-access decode).
+    /// Look up a single assignment by zero-based index.
     Lookup(LookupArgs),
     /// Compress an arbitrary stream with XZ.
     XzCompress(XzCompressArgs),
@@ -198,9 +198,8 @@ pub(super) struct XdecodeArgs {
 pub(super) struct LookupArgs {
     /// Input BEN file.
     pub input_file: String,
-    /// Sample number to extract.
-    #[arg(short = 'n', long)]
-    pub sample_number: usize,
+    /// Zero-based position to extract.
+    pub index: usize,
 }
 
 /// `ben xz-compress` options.

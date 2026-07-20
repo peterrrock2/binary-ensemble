@@ -249,7 +249,7 @@ where
 {
     let mut decoder = BenStreamReader::from_ben(reader)?.silent(true);
     let mut writer = BenStreamWriter::for_ben(writer, target_variant)?;
-    let mut sample_number = 0usize;
+    let mut samples_written = 0usize;
     let spinner = Spinner::new("Relabeling line");
 
     // Both run policies share the same per-frame bookkeeping (sample limit, transform, output
@@ -257,13 +257,13 @@ where
     // `out_count` is bounded by the input frame's `count` (a `u16`), so the `as u16` cast on
     // the preserve path cannot truncate.
     decoder.for_each_assignment(|assignment, count| {
-        if max_samples.is_some_and(|limit| sample_number >= limit) {
+        if max_samples.is_some_and(|limit| samples_written >= limit) {
             return Ok(false);
         }
 
         let relabeled = transform(assignment)?;
         let out_count = max_samples
-            .map(|limit| (limit - sample_number).min(count as usize))
+            .map(|limit| (limit - samples_written).min(count as usize))
             .unwrap_or(count as usize);
 
         if out_count > 0 {
@@ -283,8 +283,8 @@ where
             }
         }
 
-        sample_number += out_count;
-        spinner.set_count(sample_number as u64);
+        samples_written += out_count;
+        spinner.set_count(samples_written as u64);
         Ok(true)
     })?;
     writer.finish()?;
@@ -303,10 +303,10 @@ fn relabel_first_seen_via_byte_walk<R: Read, W: Write>(
     input_variant: BenVariant,
     max_samples: Option<usize>,
 ) -> io::Result<()> {
-    let mut sample_number = 0usize;
+    let mut samples_written = 0usize;
     let spinner = Spinner::new("Relabeling line");
     loop {
-        if max_samples.is_some_and(|limit| sample_number >= limit) {
+        if max_samples.is_some_and(|limit| samples_written >= limit) {
             break;
         }
         let mut tmp_buffer = [0u8];
@@ -337,7 +337,7 @@ fn relabel_first_seen_via_byte_walk<R: Read, W: Write>(
                 ));
             }
             max_samples
-                .map(|limit| ((limit - sample_number).min(count as usize)) as u16)
+                .map(|limit| ((limit - samples_written).min(count as usize)) as u16)
                 .unwrap_or(count)
         } else {
             1
@@ -346,8 +346,8 @@ fn relabel_first_seen_via_byte_walk<R: Read, W: Write>(
         let frame = BenEncodeFrame::from_rle(ben_line, input_variant, Some(count_occurrences))?;
         writer.write_all(frame.as_slice())?;
 
-        sample_number += count_occurrences as usize;
-        spinner.set_count(sample_number as u64);
+        samples_written += count_occurrences as usize;
+        spinner.set_count(samples_written as u64);
     }
 
     Ok(())

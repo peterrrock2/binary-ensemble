@@ -28,7 +28,8 @@ This document uses the workspace glossary. The terms that matter most here:
 
 - **assignment** — a length-N `Vec<u16>` where index _i_ is the district id of dual-graph node _i_.
 - **district id** — an integer value stored in an assignment. Range `0..=65535`.
-- **sample** — one `(sample_number, assignment)` pair. `sample_number` lives in _expanded_ space.
+- **sample** — one `(sample_index, assignment)` pair. `sample_index` is zero-based and lives in
+  _expanded_ space.
 - **sample count** — the _expanded_ number of samples: a MkvChain frame with `count = 5` contributes
   5, not 1.
 - **variant** — `Standard` or `MkvChain` here. One variant per stream, fixed by the banner.

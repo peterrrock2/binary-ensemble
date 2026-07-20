@@ -361,7 +361,7 @@ impl BenDecodeFrame {
             } => {
                 let prev =
                     prev.ok_or_else(|| io::Error::from(DecodeError::TwoDeltaNoAnchorFrame))?;
-                apply_twodelta_runs_to_assignment(prev, *pair, run_lengths)
+                apply_twodelta_runs_to_assignment(prev, *pair, run_lengths, None)
             }
         }
     }

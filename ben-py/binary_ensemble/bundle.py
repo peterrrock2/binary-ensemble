@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Literal, cast, get_args, overload
 
 from binary_ensemble._core import BendlDecoder, BendlStreamSession
 from binary_ensemble._core import BendlEncoder as _CoreBendlEncoder
+from binary_ensemble._core import decompress_bundle as _decompress_bundle
 from binary_ensemble._core import recompress_bundle as _recompress_bundle
 from binary_ensemble._core import relabel_bundle as _relabel_bundle
 from binary_ensemble.types import (
@@ -54,6 +55,7 @@ __all__ = [
     "BendlDecoder",
     "BendlStreamSession",
     "compress_stream",
+    "decompress_stream",
     "relabel_bundle",
 ]
 
@@ -135,7 +137,7 @@ class BendlEncoder:
     the ``ben_stream()`` context finalizes the bundle, so the common pattern is::
 
         enc = BendlEncoder(path, overwrite=True)
-        graph = enc.add_graph(my_graph)          # MLC-reordered by default
+        graph = enc.add_graph(my_graph)          # original node order by default
         with enc.ben_stream() as ensemble:             # only the stream needs ``with``
             for assignment in chain:
                 ensemble.write(assignment)
@@ -188,7 +190,7 @@ class BendlEncoder:
     def add_graph(
         self,
         graph: GraphInput,
-        sort: SortMethod | None = "mlc",
+        sort: SortMethod | None = None,
         key: str | None = None,
         *,
         compress: bool | None = None,
@@ -210,7 +212,7 @@ class BendlEncoder:
                 (:data:`~binary_ensemble.types.SortMethod` or ``None``): ``"mlc"`` (multi-level
                 clustering that reorders the graph for better compression), ``"rcm"`` (reverse
                 Cuthill-McKee), ``"key"`` (sort by the node attribute named in ``key``), or
-                ``None`` to store the graph as-is with no permutation map. Default is ``"mlc"``.
+                ``None`` to store the graph as-is with no permutation map. Default is ``None``.
             key (str | None, optional): Node attribute to sort by, e.g. ``key="GEOID"``;
                 ``key="id"`` sorts by the NetworkX node id. Required with (and only valid with)
                 ``sort="key"``. Default is ``None``.
@@ -476,9 +478,42 @@ def compress_stream(
 
     Raises:
         OSError: If ``out_file`` exists and ``overwrite`` is ``False``.
+        Exception: If the bundle is unfinalized or does not contain a BEN stream.
     """
     _atomic_or_out(
         lambda src, dst, ow: _recompress_bundle(src, dst, overwrite=ow),
+        path,
+        out_file,
+        overwrite,
+    )
+
+
+def decompress_stream(
+    path: StrPath,
+    out_file: StrPath | None = None,
+    overwrite: bool = False,
+) -> None:
+    """Decompress a bundle's embedded XBEN stream to BEN, preserving every asset.
+
+    All assets (graph, metadata, node_permutation_map, custom blobs) are preserved by decoded
+    payload, name, type, and JSON flag; storage compression is normalized to the writer's default
+    policy. An assets-only XBEN bundle becomes an assets-only BEN bundle.
+
+    Args:
+        path (StrPath): Path to the source ``.bendl`` bundle (``str`` or ``os.PathLike``).
+        out_file (StrPath | None, optional): Destination path for the decompressed bundle
+            (``str`` or ``os.PathLike``), leaving ``path`` untouched. Default is ``None`` which
+            decompresses in place: the result is written to a temp file and atomically swapped
+            over ``path``.
+        overwrite (bool, optional): Replace ``out_file`` if it already exists. Irrelevant in
+            place, which always replaces ``path``. Default is ``False``.
+
+    Raises:
+        OSError: If ``out_file`` exists and ``overwrite`` is ``False``.
+        Exception: If the bundle is unfinalized or does not contain an XBEN stream.
+    """
+    _atomic_or_out(
+        lambda src, dst, ow: _decompress_bundle(src, dst, overwrite=ow),
         path,
         out_file,
         overwrite,
