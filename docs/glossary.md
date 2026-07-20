@@ -179,7 +179,7 @@ listed for reference.
   - Means "with LZMA2 wrapping." Not a separate verb; a modifier on `encode`/`decode`.
 - **Sample lookup** _(prose)_ / random-access decode
   - Decode just one sample from a BEN file.
-  - CLI: `ben lookup index FILE I`, where `I` is a zero-based sample index.
+  - CLI: `ben lookup FILE I`, where `I` is a zero-based sample index.
   - For seekable plain `.ben` files, `TwoDelta` lookup scans frame tags/counts to find the latest
     snapshot before I, seeks there, and replays forward. `Standard` and `MkvChain` can skip raw
     frames directly.

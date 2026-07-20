@@ -191,13 +191,7 @@ fn ben_cli_encode_decode_read_and_x_modes_roundtrip() {
 
     let read = run(
         "ben",
-        &[
-            "lookup",
-            "index",
-            ben_path.to_str().unwrap(),
-            "1",
-            "--print",
-        ],
+        &["lookup", ben_path.to_str().unwrap(), "1", "--print"],
         temp.path(),
     );
     assert_success(&read);
@@ -483,7 +477,7 @@ fn ben_cli_reports_expected_error_paths() {
     assert_failure(&decode);
     assert!(String::from_utf8_lossy(&decode.stderr).contains("Error:"));
 
-    // lookup requires an explicit indexing convention; omitting it is a clap parse error.
+    // Lookup requires both an input path and index; omitting them is a clap parse error.
     let read = run("ben", &["lookup"], temp.path());
     assert_failure(&read);
     assert!(String::from_utf8_lossy(&read.stderr).contains("Usage:"));
@@ -630,7 +624,6 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
             "ben",
             &[
                 "lookup",
-                "index",
                 ben_path.to_str().unwrap(),
                 "0",
                 "--output-file",
@@ -687,13 +680,7 @@ fn ben_cli_reports_overwrite_denials_and_remaining_error_modes() {
 
     let read_too_large = run(
         "ben",
-        &[
-            "lookup",
-            "index",
-            ben_path.to_str().unwrap(),
-            "99",
-            "--print",
-        ],
+        &["lookup", ben_path.to_str().unwrap(), "99", "--print"],
         temp.path(),
     );
     assert_failure(&read_too_large);

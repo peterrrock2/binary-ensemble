@@ -1,6 +1,6 @@
 use super::args::{
-    resolve_variant, CanonicalizeArgs, Cli, CliVariant, Command, Globals, LookupTarget,
-    OrderingMethod, ReencodeArgs, RelabelArgs, SortGraphArgs,
+    resolve_variant, CanonicalizeArgs, Cli, CliVariant, Command, Globals, OrderingMethod,
+    ReencodeArgs, RelabelArgs, SortGraphArgs,
 };
 use super::bundle::{
     append_graph_asset, run_encode_bundle_with_graph, run_xencode_bundle_with_graph,
@@ -115,19 +115,17 @@ fn parse_decode_from_xben_flag() {
 }
 
 #[test]
-fn lookup_requires_index_subcommand() {
+fn lookup_parses_flat_zero_based_index() {
     assert!(Cli::try_parse_from(["ben", "lookup", "x.ben"]).is_err());
 
-    let cli = Cli::try_parse_from(["ben", "lookup", "index", "x.ben", "0"]).unwrap();
+    let cli = Cli::try_parse_from(["ben", "lookup", "x.ben", "0"]).unwrap();
     match cli.command {
         Command::Lookup(a) => {
-            let LookupTarget::Index(a) = a.target;
+            assert_eq!(a.input_file, "x.ben");
             assert_eq!(a.index, 0);
         }
         other => panic!("expected lookup, got {other:?}"),
     }
-
-    assert!(Cli::try_parse_from(["ben", "lookup", "sample", "x.ben", "2"]).is_err());
 }
 
 #[test]

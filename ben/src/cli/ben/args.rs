@@ -196,20 +196,6 @@ pub(super) struct XdecodeArgs {
 /// `ben lookup` options.
 #[derive(ClapArgs, Debug)]
 pub(super) struct LookupArgs {
-    #[command(subcommand)]
-    pub target: LookupTarget,
-}
-
-/// Position convention for `ben lookup`.
-#[derive(Subcommand, Debug)]
-pub(super) enum LookupTarget {
-    /// Look up an assignment by its zero-based position.
-    Index(LookupIndexArgs),
-}
-
-/// `ben lookup index` options.
-#[derive(ClapArgs, Debug)]
-pub(super) struct LookupIndexArgs {
     /// Input BEN file.
     pub input_file: String,
     /// Zero-based position to extract.
