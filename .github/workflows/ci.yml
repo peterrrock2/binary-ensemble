@@ -30,7 +30,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - name: ruff format
         working-directory: ben-py
-        run: uvx ruff format --check .
+        run: uv run --locked ruff format --check .
 
   lint:
     name: lint
@@ -46,7 +46,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - name: ruff check
         working-directory: ben-py
-        run: uvx ruff check .
+        run: uv run --locked ruff check .
 
   rust-test:
     name: rust tests (fast)
